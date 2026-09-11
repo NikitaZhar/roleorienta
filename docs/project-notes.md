@@ -356,6 +356,88 @@ Docker Compose поднимает несколько контейнеров од
 
 ---
 
+## 11. Модель данных — первый срез («идентичность приёма»)
+
+Пять сущностей в модуле `core` (пакет `com.roleorienta.core.domain`): `Provider`,
+`Company`, `Source`, `CompanySource`, `JobPosting`. Плюс перечисления
+`ProviderKind`, `SourceKind`, `SourceState`, `VerifiedBy`. Схему задаёт миграция
+`V3__ingestion_identity.sql`.
+
+Связи первого среза:
+
+```mermaid
+erDiagram
+    Provider ||--o{ Source : "экземпляры"
+    Source ||--o{ CompanySource : "связывает работодателей"
+    Company ||--o{ CompanySource : "связана через"
+    Source ||--o{ JobPosting : "публикует"
+```
+
+### 11.1 Модуль `core`
+
+Отдельный Maven-модуль с доменными классами, от которого зависят приложения
+(сейчас — `job-api`, позже — `job-worker`). Так сущности не дублируются. Это
+**библиотека**: у неё нет `spring-boot-maven-plugin` (не исполняемое приложение),
+только `spring-boot-starter-data-jpa` (аннотации JPA/Hibernate) и `jackson-databind`
+(для JSONB). Почему модуль, а не пакет в job-api: воркер вскоре будет писать эти же
+сущности, и общий модуль исключает дублирование и болезненный перенос пакетов позже.
+
+### 11.2 Подход DB-first
+
+Схему БД описывает **Flyway** (`V3`), а JPA-сущности ей **соответствуют**. При
+старте `job-api` с `ddl-auto: validate` Hibernate проверяет совпадение сущностей
+со схемой и **ничего не меняет** сам. Источник истины по схеме — миграции.
+Почему так: миграции дают контролируемую, версионируемую эволюцию схемы; Hibernate
+в роли «генератора схемы» непредсказуем и опасен для данных.
+
+### 11.3 Конструкции JPA (и почему они выбраны)
+
+- `@Entity` + `@Table(name, uniqueConstraints)` — класс ↔ таблица; уникальные
+  ограничения объявлены декларативно.
+- `@Id` + `@GeneratedValue(IDENTITY)` — ключ выдаёт БД (`GENERATED ALWAYS AS
+  IDENTITY`). Почему IDENTITY: простой автоинкремент средствами Postgres, без
+  доп. таблиц-последовательностей в приложении.
+- `@Column(name, nullable, updatable)` — отображение колонок. Именование
+  camelCase→snake_case Spring делает сам (`firstSeenAt` → `first_seen_at`).
+- `@ManyToOne(fetch = LAZY, optional = false)` + `@JoinColumn(nullable=false)`.
+  Почему LAZY: не тянуть связанные строки, пока к ним не обратились. Почему
+  однонаправленно (без коллекций `@OneToMany`): меньше риск N+1 и случайной
+  загрузки больших коллекций; связь всегда со стороны «многих».
+- `@Enumerated(EnumType.STRING)` — enum хранится строкой. Почему STRING, а не
+  ORDINAL: читаемо в БД и не ломается при перестановке значений enum.
+- **JSONB**: `@JdbcTypeCode(SqlTypes.JSON)` + `@Column(columnDefinition="jsonb")`
+  на `Map<String,Object> capabilities`. Почему JSONB: capability-карточка —
+  гибкая структура, её преждевременно раскладывать на колонки.
+- `@CreationTimestamp` / `@UpdateTimestamp` — авто-заполнение `createdAt`/`updatedAt`
+  (`Instant` → `timestamptz`, момент в UTC).
+- Геттеры/сеттеры вручную, **без Lombok** — намеренно: никакой «магии», всё явно.
+
+### 11.4 `@EntityScan` в job-api
+
+Почему нужен: по умолчанию JPA ищет сущности в пакете приложения
+(`com.roleorienta.api`), а наши — в `com.roleorienta.core.domain` (другой модуль).
+`@EntityScan("com.roleorienta.core.domain")` указывает, где искать; иначе
+`validate` не увидит сущностей. Важно: в Spring Boot 4 эта аннотация в пакете
+`org.springframework.boot.persistence.autoconfigure` (в 3.x была в
+`org.springframework.boot.autoconfigure.domain` — при переносе кода легко ошибиться).
+Док: https://docs.spring.io/spring-boot/reference/data/sql.html#data.sql.jpa-and-spring-data.entity-classes
+
+### 11.5 Инварианты §4, зафиксированные в схеме
+
+- **Публикация уникальна** в паре источник+внешний ID:
+  `uq_job_posting_source_external_id (source_id, external_id)`.
+- **Provider ≠ Source ≠ Company** (ADR-16): работодатель связан с источником
+  только через `CompanySource` (многие-ко-многим, `uq_company_source_source_company`).
+- Источник уникален в паре провайдер+ссылка: `uq_source_provider_external_ref`.
+- Внешние ключи (`fk_*`) и индексы на FK-колонках (`idx_*`).
+
+### 11.6 Что НЕ вошло (следующие срезы)
+
+`Vacancy`, `VacancyRevision`, `CoverageAssessment` (оси зарплаты и языковые поля),
+`Requirement`, `CrawlRun`/`CrawlTask`/`SourceSnapshot`, `EmployerCandidate`,
+пользовательские сущности (`Application`, `SavedVacancy`, …), а также репозитории
+Spring Data и бизнес-логика — отдельными срезами.
+
 ## Куда смотреть дальше
 
 - Spring Boot Reference: https://docs.spring.io/spring-boot/index.html

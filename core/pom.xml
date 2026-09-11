@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.roleorienta</groupId>
+        <artifactId>roleorienta-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>core</artifactId>
+    <name>core</name>
+    <description>Общий модуль: доменные JPA-сущности и перечисления, используемые job-api и job-worker</description>
+
+    <dependencies>
+        <!-- JPA/Hibernate: аннотации сущностей и типы (@Entity, @JdbcTypeCode и т.п.). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <!-- Нужен для сериализации JSONB-поля (Map -> jsonb) на стороне Hibernate. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+    </dependencies>
+</project>

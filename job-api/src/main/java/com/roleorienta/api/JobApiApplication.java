@@ -2,6 +2,7 @@ package com.roleorienta.api;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
 
 /**
  * Точка входа приложения job-api.
@@ -13,6 +14,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * пределах согласованной области.</p>
  */
 @SpringBootApplication
+// Доменные сущности лежат в общем модуле core (пакет вне com.roleorienta.api),
+// поэтому явно указываем JPA, где их искать.
+@EntityScan("com.roleorienta.core.domain")
 public class JobApiApplication {
 
     /**

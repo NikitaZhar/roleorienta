@@ -38,6 +38,7 @@
     </dependencyManagement>
 
     <modules>
+        <module>core</module>
         <module>job-api</module>
         <module>job-worker</module>
     </modules>
