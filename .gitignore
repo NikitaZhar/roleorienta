@@ -1,0 +1,27 @@
+# Maven
+target/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+
+# Локальный env для docker compose
+.env
+
+# Логи
+*.log
+
+# Eclipse output
+bin/
+
+# Obsidian
+.obsidian/

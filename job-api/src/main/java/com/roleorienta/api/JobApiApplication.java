@@ -1,0 +1,26 @@
+package com.roleorienta.api;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * Точка входа приложения job-api.
+ *
+ * <p>Обслуживает пользовательские сценарии через REST: поиск и фильтры вакансий,
+ * подписки, компании и техпрофили, отклики, заметки, профиль навыков и отчёты об
+ * ошибках. На Этапе 1 запускается как самостоятельное Spring Boot приложение
+ * поверх общей базы PostgreSQL; бизнес-логика добавляется отдельными задачами в
+ * пределах согласованной области.</p>
+ */
+@SpringBootApplication
+public class JobApiApplication {
+
+    /**
+     * Запускает Spring Boot контекст приложения job-api.
+     *
+     * @param args аргументы командной строки, передаваемые в Spring Boot
+     */
+    public static void main(String[] args) {
+        SpringApplication.run(JobApiApplication.class, args);
+    }
+}

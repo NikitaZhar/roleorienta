@@ -1,0 +1,106 @@
+# Профиль local-pilot (Этап 1): API + worker (планировщик + публикатор outbox +
+# обработчики), PostgreSQL, RabbitMQ, объектное хранилище (MinIO, S3-совместимое),
+# заглушка источника (WireMock).
+# Образы приложений собираются заранее: `mvn spring-boot:build-image` (см. README).
+# Значения кредов ниже — локальные значения по умолчанию для разработки, не секреты;
+# переопределяются через файл .env (см. .env.example).
+
+name: roleorienta-local-pilot
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-roleorienta}
+      POSTGRES_USER: ${DB_USERNAME:-roleorienta}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-roleorienta}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-roleorienta} -d ${DB_NAME:-roleorienta}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-roleorienta}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-roleorienta}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-roleorienta}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-roleorienta-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  source-stub:
+    image: wiremock/wiremock:latest
+    command: ["--global-response-templating", "--verbose"]
+    ports:
+      - "8089:8080"
+    volumes:
+      - ./infra/source-stub:/home/wiremock
+
+  job-api:
+    image: roleorienta/job-api:0.0.1-SNAPSHOT
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-roleorienta}
+      DB_USERNAME: ${DB_USERNAME:-roleorienta}
+      DB_PASSWORD: ${DB_PASSWORD:-roleorienta}
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"
+
+  job-worker:
+    image: roleorienta/job-worker:0.0.1-SNAPSHOT
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      job-api:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-roleorienta}
+      DB_USERNAME: ${DB_USERNAME:-roleorienta}
+      DB_PASSWORD: ${DB_PASSWORD:-roleorienta}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-roleorienta}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-roleorienta}
+      SERVER_PORT: "8081"
+      SOURCE_STUB_BASE_URL: http://source-stub:8080
+    ports:
+      - "8081:8081"
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:

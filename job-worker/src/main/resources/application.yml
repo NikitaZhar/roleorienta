@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: job-worker
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/roleorienta}
+    username: ${DB_USERNAME:roleorienta}
+    password: ${DB_PASSWORD:roleorienta}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  # Схемой владеет job-api; worker не применяет миграции (ADR-2).
+  flyway:
+    enabled: false
+  # Брокер фоновых заданий (ADR-1). Соединение ленивое: контекст стартует и при
+  # недоступном брокере, а обработка/публикация возобновляются по восстановлении.
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:roleorienta}
+    password: ${RABBITMQ_PASSWORD:roleorienta}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+server:
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      # Liveness не зависит от внешних систем (§11). Readiness отражает БД;
+      # брокер не делает worker неготовым — недоступность обрабатывается явно.
+      group:
+        readiness:
+          include: readinessState,db
