@@ -15,7 +15,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-roleorienta}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-roleorienta}
     ports:
-      - "5432:5432"
+      - "5433:5432"   # хост:контейнер — 5433, чтобы не конфликтовать с локальной PostgreSQL
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

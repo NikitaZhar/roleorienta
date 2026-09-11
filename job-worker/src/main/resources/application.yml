@@ -2,7 +2,7 @@ spring:
   application:
     name: job-worker
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/roleorienta}
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/roleorienta}
     username: ${DB_USERNAME:roleorienta}
     password: ${DB_PASSWORD:roleorienta}
   jpa:

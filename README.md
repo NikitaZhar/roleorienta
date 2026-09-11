@@ -70,7 +70,27 @@ mvn verify
 mvn -DskipTests package
 ```
 
-## Запуск локально (профиль local-pilot)
+## Локальная разработка (рекомендуемый способ)
+
+Инфраструктура (база, брокер и прочее) поднимается в Docker, а приложения
+запускаются из IDE или терминала. PostgreSQL контейнера опубликован на порт
+**5433**, чтобы не конфликтовать с локально установленной PostgreSQL на 5432.
+
+Требуется: запущенный Docker Desktop и JDK 21.
+
+```bash
+./scripts/dev-up.sh       # поднять инфраструктуру (postgres:5433, rabbitmq, minio, source-stub)
+./scripts/run-api.sh      # запустить job-api  -> http://localhost:8080/actuator/health
+# ./scripts/run-worker.sh # при необходимости — job-worker -> http://localhost:8081
+# ... работа; Ctrl+C останавливает приложение ...
+./scripts/dev-down.sh     # в конце — остановить инфраструктуру (данные в томах сохраняются)
+```
+
+Запуск из Eclipse/STS: сначала `./scripts/dev-up.sh`, затем правый клик на
+`JobApiApplication` → Run As → Spring Boot App. Приложение по умолчанию
+подключается к `localhost:5433`.
+
+## Запуск всего в Docker (профиль local-pilot)
 
 Профиль поднимает API, worker, PostgreSQL, RabbitMQ, объектное хранилище (MinIO)
 и заглушку источника (WireMock).
@@ -92,7 +112,7 @@ docker compose up
 |-------------------|-------|
 | job-api           | http://localhost:8080 (health: `/actuator/health`) |
 | job-worker        | http://localhost:8081 (health: `/actuator/health`) |
-| PostgreSQL        | localhost:5432 |
+| PostgreSQL        | localhost:5433 (в контейнере 5432) |
 | RabbitMQ          | localhost:5672 (консоль: http://localhost:15672) |
 | MinIO             | http://localhost:9000 (консоль: http://localhost:9001) |
 | source-stub       | http://localhost:8089 |
