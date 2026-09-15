@@ -15,6 +15,13 @@
     <description>Фоновый обработчик: планировщик, публикатор outbox, обнаружение, сбор, ревизии, дайджест (Этап 1, каркас)</description>
 
     <dependencies>
+        <!-- Общий модуль доменных сущностей (Source, CrawlRun, CrawlTask и др.).
+             Планировщик читает источники и создаёт обходы/задания. -->
+        <dependency>
+            <groupId>com.roleorienta</groupId>
+            <artifactId>core</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

@@ -21,6 +21,22 @@ spring:
     password: ${RABBITMQ_PASSWORD:roleorienta}
     publisher-confirm-type: correlated
     publisher-returns: true
+    # mandatory: немаршрутизируемое сообщение брокер возвращает (basic.return), а не
+    # теряет молча — нужно для корректного outbox (A15).
+    template:
+      mandatory: true
+    # Нативные повторы потребителя (Spring Boot 4, без spring-retry). При
+    # исчерпании попыток сообщение отклоняется без повторной постановки в очередь
+    # (default-requeue-rejected=false) и уходит в DLX→DLQ.
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 5
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
 
 server:
   port: ${SERVER_PORT:8081}
@@ -39,3 +55,28 @@ management:
       group:
         readiness:
           include: readinessState,db
+
+# Настройки магистрали доставки (значения по умолчанию совпадают с кодом; вынесены
+# сюда для внешней конфигурации — §3.4 боевого контракта).
+app:
+  outbox:
+    # Публикатор outbox включён по умолчанию; в тестах отключается (пачки
+    # запускаются вручную).
+    scheduler:
+      enabled: true
+    # Период тика публикатора, мс.
+    poll-interval-ms: 1000
+    # Максимум событий в одной пачке (транзакция удерживается на время
+    # подтверждений, поэтому пачка ограничена).
+    batch-size: 100
+    # Тайм-аут ожидания подтверждений брокера на пачку, мс.
+    confirm-timeout-ms: 5000
+  scheduler:
+    # Планировщик источников включён по умолчанию; в тестах отключается (проход
+    # запускается вручную).
+    enabled: true
+    # Период тика планировщика, мс.
+    poll-interval-ms: 60000
+    # Размер окна расписания, мс (по умолчанию 15 минут): в пределах одного окна
+    # источник планируется один раз.
+    window-ms: 900000

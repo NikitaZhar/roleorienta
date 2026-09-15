@@ -25,3 +25,6 @@ bin/
 
 # Obsidian
 .obsidian/
+
+# Временные файлы FUSE-монтирования
+.fuse_hidden*

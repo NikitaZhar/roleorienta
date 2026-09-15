@@ -1,8 +1,8 @@
 ---
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
-Дата: 2026-09-11
-Статус: локальный запуск — скрипты dev-up/run-api и Postgres контейнера на порту 5433
+Дата: 2026-09-14
+Статус: добавлен доменный планировщик — обход/задание/outbox-событие в одной транзакции под leader-lock, идемпотентно по окну; миграция V5, сущности CrawlRun/CrawlTask в core (см. §14). Ранее: магистраль доставки (§13)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -362,8 +362,10 @@ DLQ — «очередь мёртвых писем»).
 снова.
 Обзор паттерна: https://microservices.io/patterns/data/transactional-outbox.html
 
-На первом этапе заложена только инфраструктура (брокер + таблица + настройки).
-Сам отправитель и обработчики сообщений — ближайшая задача реализации.
+Инфраструктура (брокер, таблица outbox, настройки) и сам конвейер доставки —
+публикатор, топология RabbitMQ и идемпотентный потребитель — реализованы;
+подробный разбор конструкций в §13. Планировщик доменных заданий (создание
+`CrawlRun`/задания в одной транзакции с outbox-событием) — следующий инкремент.
 
 ---
 
@@ -553,6 +555,235 @@ Hibernate только проверяет, что сущности совпад�
 модуля `core`, и при запуске только `job-api` (`-pl job-api`) Maven берёт `core`
 из локального репозитория. Флаг `-am` для `spring-boot:run` не годится — он
 пытается запустить и корневой модуль-агрегатор, у которого нет класса `main`.
+
+## 13. Магистраль доставки: outbox-публикатор, RabbitMQ и потребитель
+
+Этот срез оживляет доставку фоновых заданий (ADR-1/ADR-10/ADR-12, §8 техдока).
+Всё, кроме миграции, лежит в `job-worker`; схему по-прежнему ведёт `job-api`.
+
+Границы среза: реализованы публикатор outbox, топология брокера, идемпотентный
+потребитель и leader-lock. **Доменный планировщик** (создание `CrawlRun`/задания
+в одной транзакции с outbox-событием) в этот срез не входит — он появится, когда
+будет модель заданий; поэтому leader-lock сделан как готовый компонент, но к
+живому тику пока не подключён.
+
+Новые файлы:
+
+```
+job-api/.../db/migration/V4__delivery_backbone.sql   # таблица processed_message
+job-worker/.../messaging/RabbitMessaging.java          # имена топологии
+job-worker/.../messaging/RabbitTopologyConfig.java     # обменники, очереди, DLX/DLQ, retry
+job-worker/.../messaging/JobMessageListener.java        # потребитель
+job-worker/.../outbox/OutboxEvent.java                  # сущность строки outbox
+job-worker/.../outbox/OutboxEventRepository.java        # захват и отметка событий
+job-worker/.../outbox/OutboxPublisher.java              # публикация пачки
+job-worker/.../outbox/OutboxPublisherScheduler.java     # периодический тик
+job-worker/.../idempotency/ProcessedMessage.java        # сущность ключа идемпотентности
+job-worker/.../idempotency/ProcessedMessageRepository.java
+job-worker/.../jobs/JobHandler.java                     # абстракция обработчика
+job-worker/.../jobs/NoOpJobHandler.java                 # обработчик-заглушка
+job-worker/.../jobs/JobMessage.java                     # разобранное задание
+```
+
+### 13.1 Декларативная топология и dead-letter (DLX/DLQ)
+
+`RabbitTopologyConfig` объявляет бинами обменники (`DirectExchange`), очереди
+(`Queue`) и привязки (`Binding`). Spring AMQP при старте создаёт их в брокере,
+если отсутствуют. Всё durable — переживает перезапуск брокера.
+Рабочая очередь настроена на **dead-letter**: аргумент `x-dead-letter-exchange`
+(через `QueueBuilder.deadLetterExchange(...)`) отправляет отклонённые сообщения в
+отдельный обменник `job.dlx`, а он — в очередь «мёртвых писем» `job.work.dlq` для
+ручного разбора. Документация:
+https://docs.spring.io/spring-amqp/reference/amqp/broker-configuration.html и
+https://www.rabbitmq.com/docs/dlx
+
+### 13.2 Publisher confirms + `mandatory` (почему одного confirm мало, A15)
+
+Publisher confirm подтверждает, что брокер **принял** сообщение, но не то, что
+оно попало в очередь (например, при неверном ключе маршрутизации сообщение
+некуда деть). Поэтому у `RabbitTemplate` включён `mandatory`: немаршрутизируемое
+сообщение брокер **возвращает** (basic.return), а не теряет молча. Возвраты
+собираются через `setReturnsCallback`, и публикатор помечает событие
+опубликованным **только если оно не вернулось**. Документация:
+https://docs.spring.io/spring-amqp/reference/amqp/template.html#template-confirms
+
+### 13.3 Захват событий: `FOR UPDATE SKIP LOCKED`
+
+`OutboxEventRepository.claimUnpublished` — нативный запрос
+`SELECT ... WHERE published_at IS NULL ... FOR UPDATE SKIP LOCKED LIMIT :batch`.
+`FOR UPDATE` блокирует выбранные строки на время транзакции публикатора,
+`SKIP LOCKED` пропускает строки, уже захваченные другой репликой. Итог: каждое
+событие публикует ровно один экземпляр worker, без координатора. Документация:
+https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE
+
+`OutboxPublisher.publishBatch` выполняется в одной транзакции: захват →
+отправка с ожиданием подтверждений (`invoke` + `waitForConfirmsOrDie`) → отметка
+`published_at` у маршрутизированных, `attempts++` у вернувшихся. Транзакция
+удерживается на время ожидания подтверждений, поэтому размер пачки и тайм-аут
+ограничены свойствами `app.outbox.*`.
+
+### 13.4 Разделение публикатора и тика
+
+Логика публикации (`OutboxPublisher`) отделена от расписания
+(`OutboxPublisherScheduler` с `@Scheduled`), чтобы пачку можно было запускать
+вручную из тестов. Тик выключается свойством
+`app.outbox.scheduler.enabled=false` через аннотацию
+`@ConditionalOnProperty` (бин планировщика в этом случае просто не создаётся).
+Сам публикатор безопасен на нескольких репликах (через `SKIP LOCKED`), поэтому
+под leader-lock **не** ставится — в отличие от будущего планировщика заданий.
+
+### 13.5 Идемпотентность потребителя: `INSERT ... ON CONFLICT DO NOTHING`
+
+Доставка — at-least-once, повтор сообщения ожидаем. Перед обработкой
+`JobMessageListener` фиксирует ключ идемпотентности (это `messageId`, равный id
+исходного outbox-события) в таблице `processed_message`. Запрос
+`INSERT ... ON CONFLICT DO NOTHING` атомарен и безопасен при гонке: первая
+вставка вернёт 1 (обрабатываем), повторная — 0 (уже обработано, пропускаем).
+Метод потребителя транзакционный: при ошибке обработчика откатывается и фиксация
+ключа, поэтому повтор корректен. Документация:
+https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT
+
+### 13.6 Абстракция обработчика (`JobHandler`)
+
+Слушатель зависит от интерфейса `JobHandler`, а не от конкретной логики (принцип
+инверсии зависимостей, §3.2 контракта): приём, идемпотентность и повторы отделены
+от бизнес-обработки. Пока есть только `NoOpJobHandler` (подтверждает получение,
+без доменной логики); реальные обработчики (сбор, обнаружение, агрегация)
+добавятся отдельными реализациями. Это же разделение позволяет в тесте подменить
+обработчик на падающий и проверить путь «повторы → DLQ».
+
+### 13.7 Повторы с backoff, затем DLQ
+
+Spring Boot 4 / Spring AMQP 4.0 отказались от библиотеки `spring-retry` и
+используют нативные повторы Spring Framework, поэтому отдельная зависимость не
+нужна и не добавляется. Повторы потребителя настраиваются **свойствами**
+`spring.rabbitmq.listener.simple.retry.*` (`enabled`, `max-attempts`,
+`initial-interval`, `multiplier`, `max-interval`): ограниченное число попыток с
+экспоненциальной паузой — чтобы не было бесконечного немедленного requeue.
+Вместе с `spring.rabbitmq.listener.simple.default-requeue-rejected=false` это
+означает: после исчерпания попыток сообщение отклоняется без возврата в очередь и
+уходит в DLX→DLQ (dead-letter настроен на рабочей очереди, см. §13.1). Фатальную
+ошибку можно сразу отправить в DLQ, бросив `AmqpRejectAndDontRequeueException`
+(так сделано для сообщения без messageId). Тонкую настройку при необходимости даёт
+бин `RabbitListenerRetrySettingsCustomizer`. Документация:
+https://docs.spring.io/spring-boot/reference/messaging/amqp.html
+
+### 13.8 Leader-lock: транзакционный advisory-лок PostgreSQL
+
+`PostgresLeaderLock.runIfLeader` использует `pg_try_advisory_xact_lock(key)` —
+**транзакционный** advisory-лок: он привязан к транзакции и освобождается
+автоматически при её завершении. Это осознанный выбор против сессионного
+`pg_advisory_lock`, для которого «взять» и «отпустить» нужно делать на одном и том
+же соединении (в пуле соединений это легко нарушить и получить утечку лока).
+Метод помечен `@Transactional`, поэтому лок и защищённая задача идут в одной
+транзакции. Ограничение (A17): это защита от одновременного захвата, а не
+пожизненная единственность, — поэтому она дополняет идемпотентность планирования,
+а не заменяет её. Документация:
+https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+
+### 13.9 Маппинг `jsonb` в сущности
+
+Поля `payload`/`headers` в `OutboxEvent` — тип `jsonb`. Аннотация
+`@JdbcTypeCode(SqlTypes.JSON)` на строковом поле хранит/читает их как «сырой»
+JSON без промежуточной десериализации: публикатору нужно лишь переслать тело
+события дальше в брокер (тот же приём JSON-полей, что и в модуле `core`).
+
+### 13.10 Схема в тестах
+
+`job-worker` не применяет миграции (ADR-2), а Testcontainers поднимает пустую
+базу. Поэтому интеграционные тесты создают нужные таблицы фикстурой
+`src/test/resources/db/delivery-schema.sql` (аннотация `@Sql`). **Источник истины
+по схеме — миграции `job-api` (V2, V4)**; фикстура повторяет их и при изменении
+миграций должна синхронизироваться (кандидат на вынос в общий модуль позже).
+
+### 13.11 Что проверяют интеграционные тесты (Testcontainers PG+Rabbit)
+
+- `OutboxDeliveryIntegrationTest`: событие из outbox публикуется и помечается
+  `published_at`; доходит до потребителя и обрабатывается один раз; повторная
+  доставка того же `messageId` не создаёт дубля (идемпотентность);
+  «отравленное» сообщение после повторов уходит в DLQ.
+- `PostgresLeaderLockIntegrationTest`: незанятый лок захватывается и задача
+  выполняется; при удержании лока другой транзакцией повторный захват не проходит.
+
+Тесты требуют работающего Docker (Testcontainers) и запускаются владельцем как
+завершающий этап (§2 контракта).
+
+## 14. Доменный планировщик обхода источников
+
+Этот срез оживляет вход конвейера: планировщик создаёт из активных источников
+задания и кладёт их в outbox, откуда их забирает магистраль доставки (§13).
+Реальный сбор (адаптеры) — следующий инкремент; пока обработчик задания —
+заглушка.
+
+Новые файлы:
+
+```
+job-api/.../db/migration/V5__crawl_scheduling.sql   # таблицы crawl_run, crawl_task
+core/.../domain/CrawlRun.java, CrawlRunState.java     # обход источника за окно
+core/.../domain/CrawlTask.java, CrawlTaskType.java, CrawlTaskState.java
+job-worker/.../scheduling/SourceRepository.java       # активные источники
+job-worker/.../scheduling/CrawlRunRepository.java     # вставка-если-нет обхода
+job-worker/.../scheduling/CrawlTaskRepository.java
+job-worker/.../scheduling/SourceScheduler.java        # планирование под leader-lock
+job-worker/.../scheduling/SourceSchedulerTrigger.java # периодический тик
+```
+
+Изменены: `job-worker/pom.xml` (зависимость на `core`), `JobWorkerApplication`
+(`@EntityScan` теперь включает `core.domain`), `OutboxEvent` (конструктор создания).
+
+### 14.1 Зависимость job-worker → core
+
+Планировщик читает `Source` и создаёт `CrawlRun`/`CrawlTask` — доменные сущности
+из общего модуля `core`. Поэтому `job-worker` теперь зависит от `core` (как и
+`job-api`). Это было предусмотрено (§11.1). Из-за того что сущности лежат вне
+пакета приложения, в `JobWorkerApplication` добавлен
+`@EntityScan({"com.roleorienta.worker", "com.roleorienta.core.domain"})` —
+иначе JPA не найдёт ни свои (outbox/идемпотентность), ни core-сущности. В Spring
+Boot 4 аннотация — из пакета `org.springframework.boot.persistence.autoconfigure`.
+
+### 14.2 Окно расписания и идемпотентность (ADR-12)
+
+«Пора ли запускать источник» определяется **окном времени**: `windowStart` —
+текущий момент, усечённый вниз до кратного размеру окна
+(`app.scheduler.window-ms`, по умолчанию 15 минут). В пределах окна источник
+планируется один раз. Гарантия — уникальный ключ `(source_id, window_start)` на
+`crawl_run`: даже двойной запуск (или гонка реплик) не создаёт второй обход. Это
+durable-страховка поверх leader-lock (A17: лок защищает от одновременного
+захвата, но уникальный ключ — последняя линия). Разбор cron-выражения из
+`Source.schedule` пока не делается (фиксированное окно) — это упрощение на
+следующий инкремент.
+
+### 14.3 Транзакция планирования под leader-lock
+
+`SourceScheduler.runOnce()` оборачивает работу в
+`PostgresLeaderLock.runIfLeader(key, …)` (транзакционный advisory-лок из §13.8):
+при нескольких репликах планирует только лидер. Внутри одной транзакции для
+каждого активного источника:
+
+1. `crawlRunRepository.insertIfAbsent(...)` — `INSERT ... ON CONFLICT DO NOTHING`;
+   вернул 1 → обход создан впервые, 0 → в этом окне уже запланировано (пропуск).
+2. При создании: `crawlTaskRepository.save(new CrawlTask(...))` — задание типа
+   `DISCOVER_PAGE` в состоянии `SCHEDULED` (id нужен для события; ссылку на обход
+   даёт `getReferenceById`, без лишнего запроса).
+3. `outboxEventRepository.save(new OutboxEvent("CrawlTask", taskId, ...))` — событие
+   с JSON-payload (`taskId`, `crawlRunId`, `sourceId`, `type`, `windowStart`).
+
+Всё в одной транзакции: либо появляются и обход, и задание, и событие, либо
+ничего (согласованность outbox). Публикатор (§13) затем отправит событие в брокер,
+потребитель обработает его заглушкой.
+
+### 14.4 Отделение тика от логики
+
+Как и у публикатора, тик (`SourceSchedulerTrigger`, `@Scheduled`) отделён от
+логики (`SourceScheduler`) и отключается свойством `app.scheduler.enabled=false`
+(в тестах проход запускается вручную через `runOnce()`).
+
+### 14.5 Что проверяют тесты
+
+`SourceSchedulerIntegrationTest` (Testcontainers PostgreSQL): активный источник
+планируется (создаются обход, задание, outbox-событие); повторный проход в том же
+окне не создаёт дублей; неактивный источник (`PAUSED`) не планируется. Схему даёт
+фикстура `scheduler-schema.sql` (мирроринг миграций, см. оговорку в §13.10).
 
 ## Куда смотреть дальше
 
