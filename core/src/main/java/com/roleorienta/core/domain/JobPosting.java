@@ -59,6 +59,18 @@ public class JobPosting {
     @Column(name = "last_seen_at", nullable = false)
     private Instant lastSeenAt;
 
+    /** Сырая локация с детальной страницы (нормализация — следующий срез, §6). */
+    @Column(name = "raw_location")
+    private String rawLocation;
+
+    /** Сырая строка зарплаты/компенсации с детальной страницы (нормализация — следующий срез, §6, A09). */
+    @Column(name = "raw_compensation")
+    private String rawCompensation;
+
+    /** Когда деталь публикации была дозапрошена заданием {@code FETCH_POSTING}, либо {@code null}. */
+    @Column(name = "detail_fetched_at")
+    private Instant detailFetchedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -87,6 +99,15 @@ public class JobPosting {
 
     public Instant getLastSeenAt() { return lastSeenAt; }
     public void setLastSeenAt(Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }
+
+    public String getRawLocation() { return rawLocation; }
+    public void setRawLocation(String rawLocation) { this.rawLocation = rawLocation; }
+
+    public String getRawCompensation() { return rawCompensation; }
+    public void setRawCompensation(String rawCompensation) { this.rawCompensation = rawCompensation; }
+
+    public Instant getDetailFetchedAt() { return detailFetchedAt; }
+    public void setDetailFetchedAt(Instant detailFetchedAt) { this.detailFetchedAt = detailFetchedAt; }
 
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

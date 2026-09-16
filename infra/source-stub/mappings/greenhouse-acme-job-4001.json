@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "note": "Деталь вакансии 4001 (Greenhouse detail-endpoint). Локация и зарплатный диапазон (pay_input_ranges) отдаются только на детали, при pay_transparency=true."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/boards/acme/jobs/4001"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "id": 4001,
+      "title": "Senior Java Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001",
+      "location": { "name": "Berlin, Germany" },
+      "pay_input_ranges": [
+        { "title": "Base salary", "min_cents": 8000000, "max_cents": 11000000, "currency_type": "EUR" }
+      ]
+    }
+  }
+}

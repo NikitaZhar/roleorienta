@@ -2,7 +2,7 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-16
-Статус: добавлен первый реальный обработчик сбора — контракт адаптера, адаптер Greenhouse (JSON), маршрутизация обработчиков по типу задания и обработчик DISCOVER_PAGE (чтение ленты → идемпотентный upsert публикаций); фикстуры WireMock и dev-seed активного источника (см. §15). Ранее: доменный планировщик (§14), магистраль доставки (§13)
+Статус: добавлено второе звено конвейера — задание FETCH_POSTING: DISCOVER_PAGE ставит FETCH_POSTING на каждую публикацию (через outbox), адаптер Greenhouse дозапрашивает detail-endpoint, обработчик сохраняет сырые локацию и зарплату; миграция V6, поля в JobPosting, detail-фикстуры заглушки (см. §16). Ранее: первое звено DISCOVER_PAGE (§15), планировщик (§14), магистраль (§13)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -915,6 +915,81 @@ worker целиком в Compose источник должен указыват�
 извлечение структурированных требований (§6); сохранение сырого снимка
 `SourceSnapshot`; ревизии «было → стало»; выделенный SSRF-клиент (§9, A13/A14);
 разнесение HTTP и записи по транзакциям (§15.4); разбор cron из `Source.schedule`.
+
+## 16. Второе звено конвейера: задание FETCH_POSTING
+
+Первое звено (`DISCOVER_PAGE`, §15) сохраняет из ленты-списка только базовые поля
+(id, ссылка, заголовок). Второе звено — `FETCH_POSTING` — дозапрашивает **детальную
+страницу** каждой публикации и добирает поля, которых в списке нет. В этом срезе это
+локация и зарплата; хранятся сырыми, нормализация — отдельный срез (§6, A09).
+
+Новое и изменённое:
+
+```
+core/.../domain/CrawlTaskType.java        # изменён: добавлено значение FETCH_POSTING
+core/.../domain/JobPosting.java           # изменён: поля raw_location, raw_compensation, detail_fetched_at
+job-api/.../db/migration/V6__posting_details.sql   # миграция: nullable-колонки деталей
+job-worker/.../adapters/FetchedPosting.java        # добранные детальные поля (record)
+job-worker/.../adapters/SourceAdapter.java         # изменён: метод getPosting(...)
+job-worker/.../adapters/greenhouse/GreenhouseAdapter.java  # изменён: реализация getPosting
+job-worker/.../collect/JobPostingRepository.java   # изменён: updateDetails(...)
+job-worker/.../collect/DiscoverPageJobHandler.java # изменён: постановка FETCH_POSTING
+job-worker/.../collect/FetchPostingJobHandler.java # обработчик FETCH_POSTING
+infra/source-stub/mappings/greenhouse-acme-job-400{1,2,3}.json  # detail-фикстуры
+```
+
+### 16.1 Сцепление заданий через outbox
+
+`DiscoverPageJobHandler` после сохранения каждой публикации создаёт задание
+`FETCH_POSTING` и outbox-событие — **в той же транзакции** (тем же паттерном, что
+планировщик, §14.3). Событие несёт `externalId` публикации. Дальше оно идёт по
+штатной магистрали (§13): публикатор → очередь → слушатель, а слушатель по
+`eventType` направляет его новому обработчику `FetchPostingJobHandler` (маршрутизация
+из §15.3 — новый тип подключился отдельным бином, слушатель и магистраль не менялись).
+
+### 16.2 Дозапрос детали и сырые поля
+
+Контракт адаптера расширен методом `getPosting(source, externalId)` →
+`FetchedPosting` (локация, строка зарплаты). `GreenhouseAdapter` запрашивает
+`<base_url>/v1/boards/<slug>/jobs/<id>?pay_transparency=true`: флаг
+`pay_transparency=true` включает зарплатные диапазоны, которых нет в списке (§5,
+A12). Из детали берутся `location.name` и первый диапазон `pay_input_ranges`.
+
+Важно: строка зарплаты — **сырое сведение** исходных чисел (Greenhouse отдаёт
+суммы в центах), без приведения к общей валюте/периоду и без различения gross/net.
+Это не нормализация — полная нормализация зарплат отдельный срез (§6, A09). Поля
+дописываются к существующей публикации методом `updateDetails` (UPDATE по
+`(source_id, external_id)`; строку создал `DISCOVER_PAGE`).
+
+### 16.3 Миграция V6 (expand)
+
+`V6__posting_details.sql` добавляет в `job_posting` **nullable**-колонки
+`raw_location`, `raw_compensation`, `detail_fetched_at` — шаг «expand» схемы
+expand→migrate→contract (ADR-2): существующие строки и вставка в `DISCOVER_PAGE`
+не затрагиваются, значения проставляет `FETCH_POSTING`.
+
+```mermaid
+flowchart LR
+    D[DISCOVER_PAGE\nчтение ленты-списка] -->|upsert базовых полей| P[(job_posting)]
+    D -->|на каждую публикацию: задание + outbox| Q[очередь §13]
+    Q -->|FETCH_POSTING| F[FetchPostingJobHandler]
+    F -->|getPosting detail-endpoint| W[(source-stub / Greenhouse)]
+    F -->|updateDetails: локация, зарплата| P
+```
+
+### 16.4 Состояние обхода (оговорка)
+
+`DISCOVER_PAGE` помечает `crawl_run` как `COMPLETED` сразу после обнаружения, хотя
+порождённые `FETCH_POSTING` ещё выполняются. Для пилота это приемлемо (обход =
+«список пройден»); каждое `FETCH_POSTING` отмечает лишь своё `crawl_task`.
+Точная агрегированная семантика завершения обхода (с учётом дочерних заданий) —
+предмет отдельного улучшения.
+
+### 16.5 Что НЕ вошло (следующие срезы)
+
+Нормализация полей (валюта/период/gross-net, языки — тристейт, §6, A07/A09);
+извлечение структурированных требований по таксономии; ревизии «было→стало»;
+сохранение сырого снимка `SourceSnapshot`; разнесение HTTP и записи по транзакциям.
 
 ## Куда смотреть дальше
 

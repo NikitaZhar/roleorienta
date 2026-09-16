@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "note": "Деталь вакансии 4003 (Greenhouse detail-endpoint)."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/boards/acme/jobs/4003"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "id": 4003,
+      "title": "Platform Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4003",
+      "location": { "name": "Munich, Germany" },
+      "pay_input_ranges": [
+        { "title": "Base salary", "min_cents": 8500000, "max_cents": 11500000, "currency_type": "EUR" }
+      ]
+    }
+  }
+}

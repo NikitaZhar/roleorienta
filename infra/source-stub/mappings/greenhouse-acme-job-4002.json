@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "note": "Деталь вакансии 4002 (Greenhouse detail-endpoint)."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/boards/acme/jobs/4002"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "id": 4002,
+      "title": "Backend Engineer (PostgreSQL)",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4002",
+      "location": { "name": "Remote, EU" },
+      "pay_input_ranges": [
+        { "title": "Base salary", "min_cents": 7000000, "max_cents": 9500000, "currency_type": "EUR" }
+      ]
+    }
+  }
+}

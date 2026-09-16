@@ -44,4 +44,29 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
                @Param("url") String url,
                @Param("rawTitle") String rawTitle,
                @Param("seenAt") Instant seenAt);
+
+    /**
+     * Записывает детальные поля публикации, добранные заданием {@code FETCH_POSTING}.
+     * Публикация уже существует (её создал {@code DISCOVER_PAGE}), поэтому это UPDATE
+     * по уникальной паре {@code (source_id, external_id)}. Значения сырые; {@code null}
+     * означает «поле отсутствует в источнике».
+     *
+     * @param sourceId        идентификатор источника
+     * @param externalId      идентификатор публикации в терминах источника
+     * @param rawLocation     сырая локация или {@code null}
+     * @param rawCompensation сырая строка зарплаты/компенсации или {@code null}
+     * @param fetchedAt       момент дозапроса детали
+     * @return число обновлённых строк (1, если публикация найдена)
+     */
+    @Modifying
+    @Query(value = "UPDATE job_posting SET "
+            + "raw_location = :rawLocation, raw_compensation = :rawCompensation, "
+            + "detail_fetched_at = :fetchedAt, updated_at = now() "
+            + "WHERE source_id = :sourceId AND external_id = :externalId",
+            nativeQuery = true)
+    int updateDetails(@Param("sourceId") Long sourceId,
+                      @Param("externalId") String externalId,
+                      @Param("rawLocation") String rawLocation,
+                      @Param("rawCompensation") String rawCompensation,
+                      @Param("fetchedAt") Instant fetchedAt);
 }
