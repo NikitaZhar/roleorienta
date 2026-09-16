@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "note": "Заглушка ленты доски Greenhouse для компании acme. Путь совпадает с шаблоном адаптера (<base_url>/v1/boards/<slug>/jobs); query-параметры (content=true) игнорируются."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/boards/acme/jobs"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "greenhouse-acme-jobs.json"
+  }
+}

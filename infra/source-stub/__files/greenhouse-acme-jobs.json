@@ -1,0 +1,29 @@
+{
+  "jobs": [
+    {
+      "id": 4001,
+      "internal_job_id": 900001,
+      "title": "Senior Java Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001",
+      "updated_at": "2026-09-01T10:00:00-04:00",
+      "location": { "name": "Berlin, Germany" }
+    },
+    {
+      "id": 4002,
+      "internal_job_id": 900002,
+      "title": "Backend Engineer (PostgreSQL)",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4002",
+      "updated_at": "2026-09-03T09:30:00-04:00",
+      "location": { "name": "Remote, EU" }
+    },
+    {
+      "id": 4003,
+      "internal_job_id": 900003,
+      "title": "Platform Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4003",
+      "updated_at": "2026-09-05T14:15:00-04:00",
+      "location": { "name": "Munich, Germany" }
+    }
+  ],
+  "meta": { "total": 3 }
+}

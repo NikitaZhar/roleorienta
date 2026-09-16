@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "note": "Ошибочный ответ источника для негативных проверок: доска broken отвечает 500. Обработчик должен трактовать это как неуспех задания (повтор, затем DLQ)."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/boards/broken/jobs"
+  },
+  "response": {
+    "status": 500,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": "internal error (stub)" }
+  }
+}

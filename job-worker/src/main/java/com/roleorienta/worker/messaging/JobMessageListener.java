@@ -3,7 +3,12 @@ package com.roleorienta.worker.messaging;
 import com.roleorienta.worker.idempotency.ProcessedMessageRepository;
 import com.roleorienta.worker.jobs.JobHandler;
 import com.roleorienta.worker.jobs.JobMessage;
+import com.roleorienta.worker.jobs.TypedJobHandler;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
@@ -19,6 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
  * фиксирует ключ идемпотентности (messageId) в {@code processed_message}; если
  * ключ уже был — сообщение считается обработанным ранее и пропускается (ADR-3).</p>
  *
+ * <p>Маршрутизация по типу задания: слушатель собирает все {@link TypedJobHandler}
+ * и по {@code eventType} сообщения выбирает нужный; для типов без своего обработчика
+ * вызывается запасной {@link JobHandler} (в рабочем окружении — заглушка
+ * {@code NoOpJobHandler}). Так обработчики новых типов добавляются отдельными
+ * бинами, не меняя ни слушатель, ни доставку.</p>
+ *
  * <p>Метод транзакционный: и фиксация ключа, и работа обработчика — в одной
  * транзакции БД. Исключение обработчика откатывает её (в том числе фиксацию
  * ключа), после чего повтором управляет цепочка повторов контейнера, а при
@@ -30,15 +41,28 @@ public class JobMessageListener {
     private static final Logger log = LoggerFactory.getLogger(JobMessageListener.class);
 
     private final ProcessedMessageRepository processedMessages;
-    private final JobHandler jobHandler;
+    private final Map<String, TypedJobHandler> handlersByTaskType;
+    private final JobHandler fallbackHandler;
 
     /**
      * @param processedMessages хранилище ключей идемпотентности
-     * @param jobHandler        обработчик задания (абстракция)
+     * @param typedHandlers     обработчики конкретных типов заданий
+     * @param fallbackHandler   запасной обработчик для типов без своей реализации
+     * @throws IllegalStateException если два обработчика заявили один и тот же тип задания
      */
-    public JobMessageListener(ProcessedMessageRepository processedMessages, JobHandler jobHandler) {
+    public JobMessageListener(
+            ProcessedMessageRepository processedMessages,
+            List<TypedJobHandler> typedHandlers,
+            JobHandler fallbackHandler) {
         this.processedMessages = processedMessages;
-        this.jobHandler = jobHandler;
+        this.handlersByTaskType = typedHandlers.stream().collect(Collectors.toMap(
+                TypedJobHandler::taskType,
+                Function.identity(),
+                (first, second) -> {
+                    throw new IllegalStateException(
+                            "Два обработчика для одного типа задания: " + first.taskType());
+                }));
+        this.fallbackHandler = fallbackHandler;
     }
 
     /**
@@ -60,10 +84,15 @@ public class JobMessageListener {
             return;
         }
         Object eventTypeHeader = message.getMessageProperties().getHeader("eventType");
+        String eventType = eventTypeHeader == null ? null : eventTypeHeader.toString();
         String payload = new String(message.getBody(), StandardCharsets.UTF_8);
-        jobHandler.handle(new JobMessage(
-                idempotencyKey,
-                eventTypeHeader == null ? null : eventTypeHeader.toString(),
-                payload));
+        JobMessage jobMessage = new JobMessage(idempotencyKey, eventType, payload);
+
+        TypedJobHandler handler = handlersByTaskType.get(eventType);
+        if (handler != null) {
+            handler.handle(jobMessage);
+        } else {
+            fallbackHandler.handle(jobMessage);
+        }
     }
 }
