@@ -12,11 +12,8 @@ import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.adapters.SourceAdapterRegistry;
 import com.roleorienta.worker.jobs.JobMessage;
 import com.roleorienta.worker.jobs.TypedJobHandler;
-import com.roleorienta.worker.normalize.NormalizedSalary;
-import com.roleorienta.worker.normalize.SalaryNormalizer;
 import com.roleorienta.worker.scheduling.CrawlTaskRepository;
 import com.roleorienta.worker.scheduling.SourceRepository;
-import java.math.BigDecimal;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,11 +22,11 @@ import org.springframework.stereotype.Component;
 /**
  * Обработчик задания {@code FETCH_POSTING} — второе звено конвейера сбора (§6 техдока).
  *
- * <p>Дозапрашивает детальную страницу публикации через адаптер, дописывает к уже
- * существующей публикации (её создал {@code DISCOVER_PAGE}) сырые поля (локация,
- * строка зарплаты) и нормализованную зарплату ({@link SalaryNormalizer}). Сырое
- * хранится рядом с нормализованным (§6). Запись идёт через сущность
- * {@link JobPosting} (без длинного native UPDATE).</p>
+ * <p>Оркестрирует сбор детали: находит источник и уже существующую публикацию (её
+ * создал {@code DISCOVER_PAGE}), дозапрашивает деталь через адаптер и передаёт её в
+ * {@link PostingEnricher} (нормализация полей, извлечение языков, история изменений),
+ * после чего сохраняет публикацию и отмечает задание выполненным. Само доменное
+ * обогащение вынесено в {@link PostingEnricher}, чтобы обработчик оставался тонким.</p>
  *
  * <p>Границы транзакции — как у {@code DiscoverPageJobHandler}: HTTP-вызов внутри
  * транзакции слушателя (оговорка пилота, Этап 1). Повторный GET и запись через
@@ -44,8 +41,7 @@ public class FetchPostingJobHandler implements TypedJobHandler {
     private final CrawlTaskRepository crawlTaskRepository;
     private final JobPostingRepository jobPostingRepository;
     private final SourceAdapterRegistry adapterRegistry;
-    private final SalaryNormalizer salaryNormalizer;
-    private final PostingRevisionRecorder revisionRecorder;
+    private final PostingEnricher postingEnricher;
 
     /** Разбор тела задания (JSON). Создаётся локально (как в {@code SourceScheduler}). */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -55,22 +51,19 @@ public class FetchPostingJobHandler implements TypedJobHandler {
      * @param crawlTaskRepository  задания
      * @param jobPostingRepository публикации
      * @param adapterRegistry      реестр адаптеров источников
-     * @param salaryNormalizer     нормализатор зарплаты
-     * @param revisionRecorder     запись истории изменений полей
+     * @param postingEnricher      обогащение публикации детальными данными
      */
     public FetchPostingJobHandler(
             SourceRepository sourceRepository,
             CrawlTaskRepository crawlTaskRepository,
             JobPostingRepository jobPostingRepository,
             SourceAdapterRegistry adapterRegistry,
-            SalaryNormalizer salaryNormalizer,
-            PostingRevisionRecorder revisionRecorder) {
+            PostingEnricher postingEnricher) {
         this.sourceRepository = sourceRepository;
         this.crawlTaskRepository = crawlTaskRepository;
         this.jobPostingRepository = jobPostingRepository;
         this.adapterRegistry = adapterRegistry;
-        this.salaryNormalizer = salaryNormalizer;
-        this.revisionRecorder = revisionRecorder;
+        this.postingEnricher = postingEnricher;
     }
 
     @Override
@@ -88,7 +81,6 @@ public class FetchPostingJobHandler implements TypedJobHandler {
 
         SourceAdapter adapter = adapterRegistry.forProviderCode(source.getProvider().getCode());
         FetchedPosting detail = adapter.getPosting(source, payload.externalId());
-        NormalizedSalary salary = salaryNormalizer.normalize(detail.compensation());
 
         JobPosting posting = jobPostingRepository
                 .findBySource_IdAndExternalId(source.getId(), payload.externalId())
@@ -96,18 +88,7 @@ public class FetchPostingJobHandler implements TypedJobHandler {
                         "Публикация для детали не найдена: source=" + source.getId()
                                 + " externalId=" + payload.externalId()));
 
-        Instant now = Instant.now();
-        // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
-        recordChanges(posting, detail.rawLocation(), salary, now);
-
-        posting.setRawLocation(detail.rawLocation());
-        posting.setRawCompensation(detail.rawCompensation());
-        posting.setSalaryMin(salary.min());
-        posting.setSalaryMax(salary.max());
-        posting.setSalaryCurrency(salary.currency());
-        posting.setSalaryPeriod(salary.period());
-        posting.setSalaryBasis(salary.basis());
-        posting.setDetailFetchedAt(now);
+        postingEnricher.enrich(posting, detail, Instant.now());
         jobPostingRepository.save(posting);
 
         CrawlTask task = crawlTaskRepository.findById(payload.taskId())
@@ -115,30 +96,8 @@ public class FetchPostingJobHandler implements TypedJobHandler {
         task.setState(CrawlTaskState.SUCCEEDED);
         crawlTaskRepository.save(task);
 
-        log.info("FETCH_POSTING: источник {} ({}), публикация {}, локация={}, зарплата={} {}–{} (период={}, база={})",
-                source.getId(), source.getProvider().getCode(), payload.externalId(),
-                detail.rawLocation(), salary.currency(), salary.min(), salary.max(),
-                salary.period(), salary.basis());
-    }
-
-    /**
-     * Фиксирует изменения детальных полей относительно прежних значений публикации
-     * (сравнение до перезаписи). Пишутся только реальные смены (см. {@link PostingRevisionRecorder}).
-     */
-    private void recordChanges(JobPosting posting, String newLocation, NormalizedSalary salary, Instant at) {
-        revisionRecorder.recordIfChanged(posting, "raw_location",
-                posting.getRawLocation(), newLocation, at);
-        revisionRecorder.recordIfChanged(posting, "salary_min",
-                str(posting.getSalaryMin()), str(salary.min()), at);
-        revisionRecorder.recordIfChanged(posting, "salary_max",
-                str(posting.getSalaryMax()), str(salary.max()), at);
-        revisionRecorder.recordIfChanged(posting, "salary_currency",
-                posting.getSalaryCurrency(), salary.currency(), at);
-    }
-
-    /** Число в строку без хвостовых нулей, либо {@code null}. */
-    private String str(BigDecimal value) {
-        return value == null ? null : value.stripTrailingZeros().toPlainString();
+        log.info("FETCH_POSTING: источник {} ({}), публикация {} — деталь обработана",
+                source.getId(), source.getProvider().getCode(), payload.externalId());
     }
 
     /**

@@ -43,6 +43,14 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Jsoup — снятие HTML-разметки с описания вакансии в текст для извлечения
+             (§6: Jsoup для HTML). Версия задаётся явно: BOM Spring Boot её не ведёт.
+             https://jsoup.org/ -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

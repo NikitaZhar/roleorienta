@@ -62,9 +62,26 @@ public class JobPosting {
     @Column(name = "last_seen_at", nullable = false)
     private Instant lastSeenAt;
 
-    /** Сырая локация с детальной страницы (нормализация — следующий срез, §6). */
+    /** Сырая локация с детальной страницы; нормализованные поля — рядом ниже (§6). */
     @Column(name = "raw_location")
     private String rawLocation;
+
+    /** Нормализованный город из строки локации, либо {@code null}. */
+    @Column(name = "city")
+    private String city;
+
+    /** Нормализованная страна/регион из строки локации, либо {@code null}. */
+    @Column(name = "country")
+    private String country;
+
+    /** Формат работы; {@code UNKNOWN}, если есть локация без remote/hybrid; {@code null} — локации нет. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "work_modality")
+    private WorkModality workModality;
+
+    /** Текст описания вакансии (снят из HTML источника), либо {@code null}. Источник для извлечения (§6). */
+    @Column(name = "raw_description")
+    private String rawDescription;
 
     /** Сырая строка зарплаты/компенсации с детальной страницы (нормализация — следующий срез, §6, A09). */
     @Column(name = "raw_compensation")
@@ -127,6 +144,18 @@ public class JobPosting {
 
     public String getRawLocation() { return rawLocation; }
     public void setRawLocation(String rawLocation) { this.rawLocation = rawLocation; }
+
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
+
+    public String getCountry() { return country; }
+    public void setCountry(String country) { this.country = country; }
+
+    public WorkModality getWorkModality() { return workModality; }
+    public void setWorkModality(WorkModality workModality) { this.workModality = workModality; }
+
+    public String getRawDescription() { return rawDescription; }
+    public void setRawDescription(String rawDescription) { this.rawDescription = rawDescription; }
 
     public String getRawCompensation() { return rawCompensation; }
     public void setRawCompensation(String rawCompensation) { this.rawCompensation = rawCompensation; }

@@ -2,8 +2,8 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-16
-Статус: добавлена история изменений «было→стало» (§6, A06/A16) — таблица posting_revision, сущность PostingRevision, PostingRevisionRecorder пишет строку при реальной смене поля (локация, зарплата) на повторном сборе; первичное заполнение не считается изменением (см. §18). Ранее: нормализация зарплаты (§17), FETCH_POSTING (§16)
-Прежний статус: добавлена нормализация зарплаты (§6, A09) — адаптер отдаёт структурированный диапазон (CompensationRange), SalaryNormalizer раскладывает его на min/max/валюта с явным UNKNOWN для периода и gross/net; перечисления SalaryPeriod/SalaryBasis, миграция V7, поля в JobPosting; FETCH_POSTING пишет деталь через сущность (см. §17). Ранее: FETCH_POSTING (§16), DISCOVER_PAGE (§15), планировщик (§14), магистраль (§13)
+Статус: добавлены захват описания и языковые требования (§6, A07) — адаптер снимает HTML описания (content) через Jsoup в текст (raw_description); LanguageExtractor правилами извлекает языки в модель A07 (mentioned и modality раздельно, фрагмент-подтверждение, версия правил): required/must/fluent → REQUIRED, is a plus/preferred → PREFERRED, «not required»/«German-speaking team» → UNSPECIFIED, язык не найден → строки нет; enum LanguageMention/LanguageModality, сущность PostingLanguage, миграция V10, зависимость Jsoup. Обогащение публикации вынесено в PostingEnricher (конструктор FETCH_POSTING сокращён до оркестрации — устранено нарушение «≤5 параметров»). См. §20. Ранее: нормализация локации (§19), история изменений (§18), нормализация зарплаты (§17)
+Прежний статус: добавлена нормализация локации (§6, A01) — enum WorkModality (REMOTE/HYBRID/UNKNOWN), LocationNormalizer разбирает свободную строку локации: формат работы только по явным словам remote/hybrid (иначе UNKNOWN, не офис), город/страна — эвристикой из «City, Country» лишь для обычного места; миграция V9 (city/country/work_modality), поля в JobPosting; FETCH_POSTING пишет и фиксирует ревизии новых полей (см. §19). Ранее: история изменений (§18), нормализация зарплаты (§17), FETCH_POSTING (§16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -1084,6 +1084,162 @@ job-worker/.../collect/FetchPostingJobHandler.java    # изменён: фикс
 Изменения заголовка (идут через `DISCOVER_PAGE`/native upsert — нужен отдельный
 путь сравнения); показ истории в REST/UI; ревизии на основе снимка (`SourceSnapshot`);
 статус «вероятно закрыта» по подтверждённому отсутствию.
+
+## 19. Нормализация локации (§6, A01)
+
+Следующий срез нормализации (§6): локация раскладывается на структуру, пригодную
+для фильтров (город/страна) и признак формата работы. Главное отличие от зарплаты —
+источник даёт локацию **только свободной строкой** `location.name` (в фикстурах:
+`"Berlin, Germany"`, `"Remote, EU"`, `"Munich, Germany"`), без структурированных
+город/страна/формат. Поэтому разбор здесь эвристический и намеренно осторожный, а
+правило A01 соблюдается буквально — **неизвестное помечается явно, а не угадывается**.
+
+Новое и изменённое:
+
+```
+core/.../domain/WorkModality.java   # перечисление формата работы (REMOTE/HYBRID/UNKNOWN)
+core/.../domain/JobPosting.java     # изменён: поля city/country/work_modality
+job-api/.../db/migration/V9__posting_location.sql   # миграция: nullable-колонки локации
+job-worker/.../normalize/NormalizedLocation.java    # результат нормализации
+job-worker/.../normalize/LocationNormalizer.java    # правила нормализации
+job-worker/.../collect/FetchPostingJobHandler.java  # изменён: нормализация + запись + ревизии
+```
+
+### 19.1 Свободная строка вместо структуры
+
+Зарплату прошлый срез (§17) нормализовал из **структурированного** поля Greenhouse
+(`pay_input_ranges`). Локацию Greenhouse на детали отдаёт только строкой
+`location.name`. Структурированного город/страна и полей «формат работы» / «тип
+занятости» в этом API нет. Поэтому:
+
+- формат работы и тип занятости как отдельные структурированные поля **не вводятся** —
+  источник их не сообщает, колонки были бы поголовно пустыми (минимизация, контракт
+  §3.10);
+- то, что можно взять честно, — это признак удалёнки и грубый разбор «город, страна».
+
+### 19.2 Правило нормализации
+
+`LocationNormalizer` — отдельный компонент (правила в одном месте, как
+`SalaryNormalizer`). Порядок:
+
+1. Пустая строка → `NormalizedLocation.ABSENT` (все поля `null`): локации нет вовсе.
+2. Формат работы — только по явным словам: строка содержит `remote` → `REMOTE`,
+   иначе `hybrid` → `HYBRID`, иначе `UNKNOWN`. **Отсутствие слова ≠ офис** —
+   ставится явное «неизвестно» (A01).
+3. Город/страна разбираются **только для обычного места** (модальность `UNKNOWN`):
+   деление по **последней** запятой — слева город, справа страна. Без запятой вся
+   строка считается городом. При `REMOTE`/`HYBRID` город/страна остаются `null`,
+   чтобы `"Remote, EU"` не превратилось в город=`Remote`.
+
+Результат на фикстурах: `"Berlin, Germany"` → Berlin / Germany / UNKNOWN;
+`"Munich, Germany"` → Munich / Germany / UNKNOWN; `"Remote, EU"` → null / null / REMOTE.
+
+Различие `null` и `UNKNOWN` — как у зарплаты: `null` во всех колонках — локации нет;
+`work_modality = UNKNOWN` — локация есть, но формат из неё не следует.
+
+### 19.3 Запись и ревизии
+
+`FETCH_POSTING` до перезаписи сравнивает прежние значения с новыми и через
+`PostingRevisionRecorder` пишет строку «было → стало» на реальную смену полей `city`,
+`country`, `work_modality` (тем же правилом, что для зарплаты: было не пусто и
+отличается). Сырое `raw_location` по-прежнему хранится и отслеживается рядом.
+
+### 19.4 Что НЕ вошло (следующие срезы)
+
+Точный справочник город/страна (гео-таксономия вместо разбора по запятой); формат
+работы и тип занятости из адаптеров, которые их сообщают; языки — тристейт (A07);
+извлечение требований по таксономии; показ истории/локации в REST/UI.
+
+## 20. Захват описания и языковые требования (§6, A07)
+
+Первый срез извлечения (§6): из текста описания правилами получаются структурированные
+языковые требования. Захват описания идёт первым куском — до него `FETCH_POSTING`
+описание не забирал, а языки и требования брать неоткуда.
+
+Новое и изменённое:
+
+```
+core/.../domain/LanguageMention.java    # факт упоминания: YES/NO/UNKNOWN
+core/.../domain/LanguageModality.java   # обязательность: REQUIRED/PREFERRED/UNSPECIFIED
+core/.../domain/PostingLanguage.java    # сущность языкового требования публикации
+core/.../domain/JobPosting.java         # изменён: поле raw_description
+job-api/.../db/migration/V10__posting_description_and_languages.sql  # raw_description + таблица posting_language
+job-worker/pom.xml                      # изменён: зависимость Jsoup
+job-worker/.../adapters/FetchedPosting.java          # изменён: поле rawDescription
+job-worker/.../adapters/greenhouse/GreenhouseAdapter.java  # изменён: разбор content через Jsoup
+job-worker/.../extract/ExtractedLanguage.java        # результат извлечения языка
+job-worker/.../extract/LanguageExtractor.java        # правила извлечения языков
+job-worker/.../collect/PostingLanguageRepository.java # доступ к языкам
+job-worker/.../collect/PostingEnricher.java          # обогащение публикации (нормализация + языки + ревизии)
+job-worker/.../collect/FetchPostingJobHandler.java   # изменён: тонкая оркестрация через PostingEnricher
+infra/source-stub/mappings/greenhouse-acme-job-400{1,2,3}.json  # изменены: поле content
+```
+
+### 20.1 Захват описания (Jsoup)
+
+Greenhouse отдаёт описание вакансии в поле `content` как HTML. Адаптер снимает разметку
+через **Jsoup** (`Jsoup.parse(html).text()`) — теги убираются, HTML-сущности
+декодируются — и сохраняет текст в `raw_description`. Это тот самый случай, для
+которого §6 разрешает Jsoup («Jsoup — только для HTML»). Пустое описание → `null`.
+Jsoup — новая зависимость (BOM Spring Boot её не ведёт, версия задана явно в pom).
+
+### 20.2 Модель языка A07: два независимых поля
+
+По §4 (A07) язык — это **два независимых поля**: `mentioned` (YES/NO/UNKNOWN) и
+`modality` (REQUIRED/PREFERRED/UNSPECIFIED), плюс фрагмент-подтверждение и версия
+правил. Различия, которые модель не смешивает:
+
+- «German-speaking team» → `mentioned=YES, modality=UNSPECIFIED` (упомянут, но
+  обязательность не заявлена) — не «требуется»;
+- «German is not required» → `mentioned=YES, modality=UNSPECIFIED` (отрицание не даёт
+  REQUIRED);
+- язык не упомянут → **строки нет** (это не `mentioned=NO` и не `UNKNOWN`);
+- `NO`/`UNKNOWN` зарезервированы под явное «не требуется» и ошибку разбора.
+
+Языки — отдельная таблица `posting_language` (не общая `Requirement`): у языка своя
+модель A07, отличная от навыков; таксономия навыков придёт своей структурой позже.
+
+### 20.3 Правила извлечения (детерминированно, ADR-13)
+
+`LanguageExtractor` — курируемый набор языков (пилот: `en`, `de`) и словари
+формулировок. Для каждого языка ищется упоминание по границам слова; найденное
+предложение — фрагмент. Модальность по формулировке: отрицание → UNSPECIFIED;
+`required/must/fluent/…` → REQUIRED; `is a plus/preferred/…` → PREFERRED; иначе
+UNSPECIFIED. Правила версионируются (`VERSION = lang-rules-1`), результат
+воспроизводим и может быть пересчитан. Качество ограничено полнотой словарей — они
+ведутся как данные.
+
+### 20.4 PostingEnricher (устранение роста конструктора)
+
+Обогащение публикации (нормализация зарплаты/локации, извлечение языков, ревизии,
+запись полей и языков) вынесено из `FetchPostingJobHandler` в отдельный компонент
+`PostingEnricher`. Причина: добавление языков довело бы конструктор обработчика до 9
+зависимостей, нарушая правило «не более 5 параметров» (контракт §3.10). Теперь
+обработчик — тонкая оркестрация (источник, публикация, адаптер, отметка задания) с 5
+зависимостями, а обогащение — в `PostingEnricher` (тоже 5). Публикацию сохраняет
+обработчик; языки при каждом сборе переписываются полностью (удалить + вставить).
+
+### 20.5 Демонстрация на стенде
+
+Фикстуры детали содержат `content` с разными формулировками:
+
+- 4001 «Fluent English is required. German is a plus.» → `en` REQUIRED, `de` PREFERRED;
+- 4002 «German-speaking team. English is required…» → `de` UNSPECIFIED, `en` REQUIRED;
+- 4003 «German is not required. English is a plus.» → `de` UNSPECIFIED, `en` PREFERRED.
+
+Проверка в базе:
+
+```sql
+SELECT jp.external_id, pl.language_code, pl.mentioned, pl.modality
+FROM posting_language pl JOIN job_posting jp ON jp.id = pl.job_posting_id
+ORDER BY jp.external_id, pl.language_code;
+```
+
+### 20.6 Что НЕ вошло (следующие срезы)
+
+Ревизии по языкам (смена требования между сборами); уровень владения языком; более
+широкий набор языков и формулировок; извлечение технологий/опыта по таксономии навыков
+(A08); показ языков в REST/UI.
 
 ## Куда смотреть дальше
 

@@ -12,6 +12,7 @@ import com.roleorienta.worker.http.SourceHttpClient;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import org.jsoup.Jsoup;
 import org.springframework.stereotype.Component;
 
 /**
@@ -130,10 +131,11 @@ public class GreenhouseAdapter implements SourceAdapter {
         try {
             JsonNode root = objectMapper.readTree(body);
             String rawLocation = textOrNull(root.path("location").path("name"));
+            String rawDescription = descriptionText(root.path("content"));
 
             JsonNode ranges = root.path("pay_input_ranges");
             if (!ranges.isArray() || ranges.size() == 0) {
-                return new FetchedPosting(rawLocation, null, null);
+                return new FetchedPosting(rawLocation, null, null, rawDescription);
             }
             JsonNode range = ranges.get(0);
             BigDecimal min = centsToAmount(range.path("min_cents"));
@@ -141,10 +143,23 @@ public class GreenhouseAdapter implements SourceAdapter {
             String currency = textOrNull(range.path("currency_type"));
             CompensationRange compensation = new CompensationRange(min, max, currency);
             String rawCompensation = displayCompensation(textOrNull(range.path("title")), min, max, currency);
-            return new FetchedPosting(rawLocation, rawCompensation, compensation);
+            return new FetchedPosting(rawLocation, rawCompensation, compensation, rawDescription);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать деталь Greenhouse", e);
         }
+    }
+
+    /**
+     * Снимает HTML-разметку с описания вакансии ({@code content}) и возвращает текст.
+     * Greenhouse отдаёт описание как HTML; Jsoup убирает теги и декодирует сущности.
+     * Пустой узел или пустой текст → {@code null} (явное «нет описания»).
+     */
+    private String descriptionText(JsonNode content) {
+        if (content.isMissingNode() || content.isNull()) {
+            return null;
+        }
+        String text = Jsoup.parse(content.asText()).text().strip();
+        return text.isEmpty() ? null : text;
     }
 
     /** Текст узла или {@code null}, если узел отсутствует/пуст (явное «неизвестно»). */

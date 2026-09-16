@@ -14,6 +14,7 @@
       "title": "Backend Engineer (PostgreSQL)",
       "absolute_url": "https://boards.greenhouse.io/acme/jobs/4002",
       "location": { "name": "Remote, EU" },
+      "content": "<p>Backend Engineer with strong PostgreSQL experience.</p><p>You will join a German-speaking team. English is required for daily work.</p>",
       "pay_input_ranges": [
         { "title": "Base salary", "min_cents": 7000000, "max_cents": 9500000, "currency_type": "EUR" }
       ]

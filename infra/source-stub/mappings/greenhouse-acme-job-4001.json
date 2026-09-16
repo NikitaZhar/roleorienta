@@ -14,6 +14,7 @@
       "title": "Senior Java Engineer",
       "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001",
       "location": { "name": "Berlin, Germany" },
+      "content": "<p>We are hiring a Senior Java Engineer to work on our backend platform.</p><p>Fluent English is required. German is a plus.</p>",
       "pay_input_ranges": [
         { "title": "Base salary", "min_cents": 7500000, "max_cents": 11000000, "currency_type": "EUR" }
       ]
