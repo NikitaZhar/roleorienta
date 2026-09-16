@@ -2,6 +2,7 @@ package com.roleorienta.worker.collect;
 
 import com.roleorienta.core.domain.JobPosting;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -46,27 +47,13 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
                @Param("seenAt") Instant seenAt);
 
     /**
-     * Записывает детальные поля публикации, добранные заданием {@code FETCH_POSTING}.
-     * Публикация уже существует (её создал {@code DISCOVER_PAGE}), поэтому это UPDATE
-     * по уникальной паре {@code (source_id, external_id)}. Значения сырые; {@code null}
-     * означает «поле отсутствует в источнике».
+     * Находит публикацию по источнику и внешнему ID (пара уникальна). Используется
+     * заданием {@code FETCH_POSTING}, чтобы дописать детальные и нормализованные поля
+     * к уже существующей строке через её сущность (без длинного native UPDATE).
      *
-     * @param sourceId        идентификатор источника
-     * @param externalId      идентификатор публикации в терминах источника
-     * @param rawLocation     сырая локация или {@code null}
-     * @param rawCompensation сырая строка зарплаты/компенсации или {@code null}
-     * @param fetchedAt       момент дозапроса детали
-     * @return число обновлённых строк (1, если публикация найдена)
+     * @param sourceId   идентификатор источника
+     * @param externalId идентификатор публикации в терминах источника
+     * @return публикация, если найдена
      */
-    @Modifying
-    @Query(value = "UPDATE job_posting SET "
-            + "raw_location = :rawLocation, raw_compensation = :rawCompensation, "
-            + "detail_fetched_at = :fetchedAt, updated_at = now() "
-            + "WHERE source_id = :sourceId AND external_id = :externalId",
-            nativeQuery = true)
-    int updateDetails(@Param("sourceId") Long sourceId,
-                      @Param("externalId") String externalId,
-                      @Param("rawLocation") String rawLocation,
-                      @Param("rawCompensation") String rawCompensation,
-                      @Param("fetchedAt") Instant fetchedAt);
+    Optional<JobPosting> findBySource_IdAndExternalId(Long sourceId, String externalId);
 }

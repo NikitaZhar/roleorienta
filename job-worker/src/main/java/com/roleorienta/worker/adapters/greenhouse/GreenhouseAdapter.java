@@ -3,11 +3,13 @@ package com.roleorienta.worker.adapters.greenhouse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.core.domain.Source;
+import com.roleorienta.worker.adapters.CompensationRange;
 import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.FetchedPosting;
 import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.http.SourceHttpClient;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -118,15 +120,28 @@ public class GreenhouseAdapter implements SourceAdapter {
     }
 
     /**
-     * Разбирает деталь публикации: локация ({@code location.name}) и сырая строка
-     * зарплаты из первого диапазона {@code pay_input_ranges}. Нормализация не делается.
+     * Разбирает деталь публикации: локация ({@code location.name}) и первый
+     * зарплатный диапазон {@code pay_input_ranges}. Возвращает и структуру
+     * ({@link CompensationRange} — для нормализации), и сырую строку (для показа).
+     * Greenhouse отдаёт суммы в центах — переводим в единицы валюты; нормализация
+     * (период, gross/net) здесь не делается.
      */
     private FetchedPosting parseDetail(String body) {
         try {
             JsonNode root = objectMapper.readTree(body);
             String rawLocation = textOrNull(root.path("location").path("name"));
-            String rawCompensation = firstPayRange(root.path("pay_input_ranges"));
-            return new FetchedPosting(rawLocation, rawCompensation);
+
+            JsonNode ranges = root.path("pay_input_ranges");
+            if (!ranges.isArray() || ranges.size() == 0) {
+                return new FetchedPosting(rawLocation, null, null);
+            }
+            JsonNode range = ranges.get(0);
+            BigDecimal min = centsToAmount(range.path("min_cents"));
+            BigDecimal max = centsToAmount(range.path("max_cents"));
+            String currency = textOrNull(range.path("currency_type"));
+            CompensationRange compensation = new CompensationRange(min, max, currency);
+            String rawCompensation = displayCompensation(textOrNull(range.path("title")), min, max, currency);
+            return new FetchedPosting(rawLocation, rawCompensation, compensation);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать деталь Greenhouse", e);
         }
@@ -137,29 +152,32 @@ public class GreenhouseAdapter implements SourceAdapter {
         return node.isMissingNode() || node.isNull() ? null : node.asText();
     }
 
-    /**
-     * Формирует сырую строку зарплаты из первого диапазона {@code pay_input_ranges}
-     * (Greenhouse отдаёт суммы в центах). Это НЕ нормализация: значения не приводятся
-     * к общей валюте/периоду, gross/net не различается — только читаемое сведение
-     * исходных чисел. Полная нормализация зарплат — отдельный срез (§6, A09).
-     */
-    private String firstPayRange(JsonNode ranges) {
-        if (!ranges.isArray() || ranges.size() == 0) {
+    /** Сумма из центов в единицы валюты, либо {@code null}, если узел отсутствует. */
+    private BigDecimal centsToAmount(JsonNode cents) {
+        if (cents.isMissingNode() || cents.isNull()) {
             return null;
         }
-        JsonNode range = ranges.get(0);
-        long minUnits = range.path("min_cents").asLong(0) / 100;
-        long maxUnits = range.path("max_cents").asLong(0) / 100;
-        String currency = textOrNull(range.path("currency_type"));
-        String title = textOrNull(range.path("title"));
+        return BigDecimal.valueOf(cents.asLong()).movePointLeft(2);
+    }
+
+    /**
+     * Человекочитаемая сырая строка зарплаты для показа/хранения как есть (НЕ
+     * нормализация): {@code "<title>: <min>–<max> <currency>"}.
+     */
+    private String displayCompensation(String title, BigDecimal min, BigDecimal max, String currency) {
         StringBuilder sb = new StringBuilder();
         if (title != null) {
             sb.append(title).append(": ");
         }
-        sb.append(minUnits).append("–").append(maxUnits);
+        sb.append(plain(min)).append("–").append(plain(max));
         if (currency != null) {
             sb.append(' ').append(currency);
         }
         return sb.toString();
+    }
+
+    /** Число без хвостовых нулей ({@code 80000.00} → {@code "80000"}), либо {@code "?"}. */
+    private String plain(BigDecimal value) {
+        return value == null ? "?" : value.stripTrailingZeros().toPlainString();
     }
 }

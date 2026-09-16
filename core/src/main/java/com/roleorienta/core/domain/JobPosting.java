@@ -2,6 +2,8 @@ package com.roleorienta.core.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -10,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.math.BigDecimal;
 import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -71,6 +74,28 @@ public class JobPosting {
     @Column(name = "detail_fetched_at")
     private Instant detailFetchedAt;
 
+    /** Нормализованная нижняя граница зарплаты, либо {@code null} (зарплата не указана). */
+    @Column(name = "salary_min")
+    private BigDecimal salaryMin;
+
+    /** Нормализованная верхняя граница зарплаты, либо {@code null}. */
+    @Column(name = "salary_max")
+    private BigDecimal salaryMax;
+
+    /** Код валюты зарплаты (напр. {@code EUR}), либо {@code null}. */
+    @Column(name = "salary_currency")
+    private String salaryCurrency;
+
+    /** Период зарплаты; {@code UNKNOWN}, если есть сумма, но период не указан; {@code null} — зарплаты нет. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "salary_period")
+    private SalaryPeriod salaryPeriod;
+
+    /** База (gross/net); {@code UNKNOWN}, если есть сумма, но база не указана; {@code null} — зарплаты нет. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "salary_basis")
+    private SalaryBasis salaryBasis;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -108,6 +133,21 @@ public class JobPosting {
 
     public Instant getDetailFetchedAt() { return detailFetchedAt; }
     public void setDetailFetchedAt(Instant detailFetchedAt) { this.detailFetchedAt = detailFetchedAt; }
+
+    public BigDecimal getSalaryMin() { return salaryMin; }
+    public void setSalaryMin(BigDecimal salaryMin) { this.salaryMin = salaryMin; }
+
+    public BigDecimal getSalaryMax() { return salaryMax; }
+    public void setSalaryMax(BigDecimal salaryMax) { this.salaryMax = salaryMax; }
+
+    public String getSalaryCurrency() { return salaryCurrency; }
+    public void setSalaryCurrency(String salaryCurrency) { this.salaryCurrency = salaryCurrency; }
+
+    public SalaryPeriod getSalaryPeriod() { return salaryPeriod; }
+    public void setSalaryPeriod(SalaryPeriod salaryPeriod) { this.salaryPeriod = salaryPeriod; }
+
+    public SalaryBasis getSalaryBasis() { return salaryBasis; }
+    public void setSalaryBasis(SalaryBasis salaryBasis) { this.salaryBasis = salaryBasis; }
 
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
