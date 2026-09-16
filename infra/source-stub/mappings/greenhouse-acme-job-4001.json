@@ -15,7 +15,7 @@
       "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001",
       "location": { "name": "Berlin, Germany" },
       "pay_input_ranges": [
-        { "title": "Base salary", "min_cents": 8000000, "max_cents": 11000000, "currency_type": "EUR" }
+        { "title": "Base salary", "min_cents": 7500000, "max_cents": 11000000, "currency_type": "EUR" }
       ]
     }
   }

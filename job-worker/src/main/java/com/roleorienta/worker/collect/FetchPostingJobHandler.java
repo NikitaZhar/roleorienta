@@ -16,6 +16,7 @@ import com.roleorienta.worker.normalize.NormalizedSalary;
 import com.roleorienta.worker.normalize.SalaryNormalizer;
 import com.roleorienta.worker.scheduling.CrawlTaskRepository;
 import com.roleorienta.worker.scheduling.SourceRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class FetchPostingJobHandler implements TypedJobHandler {
     private final JobPostingRepository jobPostingRepository;
     private final SourceAdapterRegistry adapterRegistry;
     private final SalaryNormalizer salaryNormalizer;
+    private final PostingRevisionRecorder revisionRecorder;
 
     /** Разбор тела задания (JSON). Создаётся локально (как в {@code SourceScheduler}). */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -54,18 +56,21 @@ public class FetchPostingJobHandler implements TypedJobHandler {
      * @param jobPostingRepository публикации
      * @param adapterRegistry      реестр адаптеров источников
      * @param salaryNormalizer     нормализатор зарплаты
+     * @param revisionRecorder     запись истории изменений полей
      */
     public FetchPostingJobHandler(
             SourceRepository sourceRepository,
             CrawlTaskRepository crawlTaskRepository,
             JobPostingRepository jobPostingRepository,
             SourceAdapterRegistry adapterRegistry,
-            SalaryNormalizer salaryNormalizer) {
+            SalaryNormalizer salaryNormalizer,
+            PostingRevisionRecorder revisionRecorder) {
         this.sourceRepository = sourceRepository;
         this.crawlTaskRepository = crawlTaskRepository;
         this.jobPostingRepository = jobPostingRepository;
         this.adapterRegistry = adapterRegistry;
         this.salaryNormalizer = salaryNormalizer;
+        this.revisionRecorder = revisionRecorder;
     }
 
     @Override
@@ -90,6 +95,11 @@ public class FetchPostingJobHandler implements TypedJobHandler {
                 .orElseThrow(() -> new IllegalStateException(
                         "Публикация для детали не найдена: source=" + source.getId()
                                 + " externalId=" + payload.externalId()));
+
+        Instant now = Instant.now();
+        // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
+        recordChanges(posting, detail.rawLocation(), salary, now);
+
         posting.setRawLocation(detail.rawLocation());
         posting.setRawCompensation(detail.rawCompensation());
         posting.setSalaryMin(salary.min());
@@ -97,7 +107,7 @@ public class FetchPostingJobHandler implements TypedJobHandler {
         posting.setSalaryCurrency(salary.currency());
         posting.setSalaryPeriod(salary.period());
         posting.setSalaryBasis(salary.basis());
-        posting.setDetailFetchedAt(Instant.now());
+        posting.setDetailFetchedAt(now);
         jobPostingRepository.save(posting);
 
         CrawlTask task = crawlTaskRepository.findById(payload.taskId())
@@ -109,6 +119,26 @@ public class FetchPostingJobHandler implements TypedJobHandler {
                 source.getId(), source.getProvider().getCode(), payload.externalId(),
                 detail.rawLocation(), salary.currency(), salary.min(), salary.max(),
                 salary.period(), salary.basis());
+    }
+
+    /**
+     * Фиксирует изменения детальных полей относительно прежних значений публикации
+     * (сравнение до перезаписи). Пишутся только реальные смены (см. {@link PostingRevisionRecorder}).
+     */
+    private void recordChanges(JobPosting posting, String newLocation, NormalizedSalary salary, Instant at) {
+        revisionRecorder.recordIfChanged(posting, "raw_location",
+                posting.getRawLocation(), newLocation, at);
+        revisionRecorder.recordIfChanged(posting, "salary_min",
+                str(posting.getSalaryMin()), str(salary.min()), at);
+        revisionRecorder.recordIfChanged(posting, "salary_max",
+                str(posting.getSalaryMax()), str(salary.max()), at);
+        revisionRecorder.recordIfChanged(posting, "salary_currency",
+                posting.getSalaryCurrency(), salary.currency(), at);
+    }
+
+    /** Число в строку без хвостовых нулей, либо {@code null}. */
+    private String str(BigDecimal value) {
+        return value == null ? null : value.stripTrailingZeros().toPlainString();
     }
 
     /**
