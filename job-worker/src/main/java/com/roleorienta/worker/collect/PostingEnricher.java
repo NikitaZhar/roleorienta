@@ -1,31 +1,30 @@
 package com.roleorienta.worker.collect;
 
 import com.roleorienta.core.domain.JobPosting;
-import com.roleorienta.core.domain.PostingLanguage;
 import com.roleorienta.core.domain.WorkModality;
 import com.roleorienta.worker.adapters.FetchedPosting;
-import com.roleorienta.worker.extract.ExtractedLanguage;
-import com.roleorienta.worker.extract.LanguageExtractor;
 import com.roleorienta.worker.normalize.LocationNormalizer;
 import com.roleorienta.worker.normalize.NormalizedLocation;
 import com.roleorienta.worker.normalize.NormalizedSalary;
 import com.roleorienta.worker.normalize.SalaryNormalizer;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
  * Обогащение публикации детальными данными: нормализация полей (зарплата, локация),
- * извлечение языков (§6, A07) и фиксация истории изменений.
+ * запись структурированных требований (языки §6/A07, навыки §6/A08) и фиксация истории
+ * изменений.
  *
- * <p>Вынесено из {@code FetchPostingJobHandler}, чтобы обработчик занимался только
- * оркестрацией задания (найти источник/публикацию, вызвать адаптер, отметить задание),
- * а доменное обогащение жило в одном месте и не раздувало конструктор обработчика.
- * Метод {@link #enrich} меняет переданную сущность {@link JobPosting} (её сохранение —
- * за вызывающим, в той же транзакции) и переписывает языки публикации.</p>
+ * <p>Обработчик {@code FetchPostingJobHandler} занимается только оркестрацией задания
+ * (найти источник/публикацию, вызвать адаптер, отметить задание), а доменное обогащение
+ * живёт здесь. Извлечение и запись требований из текста описания вынесены в
+ * {@link PostingRequirementWriter} — иначе добавление навыков подняло бы число
+ * зависимостей обогатителя выше пяти (контракт §3.10). Метод {@link #enrich} меняет
+ * переданную сущность {@link JobPosting} (её сохранение — за вызывающим, в той же
+ * транзакции) и переписывает требования публикации.</p>
  */
 @Component
 public class PostingEnricher {
@@ -34,33 +33,29 @@ public class PostingEnricher {
 
     private final SalaryNormalizer salaryNormalizer;
     private final LocationNormalizer locationNormalizer;
-    private final LanguageExtractor languageExtractor;
     private final PostingRevisionRecorder revisionRecorder;
-    private final PostingLanguageRepository postingLanguageRepository;
+    private final PostingRequirementWriter requirementWriter;
 
     /**
-     * @param salaryNormalizer          нормализатор зарплаты
-     * @param locationNormalizer        нормализатор локации
-     * @param languageExtractor         извлечение языков
-     * @param revisionRecorder          запись истории изменений полей
-     * @param postingLanguageRepository языковые требования публикации
+     * @param salaryNormalizer   нормализатор зарплаты
+     * @param locationNormalizer нормализатор локации
+     * @param revisionRecorder   запись истории изменений полей
+     * @param requirementWriter  извлечение и запись требований (языки, навыки)
      */
     public PostingEnricher(
             SalaryNormalizer salaryNormalizer,
             LocationNormalizer locationNormalizer,
-            LanguageExtractor languageExtractor,
             PostingRevisionRecorder revisionRecorder,
-            PostingLanguageRepository postingLanguageRepository) {
+            PostingRequirementWriter requirementWriter) {
         this.salaryNormalizer = salaryNormalizer;
         this.locationNormalizer = locationNormalizer;
-        this.languageExtractor = languageExtractor;
         this.revisionRecorder = revisionRecorder;
-        this.postingLanguageRepository = postingLanguageRepository;
+        this.requirementWriter = requirementWriter;
     }
 
     /**
      * Применяет к публикации детальные данные: нормализует и записывает поля, фиксирует
-     * реальные изменения в историю и переписывает языковые требования.
+     * реальные изменения в историю и переписывает требования (языки, навыки).
      *
      * @param posting публикация (управляемая сущность; сохранение — за вызывающим)
      * @param detail  детальные поля из адаптера
@@ -69,7 +64,6 @@ public class PostingEnricher {
     public void enrich(JobPosting posting, FetchedPosting detail, Instant at) {
         NormalizedSalary salary = salaryNormalizer.normalize(detail.compensation());
         NormalizedLocation location = locationNormalizer.normalize(detail.rawLocation());
-        List<ExtractedLanguage> languages = languageExtractor.extract(detail.rawDescription());
 
         // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
         recordChanges(posting, detail.rawLocation(), location, salary, at);
@@ -87,32 +81,13 @@ public class PostingEnricher {
         posting.setRawDescription(detail.rawDescription());
         posting.setDetailFetchedAt(at);
 
-        replaceLanguages(posting, languages);
+        PostingRequirementWriter.RequirementCounts counts = requirementWriter.write(posting, detail.rawDescription());
 
         log.info("Обогащение публикации {}: локация={} (город={}, страна={}, формат={}), "
-                        + "зарплата={} {}–{} (период={}, база={}), языков={}",
+                        + "зарплата={} {}–{} (период={}, база={}), языков={}, навыков={}",
                 posting.getExternalId(), detail.rawLocation(), location.city(), location.country(),
                 location.modality(), salary.currency(), salary.min(), salary.max(),
-                salary.period(), salary.basis(), languages.size());
-    }
-
-    /**
-     * Переписывает языковые требования публикации: удаляет прежние и вставляет текущие.
-     * Полная замена идемпотентна относительно содержимого описания; ревизии по языкам в
-     * этот срез не вводятся.
-     */
-    private void replaceLanguages(JobPosting posting, List<ExtractedLanguage> languages) {
-        postingLanguageRepository.deleteByJobPosting_Id(posting.getId());
-        for (ExtractedLanguage language : languages) {
-            PostingLanguage row = new PostingLanguage();
-            row.setJobPosting(posting);
-            row.setLanguageCode(language.languageCode());
-            row.setMentioned(language.mentioned());
-            row.setModality(language.modality());
-            row.setSourceFragment(language.fragment());
-            row.setExtractionVersion(LanguageExtractor.VERSION);
-            postingLanguageRepository.save(row);
-        }
+                salary.period(), salary.basis(), counts.languages(), counts.skills());
     }
 
     /**
