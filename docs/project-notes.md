@@ -2,8 +2,8 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-17
-Статус: добавлено извлечение технологий/навыков по таксономии (§6, A08, §21) — SkillExtractor (курируемый газеттир алиасов, границы токенов C++/C#/.NET/Node.js, модальность по формулировкам, альтернативы и отрицания → UNSPECIFIED, версия правил), сущность PostingSkill и enum RequirementModality, миграция V11; запись извлечённых требований (языки+навыки) вынесена в PostingRequirementWriter, т.к. у PostingEnricher было 5 зависимостей — предел «≤5 параметров» (см. §21.1). См. §21. Ранее: захват описания и языки (§20), локация (§19), история изменений (§18) Добавлены модульные тесты логики извлечения/нормализации (§22). Исправлен порядок DELETE/INSERT при повторной записи требований (§23). Добавлено извлечение уровня опыта/лет (A08, §24). A08 закрыт: отношение к навыку (запрос/отрицание/миграция) отдельно от обязательности (§25). Открыт REST-эндпоинт чтения публикаций: лента (курсор) и карточка, §7 (§26). Добавлены фильтры ленты по нормализованным полям (§7.3, §27). Добавлен web-интеграционный тест read-эндпоинтов (MockMvc+Testcontainers, §28).
-Прежний статус: добавлены захват описания и языковые требования (§6, A07) — адаптер снимает HTML описания (content) через Jsoup в текст (raw_description); LanguageExtractor правилами извлекает языки в модель A07 (mentioned и modality раздельно, фрагмент-подтверждение, версия правил): required/must/fluent → REQUIRED, is a plus/preferred → PREFERRED, «not required»/«German-speaking team» → UNSPECIFIED, язык не найден → строки нет; enum LanguageMention/LanguageModality, сущность PostingLanguage, миграция V10, зависимость Jsoup. Обогащение публикации вынесено в PostingEnricher (конструктор FETCH_POSTING сокращён до оркестрации — устранено нарушение «≤5 параметров»). См. §20. Ранее: нормализация локации (§19), история изменений (§18), нормализация зарплаты (§17)
+Статус: добавлен модуль аутентификации в job-api (§9, §29) — Spring Security + Spring Session JDBC; сущность AppUser (роль USER/ADMIN, только bcrypt-хэш пароля) в пакете com.roleorienta.api.auth (добавлен в @EntityScan), миграции V14 (app_user, уникальный email по lower()) и V15 (официальная схема Spring Session для PostgreSQL); эндпоинты /api/v1/auth — register (роль USER), login (устанавливает сессию), logout (через Spring Security), me, csrf; CSRF через cookie XSRF-TOKEN (+ фильтр, принудительно отдающий токен); открытая саморегистрация и bootstrap администратора из внешней конфигурации (app.auth.admin.*, секрет из env); публичные чтения ленты (GET /api/v1/postings/**) остаются открытыми — контракт §7 не изменён. Интеграционный тест auth (MockMvc + springSecurity() + Testcontainers). Компиляция/тесты в среде ИИ не запускались (Maven Central недоступен из-за egress-политики) — их выполняет владелец.
+Прежний статус: добавлено извлечение технологий/навыков по таксономии (§6, A08, §21) — SkillExtractor, сущность PostingSkill и enum RequirementModality, миграция V11; запись требований вынесена в PostingRequirementWriter (§21.1). Ранее: захват описания и языки (§20), локация (§19), история изменений (§18), модульные тесты извлечения/нормализации (§22), порядок DELETE/INSERT (§23), уровень опыта/лет (§24), отношение к навыку отдельно от обязательности (§25), REST-чтение публикаций — лента и карточка (§26), фильтры ленты (§27), web-интеграционный тест read-эндпоинтов (§28)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -1723,6 +1723,109 @@ MockMvc собирается из контекста через `MockMvcBuilders
 Так закрыт долг §26.4/§27.4: то, что исполняется только на реальной БД и web (JPQL-фильтры,
 сериализация, маршрутизация, problem+json), теперь проверяется автоматически. Тест требует
 Docker (Testcontainers) и запускается владельцем как завершающий этап (§2 контракта).
+
+## 29. Модуль аутентификации (§9)
+
+До сих пор все эндпoинты были анонимны. Пользовательские возможности пилота
+(подписки, заметки, отклики, дайджест) привязаны к пользователю, поэтому первым
+шагом введена аутентификация. Реализовано **ядро** модуля auth; восстановление
+пароля и экспорт/удаление профиля отложены отдельными задачами (первое требует
+почтовой доставки, второе осмысленно с появлением персональных данных).
+
+Область — только `job-api`. Сущность пользователя размещена в самом `job-api`
+(пакет `com.roleorienta.api.auth`), а не в общем `core`: пользователями управляет
+только API, `job-worker` их не использует. Поэтому пакет добавлен в `@EntityScan`
+приложения (рядом с `com.roleorienta.core.domain`).
+
+### Файлы
+
+- `auth/UserRole.java` — роль `USER` | `ADMIN` (§7.9).
+- `auth/AppUser.java` — сущность пользователя: email, `password_hash` (только хэш,
+  не пароль — §3.9), роль; уникальность email — без учёта регистра.
+- `auth/AppUserRepository.java` — узкий `Repository` (как `PostingReadRepository`),
+  но с записью (`save`): регистрация и bootstrap создают пользователей.
+- `auth/AppUserService.java` — единственное место, где пароль хэшируется и
+  проверяется уникальность email; регистрация (роль `USER`) и идемпотентное
+  создание администратора.
+- `auth/AppUserDetailsService.java` — мост к Spring Security: находит пользователя
+  по email и отдаёт `UserDetails` с ролью (`ROLE_*`).
+- `auth/SecurityConfig.java` — `SecurityFilterChain`, `PasswordEncoder`,
+  `AuthenticationManager`, правила доступа, CSRF, точка входа 401, logout.
+- `auth/AuthController.java` — `POST /register`, `POST /login`, `GET /me`,
+  `GET /csrf` (выход обрабатывает Spring Security на `POST /logout`).
+- `auth/AuthProperties.java` + `auth/AdminBootstrap.java` — bootstrap
+  администратора при старте из внешней конфигурации.
+- `auth/AuthDtos.java` — запросы/ответы (записи, валидация).
+- Миграции `V14__app_user.sql`, `V15__spring_session.sql`.
+
+### Неочевидные конструкции (по контракту 0.1)
+
+- **Spring Security** (`spring-boot-starter-security`) — аутентификация,
+  авторизация, CSRF, кодирование паролей. Конфигурация — бин `SecurityFilterChain`
+  (компонентный стиль, без устаревшего `WebSecurityConfigurerAdapter`).
+  https://docs.spring.io/spring-security/reference/
+- **Spring Session JDBC** (`spring-session-jdbc`) — HTTP-сессия хранится в
+  PostgreSQL, чтобы быть общей между репликами API (§9) и не держать локальное
+  состояние (§3.4). Схему сессий ведёт Flyway (V15), авто-создание выключено
+  (`spring.session.jdbc.initialize-schema=never`); эти таблицы — не JPA-сущности,
+  поэтому `ddl-auto=validate` их не трогает.
+  https://docs.spring.io/spring-session/reference/
+- **`DelegatingPasswordEncoder`/bcrypt** — хэш хранится с префиксом алгоритма
+  (`{bcrypt}…`); алгоритм можно сменить без миграции старых хэшей.
+  https://docs.spring.io/spring-security/reference/servlet/authentication/passwords/
+- **CSRF для SPA** — токен в читаемой cookie `XSRF-TOKEN`
+  (`CookieCsrfTokenRepository.withHttpOnlyFalse()`), клиент возвращает его
+  заголовком `X-XSRF-TOKEN`. Spring Security откладывает вычисление токена (защита
+  от BREACH), поэтому без обращения к нему cookie не выставляется — небольшой
+  фильтр `CsrfCookieFilter` принудительно отдаёт токен. Первый токен клиент
+  получает безопасным `GET /api/v1/auth/csrf`.
+  https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html
+- **Явное сохранение контекста при входе** — при аутентификации из контроллера
+  контекст безопасности нужно сохранить в сессию вручную
+  (`SecurityContextRepository.saveContext`), иначе следующий запрос не будет
+  аутентифицирован.
+  https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html
+- **Атрибуты cookie сессии** — `httpOnly`/`SameSite`/`Secure` через
+  `server.servlet.session.cookie.*`; `Secure` включается за HTTPS (env), для
+  локального http по умолчанию выключен.
+
+### Поток входа
+
+```mermaid
+sequenceDiagram
+    participant C as Клиент (SPA)
+    participant A as AuthController
+    participant M as AuthenticationManager
+    participant R as SecurityContextRepository (сессия)
+    C->>A: POST /api/v1/auth/login (email, пароль, X-XSRF-TOKEN)
+    A->>M: authenticate(email, пароль)
+    M-->>A: Authentication (или ошибка → 401)
+    A->>R: saveContext(...) — контекст в сессию
+    A-->>C: 200 + {id,email,role}, cookie SESSION
+    C->>A: GET /api/v1/auth/me (cookie SESSION)
+    A-->>C: 200 + {id,email,role}
+```
+
+### Доступ
+
+Открыты без входа: `GET /api/v1/postings/**` (существующие чтения — контракт §7 не
+изменён), `GET /api/v1/auth/csrf`, `POST /api/v1/auth/register` и
+`POST /api/v1/auth/login`, `actuator/health`. Всё прочее требует аутентификации;
+неаутентифицированный запрос к защищённому ресурсу → `401`.
+
+### Проверки
+
+Компиляция и тесты в среде ИИ не запускались: Maven Central недоступен из-за
+egress-политики сессии (403), новые зависимости не скачиваются, обход политики
+запрещён. Код проверен ручным ревью. Сборку (`mvn -pl job-api -am -DskipTests
+package`) и тесты (нужен Docker для Testcontainers) выполняет владелец как
+завершающий этап (§2 контракта).
+
+### Что дальше (вне этой задачи)
+
+Восстановление пароля (после появления почты), экспорт/удаление профиля,
+матрица прав «операция × владелец» (§9, A23) — по мере появления персональных
+сущностей (подписки, заметки, отклики).
 
 ## Куда смотреть дальше
 

@@ -32,6 +32,19 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
+        <!-- Аутентификация/авторизация, кодирование паролей, CSRF (§9).
+             https://docs.spring.io/spring-security/reference/ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- Хранение HTTP-сессии в PostgreSQL: сессии общие между репликами API (§9),
+             без локального состояния (§3.4). Версия управляется Spring Boot BOM.
+             https://docs.spring.io/spring-session/reference/ -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-jdbc</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -53,6 +66,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Помощники MockMvc для Spring Security в тестах: постпроцессоры csrf()/user().
+             https://docs.spring.io/spring-security/reference/servlet/test/mockmvc/ -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

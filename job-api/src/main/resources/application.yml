@@ -15,9 +15,27 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  session:
+    store-type: jdbc          # HTTP-сессия хранится в PostgreSQL (§9)
+    jdbc:
+      initialize-schema: never   # схему сессий ведёт Flyway (V15), а не Spring Session (ADR-2)
 
 server:
   port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        http-only: true                       # cookie сессии недоступна из JavaScript (§9)
+        same-site: lax                         # базовый профиль same-origin (§9, A22)
+        secure: ${SESSION_COOKIE_SECURE:false} # true за HTTPS (прод); false для локального http
+
+# Bootstrap администратора (§9): аккаунт создаётся при старте, только если задан
+# email и его ещё нет. Пароль передаётся извне (env), в коде и образе не хранится (§3.9).
+app:
+  auth:
+    admin:
+      email: ${ADMIN_EMAIL:}
+      password: ${ADMIN_PASSWORD:}
 
 # job-api владеет схемой БД и применяет миграции Flyway (ADR-2).
 management:
