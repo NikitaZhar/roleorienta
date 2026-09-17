@@ -4,13 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.roleorienta.core.domain.RequirementModality;
-import java.util.List;
+import com.roleorienta.core.domain.SkillStance;
 import org.junit.jupiter.api.Test;
 
 /**
- * Модульные тесты извлечения навыков (§6, A08). Проверяют правила без БД и Spring:
- * сведение алиасов к канону, обязательность по формулировкам, консервативную обработку
- * альтернатив и отрицаний, границы технических токенов и осторожность набора.
+ * Модульные тесты извлечения навыков (§6, A08). Проверяют без БД и Spring: сведение
+ * алиасов к канону, границы токенов, обязательность по формулировкам и — раздельно —
+ * отношение к навыку (запрос/отрицание/миграция).
  */
 class SkillExtractorTest {
 
@@ -18,17 +18,16 @@ class SkillExtractorTest {
 
     @Test
     void aliasesCollapseToSingleCanonicalSkill() {
-        List<ExtractedSkill> skills = extractor.extract("We use PostgreSQL here. Postgres is everywhere.");
-        assertThat(skills)
+        assertThat(extractor.extract("We use PostgreSQL here. Postgres is everywhere."))
                 .extracting(ExtractedSkill::skill)
                 .containsExactly("PostgreSQL");
     }
 
     @Test
-    void requiredCueGivesRequired() {
+    void requiredCueGivesRequestedRequired() {
         assertThat(extractor.extract("Java is required."))
-                .extracting(ExtractedSkill::skill, ExtractedSkill::modality)
-                .containsExactly(tuple("Java", RequirementModality.REQUIRED));
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
+                .containsExactly(tuple("Java", SkillStance.REQUESTED, RequirementModality.REQUIRED));
     }
 
     @Test
@@ -39,26 +38,40 @@ class SkillExtractorTest {
     }
 
     @Test
-    void mentionWithoutCueGivesUnspecified() {
+    void mentionWithoutCueGivesRequestedUnspecified() {
         assertThat(extractor.extract("We work with Kubernetes."))
-                .extracting(ExtractedSkill::skill, ExtractedSkill::modality)
-                .containsExactly(tuple("Kubernetes", RequirementModality.UNSPECIFIED));
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
+                .containsExactly(tuple("Kubernetes", SkillStance.REQUESTED, RequirementModality.UNSPECIFIED));
     }
 
     @Test
-    void negationDoesNotGiveRequired() {
+    void negationGivesNegatedStance() {
         assertThat(extractor.extract("C# is not required."))
-                .extracting(ExtractedSkill::skill, ExtractedSkill::modality)
-                .containsExactly(tuple("C#", RequirementModality.UNSPECIFIED));
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
+                .containsExactly(tuple("C#", SkillStance.NEGATED, RequirementModality.UNSPECIFIED));
     }
 
     @Test
-    void alternativeDoesNotGiveRequiredForEither() {
+    void migrationGivesMigrationStance() {
+        assertThat(extractor.extract("We are migrating away from AWS."))
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
+                .containsExactly(tuple("AWS", SkillStance.MIGRATION, RequirementModality.UNSPECIFIED));
+    }
+
+    @Test
+    void alternativeStaysRequestedWithoutRequiredForEither() {
         assertThat(extractor.extract("Java or Kotlin is required."))
-                .extracting(ExtractedSkill::skill, ExtractedSkill::modality)
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
                 .containsExactlyInAnyOrder(
-                        tuple("Java", RequirementModality.UNSPECIFIED),
-                        tuple("Kotlin", RequirementModality.UNSPECIFIED));
+                        tuple("Java", SkillStance.REQUESTED, RequirementModality.UNSPECIFIED),
+                        tuple("Kotlin", SkillStance.REQUESTED, RequirementModality.UNSPECIFIED));
+    }
+
+    @Test
+    void requestBeatsNegationAcrossSentences() {
+        assertThat(extractor.extract("Java is required. Java is not required."))
+                .extracting(ExtractedSkill::skill, ExtractedSkill::stance, ExtractedSkill::modality)
+                .containsExactly(tuple("Java", SkillStance.REQUESTED, RequirementModality.REQUIRED));
     }
 
     @Test
@@ -106,6 +119,6 @@ class SkillExtractorTest {
 
     @Test
     void ruleVersionIsStable() {
-        assertThat(SkillExtractor.VERSION).isEqualTo("skill-rules-1");
+        assertThat(SkillExtractor.VERSION).isEqualTo("skill-rules-2");
     }
 }

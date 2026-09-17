@@ -14,7 +14,7 @@
       "title": "Platform Engineer",
       "absolute_url": "https://boards.greenhouse.io/acme/jobs/4003",
       "location": { "name": "Munich, Germany" },
-      "content": "<p>Platform Engineer for our infrastructure team.</p><p>Experience with Docker and Kubernetes is required. Node.js is a plus.</p><p>German is not required. English is a plus.</p><p>This is a mid-level role.</p>",
+      "content": "<p>Platform Engineer for our infrastructure team.</p><p>Experience with Docker and Kubernetes is required. Node.js is a plus.</p><p>German is not required. English is a plus.</p><p>This is a mid-level role.</p><p>We are migrating away from AWS.</p>",
       "pay_input_ranges": [
         { "title": "Base salary", "min_cents": 8500000, "max_cents": 11500000, "currency_type": "EUR" }
       ]

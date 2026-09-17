@@ -22,8 +22,9 @@ import java.time.Instant;
  * <p>Навык хранится в каноническом виде ({@link #skill}, напр. {@code PostgreSQL}) —
  * алиасы источника ({@code Postgres}/{@code PostgreSQL}) сводятся к одному навыку ещё
  * при извлечении, поэтому на одну публикацию — не более одной строки на навык
- * (уникальность {@code (job_posting, skill)}). Обязательность ({@link #modality})
- * хранится отдельно, рядом — подтверждающий фрагмент текста и версия правил извлечения
+ * (уникальность {@code (job_posting, skill)}). Хранятся раздельно (A08): отношение к
+ * навыку ({@link #stance} — запрос/отрицание/миграция) и обязательность
+ * ({@link #modality}); рядом — подтверждающий фрагмент текста и версия правил извлечения
  * (для воспроизводимости и повторной обработки). Отсутствие строки означает «навык не
  * упомянут». Языки — отдельная сущность {@link PostingLanguage} со своей моделью A07;
  * связанные навыки (Java и JVM) и иерархия таксономии — предмет отдельного среза.</p>
@@ -53,6 +54,11 @@ public class PostingSkill {
     @Column(name = "skill", nullable = false)
     private String skill;
 
+    /** Отношение к навыку (запрос/отрицание/миграция); независимо от обязательности. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stance", nullable = false)
+    private SkillStance stance;
+
     /** Обязательность требования (по формулировке; при неоднозначности — {@code UNSPECIFIED}). */
     @Enumerated(EnumType.STRING)
     @Column(name = "modality", nullable = false)
@@ -77,6 +83,9 @@ public class PostingSkill {
 
     public String getSkill() { return skill; }
     public void setSkill(String skill) { this.skill = skill; }
+
+    public SkillStance getStance() { return stance; }
+    public void setStance(SkillStance stance) { this.stance = stance; }
 
     public RequirementModality getModality() { return modality; }
     public void setModality(RequirementModality modality) { this.modality = modality; }

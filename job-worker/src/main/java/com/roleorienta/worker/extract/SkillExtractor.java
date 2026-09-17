@@ -1,6 +1,7 @@
 package com.roleorienta.worker.extract;
 
 import com.roleorienta.core.domain.RequirementModality;
+import com.roleorienta.core.domain.SkillStance;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,39 +16,45 @@ import org.springframework.stereotype.Component;
  * алиасов/вариантов написания. Алиасы сводятся к одному навыку
  * ({@code Postgres}/{@code PostgreSQL} → {@code PostgreSQL}) — это отличие «алиасов
  * одного навыка» от «связанных навыков» (A08); связи между навыками (Java↔JVM) и
- * иерархия таксономии в этот срез не вводятся. Для каждого найденного навыка —
- * строка {@link ExtractedSkill} с обязательностью по формулировке предложения:
- * «required/must/mandatory…» → {@link RequirementModality#REQUIRED}; «is a plus/nice
- * to have…» → {@link RequirementModality#PREFERRED}; иначе → {@code UNSPECIFIED}.</p>
+ * иерархия таксономии в этот срез не вводятся.</p>
  *
- * <p>Две ловушки A08 обрабатываются осознанно и консервативно (лучше не утверждать
- * обязательность, чем выдумать её):</p>
+ * <p>Для каждого найденного навыка раздельно извлекаются (A08):</p>
  * <ul>
- *   <li><b>Альтернативы.</b> «Java or Kotlin is required» не создаёт двух обязательных
- *       пробелов: предложение с союзом «or» даёт обоим навыкам {@code UNSPECIFIED}
- *       (обязательность конкретного навыка из альтернативы не следует).</li>
- *   <li><b>Отрицания/миграции.</b> «C# is not required», «moving away from X» не дают
- *       {@code REQUIRED} — ставится {@code UNSPECIFIED}.</li>
+ *   <li><b>Отношение</b> ({@link SkillStance}): {@code MIGRATION} — работодатель уходит
+ *       от технологии («moving away from X», «legacy», «phasing out»);
+ *       {@code NEGATED} — навык явно назван ненужным («X is not required»);
+ *       иначе {@code REQUESTED} — навык запрашивается.</li>
+ *   <li><b>Обязательность</b> ({@link RequirementModality}) — только для
+ *       {@code REQUESTED}: «required/must» → REQUIRED; «is a plus/nice to have» →
+ *       PREFERRED; иначе {@code UNSPECIFIED}. Для {@code NEGATED}/{@code MIGRATION}
+ *       обязательность не утверждается ({@code UNSPECIFIED}).</li>
  * </ul>
  *
- * <p>Границы токенов учитывают технические названия с не-буквенными символами
- * ({@code C++}, {@code C#}, {@code .NET}, {@code Node.js}): совпадение ограничено
- * лукахедом/лукбехайндом по набору «символов токена», а не {@code \\b} (для которого
- * {@code +}/{@code #}/{@code .} — границы, и {@code C} ошибочно совпало бы с началом
- * {@code C++}). Разбиение на предложения не рвёт токены с точкой ({@code Node.js}):
- * точка считается концом предложения только перед пробелом или концом текста.</p>
+ * <p>Альтернативы (A08): предложение с союзом «or» («Java or Kotlin is required») даёт
+ * обоим навыкам {@code UNSPECIFIED} при {@code stance = REQUESTED} — они запрашиваются,
+ * но обязательность конкретного из альтернативы не следует (двух обязательных пробелов
+ * не создаётся).</p>
  *
- * <p>Набор навыков и словари формулировок намеренно малы (пилот) и ведутся как данные.
- * Набор консервативен: неоднозначные однобуквенные/словарные коллизии в него не
- * включены (напр. язык {@code Go} — только по алиасу {@code golang}, без «go», чтобы не
- * ловить английский глагол). Качество ограничено полнотой словарей (ADR-13); правила
+ * <p>Отношение и обязательность определяются <b>по предложению</b> (не по каждому слову),
+ * поэтому cue относятся ко всем навыкам этого предложения — фикстуры держат
+ * отрицание/миграцию в отдельных предложениях. Если навык упомянут в нескольких
+ * предложениях, берётся самый сильный сигнал (запрос сильнее миграции/отрицания;
+ * среди запросов — сильнейшая обязательность).</p>
+ *
+ * <p>Границы токенов учитывают технические названия с не-буквенными символами
+ * ({@code C++}, {@code C#}, {@code .NET}, {@code Node.js}) — совпадение ограничено по
+ * набору «символов токена», а не {@code \\b}. Разбиение на предложения не рвёт токены с
+ * точкой ({@code Node.js}): точка — конец предложения только перед пробелом/концом.</p>
+ *
+ * <p>Набор навыков и словари формулировок намеренно малы (пилот) и ведутся как данные;
+ * набор консервативен (напр. язык {@code Go} — только по алиасу {@code golang}). Правила
  * версионируются ({@link #VERSION}) для воспроизводимости и пересчёта.</p>
  */
 @Component
 public class SkillExtractor {
 
     /** Версия правил извлечения навыков; меняется при изменении таксономии/словарей. */
-    public static final String VERSION = "skill-rules-1";
+    public static final String VERSION = "skill-rules-2";
 
     /** Символы, из которых состоит технический токен (для границ совпадения). */
     private static final String TOKEN_CHARS = "A-Za-z0-9+#.";
@@ -92,10 +99,15 @@ public class SkillExtractor {
             "is a plus", "a plus", "preferred", "nice to have", "nice-to-have",
             "desirable", "advantage", "advantageous", "bonus", "beneficial");
 
-    /** Явные отрицания/миграции (не дают REQUIRED). */
+    /** Явные отрицания: навык назван как ненужный. */
     private static final List<String> NEGATION_CUES = List.of(
-            "not required", "not mandatory", "not necessary", "no need",
-            "no longer", "moving away", "away from", "deprecat", "legacy");
+            "not required", "not mandatory", "not necessary", "no need", "not needed");
+
+    /** Миграции: работодатель уходит от технологии. */
+    private static final List<String> MIGRATION_CUES = List.of(
+            "moving away", "move away", "migrating away", "migrating off", "away from",
+            "phasing out", "phase out", "deprecat", "legacy", "no longer use",
+            "no longer using", "sunset");
 
     /** Союз-альтернатива в предложении (по границам слова), напр. «Java or Kotlin». */
     private static final Pattern ALTERNATIVE = Pattern.compile("\\bor\\b");
@@ -118,34 +130,52 @@ public class SkillExtractor {
         String[] sentences = SENTENCE_SPLIT.split(description);
         for (Map.Entry<String, List<String>> skill : SKILLS.entrySet()) {
             Pattern pattern = PATTERNS.get(skill.getKey());
-            RequirementModality best = null;
+            SkillStance bestStance = null;
+            RequirementModality bestModality = null;
             String fragment = null;
+            int bestRank = -1;
             for (String raw : sentences) {
                 if (!pattern.matcher(raw).find()) {
                     continue;
                 }
                 String sentence = raw.strip();
-                RequirementModality modality = modalityOf(sentence);
-                // Первое упоминание задаёт значение; более сильная обязательность его повышает.
-                if (best == null || rank(modality) > rank(best)) {
-                    best = modality;
+                SkillStance stance = stanceOf(sentence);
+                RequirementModality modality =
+                        stance == SkillStance.REQUESTED ? modalityOf(sentence) : RequirementModality.UNSPECIFIED;
+                int rank = rank(stance, modality);
+                if (rank > bestRank) {
+                    bestRank = rank;
+                    bestStance = stance;
+                    bestModality = modality;
                     fragment = sentence;
                 }
             }
-            if (best != null) {
-                result.add(new ExtractedSkill(skill.getKey(), best, fragment));
+            if (bestStance != null) {
+                result.add(new ExtractedSkill(skill.getKey(), bestStance, bestModality, fragment));
             }
         }
         return result;
     }
 
+    /** Отношение к навыку по формулировке: миграция → отрицание → запрос. */
+    private SkillStance stanceOf(String sentence) {
+        String lower = sentence.toLowerCase();
+        if (containsAny(lower, MIGRATION_CUES)) {
+            return SkillStance.MIGRATION;
+        }
+        if (containsAny(lower, NEGATION_CUES)) {
+            return SkillStance.NEGATED;
+        }
+        return SkillStance.REQUESTED;
+    }
+
     /**
-     * Определяет обязательность по формулировке предложения. Порядок: альтернатива или
-     * отрицание → {@code UNSPECIFIED}; иначе обязательно → желательно → не уточнено.
+     * Обязательность запрошенного навыка: альтернатива → {@code UNSPECIFIED}; иначе
+     * обязательно → желательно → не уточнено.
      */
     private RequirementModality modalityOf(String sentence) {
         String lower = sentence.toLowerCase();
-        if (ALTERNATIVE.matcher(lower).find() || containsAny(lower, NEGATION_CUES)) {
+        if (ALTERNATIVE.matcher(lower).find()) {
             return RequirementModality.UNSPECIFIED;
         }
         if (containsAny(lower, REQUIRED_CUES)) {
@@ -157,12 +187,19 @@ public class SkillExtractor {
         return RequirementModality.UNSPECIFIED;
     }
 
-    /** Ранг обязательности для выбора самой сильной среди нескольких упоминаний. */
-    private int rank(RequirementModality modality) {
-        return switch (modality) {
-            case REQUIRED -> 3;
-            case PREFERRED -> 2;
-            case UNSPECIFIED -> 1;
+    /**
+     * Ранг сигнала для выбора самого сильного среди упоминаний: запрос сильнее
+     * миграции/отрицания; среди запросов — сильнейшая обязательность.
+     */
+    private int rank(SkillStance stance, RequirementModality modality) {
+        return switch (stance) {
+            case REQUESTED -> switch (modality) {
+                case REQUIRED -> 5;
+                case PREFERRED -> 4;
+                case UNSPECIFIED -> 3;
+            };
+            case MIGRATION -> 2;
+            case NEGATED -> 1;
         };
     }
 

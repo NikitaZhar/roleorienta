@@ -85,6 +85,7 @@ public class PostingRequirementWriter {
             PostingSkill row = new PostingSkill();
             row.setJobPosting(posting);
             row.setSkill(skill.skill());
+            row.setStance(skill.stance());
             row.setModality(skill.modality());
             row.setSourceFragment(skill.fragment());
             row.setExtractionVersion(SkillExtractor.VERSION);
