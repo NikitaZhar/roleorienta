@@ -113,6 +113,15 @@ public class JobPosting {
     @Column(name = "salary_basis")
     private SalaryBasis salaryBasis;
 
+    /** Уровень опыта (seniority) из описания; {@code UNKNOWN}, если из текста не следует. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "seniority")
+    private SeniorityLevel seniority;
+
+    /** Минимально требуемое число лет опыта из описания, либо {@code null} (не указано). */
+    @Column(name = "experience_years_min")
+    private Integer experienceYearsMin;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -177,6 +186,12 @@ public class JobPosting {
 
     public SalaryBasis getSalaryBasis() { return salaryBasis; }
     public void setSalaryBasis(SalaryBasis salaryBasis) { this.salaryBasis = salaryBasis; }
+
+    public SeniorityLevel getSeniority() { return seniority; }
+    public void setSeniority(SeniorityLevel seniority) { this.seniority = seniority; }
+
+    public Integer getExperienceYearsMin() { return experienceYearsMin; }
+    public void setExperienceYearsMin(Integer experienceYearsMin) { this.experienceYearsMin = experienceYearsMin; }
 
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
