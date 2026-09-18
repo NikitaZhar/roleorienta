@@ -6,6 +6,7 @@ import com.roleorienta.core.domain.RequirementModality;
 import com.roleorienta.core.domain.SalaryBasis;
 import com.roleorienta.core.domain.SalaryPeriod;
 import com.roleorienta.core.domain.SeniorityLevel;
+import com.roleorienta.api.saved.SavedState;
 import com.roleorienta.core.domain.SkillStance;
 import com.roleorienta.core.domain.WorkModality;
 import java.math.BigDecimal;
@@ -22,7 +23,11 @@ public final class PostingDtos {
     private PostingDtos() {
     }
 
-    /** Строка ленты — компактный набор полей публикации. */
+    /**
+     * Строка ленты — компактный набор полей публикации. Поля {@code viewer*} — персонализация
+     * под вошедшего пользователя (§31): его отношение к публикации. Для анонимного запроса
+     * {@code viewerState = null} и {@code viewerSeen = false} (лента не персонализирована).
+     */
     public record Summary(
             Long id,
             String externalId,
@@ -37,7 +42,9 @@ public final class PostingDtos {
             SeniorityLevel seniority,
             Integer experienceYearsMin,
             Instant firstSeenAt,
-            Instant lastSeenAt) {
+            Instant lastSeenAt,
+            SavedState viewerState,
+            boolean viewerSeen) {
     }
 
     /** Языковое требование в карточке (A07): факт упоминания и обязательность раздельно. */

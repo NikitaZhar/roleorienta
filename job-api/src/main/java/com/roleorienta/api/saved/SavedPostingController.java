@@ -14,20 +14,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST-эндпоинты персональных маркеров публикаций (§7): сохранить, скрыть, снять и список
- * сохранённых текущего пользователя.
+ * REST-эндпоинты персональных маркеров публикаций (§7): сохранить, скрыть, отметить
+ * просмотренной, снять и список сохранённых текущего пользователя.
  *
  * <p>Контроллер тонкий (§3.3): передаёт {@link Authentication} и параметры в
  * {@link SavedPostingService}, без бизнес-логики. Пути версионированы ({@code /api/v1}).
- * Ресурс — {@code postings} (исходная {@code JobPosting}); агрегированные
- * {@code /vacancies} появятся с моделью {@code Vacancy} (§26.2).</p>
+ * Ресурс — {@code postings} (исходная {@code JobPosting}); агрегированные {@code /vacancies}
+ * появятся с моделью {@code Vacancy} (§26.2).</p>
  *
  * <p><b>Доступ и почему {@code SecurityConfig} не меняется (§4).</b> Пишущие операции —
  * {@code POST}/{@code DELETE} под {@code /api/v1/postings/**}; открыт же только
  * {@code GET /api/v1/postings/**}, поэтому они уже требуют аутентификации по правилу
- * {@code anyRequest().authenticated()}. Персональный список намеренно вынесен под
- * {@code /api/v1/me/saved-postings} — вне публичного {@code GET}-матчера, — иначе он попал
- * бы под открытое чтение ленты. Так добавление фичи не трогает правила безопасности.</p>
+ * {@code anyRequest().authenticated()}. Персональный список вынесен под
+ * {@code /api/v1/me/saved-postings} — вне публичного {@code GET}-матчера. Аннотация и
+ * фильтрация самой ленты (§31) сделаны в открытом {@code GET /api/v1/postings}: аноним
+ * получает ленту как раньше, вошедший — со скрытием и пометками.</p>
  */
 @RestController
 public class SavedPostingController {
@@ -70,7 +71,19 @@ public class SavedPostingController {
     }
 
     /**
-     * Снять маркер (отменить сохранение/скрытие).
+     * Отметить публикацию просмотренной.
+     *
+     * @param id             id публикации
+     * @param authentication текущий пользователь
+     * @return маркер с проставленным {@code seenAt}
+     */
+    @PostMapping("/api/v1/postings/{id}/seen")
+    public SavedPostingResponse seen(@PathVariable Long id, Authentication authentication) {
+        return savedPostingService.markSeen(authentication, id);
+    }
+
+    /**
+     * Снять сохранение/скрытие (просмотр сохраняется).
      *
      * @param id             id публикации
      * @param authentication текущий пользователь

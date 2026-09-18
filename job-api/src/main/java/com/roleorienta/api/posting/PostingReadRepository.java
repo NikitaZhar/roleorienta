@@ -35,9 +35,11 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
      * столбцам (§7.3). Запрашивается на одну строку больше размера страницы (через
      * {@link Limit}) — чтобы определить курсор следующей страницы.</p>
      *
-     * @param cursor {@code id} последней публикации предыдущей страницы (0 — с начала)
-     * @param filter необязательные фильтры (поля {@code null} игнорируются)
-     * @param limit  сколько строк вернуть (размер страницы, +1 для определения продолжения)
+     * @param cursor          {@code id} последней публикации предыдущей страницы (0 — с начала)
+     * @param filter          необязательные фильтры (поля {@code null} игнорируются)
+     * @param hiddenForUserId id пользователя, чьи скрытые публикации исключить из выборки
+     *                        (§31); {@code null} — не исключать (аноним или includeHidden)
+     * @param limit           сколько строк вернуть (размер страницы, +1 для определения продолжения)
      * @return публикации по возрастанию {@code id}
      */
     @Query("""
@@ -47,9 +49,14 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
               and (:#{#filter.seniority} is null or p.seniority = :#{#filter.seniority})
               and (:#{#filter.country} is null or lower(p.country) = lower(:#{#filter.country}))
               and (:#{#filter.minSalary} is null or p.salaryMax >= :#{#filter.minSalary})
+              and (:hiddenForUserId is null or not exists (
+                      select 1 from SavedPosting sp
+                      where sp.posting = p and sp.user.id = :hiddenForUserId
+                        and sp.state = com.roleorienta.api.saved.SavedState.HIDDEN))
             order by p.id asc
             """)
     List<JobPosting> search(@Param("cursor") long cursor,
                             @Param("filter") PostingFilter filter,
+                            @Param("hiddenForUserId") Long hiddenForUserId,
                             Limit limit);
 }

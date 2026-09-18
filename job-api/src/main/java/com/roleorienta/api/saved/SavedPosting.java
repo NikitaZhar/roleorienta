@@ -20,12 +20,17 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * Персональный маркер публикации (§7): отношение конкретного пользователя к конкретной
- * публикации — сохранена или скрыта (с причиной).
+ * публикации — сохранена, скрыта (с причиной) и/или просмотрена.
  *
  * <p>Одна строка на пару «пользователь × публикация» (уникальный ключ
- * {@code (app_user_id, job_posting_id)}, миграция V16) — durable-страховка
- * идемпотентности: повторные «сохранить/скрыть» не плодят строк (тот же приём, что
- * {@code uq_crawl_run} §14 и {@code uq_app_user_email_lower} §29).</p>
+ * {@code (app_user_id, job_posting_id)}, миграция V16) — durable-страховка идемпотентности:
+ * повторные пометки не плодят строк (тот же приём, что {@code uq_crawl_run} §14 и
+ * {@code uq_app_user_email_lower} §29).</p>
+ *
+ * <p><b>Модель после §31.</b> «Сохранить»/«скрыть» и «просмотрено» независимы: {@code state}
+ * ({@link SavedState}: {@code SAVED}|{@code HIDDEN}) допускает {@code null} — «явного
+ * сохранения/скрытия нет», а {@code seenAt} отмечает факт просмотра ортогонально. Строка
+ * осмысленна, пока задан хотя бы один из них; когда оба пусты, сервис удаляет строку.</p>
  *
  * <p>Связи заданы со стороны «многих» через {@code @ManyToOne(fetch = LAZY,
  * optional = false)} (§11.3 техдока): связанные строки подгружаются лениво, коллекций на
@@ -58,14 +63,18 @@ public class SavedPosting {
     @JoinColumn(name = "job_posting_id", nullable = false)
     private JobPosting posting;
 
-    /** Текущее состояние: сохранена или скрыта. */
+    /** Сохранена/скрыта или {@code null} — явного сохранения/скрытия нет (только просмотр). */
     @Enumerated(EnumType.STRING)
-    @Column(name = "state", nullable = false)
+    @Column(name = "state")
     private SavedState state;
 
     /** Причина скрытия; осмысленна только при {@link SavedState#HIDDEN}, иначе {@code null}. */
     @Column(name = "hidden_reason")
     private String hiddenReason;
+
+    /** Момент первого просмотра публикации пользователем или {@code null}. */
+    @Column(name = "seen_at")
+    private Instant seenAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -88,6 +97,9 @@ public class SavedPosting {
 
     public String getHiddenReason() { return hiddenReason; }
     public void setHiddenReason(String hiddenReason) { this.hiddenReason = hiddenReason; }
+
+    public Instant getSeenAt() { return seenAt; }
+    public void setSeenAt(Instant seenAt) { this.seenAt = seenAt; }
 
     public Instant getCreatedAt() { return createdAt; }
 

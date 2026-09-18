@@ -5,7 +5,9 @@ import com.roleorienta.api.auth.AppUserRepository;
 import com.roleorienta.api.posting.PostingReadRepository;
 import com.roleorienta.api.saved.SavedPostingDtos.SavedPostingResponse;
 import com.roleorienta.core.domain.JobPosting;
+import java.time.Instant;
 import java.util.List;
+import java.util.function.Consumer;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -13,8 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Логика персональных маркеров публикаций (§7): сохранить, скрыть, снять и перечислить
- * сохранённые — всегда в пределах текущего пользователя.
+ * Логика персональных маркеров публикаций (§7): сохранить, скрыть, отметить просмотренной,
+ * снять и перечислить сохранённые — всегда в пределах текущего пользователя.
  *
  * <p><b>Проверка владельца (A23, §3.9).</b> Владелец берётся только из аутентификации
  * (сессии): {@code Authentication.getName()} даёт email, по нему находится {@link AppUser}.
@@ -24,8 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Слои соблюдены (§3.3): сервис содержит логику, репозитории — только доступ. Три
  * зависимости — в пределах лимита §3.10. Существующий {@link PostingReadRepository}
  * переиспользуется без изменений: его {@code findById} даёт и проверку существования
- * публикации (иначе {@code 404}), и саму сущность как цель связи маркера — поэтому
- * добавлять отдельную проверку существования не потребовалось (§4).</p>
+ * публикации (иначе {@code 404}), и саму сущность как цель связи маркера.</p>
  */
 @Service
 public class SavedPostingService {
@@ -48,7 +49,7 @@ public class SavedPostingService {
     }
 
     /**
-     * Пометить публикацию сохранённой (идемпотентно).
+     * Пометить публикацию сохранённой (идемпотентно). Признак просмотра, если был, сохраняется.
      *
      * @param authentication текущая аутентификация (владелец)
      * @param postingId      id публикации
@@ -57,11 +58,14 @@ public class SavedPostingService {
      */
     @Transactional
     public SavedPostingResponse save(Authentication authentication, Long postingId) {
-        return upsert(authentication, postingId, SavedState.SAVED, null);
+        return upsert(authentication, postingId, marker -> {
+            marker.setState(SavedState.SAVED);
+            marker.setHiddenReason(null);
+        });
     }
 
     /**
-     * Скрыть публикацию с необязательной причиной (идемпотентно).
+     * Скрыть публикацию с необязательной причиной (идемпотентно). Признак просмотра сохраняется.
      *
      * @param authentication текущая аутентификация (владелец)
      * @param postingId      id публикации
@@ -71,12 +75,34 @@ public class SavedPostingService {
      */
     @Transactional
     public SavedPostingResponse hide(Authentication authentication, Long postingId, String reason) {
-        return upsert(authentication, postingId, SavedState.HIDDEN, reason);
+        return upsert(authentication, postingId, marker -> {
+            marker.setState(SavedState.HIDDEN);
+            marker.setHiddenReason(reason);
+        });
     }
 
     /**
-     * Снять маркер (отменить сохранение/скрытие). Идемпотентно: если маркера нет — ничего
-     * не делает (тот же результат {@code 204} у контроллера).
+     * Отметить публикацию просмотренной (идемпотентно): проставляет момент первого просмотра,
+     * если он ещё не задан. Сохранение/скрытие, если было, не меняется.
+     *
+     * @param authentication текущая аутентификация (владелец)
+     * @param postingId      id публикации
+     * @return представление маркера с проставленным {@code seenAt}
+     * @throws ResponseStatusException {@code 404}, если публикации нет
+     */
+    @Transactional
+    public SavedPostingResponse markSeen(Authentication authentication, Long postingId) {
+        return upsert(authentication, postingId, marker -> {
+            if (marker.getSeenAt() == null) {
+                marker.setSeenAt(Instant.now());
+            }
+        });
+    }
+
+    /**
+     * Снять сохранение/скрытие. Признак просмотра сохраняется: если публикация была
+     * просмотрена, строка остаётся (только с {@code seenAt}); иначе маркер удаляется целиком.
+     * Идемпотентно: если маркера нет — ничего не делает.
      *
      * @param authentication текущая аутентификация (владелец)
      * @param postingId      id публикации
@@ -84,8 +110,15 @@ public class SavedPostingService {
     @Transactional
     public void remove(Authentication authentication, Long postingId) {
         AppUser owner = currentUser(authentication);
-        markers.findByUser_IdAndPosting_Id(owner.getId(), postingId)
-                .ifPresent(markers::delete);
+        markers.findByUser_IdAndPosting_Id(owner.getId(), postingId).ifPresent(marker -> {
+            marker.setState(null);
+            marker.setHiddenReason(null);
+            if (marker.getSeenAt() == null) {
+                markers.delete(marker);
+            } else {
+                markers.save(marker);
+            }
+        });
     }
 
     /**
@@ -104,15 +137,14 @@ public class SavedPostingService {
     }
 
     /**
-     * Найти-или-создать маркер владельца на публикации и выставить состояние/причину.
+     * Найти-или-создать маркер владельца на публикации, применить изменение и сохранить.
      *
      * <p>Идемпотентность (§3.4): повторный вызов обновляет существующую строку, а не создаёт
      * новую (уникальный ключ {@code (app_user_id, job_posting_id)} — durable-страховка).
-     * Запись через сеттеры сущности (§17.3), а не длинным SQL. Причина хранится только у
-     * скрытой публикации; при переходе в {@code SAVED} прежняя причина очищается.</p>
+     * Запись через сеттеры сущности (§17.3), а не длинным SQL.</p>
      */
     private SavedPostingResponse upsert(Authentication authentication, Long postingId,
-                                        SavedState state, String reason) {
+                                        Consumer<SavedPosting> change) {
         AppUser owner = currentUser(authentication);
         JobPosting posting = postings.findById(postingId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -122,8 +154,7 @@ public class SavedPostingService {
                 .orElseGet(SavedPosting::new);
         marker.setUser(owner);
         marker.setPosting(posting);
-        marker.setState(state);
-        marker.setHiddenReason(state == SavedState.HIDDEN ? reason : null);
+        change.accept(marker);
 
         return toResponse(markers.save(marker));
     }
@@ -145,6 +176,6 @@ public class SavedPostingService {
     /** Отображение сущности в DTO. {@code getPosting().getId()} по id прокси не грузит публикацию. */
     private static SavedPostingResponse toResponse(SavedPosting marker) {
         return new SavedPostingResponse(marker.getPosting().getId(), marker.getState(),
-                marker.getHiddenReason(), marker.getCreatedAt());
+                marker.getHiddenReason(), marker.getSeenAt(), marker.getCreatedAt());
     }
 }

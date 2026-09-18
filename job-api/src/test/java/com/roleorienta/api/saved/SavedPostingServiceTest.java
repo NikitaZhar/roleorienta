@@ -13,6 +13,7 @@ import com.roleorienta.api.auth.AppUserRepository;
 import com.roleorienta.api.posting.PostingReadRepository;
 import com.roleorienta.api.saved.SavedPostingDtos.SavedPostingResponse;
 import com.roleorienta.core.domain.JobPosting;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,10 +23,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Модульные тесты {@link SavedPostingService} на моках (без БД и Spring): проверяют
- * owner-логику (A23) и правила upsert/списка/снятия напрямую — быстро, в обычном
- * {@code mvn test}, без Docker. Владелец, публикация и репозитории подменены моками;
- * поведение веб-слоя, реального SQL и CSRF проверяет {@link SavedPostingApiIntegrationTest}.
+ * Модульные тесты {@link SavedPostingService} на моках (без БД и Spring): owner-логика (A23)
+ * и правила сохранить/скрыть/просмотрено/снять/список напрямую — быстро, без Docker.
+ * Поведение веб-слоя, реального SQL и CSRF проверяют интеграционные тесты.
  */
 class SavedPostingServiceTest {
 
@@ -58,13 +58,13 @@ class SavedPostingServiceTest {
 
         posting = mock(JobPosting.class);
         when(posting.getId()).thenReturn(POSTING_ID);
+        when(postings.findById(POSTING_ID)).thenReturn(Optional.of(posting));
 
         when(markers.save(any(SavedPosting.class))).thenAnswer(i -> i.getArgument(0));
     }
 
     @Test
     void saveCreatesMarkerInSavedState() {
-        when(postings.findById(POSTING_ID)).thenReturn(Optional.of(posting));
         when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.empty());
 
         SavedPostingResponse response = service.save(auth, POSTING_ID);
@@ -81,7 +81,6 @@ class SavedPostingServiceTest {
         existing.setPosting(posting);
         existing.setState(SavedState.HIDDEN);
         existing.setHiddenReason("не интересно");
-        when(postings.findById(POSTING_ID)).thenReturn(Optional.of(posting));
         when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.of(existing));
 
         SavedPostingResponse response = service.save(auth, POSTING_ID);
@@ -91,14 +90,53 @@ class SavedPostingServiceTest {
     }
 
     @Test
+    void saveKeepsExistingSeen() {
+        SavedPosting existing = new SavedPosting();
+        existing.setUser(owner);
+        existing.setPosting(posting);
+        existing.setSeenAt(Instant.now());
+        when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.of(existing));
+
+        SavedPostingResponse response = service.save(auth, POSTING_ID);
+
+        assertThat(response.state()).isEqualTo(SavedState.SAVED);
+        assertThat(response.seenAt()).isNotNull();
+    }
+
+    @Test
     void hideStoresReason() {
-        when(postings.findById(POSTING_ID)).thenReturn(Optional.of(posting));
         when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.empty());
 
         SavedPostingResponse response = service.hide(auth, POSTING_ID, "дубликат вакансии");
 
         assertThat(response.state()).isEqualTo(SavedState.HIDDEN);
         assertThat(response.hiddenReason()).isEqualTo("дубликат вакансии");
+    }
+
+    @Test
+    void markSeenSetsSeenAtWithoutState() {
+        when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.empty());
+
+        SavedPostingResponse response = service.markSeen(auth, POSTING_ID);
+
+        assertThat(response.seenAt()).isNotNull();
+        assertThat(response.state()).isNull();
+    }
+
+    @Test
+    void markSeenIsIdempotentAndKeepsFirstSeenInstant() {
+        Instant firstSeen = Instant.parse("2026-01-01T00:00:00Z");
+        SavedPosting existing = new SavedPosting();
+        existing.setUser(owner);
+        existing.setPosting(posting);
+        existing.setState(SavedState.SAVED);
+        existing.setSeenAt(firstSeen);
+        when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.of(existing));
+
+        SavedPostingResponse response = service.markSeen(auth, POSTING_ID);
+
+        assertThat(response.seenAt()).isEqualTo(firstSeen);
+        assertThat(response.state()).isEqualTo(SavedState.SAVED);
     }
 
     @Test
@@ -130,13 +168,32 @@ class SavedPostingServiceTest {
     }
 
     @Test
-    void removeDeletesExistingMarker() {
+    void removeDeletesMarkerWithoutSeen() {
         SavedPosting marker = new SavedPosting();
+        marker.setUser(owner);
+        marker.setPosting(posting);
+        marker.setState(SavedState.SAVED);
         when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.of(marker));
 
         service.remove(auth, POSTING_ID);
 
         verify(markers).delete(marker);
+    }
+
+    @Test
+    void removeKeepsMarkerWhenSeenPreserved() {
+        SavedPosting marker = new SavedPosting();
+        marker.setUser(owner);
+        marker.setPosting(posting);
+        marker.setState(SavedState.SAVED);
+        marker.setSeenAt(Instant.now());
+        when(markers.findByUser_IdAndPosting_Id(USER_ID, POSTING_ID)).thenReturn(Optional.of(marker));
+
+        service.remove(auth, POSTING_ID);
+
+        verify(markers, never()).delete(any());
+        verify(markers).save(marker);
+        assertThat(marker.getState()).isNull();
     }
 
     @Test
@@ -146,6 +203,7 @@ class SavedPostingServiceTest {
         service.remove(auth, POSTING_ID);
 
         verify(markers, never()).delete(any());
+        verify(markers, never()).save(any());
     }
 
     @Test

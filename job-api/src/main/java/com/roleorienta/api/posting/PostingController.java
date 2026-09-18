@@ -3,6 +3,7 @@ package com.roleorienta.api.posting;
 import com.roleorienta.api.posting.PostingDtos.Card;
 import com.roleorienta.api.posting.PostingDtos.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
  * агрегированные {@code /vacancies} (§7) появятся, когда будет модель {@code Vacancy}.
  * Отсутствие карточки → {@code 404}; тело ошибки — {@code application/problem+json}
  * (RFC 9457, включено {@code spring.mvc.problemdetails}).</p>
+ *
+ * <p>Лента открыта и для анонимных, и для вошедших ({@code GET /api/v1/postings/**}
+ * разрешён без входа). Для вошедшего лента персонализируется (§31): скрытые им публикации
+ * исключаются (если не задан {@code includeHidden=true}), а элементы помечаются его
+ * отношением. {@link Authentication} для анонимного запроса равен {@code null}.</p>
  */
 @RestController
 @RequestMapping("/api/v1/postings")
@@ -36,17 +42,21 @@ public class PostingController {
     /**
      * Лента публикаций с курсорной пагинацией.
      *
-     * @param cursor {@code id} последней публикации предыдущей страницы (необязателен)
-     * @param limit  размер страницы (необязателен; по умолчанию/максимум задаёт сервис)
-     * @param filter необязательные фильтры ленты (§7.3); поля берутся из query-параметров
+     * @param cursor         {@code id} последней публикации предыдущей страницы (необязателен)
+     * @param limit          размер страницы (необязателен; по умолчанию/максимум задаёт сервис)
+     * @param includeHidden  для вошедшего: включать ли скрытые им публикации (по умолчанию нет)
+     * @param filter         необязательные фильтры ленты (§7.3); поля берутся из query-параметров
+     * @param authentication текущий пользователь или {@code null} (аноним)
      * @return страница ленты и курсор следующей
      */
     @GetMapping
     public Page list(
             @RequestParam(required = false) Long cursor,
             @RequestParam(required = false) Integer limit,
-            PostingFilter filter) {
-        return postingQueryService.list(cursor, limit, filter);
+            @RequestParam(required = false, defaultValue = "false") boolean includeHidden,
+            PostingFilter filter,
+            Authentication authentication) {
+        return postingQueryService.list(cursor, limit, filter, authentication, includeHidden);
     }
 
     /**

@@ -24,11 +24,12 @@ public final class SavedPostingDtos {
      * Ответ-представление маркера.
      *
      * @param postingId    id публикации
-     * @param state        состояние (сохранена/скрыта)
+     * @param state        состояние (сохранена/скрыта) или {@code null}
      * @param hiddenReason причина скрытия или {@code null}
+     * @param seenAt       момент первого просмотра или {@code null}
      * @param createdAt    момент первого создания маркера
      */
-    public record SavedPostingResponse(Long postingId, SavedState state,
-                                       String hiddenReason, Instant createdAt) {
+    public record SavedPostingResponse(Long postingId, SavedState state, String hiddenReason,
+                                       Instant seenAt, Instant createdAt) {
     }
 }

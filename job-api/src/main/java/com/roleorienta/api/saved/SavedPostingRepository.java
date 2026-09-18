@@ -25,6 +25,15 @@ public interface SavedPostingRepository extends Repository<SavedPosting, Long> {
     Optional<SavedPosting> findByUser_IdAndPosting_Id(Long userId, Long postingId);
 
     /**
+     * Маркеры пользователя на заданном наборе публикаций (для аннотации ленты, §31).
+     *
+     * @param userId     id владельца
+     * @param postingIds идентификаторы публикаций текущей страницы ленты
+     * @return маркеры владельца по этим публикациям (для отсутствующих строк нет)
+     */
+    List<SavedPosting> findByUser_IdAndPosting_IdIn(Long userId, List<Long> postingIds);
+
+    /**
      * Маркеры пользователя в заданном состоянии, новые сверху (по убыванию {@code id}).
      *
      * @param userId id владельца
@@ -34,7 +43,7 @@ public interface SavedPostingRepository extends Repository<SavedPosting, Long> {
     List<SavedPosting> findByUser_IdAndStateOrderByIdDesc(Long userId, SavedState state);
 
     /**
-     * Сохранить маркер (создание или обновление состояния/причины).
+     * Сохранить маркер (создание или обновление состояния/причины/просмотра).
      *
      * @param marker маркер
      * @return сохранённая сущность
@@ -42,7 +51,7 @@ public interface SavedPostingRepository extends Repository<SavedPosting, Long> {
     SavedPosting save(SavedPosting marker);
 
     /**
-     * Удалить маркер (снятие сохранения/скрытия).
+     * Удалить маркер (когда не осталось ни сохранения/скрытия, ни просмотра).
      *
      * @param marker маркер
      */
