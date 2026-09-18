@@ -46,6 +46,8 @@ class PostingApiIntegrationTest {
     void seed() {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
+        // saved_posting ссылается на job_posting (V16) — очищаем до публикаций.
+        jdbcTemplate.update("DELETE FROM saved_posting");
         jdbcTemplate.update("DELETE FROM posting_skill");
         jdbcTemplate.update("DELETE FROM posting_language");
         jdbcTemplate.update("DELETE FROM job_posting");

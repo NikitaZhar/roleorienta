@@ -15,10 +15,11 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
  */
 @SpringBootApplication
 // Доменные сущности лежат в общем модуле core (пакет вне com.roleorienta.api),
-// поэтому явно указываем JPA, где их искать. Сущность пользователя (AppUser) —
-// концерн только job-api (worker её не использует), поэтому она в пакете
-// com.roleorienta.api.auth, а не в core; этот пакет добавлен в область сканирования.
-@EntityScan({"com.roleorienta.core.domain", "com.roleorienta.api.auth"})
+// поэтому явно указываем JPA, где их искать. Сущности-концерны только job-api
+// (worker их не использует) живут в самом приложении, а не в core, и их пакеты тоже
+// добавлены в область сканирования: com.roleorienta.api.auth (AppUser, §29) и
+// com.roleorienta.api.saved (SavedPosting — персональные маркеры, §30).
+@EntityScan({"com.roleorienta.core.domain", "com.roleorienta.api.auth", "com.roleorienta.api.saved"})
 public class JobApiApplication {
 
     /**

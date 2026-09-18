@@ -61,6 +61,8 @@ class AuthApiIntegrationTest {
                 .apply(springSecurity())
                 .build();
 
+        // saved_posting ссылается на app_user (V16) — очищаем до пользователей.
+        jdbcTemplate.update("DELETE FROM saved_posting");
         jdbcTemplate.update("DELETE FROM spring_session_attributes");
         jdbcTemplate.update("DELETE FROM spring_session");
         jdbcTemplate.update("DELETE FROM app_user");
