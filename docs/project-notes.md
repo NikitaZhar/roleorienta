@@ -1,9 +1,9 @@
 ---
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
-Дата: 2026-09-17
-Статус: добавлен модуль аутентификации в job-api (§9, §29) — Spring Security + Spring Session JDBC; сущность AppUser (роль USER/ADMIN, только bcrypt-хэш пароля) в пакете com.roleorienta.api.auth (добавлен в @EntityScan), миграции V14 (app_user, уникальный email по lower()) и V15 (официальная схема Spring Session для PostgreSQL); эндпоинты /api/v1/auth — register (роль USER), login (устанавливает сессию), logout (через Spring Security), me, csrf; CSRF через cookie XSRF-TOKEN (+ фильтр, принудительно отдающий токен); открытая саморегистрация и bootstrap администратора из внешней конфигурации (app.auth.admin.*, секрет из env); публичные чтения ленты (GET /api/v1/postings/**) остаются открытыми — контракт §7 не изменён. Интеграционный тест auth (MockMvc + springSecurity() + Testcontainers). Компиляция/тесты в среде ИИ не запускались (Maven Central недоступен из-за egress-политики) — их выполняет владелец.
-Прежний статус: добавлено извлечение технологий/навыков по таксономии (§6, A08, §21) — SkillExtractor, сущность PostingSkill и enum RequirementModality, миграция V11; запись требований вынесена в PostingRequirementWriter (§21.1). Ранее: захват описания и языки (§20), локация (§19), история изменений (§18), модульные тесты извлечения/нормализации (§22), порядок DELETE/INSERT (§23), уровень опыта/лет (§24), отношение к навыку отдельно от обязательности (§25), REST-чтение публикаций — лента и карточка (§26), фильтры ленты (§27), web-интеграционный тест read-эндпоинтов (§28)
+Дата: 2026-09-18
+Статус: интеграция персональных маркеров в ленту (§7, §31) — признак просмотра seen_at и nullable state (миграция V17), эндпоинт POST /api/v1/postings/{id}/seen; лента для вошедшего исключает скрытые им публикации (opt-in includeHidden) и аннотирует элементы (viewerState/viewerSeen), персонализация вынесена в FeedPersonalization (PostingQueryService в пределах лимита зависимостей); аноним видит ленту как раньше — контракт анонимного чтения не изменён; SecurityConfig не менялся. Unit (FeedPersonalizationTest, обновлён PostingQueryServiceTest/SavedPostingServiceTest) и web-тест (SavedPostingFeedIntegrationTest). Компиляция/тесты в среде ИИ не запускались — их выполняет владелец.
+Прежний статус: персональные маркеры публикации (§7, §30) — сущность SavedPosting (SAVED/HIDDEN, причина скрытия), owner-логика по сессии (A23), эндпоинты POST /api/v1/postings/{id}/save|hide, DELETE .../saved, GET /api/v1/me/saved-postings, миграция V16; SecurityConfig не менялся; web-тест на втором пользователе. Ранее: модуль аутентификации (§29), REST-чтение и фильтры (§26–28), извлечение по таксономии/опыт/stance (§20–25), нормализация зарплаты/локации и история изменений (§17–19), конвейер сбора (§13–16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -1826,6 +1826,165 @@ package`) и тесты (нужен Docker для Testcontainers) выполня
 Восстановление пароля (после появления почты), экспорт/удаление профиля,
 матрица прав «операция × владелец» (§9, A23) — по мере появления персональных
 сущностей (подписки, заметки, отклики).
+
+## 30. Персональные маркеры публикации: сохранить/скрыть (§7, A23)
+
+Первая персональная (owner-scoped) фича поверх аутентификации (§29): пользователь помечает
+публикацию как **сохранённую** или **скрытую (с причиной)**. Это первая **запись** в
+`job-api` (до сих пор он только читал, §26–27) и первая проверка владельца (A23) — поэтому
+в срез входит web-тест на **втором** пользователе, обязательный для Этапа 1.
+
+Область — только `job-api`. Сущность живёт в пакете `com.roleorienta.api.saved` (не в `core`):
+маркерами управляет только API, `job-worker` их не касается — по той же логике размещения,
+что `AppUser` в §29 (пакет добавлен в `@EntityScan`). Ресурс — `postings` (исходная
+`JobPosting`), а не `vacancies`: модели агрегата пока нет (§26.2).
+
+Новые файлы:
+
+```
+job-api/.../saved/SavedState.java                  # перечисление: SAVED | HIDDEN
+job-api/.../saved/SavedPosting.java                # сущность маркера (пользователь × публикация)
+job-api/.../saved/SavedPostingRepository.java      # узкий Repository с записью
+job-api/.../saved/SavedPostingDtos.java            # HideRequest, SavedPostingResponse
+job-api/.../saved/SavedPostingService.java         # owner-логика: резолв пользователя, upsert, список
+job-api/.../saved/SavedPostingController.java       # POST save/hide, DELETE, GET списка
+job-api/.../db/migration/V16__saved_posting.sql     # expand: таблица saved_posting
+```
+
+Изменён: `JobApiApplication` (`@EntityScan` += `com.roleorienta.api.saved`).
+
+### 30.1 Модель: один маркер на пару (пользователь, публикация)
+
+Одна строка `saved_posting` на пару `(app_user, job_posting)`, уникальная (`uq_saved_posting_user_posting`).
+`state` (`SavedState`: `SAVED` | `HIDDEN`) — взаимоисключающее отношение; `hidden_reason` осмысленна
+только при `HIDDEN`. Save и hide объединены в одну сущность, потому что бизнес-ТЗ §7 группирует
+«Сохранить/скрыть» и это одно и то же отношение «пользователь ↔ публикация». Связи — как в §11.3:
+`@ManyToOne(fetch = LAZY, optional = false)` со стороны «многих», без коллекций; значения через
+сеттеры (§3.10). Уникальный ключ — durable-страховка идемпотентности (тот же приём, что `uq_crawl_run`
+§14 и `uq_app_user_email_lower` §29).
+
+### 30.2 Проверка владельца (A23, §3.9) — без правки SecurityConfig
+
+`SavedPostingService` **никогда** не принимает id пользователя от клиента: владелец резолвится из
+сессии (`Authentication.getName()` → email → `AppUserRepository.findByEmailIgnoreCase`, как
+`AuthController.me`). Все запросы к `saved_posting` идут по этому id, поэтому один пользователь не может
+прочитать или изменить маркер другого.
+
+`SecurityConfig` не менялся (§4). Пишущие операции — `POST`/`DELETE` под `/api/v1/postings/**`, а
+публичным правилом открыт только `GET /api/v1/postings/**`; значит они уже попадают под
+`anyRequest().authenticated()`. Персональный список вынесен под `GET /api/v1/me/saved-postings` — вне
+публичного `GET`-матчера (иначе был бы открыт как чтение ленты).
+
+### 30.3 Эндпоинты и идемпотентность
+
+- `POST /api/v1/postings/{id}/save` → `200` + маркер (состояние `SAVED`).
+- `POST /api/v1/postings/{id}/hide` (тело `{"reason": "..."}`, необязательно) → `200` (`HIDDEN`).
+- `DELETE /api/v1/postings/{id}/saved` → `204` (снять маркер).
+- `GET /api/v1/me/saved-postings` → список сохранённых текущего пользователя.
+
+`save`/`hide` — «найти-или-создать + сеттеры» (§17.3): повтор обновляет строку, а не плодит
+(идемпотентность §3.4). Публикация не найдена → `404` `application/problem+json` (§26.4).
+`PostingReadRepository.findById` переиспользован без изменений — даёт и проверку `404`, и `JobPosting`
+как цель связи, поэтому `PostingReadRepository` не менялся.
+
+### 30.4 Что проверяют тесты
+
+`SavedPostingServiceTest` (Mockito): создание/обновление состояния, идемпотентность, `404` на
+несуществующей публикации, список только `SAVED`. `SavedPostingApiIntegrationTest` (Testcontainers +
+MockMvc + `springSecurity()`): **A23 на втором пользователе** — B не видит маркеры A, маркеры
+независимы, `DELETE` от B не трогает маркер A; плюс требование CSRF/аутентификации и `404` problem+json.
+
+Из-за новой FK-связи `saved_posting → app_user/job_posting` в очистку `@BeforeEach` существующих
+`AuthApiIntegrationTest` и `PostingApiIntegrationTest` добавлен `DELETE FROM saved_posting` (порядок
+удаления под внешний ключ — как там уже удаляются `posting_skill`/`posting_language` перед `job_posting`).
+
+### 30.5 Что НЕ вошло (следующие срезы)
+
+Отметка «просмотрено» (seen); отражение маркеров в ленте; обогащение списка полями публикации и
+курсор; подписки/заметки/отклики и полная матрица прав (A23) по мере их появления; агрегат `Vacancy`.
+
+## 31. Интеграция маркеров в ленту и «просмотрено» (§7, §31)
+
+Продолжение §30: маркеры пользователя начинают влиять на ленту, и добавляется «отметить
+просмотренной». Половина среза (feed-персонализация) затрагивает **существующий** контракт чтения
+(§26–27), поэтому изменение согласовано с владельцем (§7, контроль расширения).
+
+Новые/изменённые файлы:
+
+```
+job-api/.../db/migration/V17__saved_posting_seen.sql   # expand: seen_at + state NULLABLE
+job-api/.../saved/SavedPosting.java                    # изменён: seenAt, state nullable
+job-api/.../saved/SavedPostingRepository.java          # изменён: findByUser_IdAndPosting_IdIn
+job-api/.../saved/SavedPostingDtos.java                # изменён: seenAt в ответе
+job-api/.../saved/SavedPostingService.java             # изменён: markSeen; remove сохраняет seen
+job-api/.../saved/SavedPostingController.java           # изменён: POST /postings/{id}/seen
+job-api/.../posting/FeedPersonalization.java           # НОВЫЙ: резолв владельца + маркеры страницы
+job-api/.../posting/PostingReadRepository.java          # изменён: search исключает скрытые (NOT EXISTS)
+job-api/.../posting/PostingDtos.java                    # изменён: Summary + viewerState/viewerSeen
+job-api/.../posting/PostingQueryService.java            # изменён: персонализация (деп 3→4)
+job-api/.../posting/PostingController.java               # изменён: Authentication + includeHidden
+```
+
+### 31.1 «Просмотрено» ортогонально «сохранить/скрыть»
+
+Просмотр не исключает сохранение/скрытие, поэтому это отдельный признак `seen_at`, а не третье
+состояние. Миграция V17 (expand) добавляет `seen_at` и снимает `NOT NULL` со `state`: строка-маркер
+может существовать только из-за просмотра (`state = NULL`, `seen_at` задан). `POST /postings/{id}/seen`
+проставляет момент первого просмотра идемпотентно (повтор не сдвигает `seen_at`).
+
+`remove` уточнён: снятие сохранения/скрытия очищает `state`/`hidden_reason`, но **сохраняет** `seen_at`
+— строка удаляется, только если не осталось ни состояния, ни отметки просмотра. Так «снял из
+сохранённых» не стирает факт, что публикация уже просмотрена.
+
+### 31.2 Персонализация ленты (FeedPersonalization)
+
+Резолв владельца из сессии и его маркеры на публикациях страницы вынесены в отдельный компонент
+`FeedPersonalization` (две зависимости) — чтобы `PostingQueryService` остался в пределах лимита §3.10
+(4 зависимости) и не смешивал чтение публикаций с персонализацией (§3.3). Это единственная точка связи
+read-слоя ленты с модулем маркеров (`com.roleorienta.api.saved`).
+
+- **Фильтр скрытых.** `PostingReadRepository.search` получил параметр `hiddenForUserId` и клауз
+  `... or not exists (select 1 from SavedPosting sp where sp.posting = p and sp.user.id = :hiddenForUserId
+  and sp.state = ...HIDDEN)`. При `null` (аноним или `includeHidden=true`) клауз не сужает выборку.
+  Фильтрация — в SQL, а не пост-обработкой, чтобы не ломать размер страницы и курсор.
+- **Аннотация.** После выборки страницы одним запросом (`findByUser_IdAndPosting_IdIn`, без N+1)
+  берутся маркеры владельца по публикациям страницы; каждый `Summary` получает `viewerState`
+  (`SAVED`/`HIDDEN`/`null`) и `viewerSeen`.
+- **Аноним.** Для неаутентифицированного запроса `currentUserId` возвращает `null`: лента остаётся
+  публичной и неперсонализированной — контракт анонимного чтения не меняется. Id пользователя берётся
+  только из сессии (A23).
+
+```mermaid
+flowchart LR
+    C[GET /api/v1/postings] --> Q[PostingQueryService]
+    Q -->|currentUserId| FP[FeedPersonalization]
+    Q -->|search + hiddenForUserId| R[(job_posting)]
+    Q -->|markersByPostingId| S[(saved_posting)]
+    Q --> P[Page: Summary + viewerState/viewerSeen]
+```
+
+### 31.3 Почему SecurityConfig снова не меняется (§4)
+
+Лента `GET /api/v1/postings` уже открыта (permitAll). Персонализация сделана как **необязательная**
+аутентификация: `Authentication` для анонима равен `null`, для вошедшего — его сессия. Новый эндпоинт
+`POST /postings/{id}/seen` — `POST` под `/postings/**`, уже требует входа по общему правилу. Правки
+правил безопасности не потребовались.
+
+### 31.4 Что проверяют тесты
+
+`FeedPersonalizationTest` (Mockito): аноним → `null`, резолв пользователя, карта маркеров по id.
+`PostingQueryServiceTest` дополнен: аноним не фильтрует скрытые; вошедший — исключает (и `includeHidden`
+возвращает); аннотация `Summary`. `SavedPostingServiceTest` дополнен: `markSeen` (создание, идемпотентность),
+`remove` сохраняет seen / удаляет строку без seen. `SavedPostingFeedIntegrationTest` (Testcontainers +
+MockMvc + `springSecurity()`): скрытая публикация исчезает из ленты вошедшего, возвращается по
+`includeHidden=true` с `viewerState=HIDDEN`, сохранённая/просмотренная помечаются; аноним видит всё без
+персонализации. Существующие `PostingApiIntegrationTest` (аноним) не изменились.
+
+### 31.5 Что НЕ вошло (следующие срезы)
+
+Аннотация карточки (`/postings/{id}`); гранулярное снятие только сохранения при сохранении и скрытия;
+курсор/фильтр по состоянию в `/me/saved-postings`; агрегат `Vacancy` + `/vacancies`; подписки на компании;
+SSRF-безопасный клиент (A13/A14).
 
 ## Куда смотреть дальше
 
