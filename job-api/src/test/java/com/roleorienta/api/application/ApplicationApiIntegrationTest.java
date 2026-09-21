@@ -75,6 +75,7 @@ class ApplicationApiIntegrationTest {
     /** FK-безопасная очистка: application_note/application и прочие дети — перед родителями (§33.8). */
     private void cleanDatabase() {
         jdbcTemplate.update("DELETE FROM application_note");
+        jdbcTemplate.update("DELETE FROM interview");
         jdbcTemplate.update("DELETE FROM application");
         jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM company_subscription");
