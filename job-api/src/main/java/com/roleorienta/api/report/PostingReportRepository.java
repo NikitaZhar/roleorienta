@@ -10,4 +10,8 @@ public interface PostingReportRepository extends JpaRepository<PostingReport, Lo
     Optional<PostingReport> findByReporter_IdAndPosting_Id(Long userId, Long postingId);
 
     List<PostingReport> findByReporter_IdOrderByIdDesc(Long userId);
+
+    List<PostingReport> findAllByOrderByIdDesc();
+
+    List<PostingReport> findByStatusOrderByIdDesc(PostingReportStatus status);
 }

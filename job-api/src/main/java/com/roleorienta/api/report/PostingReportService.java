@@ -3,6 +3,7 @@ package com.roleorienta.api.report;
 import com.roleorienta.api.auth.AppUser;
 import com.roleorienta.api.auth.AppUserRepository;
 import com.roleorienta.api.posting.PostingReadRepository;
+import com.roleorienta.api.report.PostingReportDtos.AdminReportResponse;
 import com.roleorienta.api.report.PostingReportDtos.ReportResponse;
 import com.roleorienta.core.domain.JobPosting;
 import java.util.List;
@@ -74,6 +75,47 @@ public class PostingReportService {
                 .stream()
                 .map(ReportResponse::of)
                 .toList();
+    }
+
+    /**
+     * Очередь разбора жалоб (§47) — все жалобы, новые сверху; при заданном статусе — только его.
+     * Доступ admin-only через {@code /api/v1/admin/**} (роль проверяет SecurityConfig).
+     */
+    @Transactional(readOnly = true)
+    public List<AdminReportResponse> listForModeration(PostingReportStatus status) {
+        List<PostingReport> found = (status == null)
+                ? reports.findAllByOrderByIdDesc()
+                : reports.findByStatusOrderByIdDesc(status);
+        return found.stream().map(AdminReportResponse::of).toList();
+    }
+
+    /**
+     * Разобрать жалобу (§47): перевести из {@code OPEN} в {@code RESOLVED} или {@code DISMISSED}.
+     * Повтор того же терминального статуса — идемпотентный успех; иной терминальный → 409;
+     * возврат в {@code OPEN} не поддерживается → 400.
+     *
+     * @throws ResponseStatusException 404 (нет жалобы), 400 (target OPEN), 409 (уже разобрана иначе)
+     */
+    @Transactional
+    public AdminReportResponse triage(Long reportId, PostingReportStatus target) {
+        if (target == PostingReportStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Возврат жалобы в OPEN не поддерживается");
+        }
+        PostingReport report = reports.findById(reportId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Жалоба не найдена: " + reportId));
+
+        PostingReportStatus current = report.getStatus();
+        if (current != target) {
+            if (current != PostingReportStatus.OPEN) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Жалоба уже разобрана: " + current);
+            }
+            report.setStatus(target);
+            report = reports.save(report);
+        }
+        return AdminReportResponse.of(report);
     }
 
     private AppUser currentUser(Authentication authentication) {

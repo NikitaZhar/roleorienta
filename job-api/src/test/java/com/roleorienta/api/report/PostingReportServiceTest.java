@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.roleorienta.api.auth.AppUser;
 import com.roleorienta.api.auth.AppUserRepository;
 import com.roleorienta.api.posting.PostingReadRepository;
+import com.roleorienta.api.report.PostingReportDtos.AdminReportResponse;
 import com.roleorienta.api.report.PostingReportDtos.ReportResponse;
 import com.roleorienta.core.domain.JobPosting;
 import java.util.List;
@@ -106,5 +107,84 @@ class PostingReportServiceTest {
 
         assertEquals(1, response.size());
         assertEquals("OTHER", response.get(0).reason());
+    }
+
+    private PostingReport buildReport(PostingReportStatus status) {
+        PostingReport report = new PostingReport();
+        report.setPosting(posting);
+        report.setReporter(owner);
+        report.setReason(PostingReportReason.BROKEN_LINK);
+        report.setComment("битая");
+        report.setStatus(status);
+        when(posting.getId()).thenReturn(10L);
+        when(owner.getEmail()).thenReturn("u@example.com");
+        return report;
+    }
+
+    @Test
+    void listForModerationAll() {
+        PostingReport report = buildReport(PostingReportStatus.OPEN);
+        when(reports.findAllByOrderByIdDesc()).thenReturn(List.of(report));
+        List<AdminReportResponse> response = service.listForModeration(null);
+        assertEquals(1, response.size());
+        assertEquals("u@example.com", response.get(0).reporterEmail());
+        verify(reports, never()).findByStatusOrderByIdDesc(any());
+    }
+
+    @Test
+    void listForModerationByStatus() {
+        PostingReport report = buildReport(PostingReportStatus.OPEN);
+        when(reports.findByStatusOrderByIdDesc(PostingReportStatus.OPEN)).thenReturn(List.of(report));
+        List<AdminReportResponse> response = service.listForModeration(PostingReportStatus.OPEN);
+        assertEquals(1, response.size());
+        verify(reports, never()).findAllByOrderByIdDesc();
+    }
+
+    @Test
+    void triageResolvesFromOpen() {
+        PostingReport report = buildReport(PostingReportStatus.OPEN);
+        when(reports.findById(7L)).thenReturn(Optional.of(report));
+        when(reports.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AdminReportResponse response = service.triage(7L, PostingReportStatus.RESOLVED);
+
+        assertEquals(PostingReportStatus.RESOLVED, report.getStatus());
+        assertEquals("RESOLVED", response.status());
+        verify(reports).save(report);
+    }
+
+    @Test
+    void triageMissingIsNotFound() {
+        when(reports.findById(7L)).thenReturn(Optional.empty());
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.triage(7L, PostingReportStatus.RESOLVED));
+        assertEquals(404, statusOf(e));
+    }
+
+    @Test
+    void triageToOpenIsBadRequest() {
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.triage(7L, PostingReportStatus.OPEN));
+        assertEquals(400, statusOf(e));
+        verify(reports, never()).save(any());
+    }
+
+    @Test
+    void triageAlreadyTerminalDifferentIsConflict() {
+        PostingReport report = buildReport(PostingReportStatus.DISMISSED);
+        when(reports.findById(7L)).thenReturn(Optional.of(report));
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.triage(7L, PostingReportStatus.RESOLVED));
+        assertEquals(409, statusOf(e));
+        verify(reports, never()).save(any());
+    }
+
+    @Test
+    void triageSameStatusIsIdempotent() {
+        PostingReport report = buildReport(PostingReportStatus.RESOLVED);
+        when(reports.findById(7L)).thenReturn(Optional.of(report));
+        AdminReportResponse response = service.triage(7L, PostingReportStatus.RESOLVED);
+        assertEquals("RESOLVED", response.status());
+        verify(reports, never()).save(any());
     }
 }
