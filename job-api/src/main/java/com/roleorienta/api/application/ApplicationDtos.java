@@ -19,6 +19,10 @@ public final class ApplicationDtos {
     public record AddNoteRequest(@NotBlank String body) {
     }
 
+    /** Изменить текст заметки. */
+    public record UpdateNoteRequest(@NotBlank String body) {
+    }
+
     /** Сменить статус отклика (A19: предусловие If-Match — в заголовке). */
     public record UpdateStatusRequest(@NotNull ApplicationStatus status) {
     }

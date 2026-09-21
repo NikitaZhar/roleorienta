@@ -165,4 +165,54 @@ class ApplicationServiceTest {
         service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, "\"0\"");
         verify(applications, never()).saveAndFlush(any());
     }
+
+    @Test
+    void updateNoteChangesBody() {
+        withOwner();
+        ApplicationNote note = new ApplicationNote();
+        note.setBody("old");
+        when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
+                .thenReturn(Optional.of(note));
+        when(notes.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        NoteResponse response = service.updateNote(auth, 5L, 3L, "new");
+
+        assertEquals("new", note.getBody());
+        assertEquals("new", response.body());
+        verify(notes).save(note);
+    }
+
+    @Test
+    void updateForeignNoteIsNotFound() {
+        withOwner();
+        when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
+                .thenReturn(Optional.empty());
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.updateNote(auth, 5L, 3L, "new"));
+        assertEquals(404, statusOf(e));
+        verify(notes, never()).save(any());
+    }
+
+    @Test
+    void deleteNoteRemovesIt() {
+        withOwner();
+        ApplicationNote note = new ApplicationNote();
+        when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
+                .thenReturn(Optional.of(note));
+
+        service.deleteNote(auth, 5L, 3L);
+
+        verify(notes).delete(note);
+    }
+
+    @Test
+    void deleteForeignNoteIsNotFound() {
+        withOwner();
+        when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
+                .thenReturn(Optional.empty());
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.deleteNote(auth, 5L, 3L));
+        assertEquals(404, statusOf(e));
+        verify(notes, never()).delete(any());
+    }
 }

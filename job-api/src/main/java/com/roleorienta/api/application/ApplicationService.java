@@ -158,6 +158,38 @@ public class ApplicationService {
         return NoteResponse.of(notes.save(note));
     }
 
+    /**
+     * Изменить текст заметки отклика (§44).
+     *
+     * @throws ResponseStatusException {@code 404}, если заметки нет или она чужая
+     */
+    @Transactional
+    public NoteResponse updateNote(Authentication authentication, Long applicationId,
+                                   Long noteId, String body) {
+        AppUser owner = currentUser(authentication);
+        ApplicationNote note = requireOwnedNote(noteId, applicationId, owner);
+        note.setBody(body);
+        return NoteResponse.of(notes.save(note));
+    }
+
+    /**
+     * Удалить заметку отклика (§44).
+     *
+     * @throws ResponseStatusException {@code 404}, если заметки нет или она чужая
+     */
+    @Transactional
+    public void deleteNote(Authentication authentication, Long applicationId, Long noteId) {
+        AppUser owner = currentUser(authentication);
+        ApplicationNote note = requireOwnedNote(noteId, applicationId, owner);
+        notes.delete(note);
+    }
+
+    private ApplicationNote requireOwnedNote(Long noteId, Long applicationId, AppUser owner) {
+        return notes.findByIdAndApplication_IdAndApplication_User_Id(noteId, applicationId, owner.getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Заметка не найдена: " + noteId));
+    }
+
     private ApplicationCardResponse card(Application application) {
         return ApplicationCardResponse.of(application,
                 notes.findByApplication_IdOrderByIdDesc(application.getId()));

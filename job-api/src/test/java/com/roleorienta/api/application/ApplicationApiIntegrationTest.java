@@ -2,6 +2,7 @@ package com.roleorienta.api.application;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -216,5 +217,58 @@ class ApplicationApiIntegrationTest {
                         .header(HttpHeaders.IF_MATCH, "\"0\"")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"OFFER\"}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void editAndDeleteNote() throws Exception {
+        MockHttpSession session = registerAndLogin("a@example.com");
+        long applicationId = createApplication(session);
+
+        mockMvc.perform(post("/api/v1/applications/{id}/notes", applicationId).with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"draft\"}"))
+                .andExpect(status().isCreated());
+        Long noteId = jdbcTemplate.queryForObject(
+                "SELECT id FROM application_note WHERE application_id = ? ORDER BY id DESC LIMIT 1",
+                Long.class, applicationId);
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/notes/{noteId}", applicationId, noteId)
+                        .with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"final\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.body").value("final"));
+
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes.length()").value(1))
+                .andExpect(jsonPath("$.notes[0].body").value("final"));
+
+        mockMvc.perform(delete("/api/v1/applications/{id}/notes/{noteId}", applicationId, noteId)
+                        .with(csrf()).session(session))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes.length()").value(0));
+    }
+
+    @Test
+    void noteEditAndDeleteArePrivateToOwner() throws Exception {
+        MockHttpSession first = registerAndLogin("a@example.com");
+        long applicationId = createApplication(first);
+        mockMvc.perform(post("/api/v1/applications/{id}/notes", applicationId).with(csrf()).session(first)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"mine\"}"))
+                .andExpect(status().isCreated());
+        Long noteId = jdbcTemplate.queryForObject(
+                "SELECT id FROM application_note WHERE application_id = ? ORDER BY id DESC LIMIT 1",
+                Long.class, applicationId);
+
+        MockHttpSession second = registerAndLogin("b@example.com");
+        mockMvc.perform(patch("/api/v1/applications/{id}/notes/{noteId}", applicationId, noteId)
+                        .with(csrf()).session(second)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"hijack\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/v1/applications/{id}/notes/{noteId}", applicationId, noteId)
+                        .with(csrf()).session(second))
+                .andExpect(status().isNotFound());
     }
 }

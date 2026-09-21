@@ -5,6 +5,7 @@ import com.roleorienta.api.application.ApplicationDtos.ApplicationCardResponse;
 import com.roleorienta.api.application.ApplicationDtos.ApplicationResponse;
 import com.roleorienta.api.application.ApplicationDtos.CreateApplicationRequest;
 import com.roleorienta.api.application.ApplicationDtos.NoteResponse;
+import com.roleorienta.api.application.ApplicationDtos.UpdateNoteRequest;
 import com.roleorienta.api.application.ApplicationDtos.UpdateStatusRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -81,6 +83,24 @@ public class ApplicationController {
                                 @Valid @RequestBody AddNoteRequest request,
                                 Authentication authentication) {
         return service.addNote(authentication, id, request.body());
+    }
+
+    /** Изменить текст заметки. */
+    @PatchMapping("/api/v1/applications/{id}/notes/{noteId}")
+    public NoteResponse updateNote(@PathVariable Long id,
+                                   @PathVariable Long noteId,
+                                   @Valid @RequestBody UpdateNoteRequest request,
+                                   Authentication authentication) {
+        return service.updateNote(authentication, id, noteId, request.body());
+    }
+
+    /** Удалить заметку. */
+    @DeleteMapping("/api/v1/applications/{id}/notes/{noteId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteNote(@PathVariable Long id,
+                           @PathVariable Long noteId,
+                           Authentication authentication) {
+        service.deleteNote(authentication, id, noteId);
     }
 
     private static String etag(long version) {
