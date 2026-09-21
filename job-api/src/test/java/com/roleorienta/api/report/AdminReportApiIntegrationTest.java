@@ -77,9 +77,21 @@ class AdminReportApiIntegrationTest {
         cleanDatabase();
     }
 
-    /** FK-безопасная очистка: posting_report — перед job_posting и app_user (§33.8). */
+    /** FK-безопасная, порядок-независимая очистка: все дети — перед родителями (§33.8). */
     private void cleanDatabase() {
         jdbcTemplate.update("DELETE FROM posting_report");
+        jdbcTemplate.update("DELETE FROM interview");
+        jdbcTemplate.update("DELETE FROM application_note");
+        jdbcTemplate.update("DELETE FROM application");
+        jdbcTemplate.update("DELETE FROM notification");
+        jdbcTemplate.update("DELETE FROM company_subscription");
+        jdbcTemplate.update("DELETE FROM saved_posting");
+        jdbcTemplate.update("DELETE FROM posting_skill");
+        jdbcTemplate.update("DELETE FROM posting_language");
+        jdbcTemplate.update("DELETE FROM posting_revision");
+        jdbcTemplate.update("DELETE FROM pending_change");
+        jdbcTemplate.update("DELETE FROM company_source");
+        jdbcTemplate.update("DELETE FROM employer_candidate");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM source");
         jdbcTemplate.update("DELETE FROM company");
