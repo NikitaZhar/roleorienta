@@ -19,7 +19,7 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 // (worker их не использует) живут в самом приложении, а не в core, и их пакеты тоже
 // добавлены в область сканирования: com.roleorienta.api.auth (AppUser, §29) и
 // com.roleorienta.api.saved (SavedPosting — персональные маркеры, §30).
-@EntityScan({"com.roleorienta.core.domain", "com.roleorienta.api.auth", "com.roleorienta.api.saved"})
+@EntityScan({"com.roleorienta.core.domain", "com.roleorienta.api.auth", "com.roleorienta.api.saved", "com.roleorienta.api.subscription"})
 public class JobApiApplication {
 
     /**
