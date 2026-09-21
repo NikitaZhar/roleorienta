@@ -52,6 +52,15 @@
             <version>1.17.2</version>
         </dependency>
 
+        <!-- Apache HttpClient 5 — HTTP-клиент сбора/обнаружения за RestClient.
+             Нужен ради подстановки собственного резолвера имён: обязательное
+             условие защиты от SSRF/DNS-rebinding (§9, A13; см. SourceHttpClient).
+             Версией управляет BOM Spring Boot. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
