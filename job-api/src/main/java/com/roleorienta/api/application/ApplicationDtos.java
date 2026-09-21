@@ -19,6 +19,10 @@ public final class ApplicationDtos {
     public record AddNoteRequest(@NotBlank String body) {
     }
 
+    /** Сменить статус отклика (A19: предусловие If-Match — в заголовке). */
+    public record UpdateStatusRequest(@NotNull ApplicationStatus status) {
+    }
+
     /** Отклик в списке. */
     public record ApplicationResponse(Long id, Long postingId, String status, Instant createdAt) {
 
@@ -41,13 +45,14 @@ public final class ApplicationDtos {
 
     /** Карточка отклика с заметками. */
     public record ApplicationCardResponse(Long id, Long postingId, String status,
-                                          Instant createdAt, List<NoteResponse> notes) {
+                                          long version, Instant createdAt, List<NoteResponse> notes) {
 
         static ApplicationCardResponse of(Application application, List<ApplicationNote> notes) {
             return new ApplicationCardResponse(
                     application.getId(),
                     application.getPosting().getId(),
                     application.getStatus().name(),
+                    application.getVersion(),
                     application.getCreatedAt(),
                     notes.stream().map(NoteResponse::of).toList());
         }

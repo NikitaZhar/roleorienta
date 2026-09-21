@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -51,6 +52,15 @@ public class Application {
     @Column(name = "status", nullable = false)
     private ApplicationStatus status;
 
+    /**
+     * Версия оптимистичной блокировки (A19). Служит сильным ETag карточки: каждое
+     * изменение увеличивает её, поэтому устаревший {@code If-Match} даёт 412, а
+     * гонка одновременных изменений — 409.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -69,6 +79,8 @@ public class Application {
 
     public ApplicationStatus getStatus() { return status; }
     public void setStatus(ApplicationStatus status) { this.status = status; }
+
+    public long getVersion() { return version; }
 
     public Instant getCreatedAt() { return createdAt; }
 

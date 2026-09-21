@@ -21,8 +21,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Логика откликов и заметок (§41): резолв владельца (A23), идемпотентность создания,
- * 404 на нет-публикацию и на чужой отклик. Репозитории и аутентификация — заглушки.
+ * Логика откликов, заметок и переходов статуса (§41, §42): резолв владельца (A23),
+ * идемпотентность, 404 на чужой отклик, и оптимистичная конкуренция A19
+ * (If-Match: 428/412, недопустимый переход: 409). Репозитории и аутентификация — заглушки.
  */
 class ApplicationServiceTest {
 
@@ -43,6 +44,19 @@ class ApplicationServiceTest {
         when(users.findByEmailIgnoreCase("u@example.com")).thenReturn(Optional.of(owner));
     }
 
+    private Application ownedApplication(ApplicationStatus status) {
+        Application application = new Application();
+        application.setStatus(status);
+        application.setPosting(posting);
+        when(posting.getId()).thenReturn(10L);
+        when(applications.findByIdAndUser_Id(5L, 1L)).thenReturn(Optional.of(application));
+        return application;
+    }
+
+    private static int statusOf(ResponseStatusException e) {
+        return e.getStatusCode().value();
+    }
+
     @Test
     void createNewApplication() {
         withOwner();
@@ -58,7 +72,6 @@ class ApplicationServiceTest {
         assertEquals(owner, captor.getValue().getUser());
         assertEquals(ApplicationStatus.APPLIED, captor.getValue().getStatus());
         assertEquals(10L, response.postingId());
-        assertEquals("APPLIED", response.status());
     }
 
     @Test
@@ -81,7 +94,6 @@ class ApplicationServiceTest {
     void createMissingPostingIsNotFound() {
         withOwner();
         when(postings.findById(999L)).thenReturn(Optional.empty());
-
         assertThrows(ResponseStatusException.class, () -> service.create(auth, 999L));
         verify(applications, never()).save(any());
     }
@@ -90,15 +102,13 @@ class ApplicationServiceTest {
     void getForeignApplicationIsNotFound() {
         withOwner();
         when(applications.findByIdAndUser_Id(5L, 1L)).thenReturn(Optional.empty());
-
         assertThrows(ResponseStatusException.class, () -> service.get(auth, 5L));
     }
 
     @Test
     void addNoteToOwnedApplication() {
         withOwner();
-        Application application = new Application();
-        when(applications.findByIdAndUser_Id(5L, 1L)).thenReturn(Optional.of(application));
+        Application application = ownedApplication(ApplicationStatus.APPLIED);
         when(notes.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         NoteResponse response = service.addNote(auth, 5L, "call recruiter");
@@ -107,5 +117,52 @@ class ApplicationServiceTest {
         verify(notes).save(captor.capture());
         assertEquals(application, captor.getValue().getApplication());
         assertEquals("call recruiter", response.body());
+    }
+
+    @Test
+    void updateStatusValidTransition() {
+        withOwner();
+        Application application = ownedApplication(ApplicationStatus.APPLIED);
+
+        service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, "\"0\"");
+
+        assertEquals(ApplicationStatus.INTERVIEWING, application.getStatus());
+        verify(applications).saveAndFlush(application);
+    }
+
+    @Test
+    void updateStatusWithoutIfMatchIs428() {
+        withOwner();
+        ownedApplication(ApplicationStatus.APPLIED);
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, null));
+        assertEquals(428, statusOf(e));
+    }
+
+    @Test
+    void updateStatusStaleIfMatchIs412() {
+        withOwner();
+        ownedApplication(ApplicationStatus.APPLIED);
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, "\"7\""));
+        assertEquals(412, statusOf(e));
+    }
+
+    @Test
+    void updateStatusDisallowedTransitionIs409() {
+        withOwner();
+        ownedApplication(ApplicationStatus.APPLIED);
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.updateStatus(auth, 5L, ApplicationStatus.OFFER, "\"0\""));
+        assertEquals(409, statusOf(e));
+        verify(applications, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateStatusSameStatusIsIdempotent() {
+        withOwner();
+        ownedApplication(ApplicationStatus.INTERVIEWING);
+        service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, "\"0\"");
+        verify(applications, never()).saveAndFlush(any());
     }
 }

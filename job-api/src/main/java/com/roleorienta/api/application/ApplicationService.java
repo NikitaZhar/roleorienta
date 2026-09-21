@@ -7,7 +7,11 @@ import com.roleorienta.api.auth.AppUser;
 import com.roleorienta.api.auth.AppUserRepository;
 import com.roleorienta.api.posting.PostingReadRepository;
 import com.roleorienta.core.domain.JobPosting;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -17,14 +21,28 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Логика откликов и заметок (§7) — всегда в пределах текущего пользователя.
  *
- * <p><b>Проверка владельца (A23, §3.9).</b> Владелец берётся только из аутентификации
- * (сессии): email → {@link AppUser}. Отклики и заметки читаются/меняются по id владельца,
- * поэтому чужой отклик не виден и недоступен (доступ к чужому id → {@code 404}, чтобы не
- * раскрывать существование). Существование публикации проверяется переиспользуемым
- * {@link PostingReadRepository} (иначе {@code 404}).</p>
+ * <p><b>Проверка владельца (A23, §3.9).</b> Владелец берётся только из сессии; отклики и
+ * заметки читаются/меняются по id владельца, доступ к чужому id → {@code 404}.</p>
+ *
+ * <p><b>Оптимистичная конкуренция (A19, §42).</b> Статус меняется только с корректным
+ * предусловием {@code If-Match} (сильный ETag = версия отклика): нет заголовка → {@code 428},
+ * устаревший → {@code 412}. Недопустимый переход статуса → {@code 409}. Гонка одновременных
+ * изменений ловится {@code @Version} на сохранении → {@code 409}. Повтор той же смены (статус
+ * уже такой) при совпавшем {@code If-Match} — идемпотентный успех (RFC 9110).</p>
  */
 @Service
 public class ApplicationService {
+
+    /** Допустимые переходы статуса (§7.8). Терминальные состояния переходов не имеют. */
+    private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED = Map.of(
+            ApplicationStatus.APPLIED,
+            EnumSet.of(ApplicationStatus.INTERVIEWING, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.INTERVIEWING,
+            EnumSet.of(ApplicationStatus.OFFER, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.OFFER,
+            EnumSet.of(ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.REJECTED, EnumSet.noneOf(ApplicationStatus.class),
+            ApplicationStatus.WITHDRAWN, EnumSet.noneOf(ApplicationStatus.class));
 
     private final ApplicationRepository applications;
     private final ApplicationNoteRepository notes;
@@ -45,9 +63,6 @@ public class ApplicationService {
      * Создать отклик на публикацию (идемпотентно): повторный отклик на ту же публикацию
      * возвращает существующий, статус не сбрасывается.
      *
-     * @param authentication текущая аутентификация (владелец)
-     * @param postingId      id публикации
-     * @return отклик
      * @throws ResponseStatusException {@code 404}, если публикации нет
      */
     @Transactional
@@ -70,12 +85,7 @@ public class ApplicationService {
         return ApplicationResponse.of(application);
     }
 
-    /**
-     * Отклики текущего пользователя (новые сверху).
-     *
-     * @param authentication текущая аутентификация (владелец)
-     * @return отклики владельца
-     */
+    /** Отклики текущего пользователя (новые сверху). */
     @Transactional(readOnly = true)
     public List<ApplicationResponse> list(Authentication authentication) {
         AppUser owner = currentUser(authentication);
@@ -88,27 +98,54 @@ public class ApplicationService {
     /**
      * Карточка отклика с заметками.
      *
-     * @param authentication текущая аутентификация (владелец)
-     * @param applicationId  id отклика
-     * @return карточка отклика
-     * @throws ResponseStatusException {@code 404}, если отклика нет или он не принадлежит владельцу
+     * @throws ResponseStatusException {@code 404}, если отклика нет или он чужой
      */
     @Transactional(readOnly = true)
     public ApplicationCardResponse get(Authentication authentication, Long applicationId) {
         AppUser owner = currentUser(authentication);
         Application application = requireOwned(applicationId, owner);
-        return ApplicationCardResponse.of(application,
-                notes.findByApplication_IdOrderByIdDesc(applicationId));
+        return card(application);
+    }
+
+    /**
+     * Сменить статус отклика с предусловием {@code If-Match} (A19).
+     *
+     * @param authentication текущая аутентификация (владелец)
+     * @param applicationId  id отклика
+     * @param target         целевой статус
+     * @param ifMatch        заголовок {@code If-Match} (сильный ETag = версия)
+     * @return обновлённая карточка отклика
+     * @throws ResponseStatusException 404 (нет/чужой), 428 (нет If-Match), 412 (устаревший),
+     *                                 409 (недопустимый переход или гонка версий)
+     */
+    @Transactional
+    public ApplicationCardResponse updateStatus(Authentication authentication, Long applicationId,
+                                                ApplicationStatus target, String ifMatch) {
+        AppUser owner = currentUser(authentication);
+        Application application = requireOwned(applicationId, owner);
+        requireIfMatch(ifMatch, application.getVersion());
+
+        ApplicationStatus current = application.getStatus();
+        if (current != target) {
+            if (!ALLOWED.getOrDefault(current, EnumSet.noneOf(ApplicationStatus.class)).contains(target)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Недопустимый переход статуса: " + current + " → " + target);
+            }
+            application.setStatus(target);
+            try {
+                applications.saveAndFlush(application);
+            } catch (OptimisticLockingFailureException e) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Отклик изменён другим запросом, обновите и повторите");
+            }
+        }
+        return card(application);
     }
 
     /**
      * Добавить заметку к отклику.
      *
-     * @param authentication текущая аутентификация (владелец)
-     * @param applicationId  id отклика
-     * @param body           текст заметки
-     * @return созданная заметка
-     * @throws ResponseStatusException {@code 404}, если отклика нет или он не принадлежит владельцу
+     * @throws ResponseStatusException {@code 404}, если отклика нет или он чужой
      */
     @Transactional
     public NoteResponse addNote(Authentication authentication, Long applicationId, String body) {
@@ -119,6 +156,41 @@ public class ApplicationService {
         note.setApplication(application);
         note.setBody(body);
         return NoteResponse.of(notes.save(note));
+    }
+
+    private ApplicationCardResponse card(Application application) {
+        return ApplicationCardResponse.of(application,
+                notes.findByApplication_IdOrderByIdDesc(application.getId()));
+    }
+
+    private void requireIfMatch(String ifMatch, long currentVersion) {
+        if (ifMatch == null || ifMatch.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED,
+                    "Требуется заголовок If-Match с текущей версией отклика");
+        }
+        if (ifMatch.trim().equals("*")) {
+            return;
+        }
+        Long expected = parseETag(ifMatch);
+        if (expected == null || expected != currentVersion) {
+            throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED,
+                    "Устаревшая версия отклика (If-Match не совпал)");
+        }
+    }
+
+    private Long parseETag(String raw) {
+        String value = raw.trim();
+        if (value.startsWith("W/")) {
+            value = value.substring(2).trim();
+        }
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length() - 1);
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Application requireOwned(Long applicationId, AppUser owner) {

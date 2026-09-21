@@ -2590,6 +2590,56 @@ job-api/.../JobApiApplication.java                    # изменён: @EntityS
 (`POST /applications/{id}/interviews`, timezone/перенос/отмена); правка/удаление заметок;
 повторный отклик на репост как отдельная семантика; «откликнись напрямую» для дублей.
 
+## §42 — Переходы статусов + оптимистичная конкуренция (A19)
+
+Смена статуса отклика через `PATCH /api/v1/applications/{id}` с телом `{"status": "..."}`.
+Карточка (`GET /api/v1/applications/{id}`) и ответ `PATCH` отдают сильный `ETag` — версию
+отклика (`@Version`). Клиент обязан вернуть её в `If-Match` при смене статуса (A19).
+
+### 42.1 Модель версии и миграция
+
+`Application.version` — `@Version long` (`V23__application_version.sql`:
+`ALTER TABLE application ADD COLUMN version BIGINT NOT NULL DEFAULT 0`). JPA инкрементирует
+версию на каждом изменении сущности; она же — сильный ETag (`"0"`, `"1"`, ...). У существующих
+строк версия стартует с `0` (DEFAULT), совпадая с новыми.
+
+### 42.2 Предусловие If-Match и коды ответов
+
+`updateStatus` в сервисе:
+
+- нет заголовка `If-Match` (или пустой) → `428 Precondition Required` (клиент не прочитал версию);
+- `If-Match` не совпал с текущей версией → `412 Precondition Failed` (устаревшее представление);
+- `If-Match: *` — принимается (безусловная смена);
+- гонка одновременных изменений ловится `@Version` на `saveAndFlush`
+  (`OptimisticLockingFailureException`) → `409 Conflict`.
+
+ETag парсится терпимо: снимается префикс `W/` и кавычки, затем `Long.parseLong`; мусор → `null`
+→ `412`.
+
+### 42.3 Разрешённые переходы (§7.8)
+
+`APPLIED → {INTERVIEWING, REJECTED, WITHDRAWN}`, `INTERVIEWING → {OFFER, REJECTED, WITHDRAWN}`,
+`OFFER → {REJECTED, WITHDRAWN}`; `REJECTED` и `WITHDRAWN` — терминальные. Недопустимый переход
+при корректном `If-Match` → `409 Conflict`. Повтор той же смены (статус уже целевой) при
+совпавшем `If-Match` — идемпотентный успех (RFC 9110), тело — та же карточка, версия не растёт.
+
+### 42.4 Что проверяют тесты
+
+`ApplicationServiceTest` (Mockito): корректный переход (вызван `saveAndFlush`, статус сменился),
+`428` без `If-Match`, `412` на устаревший `If-Match`, `409` на недопустимый переход, идемпотентность
+той же смены. `ApplicationApiIntegrationTest` (Testcontainers + MockMvc): `GET`/`PATCH` отдают `ETag`;
+цикл `If-Match` корректный → `200` + `INTERVIEWING` + `ETag "1"`, старый `If-Match` → `412`, без
+`If-Match` → `428`, `APPLIED → OFFER` → `409`. Тест самоочищается в `@AfterEach` (§33.8).
+
+### 42.5 README (§0.2)
+
+Не меняется: внутренняя пользовательская функция; эндпоинты в README не процитированы.
+
+### 42.6 Что НЕ вошло (следующие срезы)
+
+Интервью (`POST /applications/{id}/interviews`, timezone/перенос/отмена); правка/удаление заметок;
+email-дайджест; «сообщить об ошибке» (error-report); агрегат вакансии.
+
 ## Куда смотреть дальше
 
 - Справочник Spring Boot: https://docs.spring.io/spring-boot/index.html
