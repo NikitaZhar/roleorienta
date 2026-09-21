@@ -57,6 +57,9 @@ class EmployerDiscoveryAdminIntegrationTest {
 
         jdbcTemplate.update("DELETE FROM employer_candidate");
         jdbcTemplate.update("DELETE FROM saved_posting");
+        jdbcTemplate.update("DELETE FROM posting_skill");
+        jdbcTemplate.update("DELETE FROM posting_language");
+        jdbcTemplate.update("DELETE FROM posting_revision");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM company_source");
         jdbcTemplate.update("DELETE FROM source");

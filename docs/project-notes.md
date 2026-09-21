@@ -2165,6 +2165,19 @@ README не меняется: набор развёртываемых модул
 отдельно от `NONE`; вывод кандидата в `/api/v1/companies/suggest` для обычных
 пользователей (сейчас триггер только админский).
 
+### 33.8 Изоляция интеграционных тестов (порядок очистки FK)
+
+Добавление нового интеграционного класса (`EmployerDiscoveryAdminIntegrationTest`, буква E)
+сдвинуло порядок тестов и вскрыло скрытый баг: `SavedPostingApiIntegrationTest` и
+`SavedPostingFeedIntegrationTest` в `@BeforeEach` удаляли `job_posting`, не очистив дочерние
+таблицы (`posting_language`/`posting_skill`/`posting_revision`, FK на `job_posting`). Пока
+`PostingApiIntegrationTest` (единственный, кто их чистит) шёл после них — везло; при новом
+порядке (CI и `-Dsurefire.runOrder=alphabetical`) он оставлял осиротевшую `posting_language`,
+и `DELETE FROM job_posting` падал по внешнему ключу. Локально было зелено, в CI — красно.
+
+Исправление: во всех `setUp`, удаляющих `job_posting`, дочерние таблицы чистятся первыми
+(правило FK-порядка). Это тест-гигиена, вскрытая §33, а не дефект его прод-кода.
+
 ## 34. Доверенная локальная конфигурация SSRF-клиента (dev): allow-private-addresses
 
 Выявлено при живом прогоне §33. Жёсткий SSRF-guard §32 (строгий по умолчанию)
