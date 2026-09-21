@@ -215,4 +215,25 @@ class ApplicationServiceTest {
         assertEquals(404, statusOf(e));
         verify(notes, never()).delete(any());
     }
+    @Test
+    void markInterviewingPromotesFromApplied() {
+        Application application = new Application();
+        application.setStatus(ApplicationStatus.APPLIED);
+
+        service.markInterviewing(application);
+
+        assertEquals(ApplicationStatus.INTERVIEWING, application.getStatus());
+        verify(applications).save(application);
+    }
+
+    @Test
+    void markInterviewingIsNoopFromOtherStatus() {
+        Application application = new Application();
+        application.setStatus(ApplicationStatus.OFFER);
+
+        service.markInterviewing(application);
+
+        assertEquals(ApplicationStatus.OFFER, application.getStatus());
+        verify(applications, never()).save(any());
+    }
 }

@@ -190,6 +190,20 @@ public class ApplicationService {
                         HttpStatus.NOT_FOUND, "Заметка не найдена: " + noteId));
     }
 
+    /**
+     * Поднять статус отклика до {@link ApplicationStatus#INTERVIEWING} при назначении
+     * собеседования (§45) — только из {@link ApplicationStatus#APPLIED} (допустимый переход
+     * §7.8). Из прочих статусов (в т.ч. терминальных) — без изменений. Вызывается сервером,
+     * поэтому без предусловия {@code If-Match}; {@code @Version} растёт как при любом изменении.
+     */
+    @Transactional
+    public void markInterviewing(Application application) {
+        if (application.getStatus() == ApplicationStatus.APPLIED) {
+            application.setStatus(ApplicationStatus.INTERVIEWING);
+            applications.save(application);
+        }
+    }
+
     private ApplicationCardResponse card(Application application) {
         return ApplicationCardResponse.of(application,
                 notes.findByApplication_IdOrderByIdDesc(application.getId()));

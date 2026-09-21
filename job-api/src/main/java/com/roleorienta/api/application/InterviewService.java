@@ -30,17 +30,21 @@ public class InterviewService {
     private final InterviewRepository interviews;
     private final ApplicationRepository applications;
     private final AppUserRepository users;
+    private final ApplicationService applicationService;
 
     public InterviewService(InterviewRepository interviews,
                             ApplicationRepository applications,
-                            AppUserRepository users) {
+                            AppUserRepository users,
+                            ApplicationService applicationService) {
         this.interviews = interviews;
         this.applications = applications;
         this.users = users;
+        this.applicationService = applicationService;
     }
 
     /**
-     * Назначить собеседование по отклику.
+     * Назначить собеседование по отклику. Побочный эффект (§45): отклик в статусе
+     * {@code APPLIED} поднимается до {@code INTERVIEWING}.
      *
      * @throws ResponseStatusException 404 (отклик чужой/не найден), 400 (таймзона/прошедшее время)
      */
@@ -57,7 +61,11 @@ public class InterviewService {
         interview.setScheduledAt(scheduledAt);
         interview.setZoneId(zoneId);
         interview.setStatus(InterviewStatus.SCHEDULED);
-        return InterviewResponse.of(interviews.save(interview));
+        Interview saved = interviews.save(interview);
+
+        // §45: назначение собеседования поднимает отклик APPLIED → INTERVIEWING.
+        applicationService.markInterviewing(application);
+        return InterviewResponse.of(saved);
     }
 
     /** Собеседования по отклику (ближайшие сверху). */

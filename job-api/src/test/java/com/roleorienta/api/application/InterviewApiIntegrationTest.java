@@ -211,4 +211,26 @@ class InterviewApiIntegrationTest {
                         .content(scheduleBody(Instant.now().plusSeconds(3600), ZONE)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void schedulingPromotesApplicationToInterviewing() throws Exception {
+        MockHttpSession session = registerAndLogin("a@example.com");
+        long applicationId = createApplication(session);
+
+        // Отклик стартует в APPLIED.
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"));
+
+        mockMvc.perform(post("/api/v1/applications/{id}/interviews", applicationId)
+                        .with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(scheduleBody(Instant.now().plusSeconds(3600), ZONE)))
+                .andExpect(status().isCreated());
+
+        // §45: назначение собеседования подняло отклик до INTERVIEWING.
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("INTERVIEWING"));
+    }
 }

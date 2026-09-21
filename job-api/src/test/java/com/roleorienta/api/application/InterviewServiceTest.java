@@ -28,7 +28,9 @@ class InterviewServiceTest {
     private final InterviewRepository interviews = mock(InterviewRepository.class);
     private final ApplicationRepository applications = mock(ApplicationRepository.class);
     private final AppUserRepository users = mock(AppUserRepository.class);
-    private final InterviewService service = new InterviewService(interviews, applications, users);
+    private final ApplicationService applicationService = mock(ApplicationService.class);
+    private final InterviewService service =
+            new InterviewService(interviews, applications, users, applicationService);
 
     private final Authentication auth = mock(Authentication.class);
     private final AppUser owner = mock(AppUser.class);
@@ -77,6 +79,7 @@ class InterviewServiceTest {
         assertEquals(InterviewStatus.SCHEDULED, captor.getValue().getStatus());
         assertEquals("SCHEDULED", response.status());
         assertEquals(ZONE, response.zoneId());
+        verify(applicationService).markInterviewing(application);
     }
 
     @Test
