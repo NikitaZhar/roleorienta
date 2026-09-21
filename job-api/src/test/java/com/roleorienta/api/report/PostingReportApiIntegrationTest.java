@@ -1,4 +1,4 @@
-package com.roleorienta.api.notification;
+package com.roleorienta.api.report;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -23,13 +23,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
- * Интеграционный тест чтения уведомлений (§40) на реальном PostgreSQL (Testcontainers,
- * схема — Flyway) через MockMvc с цепочкой безопасности. Проверяет, что пользователь
- * видит свои уведомления и не видит чужие (A23) на <b>втором</b> пользователе.
+ * Интеграционный тест жалоб на публикации (§46) на реальном PostgreSQL (Testcontainers,
+ * схема — Flyway) через MockMvc с цепочкой безопасности. Проверяет создание/список,
+ * идемпотентность, 404 на нет-публикацию, 401 без входа и приватность на <b>втором</b>
+ * пользователе (A23).
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-class NotificationApiIntegrationTest {
+class PostingReportApiIntegrationTest {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
@@ -38,7 +39,6 @@ class NotificationApiIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
-    private long companyId;
     private long postingId;
 
     private static final String PASSWORD = "password123";
@@ -57,8 +57,6 @@ class NotificationApiIntegrationTest {
                 "INSERT INTO source (provider_id, kind, external_ref, base_url, state) "
                         + "VALUES (?, 'COMPANY_BOARD','acme','http://stub','ACTIVE') RETURNING id",
                 Long.class, providerId);
-        companyId = jdbcTemplate.queryForObject(
-                "INSERT INTO company (name) VALUES ('Acme Inc') RETURNING id", Long.class);
         postingId = jdbcTemplate.queryForObject(
                 "INSERT INTO job_posting (source_id, external_id, url, raw_title, first_seen_at, last_seen_at) "
                         + "VALUES (?, 'P1','http://stub/P1','Posting 1', now(), now()) RETURNING id",
@@ -70,8 +68,12 @@ class NotificationApiIntegrationTest {
         cleanDatabase();
     }
 
-    /** FK-безопасная очистка: дети job_posting/company/app_user — перед ними (урок §33.8). */
+    /** FK-безопасная очистка: posting_report — перед job_posting и app_user (§33.8). */
     private void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM posting_report");
+        jdbcTemplate.update("DELETE FROM interview");
+        jdbcTemplate.update("DELETE FROM application_note");
+        jdbcTemplate.update("DELETE FROM application");
         jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM company_subscription");
         jdbcTemplate.update("DELETE FROM saved_posting");
@@ -81,7 +83,6 @@ class NotificationApiIntegrationTest {
         jdbcTemplate.update("DELETE FROM pending_change");
         jdbcTemplate.update("DELETE FROM company_source");
         jdbcTemplate.update("DELETE FROM employer_candidate");
-        jdbcTemplate.update("DELETE FROM posting_report");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM source");
         jdbcTemplate.update("DELETE FROM company");
@@ -106,38 +107,71 @@ class NotificationApiIntegrationTest {
         return (MockHttpSession) login.getRequest().getSession(false);
     }
 
-    private long userId(String email) {
-        return jdbcTemplate.queryForObject(
-                "SELECT id FROM app_user WHERE lower(email) = lower(?)", Long.class, email);
-    }
-
-    private void insertNotification(long appUserId) {
-        jdbcTemplate.update(
-                "INSERT INTO notification (app_user_id, job_posting_id, company_id, field_name) "
-                        + "VALUES (?, ?, ?, 'salary_min')",
-                appUserId, postingId, companyId);
+    private String reportBody(String reason, String comment) {
+        return "{\"reason\":\"" + reason + "\",\"comment\":\"" + comment + "\"}";
     }
 
     @Test
-    void userSeesOwnNotifications() throws Exception {
+    void reportAndListOwn() throws Exception {
         MockHttpSession session = registerAndLogin("a@example.com");
-        insertNotification(userId("a@example.com"));
 
-        mockMvc.perform(get("/api/v1/notifications").session(session))
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", postingId).with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("BROKEN_LINK", "ссылка ведёт на 404")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reason").value("BROKEN_LINK"))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.postingId").value(postingId));
+
+        mockMvc.perform(get("/api/v1/reports").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].postingId").value(postingId))
-                .andExpect(jsonPath("$[0].companyId").value(companyId))
-                .andExpect(jsonPath("$[0].fieldName").value("salary_min"));
+                .andExpect(jsonPath("$[0].reason").value("BROKEN_LINK"));
     }
 
     @Test
-    void notificationsArePrivateToOwner() throws Exception {
-        registerAndLogin("a@example.com");
-        insertNotification(userId("a@example.com"));
+    void repeatedReportIsIdempotent() throws Exception {
+        MockHttpSession session = registerAndLogin("a@example.com");
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", postingId).with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("DUPLICATE", "дубль"))).andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", postingId).with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("OUTDATED", "устарела"))).andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/reports").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].reason").value("DUPLICATE"));
+    }
+
+    @Test
+    void reportMissingPostingIsNotFound() throws Exception {
+        MockHttpSession session = registerAndLogin("a@example.com");
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", 999999L).with(csrf()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("OTHER", "нет такой")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unauthenticatedReportIsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", postingId).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("BROKEN_LINK", "аноним")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void reportsArePrivateToOwner() throws Exception {
+        MockHttpSession first = registerAndLogin("a@example.com");
+        mockMvc.perform(post("/api/v1/postings/{id}/reports", postingId).with(csrf()).session(first)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reportBody("BROKEN_LINK", "моя жалоба")))
+                .andExpect(status().isCreated());
 
         MockHttpSession second = registerAndLogin("b@example.com");
-        mockMvc.perform(get("/api/v1/notifications").session(second))
+        mockMvc.perform(get("/api/v1/reports").session(second))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }

@@ -68,6 +68,7 @@ class SavedPostingApiIntegrationTest {
         jdbcTemplate.update("DELETE FROM posting_skill");
         jdbcTemplate.update("DELETE FROM posting_language");
         jdbcTemplate.update("DELETE FROM posting_revision");
+        jdbcTemplate.update("DELETE FROM posting_report");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM source");
         jdbcTemplate.update("DELETE FROM provider");

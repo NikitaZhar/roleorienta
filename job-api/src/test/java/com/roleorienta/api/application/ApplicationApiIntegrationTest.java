@@ -87,6 +87,7 @@ class ApplicationApiIntegrationTest {
         jdbcTemplate.update("DELETE FROM pending_change");
         jdbcTemplate.update("DELETE FROM company_source");
         jdbcTemplate.update("DELETE FROM employer_candidate");
+        jdbcTemplate.update("DELETE FROM posting_report");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM source");
         jdbcTemplate.update("DELETE FROM company");
