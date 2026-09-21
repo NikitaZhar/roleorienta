@@ -2199,6 +2199,129 @@ production строго запрещает приватные/loopback). `SsrfGu
 обнаружении админ подаёт slug вручную, внешнего пользовательского ввода URL в dev нет.
 В production флаг не задаётся — защита §32 действует в полную силу.
 
+## 35. Авто-подключение по гейту уверенности (§5, §6, ADR-6)
+
+Продолжение §33: гейт уверенности из ADR-6 доведён до конца. Раньше все кандидаты
+шли в очередь на ручное подтверждение; теперь уверенный кандидат подключается сам.
+
+Новые/изменённые файлы:
+
+```
+job-worker/.../discovery/EmployerSourceRegistrar.java        # НОВЫЙ: материализация источника
+job-worker/.../discovery/ProviderRepository.java             # НОВЫЙ
+job-worker/.../discovery/CompanyRepository.java              # НОВЫЙ
+job-worker/.../discovery/CompanySourceRepository.java        # НОВЫЙ
+job-worker/.../scheduling/SourceRepository.java              # изменён: + findByProvider_CodeAndExternalRef (дедуп)
+job-worker/.../discovery/DiscoverEmployerJobHandler.java     # изменён: ветка HIGH → авто-подключение
+```
+
+### 35.1 Гейт
+
+- **HIGH** (лента валидна и непуста) → `EmployerSourceRegistrar` заводит `Company`,
+  `Source` в состоянии `ACTIVE` и `CompanySource` с `verifiedBy=AUTO`; кандидат
+  сразу `CONFIRMED` со ссылками на созданные записи. Планировщик (§6) в ближайшем
+  окне ставит по новому источнику `DISCOVER_PAGE` — сбор идёт без участия человека.
+- **LOW/NONE** → кандидат `PENDING` в очереди на подтверждение (как в §33):
+  «неуверенный не подключается вслепую и не пропадает» (ADR-6).
+
+### 35.2 Дедуп и переиспользование
+
+Дедуп кандидата (уникальность `(provider, slug)`) уже был. Регистратор дополнительно
+ищет существующий `Source` по `(provider.code, external_ref)` и переиспользует его,
+а не заводит второй (§5: одна компания/источник не заводится дважды из разных входов).
+
+### 35.3 Дублирование с ручным подтверждением
+
+Материализация в `EmployerSourceRegistrar` повторяет `EmployerDiscoveryService.confirm`
+из job-api. Дублирование намеренное: job-api и job-worker — разные приложения со
+своими репозиториями над общими сущностями core; общего сервисного слоя между ними
+нет. Обе точки создают источник одинаково (Provider find-or-create → Company →
+Source ACTIVE → CompanySource), отличается лишь `verifiedBy` (AUTO против MANUAL).
+
+### 35.4 Что проверяют тесты
+
+`DiscoverEmployerJobHandlerTest` (Mockito) дополнен: HIGH → вызван регистратор,
+кандидат `CONFIRMED` с `sourceId`; LOW/NONE → регистратор не вызван, кандидат
+`PENDING`; дедуп — ни реестр, ни регистратор не тронуты. `EmployerSourceRegistrarTest`
+(Mockito): создаётся `Source` ACTIVE + `CompanySource` AUTO, провайдер find-or-create;
+дедуп — существующий источник переиспользуется без создания.
+
+### 35.5 README, миграции, job-api (§0.2)
+
+Миграций нет (модель §33 не менялась). job-api не меняется: авто-подключённые
+кандидаты приходят в список уже `CONFIRMED`, `confirm`/`reject` на них дают `409`
+(как и было). README не затронут — внутренняя доменная логика.
+
+### 35.6 Что НЕ вошло (следующие срезы)
+
+Конфигурируемый порог/флаг гейта (сейчас HIGH подключается всегда); имя компании из
+ленты (сейчас — slug, имя из feed не извлекается); бюджет обнаружения и лимит fan-out
+(A29); автоматический вход-гарвест ATS-хостов (Common Crawl / Certificate Transparency,
+A11) — основной источник кандидатов пилота; вынос общей материализации источника в
+переиспользуемый модуль, если дублирование с job-api начнёт расходиться.
+
+## 36. Гарвест-вход обнаружения (batch fan-out) + бюджет A29 (§5, §6, ADR-6)
+
+Замыкает автоматический путь обнаружения: кандидаты появляются без ручного триггера.
+Раньше `DISCOVER_EMPLOYER` ставился только вручную (админ по одному slug) — теперь их
+периодически подаёт гарвест.
+
+Новые/изменённые файлы:
+
+```
+job-worker/.../discovery/DiscoveryHarvestProperties.java   # НОВЫЙ: seed + бюджет (config)
+job-worker/.../discovery/DiscoveryHarvestScheduler.java     # НОВЫЙ: проход под leader-lock
+job-worker/.../discovery/DiscoveryHarvestTrigger.java       # НОВЫЙ: периодический тик
+job-worker/.../JobWorkerApplication.java                    # изменён: @EnableConfigurationProperties
+job-worker/src/main/resources/application.yml               # изменён: app.discovery.harvest.*
+job-worker/src/test/resources/application-test.properties   # изменён: harvest.enabled=false
+```
+
+### 36.1 Источник кандидатов — курируемый seed (config)
+
+На пилоте кандидаты берутся из seed в конфигурации: список `provider/slug/baseUrl`
+(`app.discovery.harvest.seed`). Это соответствует Этапу 0 («предзаготовить курируемый
+список работодателей»). Публичные датасеты (Common Crawl / Certificate Transparency,
+A11) — следующий срез: они тяжелее и требуют проверки прав повторного использования
+(A24). Пайплайн гарвест → `DISCOVER_EMPLOYER` → гейт (§35) от источника кандидатов не
+зависит — реальный вход подключается на то же место.
+
+### 36.2 Проход под leader-lock через outbox
+
+`DiscoveryHarvestScheduler.runOnce()` идёт под advisory-локом (ключ 1002, отдельный от
+планировщика источников 1001), так что при нескольких репликах гарвестит одна. Для
+каждого seed-кандидата без записи `EmployerCandidate` ставит `DISCOVER_EMPLOYER` в
+`outbox_event` — тем же transactional-outbox механизмом, что и `SourceScheduler`.
+Триггер (`@Scheduled`) отделён от планировщика, чтобы проход можно было вызвать
+напрямую в тестах; в интеграционных тестах отключается `harvest.enabled=false`.
+
+### 36.3 Бюджет fan-out (A29) и дедуп
+
+За один проход ставится не более `app.discovery.harvest.max-fan-out` заданий (по
+умолчанию 20): валидный огромный seed не даёт неограниченного размножения заданий
+(A29). Дедуп: кандидаты с уже существующей записью пропускаются (та же уникальность
+`(provider, slug)`, что в §33), повторный проход не плодит дубли.
+
+### 36.4 Что проверяют тесты
+
+`DiscoveryHarvestSchedulerTest` (Mockito): бюджет — при seed из 3 и `max-fan-out=2`
+ставится ровно 2 задания; дедуп — кандидат с существующей записью пропускается;
+пустой seed — ничего не ставится.
+
+### 36.5 README, миграции, job-api (§0.2)
+
+Миграций нет (seed — конфигурация, не таблица). job-api не меняется. README не
+затронут: набор модулей, стек, команды сборки/запуска и порты прежние — добавлен лишь
+внутренний фоновый процесс и ключи конфигурации.
+
+### 36.6 Что НЕ вошло (следующие срезы)
+
+Реальный вход-гарвест из публичных датасетов (Common Crawl CDX / Certificate
+Transparency, A11) на то же место пайплайна; основание доступа и повторного
+использования на источник (A24); per-host/провайдер rate-limit гарвеста; seed как
+курируемая таблица в БД (сейчас — конфигурация); вторичные входы (резолв по домену,
+связи); предложения компаний пользователями.
+
 ## Куда смотреть дальше
 
 - Справочник Spring Boot: https://docs.spring.io/spring-boot/index.html
