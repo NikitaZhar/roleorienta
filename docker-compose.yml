@@ -97,6 +97,9 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-roleorienta}
       SERVER_PORT: "8081"
       SOURCE_STUB_BASE_URL: http://source-stub:8080
+      # Заглушка-источник в приватной сети compose — доверенная локальная
+      # интеграция (A13). Только для local-pilot; в production не задаётся.
+      APP_COLLECT_HTTP_ALLOW_PRIVATE_ADDRESSES: "true"
     ports:
       - "8081:8081"
 

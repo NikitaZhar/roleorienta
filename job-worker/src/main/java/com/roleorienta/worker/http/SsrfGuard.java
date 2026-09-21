@@ -7,6 +7,8 @@ import java.net.UnknownHostException;
 import java.util.Locale;
 import org.apache.hc.client5.http.DnsResolver;
 import org.apache.hc.client5.http.SystemDefaultDnsResolver;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,9 +35,25 @@ public class SsrfGuard {
 
     private final AddressPolicy policy;
 
-    /** Продакшен-конструктор: строгая политика (приватные адреса запрещены). */
+    /** Строгая политика по умолчанию (используется в тестах). */
     public SsrfGuard() {
         this(AddressPolicy.strict());
+    }
+
+    /**
+     * Продакшен-бин. Флаг {@code app.collect.http.allow-private-addresses} по
+     * умолчанию {@code false} — строгий запрет приватных/loopback адресов. Значение
+     * {@code true} допускается ТОЛЬКО в локальной разработке, чтобы ходить к
+     * заглушке-источнику на loopback (скрипты) или в приватной сети compose
+     * (A13: отдельная доверенная конфигурация внутренней сети — не для URL из
+     * внешнего ввода). В production флаг всегда {@code false}.
+     *
+     * @param allowPrivateAddresses разрешить приватные/loopback адреса (только dev)
+     */
+    @Autowired
+    public SsrfGuard(
+            @Value("${app.collect.http.allow-private-addresses:false}") boolean allowPrivateAddresses) {
+        this(new AddressPolicy(allowPrivateAddresses));
     }
 
     /**

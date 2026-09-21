@@ -11,6 +11,7 @@ package com.roleorienta.core.domain;
  * своими обработчиками.</p>
  */
 public enum CrawlTaskType {
+    DISCOVER_EMPLOYER,
     DISCOVER_PAGE,
     FETCH_POSTING
 }
