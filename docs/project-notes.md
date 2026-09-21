@@ -2534,6 +2534,62 @@ job-api/.../notification/NotificationController.java   # НОВЫЙ
 Отметка «прочитано» (`POST /api/v1/notifications/{id}/read`); email-рассылка дайджеста;
 агрегация нескольких изменений в один дайджест и его частота; дедуп уведомлений.
 
+## 41. Отклики и заметки (§7, A23)
+
+Центральная опора пилота — путь кандидата: пользователь откликается на вакансию и ведёт
+заметки. Тот же owner-паттерн, что подписки/уведомления (сессия + проверка владельца,
+приватность на втором пользователе).
+
+Новые/изменённые файлы:
+
+```
+job-api/.../application/Application.java              # НОВЫЙ: отклик
+job-api/.../application/ApplicationStatus.java        # НОВЫЙ: статус
+job-api/.../application/ApplicationNote.java          # НОВЫЙ: заметка
+job-api/.../application/ApplicationRepository.java     # НОВЫЙ
+job-api/.../application/ApplicationNoteRepository.java # НОВЫЙ
+job-api/.../application/ApplicationDtos.java          # НОВЫЙ
+job-api/.../application/ApplicationService.java       # НОВЫЙ: owner-логика (A23)
+job-api/.../application/ApplicationController.java     # НОВЫЙ
+job-api/.../db/migration/V22__application.sql         # НОВЫЙ: application + application_note
+job-api/.../JobApiApplication.java                    # изменён: @EntityScan += application
+```
+
+### 41.1 Эндпоинты и идемпотентность
+
+`POST /api/v1/applications` (создать, `201`), `GET /api/v1/applications` (список),
+`GET /api/v1/applications/{id}` (карточка с заметками), `POST /api/v1/applications/{id}/notes`
+(добавить заметку, `201`). Создание идемпотентно: повторный отклик на ту же публикацию
+(уникальный ключ `(app_user_id, job_posting_id)`, V22) возвращает существующий отклик, не
+сбрасывая статус (§7.8). Стартовый статус — `APPLIED`.
+
+### 41.2 Приватность (A23) и почему SecurityConfig не меняется
+
+Владелец берётся только из сессии; отклики и заметки читаются/меняются по id владельца.
+Доступ к чужому отклику даёт `404` (не раскрываем существование). Существование публикации
+проверяется переиспользуемым `PostingReadRepository` (иначе `404`). Пути под
+`/api/v1/applications/**` уже требуют входа по `anyRequest().authenticated()` — правки
+безопасности не нужны.
+
+### 41.3 Что проверяют тесты
+
+`ApplicationServiceTest` (Mockito): создание, идемпотентность (существующий не
+перезаписывается), 404 на нет-публикацию, 404 на чужой отклик, добавление заметки.
+`ApplicationApiIntegrationTest` (Testcontainers + MockMvc + `springSecurity()`):
+создать → список → карточка с заметкой; повторный отклик идемпотентен; **второй
+пользователь не видит чужого отклика и получает 404 по его id (A23)**. Тест сам убирает
+за собой в `@AfterEach` (FK-безопасный порядок), урок §33.8 учтён.
+
+### 41.4 README (§0.2)
+
+Не меняется: внутренняя пользовательская функция; эндпоинты в README не процитированы.
+
+### 41.5 Что НЕ вошло (следующие срезы)
+
+Переходы статусов и `PATCH /applications/{id}` с `If-Match`/версией (§7, A19); интервью
+(`POST /applications/{id}/interviews`, timezone/перенос/отмена); правка/удаление заметок;
+повторный отклик на репост как отдельная семантика; «откликнись напрямую» для дублей.
+
 ## Куда смотреть дальше
 
 - Справочник Spring Boot: https://docs.spring.io/spring-boot/index.html
