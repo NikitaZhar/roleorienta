@@ -8,6 +8,7 @@ import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -91,6 +92,51 @@ public class SourceHttpClient {
         ssrfGuard.checkScheme(url);
         try {
             return restClient.get().uri(url).retrieve().body(String.class);
+        } catch (RuntimeException e) {
+            throw unwrapSsrf(e);
+        }
+    }
+
+    /**
+     * Выполняет GET с {@code Accept: application/json} и возвращает тело ответа.
+     * Нужен для лент/деталей, отдающих JSON только при явном {@code Accept} (напр.
+     * Workday cxs detail-endpoint). Проходит тот же SSRF-контур, что и {@link #getBody}.
+     *
+     * @param url полный адрес запроса
+     * @return тело ответа
+     * @throws SsrfBlockedException если схема запрещена или адрес не проходит проверку A13
+     */
+    public String getJson(String url) {
+        ssrfGuard.checkScheme(url);
+        try {
+            return restClient.get().uri(url).accept(MediaType.APPLICATION_JSON).retrieve().body(String.class);
+        } catch (RuntimeException e) {
+            throw unwrapSsrf(e);
+        }
+    }
+
+    /**
+     * Выполняет POST с JSON-телом ({@code Content-Type}/{@code Accept: application/json})
+     * и возвращает тело ответа. Нужен для лент, у которых список отдаётся POST-запросом
+     * (напр. Workday: {@code /wday/cxs/{tenant}/{site}/jobs}). Обязателен как
+     * <b>единственная</b> точка исходящих запросов сбора — идёт через тот же
+     * SSRF-защищённый клиент, что и GET (§9, A13): {@code Jsoup.connect}, сторонний SDK
+     * или отдельный raw-клиент этот путь обходить не должны.
+     *
+     * @param url      полный адрес запроса
+     * @param jsonBody тело запроса (сериализованный JSON)
+     * @return тело ответа
+     * @throws SsrfBlockedException если схема запрещена или адрес не проходит проверку A13
+     */
+    public String postJson(String url, String jsonBody) {
+        ssrfGuard.checkScheme(url);
+        try {
+            return restClient.post().uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(jsonBody)
+                    .retrieve()
+                    .body(String.class);
         } catch (RuntimeException e) {
             throw unwrapSsrf(e);
         }

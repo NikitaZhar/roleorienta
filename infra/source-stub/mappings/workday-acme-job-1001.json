@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "note": "Деталь вакансии Workday (cxs detail-endpoint, GET JSON, Accept: application/json). Локация и описание (jobDescription, HTML) есть; структурной зарплаты Workday не отдаёт — зарплата и языки извлекаются из текста описания (§6, A07/A09). Настоящая дата — startDate."
+  },
+  "request": {
+    "method": "GET",
+    "urlPath": "/wday/cxs/acme/careers/job/Bratislava/Senior-Java-Engineer_JR-1001"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "jobPostingInfo": {
+        "title": "Senior Java Engineer",
+        "location": "Bratislava, Slovakia",
+        "startDate": "2026-09-01",
+        "country": { "descriptor": "Slovakia" },
+        "jobDescription": "<p>We are hiring a Senior Java Engineer for our backend platform.</p><p>Spring Boot and PostgreSQL are required. Kubernetes (k8s) is a plus.</p><p>Fluent English is required; Slovak is a plus.</p><p>5+ years of experience expected.</p>"
+      }
+    }
+  }
+}
