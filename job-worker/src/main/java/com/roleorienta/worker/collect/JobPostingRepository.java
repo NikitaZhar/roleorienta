@@ -56,4 +56,17 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
      * @return публикация, если найдена
      */
     Optional<JobPosting> findBySource_IdAndExternalId(Long sourceId, String externalId);
+
+    /**
+     * Какие из перечисленных публикаций источника уже имеют деталь — чтобы в бюджете
+     * деталей новые шли первыми (§63).
+     *
+     * @param sourceId    источник
+     * @param externalIds идентификаторы публикаций
+     * @return идентификаторы публикаций с уже полученной деталью
+     */
+    @Query("SELECT p.externalId FROM JobPosting p WHERE p.source.id = :sourceId "
+            + "AND p.externalId IN :externalIds AND p.detailFetchedAt IS NOT NULL")
+    java.util.List<String> findDetailedExternalIds(@Param("sourceId") Long sourceId,
+                                                   @Param("externalIds") java.util.Collection<String> externalIds);
 }

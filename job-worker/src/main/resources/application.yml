@@ -63,6 +63,14 @@ app:
     # Потолок страниц ленты источника за один обход DISCOVER_PAGE (§62; Workday — 20 на
     # страницу). Лента читается только в области целевого рынка (app.discovery.market).
     max-list-pages: 10
+    niche:
+      # Ниша пилота (§63): деталь (отдельный запрос на вакансию) — только для заголовков с
+      # этими словами (целым словом, без учёта регистра); exclude сильнее include. Списки
+      # временные — в продукте ниша задаётся иначе, механизм отбора тот же.
+      include: "Java,Kotlin,Scala,JVM,Spring,Backend,Back-end,Software Engineer,Software Developer,Platform,DevOps,SRE,Site Reliability,Cloud,Microservices,Architect"
+      exclude: "SAP,Sales,Marketing,Clinical,Intern,Internship,Accountant,Accounting,Technician"
+      # Максимум запросов детали на источник за сутки (UTC); новые вакансии — первыми.
+      daily-detail-budget: 30
   outbox:
     # Публикатор outbox включён по умолчанию; в тестах отключается (пачки
     # запускаются вручную).

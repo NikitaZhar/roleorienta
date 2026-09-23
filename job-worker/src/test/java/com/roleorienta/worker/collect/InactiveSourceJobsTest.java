@@ -67,7 +67,8 @@ class InactiveSourceJobsTest {
         when(runs.findById(5L)).thenReturn(Optional.of(run));
 
         new DiscoverPageJobHandler(sources, runs, tasks, postings, outbox, adapters,
-                com.roleorienta.worker.discovery.DiscoveryMarketProperties.ofCountries(java.util.List.of("Austria")), 10).handle(new JobMessage("k",
+                com.roleorienta.worker.discovery.DiscoveryMarketProperties.ofCountries(java.util.List.of("Austria")), 10,
+                new NicheFilterProperties(java.util.List.of("Java", "Backend", "Software Engineer"), java.util.List.of("SAP", "Intern"), 30), java.time.Clock.systemUTC()).handle(new JobMessage("k",
                 "DISCOVER_PAGE", "{\"taskId\":1,\"sourceId\":9,\"crawlRunId\":5}"));
 
         verifyNoInteractions(adapters, outbox);

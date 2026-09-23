@@ -2,8 +2,8 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-22
-Статус: сбор только по рынку (§62) — MarketScope из app.discovery.market; WorkdayAdapter.listPostings(source, cursor, scope): фасеты без фильтра → id рыночных стран (иначе однозначных локаций) → список с appliedFacets, фильтр в курсоре; нет рынка → пусто; DISCOVER_PAGE читает все страницы до потолка app.collect.max-list-pages. Greenhouse не затронут. Компиляция/тесты в среде ИИ не запускались — их выполняет владелец.
-Прежний статус: прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
+Статус: ниша и бюджет деталей (§63) — в ленту сохраняются все публикации рынка, FETCH_POSTING только для заголовков ниши (app.collect.niche include/exclude, целым словом, exclude сильнее) и не больше daily-detail-budget на источник за сутки UTC, новые первыми. Компиляция/тесты в среде ИИ не запускались — их выполняет владелец.
+Прежний статус: сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -3698,6 +3698,57 @@ Developer - Cybersecurity», «Software Engineer for Dependable Systems») — �
 Отбор ниши по заголовку (деталь только для backend/JVM) и дневной бюджет деталей
 (свежие первыми); проверка на стенде — `target/stand-collect.sh` (5 досок: IQVIA, Hitachi,
 DXC — фильтр по странам; Snap, Ecolab — по локациям).
+
+## §63 — Ниша и дневной бюджет деталей
+
+Пилот §62 показал: из 76 вакансий SK/AT у 5 работодателей в нише backend/JVM — единицы
+(SAP-консультанты, клинические исследования, продажи). Деталь — отдельный HTTP-запрос на
+вакансию — уходила в основном впустую. Это второй из двух лимитов §56: **бюджет внимания**.
+
+### 63.1 Код
+
+- `collect/NicheFilterProperties` (`app.collect.niche`): `include` (Java, Kotlin, Scala, JVM,
+  Spring, Backend, Software Engineer/Developer, Platform, DevOps, SRE, Cloud, Microservices,
+  Architect), `exclude` (SAP, Sales, Marketing, Clinical, Intern, Accountant, Technician …),
+  `daily-detail-budget: 30`. Совпадение целым словом/фразой без учёта регистра («Java» ≠
+  «JavaScript»); `exclude` сильнее («Senior SAP HCM Full-Stack Developer» — вне ниши);
+  пустой `include` — ниша не ограничена. **Списки временные** (решение владельца): в продукте
+  ниша задаётся иначе (типовые названия ролей, профиль пользователя) — механизм тот же.
+- `DiscoverPageJobHandler`: все публикации рынка сохраняются (`upsert`, дёшево); `FETCH_POSTING`
+  — только для ниши и в пределах остатка бюджета источника за сутки UTC
+  (`CrawlTaskRepository.countByTypeForSourceSince`); порядок — сначала без детали
+  (`JobPostingRepository.findDetailedExternalIds`), затем перечитывание известных. Лог:
+  «обнаружено N, в нише M, поставлено K (остальные — вне дневного бюджета)».
+- `CollectClockConfig` — бин `Clock` (UTC), чтобы граница суток проверялась в тестах.
+
+### 63.2 Что проверяют тесты
+
+`NicheDetailBudgetTest` (моки, реальные заголовки из пилота §62): фильтр заголовков (SAP,
+Intern — вне; «Software Developer - Cybersecurity», «Product Owner - DevOps» — в нише;
+«JavaScript» ≠ Java; пустая ниша — всё); 7 публикаций сохранены, деталь — 3 (бюджет) новых
+из 4 нишевых, уже детализированная — в конец и не влезает; окно бюджета — сутки UTC,
+исчерпанный бюджет — ни одной детали. `DiscoverPageMarketCollectionTest`,
+`InactiveSourceJobsTest` — обновлены конструкторы. Компиляция/тесты в среде ИИ не
+запускались — их выполняет владелец.
+
+### 63.2a Стенд (5 досок, 4 мин)
+
+76 вакансий рынка сохранены в ленту, в нише — **6**, деталь запрошена только для них:
+DXC 2 из 16 («Senior Technical Architect - Healthcare», «Senior Business Architect -
+Healthcare»), Hitachi 3 из 18 («Software Engineer for Dependable Systems», «Software
+Developer - Cybersecurity», «Product Owner / Lead - DevOps Team»), Snap 1 из 3
+(«Software Engineer, CV»), IQVIA 0 из 36, Ecolab 0 из 3. Запросов детали — в ~13 раз
+меньше. Шум: «Business Architect» проходит по слову Architect — уточнение списка ниши
+(«Software/Solution/Technical Architect») — при настройке ниши в продукте. За 4 мин прошло
+два обхода (граница окна планировщика): второй перечитал те же 6 деталей — при
+`daily-detail-budget: 30` перечитывание ограничено бюджетом; частота перечитывания
+известных вакансий — отдельная настройка (позже).
+
+### 63.3 Что НЕ вошло
+
+Свежесть по дате публикации (`postedOn` — строка «Posted 3 Days Ago», `startDate` — только
+в детали): сейчас «новые первыми» = ещё без детали; перенос бюджета на следующие сутки не
+нужен — непрочитанные ниши возьмёт следующий обход. Стенд — `target/stand-niche.sh`.
 
 ## Куда смотреть дальше
 

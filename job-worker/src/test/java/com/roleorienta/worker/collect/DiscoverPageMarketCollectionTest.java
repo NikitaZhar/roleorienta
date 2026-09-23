@@ -68,7 +68,8 @@ class DiscoverPageMarketCollectionTest {
 
     private DiscoverPageJobHandler handler(int maxPages) {
         return new DiscoverPageJobHandler(sources, runs, tasks, postings, outbox, adapters,
-                DiscoveryMarketProperties.ofCountries(List.of("Slovakia", "Austria")), maxPages);
+                DiscoveryMarketProperties.ofCountries(List.of("Slovakia", "Austria")), maxPages,
+                new NicheFilterProperties(java.util.List.of("Java", "Backend", "Software Engineer"), java.util.List.of("SAP", "Intern"), 30), java.time.Clock.systemUTC());
     }
 
     private static PostingsPage page(String cursor, String... ids) {

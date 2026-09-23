@@ -22,7 +22,11 @@ import com.roleorienta.worker.scheduling.CrawlTaskRepository;
 import com.roleorienta.worker.scheduling.SourceRepository;
 import com.roleorienta.worker.adapters.MarketScope;
 import com.roleorienta.worker.discovery.DiscoveryMarketProperties;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -47,6 +51,11 @@ import org.springframework.stereotype.Component;
  * единицы-десятки вместо тысяч. Страницы читаются по курсору до его конца, но не больше
  * {@code app.collect.max-list-pages} за обход (бюджет запросов, A29).</p>
  *
+ * <p><b>Ниша и бюджет деталей (§63).</b> В ленту сохраняются все публикации рынка, но
+ * {@code FETCH_POSTING} (отдельный запрос детали) ставится только для заголовков ниши
+ * ({@link NicheFilterProperties}) и не больше дневного бюджета на источник; новые
+ * (ещё без детали) — первыми, перечитывание уже известных — на остаток бюджета.</p>
+ *
  * <p><b>Границы транзакции (пилот, Этап 1).</b> Метод вызывается внутри транзакции
  * слушателя (общей с фиксацией ключа идемпотентности), поэтому HTTP-вызов адаптера
  * происходит в этой же транзакции. Разнесение HTTP и записи в БД по разным
@@ -65,6 +74,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
     private final SourceAdapterRegistry adapterRegistry;
     private final MarketScope marketScope;
     private final int maxListPages;
+    private final NicheFilterProperties niche;
+    private final Clock clock;
 
     /** Разбор и формирование тел заданий (JSON). Создаётся локально (как в {@code SourceScheduler}). */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -78,6 +89,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
      * @param adapterRegistry       реестр адаптеров источников
      * @param market                целевой рынок (область сбора, §62)
      * @param maxListPages          потолок страниц ленты за один обход
+     * @param niche                 ниша и дневной бюджет деталей (§63)
+     * @param clock                 часы (граница суток бюджета — UTC)
      */
     public DiscoverPageJobHandler(
             SourceRepository sourceRepository,
@@ -87,7 +100,9 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
             OutboxEventRepository outboxEventRepository,
             SourceAdapterRegistry adapterRegistry,
             DiscoveryMarketProperties market,
-            @Value("${app.collect.max-list-pages:10}") int maxListPages) {
+            @Value("${app.collect.max-list-pages:10}") int maxListPages,
+            NicheFilterProperties niche,
+            Clock clock) {
         this.sourceRepository = sourceRepository;
         this.crawlRunRepository = crawlRunRepository;
         this.crawlTaskRepository = crawlTaskRepository;
@@ -96,6 +111,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
         this.adapterRegistry = adapterRegistry;
         this.marketScope = market.toScope();
         this.maxListPages = maxListPages;
+        this.niche = niche;
+        this.clock = clock;
     }
 
     @Override
@@ -142,7 +159,7 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
                     source.getId(), maxListPages);
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         for (DiscoveredPosting posting : discovered) {
             jobPostingRepository.upsert(
                     source.getId(),
@@ -150,7 +167,15 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
                     posting.url(),
                     posting.rawTitle(),
                     now);
-            scheduleFetch(run, source.getId(), posting.externalId());
+        }
+        List<String> nicheIds = discovered.stream()
+                .filter(p -> niche.matches(p.rawTitle()))
+                .map(DiscoveredPosting::externalId)
+                .distinct()
+                .toList();
+        List<String> toFetch = withinBudget(source.getId(), nicheIds, now);
+        for (String externalId : toFetch) {
+            scheduleFetch(run, source.getId(), externalId);
         }
 
         run.setState(CrawlRunState.COMPLETED);
@@ -161,9 +186,32 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
         task.setState(CrawlTaskState.SUCCEEDED);
         crawlTaskRepository.save(task);
 
-        log.info("DISCOVER_PAGE: источник {} ({}){}, страниц {}, обнаружено публикаций {}, поставлено FETCH_POSTING {}",
+        log.info("DISCOVER_PAGE: источник {} ({}){}, страниц {}, обнаружено публикаций {}, в нише {}, "
+                        + "поставлено FETCH_POSTING {}{}",
                 source.getId(), source.getProvider().getCode(), marketScope.restricted() ? " [рынок]" : "",
-                pages, discovered.size(), discovered.size());
+                pages, discovered.size(), nicheIds.size(), toFetch.size(),
+                toFetch.size() < nicheIds.size() ? " (остальные — вне дневного бюджета)" : "");
+    }
+
+    /**
+     * Публикации ниши в пределах остатка дневного бюджета деталей источника: сначала новые
+     * (без детали), затем уже известные (перечитывание ради изменений).
+     */
+    private List<String> withinBudget(Long sourceId, List<String> nicheIds, Instant now) {
+        if (nicheIds.isEmpty()) {
+            return List.of();
+        }
+        Instant dayStart = now.truncatedTo(ChronoUnit.DAYS);
+        long used = crawlTaskRepository.countByTypeForSourceSince(CrawlTaskType.FETCH_POSTING, sourceId, dayStart);
+        int remaining = (int) Math.max(0, niche.dailyDetailBudget() - used);
+        if (remaining == 0) {
+            return List.of();
+        }
+        Set<String> detailed = new HashSet<>(jobPostingRepository.findDetailedExternalIds(sourceId, nicheIds));
+        List<String> ordered = new ArrayList<>(nicheIds.size());
+        nicheIds.stream().filter(id -> !detailed.contains(id)).forEach(ordered::add);
+        nicheIds.stream().filter(detailed::contains).forEach(ordered::add);
+        return ordered.subList(0, Math.min(remaining, ordered.size()));
     }
 
     /**
