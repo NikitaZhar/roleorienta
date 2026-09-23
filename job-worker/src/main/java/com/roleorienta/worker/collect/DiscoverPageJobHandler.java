@@ -8,6 +8,7 @@ import com.roleorienta.core.domain.CrawlTask;
 import com.roleorienta.core.domain.CrawlTaskState;
 import com.roleorienta.core.domain.CrawlTaskType;
 import com.roleorienta.core.domain.Source;
+import com.roleorienta.core.domain.SourceState;
 import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
@@ -93,6 +94,19 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
         CrawlRun run = crawlRunRepository.findById(payload.crawlRunId())
                 .orElseThrow(() -> new IllegalStateException(
                         "Обход не найден: id=" + payload.crawlRunId()));
+        if (source.getState() != SourceState.ACTIVE) {
+            // Источник поставлен на паузу/отключён после постановки задания (§60): обход не идёт,
+            // FETCH_POSTING не порождаются.
+            run.setState(CrawlRunState.FAILED);
+            crawlRunRepository.save(run);
+            CrawlTask task = crawlTaskRepository.findById(payload.taskId())
+                    .orElseThrow(() -> new IllegalStateException("Задание не найдено: id=" + payload.taskId()));
+            task.setState(CrawlTaskState.FAILED);
+            crawlTaskRepository.save(task);
+            log.info("DISCOVER_PAGE: источник {} в состоянии {} — обход снят без запроса",
+                    source.getId(), source.getState());
+            return;
+        }
 
         SourceAdapter adapter = adapterRegistry.forProviderCode(source.getProvider().getCode());
         PostingsPage page = adapter.listPostings(source, null);

@@ -7,6 +7,7 @@ import com.roleorienta.core.domain.CrawlTaskState;
 import com.roleorienta.core.domain.CrawlTaskType;
 import com.roleorienta.core.domain.JobPosting;
 import com.roleorienta.core.domain.Source;
+import com.roleorienta.core.domain.SourceState;
 import com.roleorienta.worker.adapters.FetchedPosting;
 import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.adapters.SourceAdapterRegistry;
@@ -78,6 +79,14 @@ public class FetchPostingJobHandler implements TypedJobHandler {
         Source source = sourceRepository.findById(payload.sourceId())
                 .orElseThrow(() -> new IllegalStateException(
                         "Источник не найден: id=" + payload.sourceId()));
+        if (source.getState() != SourceState.ACTIVE) {
+            // Источник поставлен на паузу/отключён после постановки задания (§60): задание
+            // снимается без запроса к источнику — иначе очередь дорабатывала бы остановленный сбор.
+            markTask(payload.taskId(), CrawlTaskState.FAILED);
+            log.info("FETCH_POSTING: источник {} в состоянии {} — задание снято без запроса",
+                    source.getId(), source.getState());
+            return;
+        }
 
         SourceAdapter adapter = adapterRegistry.forProviderCode(source.getProvider().getCode());
         FetchedPosting detail = adapter.getPosting(source, payload.externalId());
@@ -91,13 +100,17 @@ public class FetchPostingJobHandler implements TypedJobHandler {
         postingEnricher.enrich(posting, detail, Instant.now());
         jobPostingRepository.save(posting);
 
-        CrawlTask task = crawlTaskRepository.findById(payload.taskId())
-                .orElseThrow(() -> new IllegalStateException("Задание не найдено: id=" + payload.taskId()));
-        task.setState(CrawlTaskState.SUCCEEDED);
-        crawlTaskRepository.save(task);
+        markTask(payload.taskId(), CrawlTaskState.SUCCEEDED);
 
         log.info("FETCH_POSTING: источник {} ({}), публикация {} — деталь обработана",
                 source.getId(), source.getProvider().getCode(), payload.externalId());
+    }
+
+    private void markTask(Long taskId, CrawlTaskState state) {
+        CrawlTask task = crawlTaskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalStateException("Задание не найдено: id=" + taskId));
+        task.setState(state);
+        crawlTaskRepository.save(task);
     }
 
     /**
