@@ -17,4 +17,14 @@ public interface EmployerCandidateRepository extends JpaRepository<EmployerCandi
      * @return {@code true}, если кандидат уже существует
      */
     boolean existsByProviderCodeAndSlug(String providerCode, String slug);
+
+    /**
+     * То же без учёта регистра slug — для входов, где провайдер к регистру slug не
+     * чувствителен (Workday cxs: {@code acme/External} = {@code acme/external}, §53/§55).
+     *
+     * @param providerCode код системы найма
+     * @param slug         идентификатор доски у провайдера
+     * @return {@code true}, если кандидат уже существует в любом регистре
+     */
+    boolean existsByProviderCodeAndSlugIgnoreCase(String providerCode, String slug);
 }

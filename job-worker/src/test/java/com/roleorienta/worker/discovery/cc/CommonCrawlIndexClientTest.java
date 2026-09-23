@@ -24,7 +24,8 @@ import org.springframework.web.client.HttpServerErrorException;
 /**
  * {@link CommonCrawlIndexClient} против заглушки CDX-сервера (локальный {@link HttpServer}):
  * свежайшая коллекция из {@code collinfo.json}, число страниц ({@code showNumPages}),
- * разбор JSON Lines страницы, {@code 404} индекса = пусто, 5xx пробрасывается,
+ * разбор JSON Lines страницы, {@code 404} индекса = пусто, 5xx пробрасывается, испорченная
+ * строка в середине пропускается, оборванный ответ отвергается,
  * кодирование шаблона в запросе. Permissive {@link AddressPolicy} — только для loopback.
  */
 class CommonCrawlIndexClientTest {
@@ -56,6 +57,15 @@ class CommonCrawlIndexClientTest {
             }
         });
         server.createContext("/CC-MAIN-BROKEN-index", ex -> respond(ex, 503, "overloaded"));
+        // Испорченная строка в середине — пропускается.
+        server.createContext("/CC-MAIN-DIRTY-index", ex -> respond(ex, 200, """
+                {"url": "https://a.wd1.myworkdayjobs.com/One"}
+                {"url": "https://b.wd1.myworkd
+                {"url": "https://c.wd1.myworkdayjobs.com/Three"}
+                """));
+        // Оборванный ответ: последняя строка — неполный JSON (сервер закрыл соединение).
+        server.createContext("/CC-MAIN-TRUNC-index", ex -> respond(ex, 200,
+                "{\"url\": \"https://a.wd1.myworkdayjobs.com/One\"}\n{\"url\": \"https://b.wd1.myworkdayjobs.com/Tw"));
         server.start();
         SourceHttpClient http = new SourceHttpClient(new SsrfGuard(new AddressPolicy(true)), 1000, 1000, 5);
         client = new CommonCrawlIndexClient(http, "http://127.0.0.1:" + server.getAddress().getPort() + "/");
@@ -73,30 +83,45 @@ class CommonCrawlIndexClientTest {
 
     @Test
     void pageCountFromShowNumPages() {
-        assertEquals(7, client.pageCount("CC-MAIN-2026-39", "*.myworkdayjobs.com"));
+        assertEquals(7, client.pageCount("CC-MAIN-2026-39", "*.myworkdayjobs.com", 1));
         assertTrue(lastQuery.get().contains("url=*.myworkdayjobs.com"), lastQuery.get());
     }
 
     @Test
     void urlsOnPageParsesJsonLinesAndSkipsBlankOrForeignLines() {
-        List<String> urls = client.urlsOnPage("CC-MAIN-2026-39", "*.myworkdayjobs.com", 3);
+        List<String> urls = client.urlsOnPage("CC-MAIN-2026-39", "*.myworkdayjobs.com", 1, 3);
 
         assertEquals(List.of(
                 "https://amgen.wd1.myworkdayjobs.com/en-US/Careers/job/x",
                 "https://3m.wd1.myworkdayjobs.com/Search"), urls);
-        assertTrue(lastQuery.get().contains("fl=url") && lastQuery.get().contains("page=3"), lastQuery.get());
+        assertTrue(lastQuery.get().contains("fl=url") && lastQuery.get().contains("&page=3")
+                && lastQuery.get().contains("pageSize=1"), lastQuery.get());
     }
 
     @Test
     void noCapturesIsEmptyNotError() {
-        assertEquals(0, client.pageCount("CC-MAIN-2026-39", "*.nothing.example"));
-        assertTrue(client.urlsOnPage("CC-MAIN-2026-39", "*.nothing.example", 0).isEmpty());
+        assertEquals(0, client.pageCount("CC-MAIN-2026-39", "*.nothing.example", 1));
+        assertTrue(client.urlsOnPage("CC-MAIN-2026-39", "*.nothing.example", 1, 0).isEmpty());
+    }
+
+    @Test
+    void malformedMiddleLineIsSkipped() {
+        assertEquals(List.of("https://a.wd1.myworkdayjobs.com/One", "https://c.wd1.myworkdayjobs.com/Three"),
+                client.urlsOnPage("CC-MAIN-DIRTY", "*.myworkdayjobs.com", 1, 0));
+    }
+
+    @Test
+    void truncatedResponseIsRejectedNotSilentlyShortened() {
+        CommonCrawlIndexClient.IncompleteIndexPageException e = assertThrows(
+                CommonCrawlIndexClient.IncompleteIndexPageException.class,
+                () -> client.urlsOnPage("CC-MAIN-TRUNC", "*.myworkdayjobs.com", 1, 2));
+        assertTrue(e.getMessage().contains("стр. 2") && e.getMessage().contains("разобрано URL 1"), e.getMessage());
     }
 
     @Test
     void serverErrorPropagates() {
         assertThrows(HttpServerErrorException.class,
-                () -> client.urlsOnPage("CC-MAIN-BROKEN", "*.myworkdayjobs.com", 0));
+                () -> client.urlsOnPage("CC-MAIN-BROKEN", "*.myworkdayjobs.com", 1, 0));
     }
 
     private static void respond(HttpExchange ex, int status, String body) throws IOException {

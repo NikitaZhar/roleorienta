@@ -1,14 +1,8 @@
 package com.roleorienta.worker.discovery;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.roleorienta.core.domain.CrawlTaskType;
 import com.roleorienta.worker.discovery.DiscoveryHarvestProperties.SeedEntry;
 import com.roleorienta.worker.lock.PostgresLeaderLock;
-import com.roleorienta.worker.outbox.OutboxEvent;
 import com.roleorienta.worker.outbox.OutboxEventRepository;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -41,7 +35,6 @@ public class DiscoveryHarvestScheduler {
     private final EmployerCandidateRepository candidateRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final PostgresLeaderLock leaderLock;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public DiscoveryHarvestScheduler(
             DiscoveryHarvestProperties properties,
@@ -78,28 +71,11 @@ public class DiscoveryHarvestScheduler {
             if (candidateRepository.existsByProviderCodeAndSlug(entry.providerCode(), entry.slug())) {
                 continue;
             }
-            outboxEventRepository.save(new OutboxEvent(
-                    "EmployerCandidate",
-                    entry.slug(),
-                    CrawlTaskType.DISCOVER_EMPLOYER.name(),
-                    payload(entry),
-                    null));
+            outboxEventRepository.save(
+                    DiscoverEmployerPayload.event(entry.providerCode(), entry.slug(), entry.baseUrl()));
             enqueued++;
         }
         log.info("Гарвест обнаружения: seed {}, бюджет {}, поставлено DISCOVER_EMPLOYER {}",
                 properties.seed().size(), budget, enqueued);
-    }
-
-    private String payload(SeedEntry entry) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("providerCode", entry.providerCode());
-        body.put("slug", entry.slug());
-        body.put("baseUrl", entry.baseUrl());
-        body.put("type", CrawlTaskType.DISCOVER_EMPLOYER.name());
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload DISCOVER_EMPLOYER", e);
-        }
     }
 }

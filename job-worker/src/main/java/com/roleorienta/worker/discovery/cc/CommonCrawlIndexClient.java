@@ -8,6 +8,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -33,7 +35,10 @@ import org.springframework.web.client.HttpClientErrorException;
  * тот же запрос с {@code showNumPages=true} → {@code {"pages": N, ...}}. Результаты
  * отсортированы по SURT (обратное имя хоста), поэтому полный охват требует обхода
  * страниц по курсору {@code (collection, page)} — хранение курсора и бюджет страниц за
- * проход — задача вызывающей стороны (следующий срез). Отсутствие совпадений индекс
+ * проход — задача вызывающей стороны (следующий срез). Размер страницы — параметр
+ * {@code pageSize} (в блоках индекса, ~3000 записей на блок; по умолчанию сервера — 5):
+ * крупная страница у Workday отвечает ~12 с и регулярно упирается в тайм-аут шлюза CDX
+ * ({@code 504} через ~10 с, §55.5a), поэтому вызывающий берёт страницы мельче. Отсутствие совпадений индекс
  * отдаёт как {@code 404} — это пустой результат, а не ошибка.</p>
  *
  * <p>Все запросы — через единый {@link SourceHttpClient} (SSRF-контур §9, A13). Условия
@@ -42,6 +47,8 @@ import org.springframework.web.client.HttpClientErrorException;
  */
 @Component
 public class CommonCrawlIndexClient {
+
+    private static final Logger log = LoggerFactory.getLogger(CommonCrawlIndexClient.class);
 
     private final SourceHttpClient httpClient;
     private final String baseUrl;
@@ -80,10 +87,11 @@ public class CommonCrawlIndexClient {
      *
      * @param collection идентификатор коллекции
      * @param urlPattern шаблон URL индекса (напр. {@code *.myworkdayjobs.com})
+     * @param pageSize   размер страницы в блоках индекса (должен совпадать с {@link #urlsOnPage})
      * @return число страниц; {@code 0}, если совпадений нет
      */
-    public int pageCount(String collection, String urlPattern) {
-        String body = getOrEmpty(searchUrl(collection, urlPattern) + "&showNumPages=true");
+    public int pageCount(String collection, String urlPattern, int pageSize) {
+        String body = getOrEmpty(searchUrl(collection, urlPattern, pageSize) + "&showNumPages=true");
         if (body.isBlank()) {
             return 0;
         }
@@ -93,28 +101,74 @@ public class CommonCrawlIndexClient {
     /**
      * URL одной страницы результата.
      *
+     * <p><b>Устойчивый разбор.</b> Ответ — JSON Lines объёмом ~1.5 МБ; строка, которая не
+     * разбирается как JSON, в середине ответа пропускается (с подсчётом в логе), чтобы одна
+     * испорченная запись не роняла всю страницу. Но если не разбирается <b>последняя</b>
+     * строка, ответ считается <b>оборванным</b> (сервер закрыл соединение посреди тела —
+     * известное поведение перегруженного CDX): бросается {@link IncompleteIndexPageException}
+     * и страница не засчитывается — курсор не продвигается, иначе хвост страницы был бы
+     * потерян молча.</p>
+     *
      * @param collection идентификатор коллекции
      * @param urlPattern шаблон URL индекса
+     * @param pageSize   размер страницы в блоках индекса (тот же, что в {@link #pageCount})
      * @param page       номер страницы, с {@code 0}
      * @return URL в порядке индекса (повторы возможны — дедуп у вызывающего); пусто, если совпадений нет
+     * @throws IncompleteIndexPageException если ответ оборван (последняя строка — неполный JSON)
      */
-    public List<String> urlsOnPage(String collection, String urlPattern, int page) {
-        String body = getOrEmpty(searchUrl(collection, urlPattern) + "&fl=url&page=" + page);
+    public List<String> urlsOnPage(String collection, String urlPattern, int pageSize, int page) {
+        String body = getOrEmpty(searchUrl(collection, urlPattern, pageSize) + "&fl=url&page=" + page);
+        String[] lines = body.split("\n");
+        int last = lines.length - 1;
+        while (last >= 0 && lines[last].isBlank()) {
+            last--;
+        }
         List<String> urls = new ArrayList<>();
-        for (String line : body.split("\n")) {
+        int malformed = 0;
+        for (int i = 0; i <= last; i++) {
+            String line = lines[i];
             if (line.isBlank()) {
                 continue;
             }
-            JsonNode url = parse(line).path("url");
+            JsonNode node;
+            try {
+                node = objectMapper.readTree(line);
+            } catch (JsonProcessingException e) {
+                if (i == last) {
+                    throw new IncompleteIndexPageException(String.format(
+                            "Common Crawl %s стр. %d: ответ оборван (строк %d, байт %d, разобрано URL %d, "
+                                    + "хвост: …%s)",
+                            collection, page, last + 1, body.length(), urls.size(), tail(line)));
+                }
+                malformed++;
+                continue;
+            }
+            JsonNode url = node.path("url");
             if (url.isTextual() && !url.asText().isBlank()) {
                 urls.add(url.asText());
             }
         }
+        if (malformed > 0) {
+            log.warn("Common Crawl {} стр. {}: пропущено неразборных строк {} из {}",
+                    collection, page, malformed, last + 1);
+        }
         return urls;
     }
 
-    private String searchUrl(String collection, String urlPattern) {
-        return baseUrl + "/" + enc(collection) + "-index?url=" + enc(urlPattern) + "&output=json";
+    private static String tail(String line) {
+        return line.length() <= 80 ? line : line.substring(line.length() - 80);
+    }
+
+    /** Страница индекса пришла оборванной — её нельзя засчитывать. */
+    public static class IncompleteIndexPageException extends IllegalStateException {
+        IncompleteIndexPageException(String message) {
+            super(message);
+        }
+    }
+
+    private String searchUrl(String collection, String urlPattern, int pageSize) {
+        return baseUrl + "/" + enc(collection) + "-index?url=" + enc(urlPattern) + "&output=json"
+                + "&pageSize=" + pageSize;
     }
 
     /** GET; {@code 404} индекса («No Captures found») — пустой ответ. */
