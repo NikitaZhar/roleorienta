@@ -10,7 +10,10 @@ import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.http.SourceHttpClient;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Component;
 
@@ -51,6 +54,16 @@ public class WorkdayAdapter implements SourceAdapter {
     /** Код провайдера Workday; должен совпадать с {@code Provider.code} источника. */
     public static final String PROVIDER_CODE = "workday";
 
+    /**
+     * Язык ответа списка. Workday локализует названия фасетов по {@code Accept-Language}
+     * (проверено 2026-09-23: {@code de-DE} → «Vereinigte Staaten»), а гейт рынка сверяет
+     * страны по английскому названию (§56) — поэтому язык фиксирован.
+     */
+    private static final Map<String, String> LIST_HEADERS = Map.of("Accept-Language", "en-US");
+
+    /** Фасет со странами: {@code Location_Country} (встречается и {@code locationCountry}). */
+    private static final Pattern COUNTRY_FACET = Pattern.compile("(?i).*country.*");
+
     /** Жёсткий потолок размера страницы Workday: значения выше молча дают пустой ответ. */
     private static final int PAGE_LIMIT = 20;
 
@@ -76,7 +89,7 @@ public class WorkdayAdapter implements SourceAdapter {
         int offset = parseOffset(cursor);
         String url = cxsPath(source) + "/jobs";
         String body = requestBody(offset);
-        String response = httpClient.postJson(url, body);
+        String response = httpClient.postJson(url, body, LIST_HEADERS);
         return parseList(source, response, offset);
     }
 
@@ -117,9 +130,39 @@ public class WorkdayAdapter implements SourceAdapter {
             int nextOffset = offset + PAGE_LIMIT;
             String nextCursor = (!postings.isEmpty() && nextOffset < total)
                     ? String.valueOf(nextOffset) : null;
-            return new PostingsPage(postings, nextCursor);
+            Map<String, Integer> countries = new LinkedHashMap<>();
+            collectCountryCounts(root.path("facets"), countries);
+            return new PostingsPage(postings, nextCursor, countries);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать список Workday", e);
+        }
+    }
+
+    /**
+     * Распределение публикаций по странам из фасетов ответа списка (§56). Фасет стран
+     * ({@code facetParameter} содержит «country») бывает на верхнем уровне или вложен в
+     * группу (напр. {@code locationMainGroup}, у значений которой свои {@code facetParameter}
+     * и {@code values}) — поэтому обход рекурсивный. Считаются значения с текстовым
+     * {@code descriptor} и числовым {@code count}; одинаковые названия суммируются.
+     * Фасетов нет — карта остаётся пустой («неизвестно»).
+     */
+    static void collectCountryCounts(JsonNode facets, Map<String, Integer> into) {
+        if (!facets.isArray()) {
+            return;
+        }
+        for (JsonNode facet : facets) {
+            String parameter = facet.path("facetParameter").asText("");
+            JsonNode values = facet.path("values");
+            if (COUNTRY_FACET.matcher(parameter).matches()) {
+                for (JsonNode value : values) {
+                    if (value.path("descriptor").isTextual() && value.path("count").isNumber()) {
+                        into.merge(value.path("descriptor").asText().strip(),
+                                value.path("count").asInt(), Integer::sum);
+                    }
+                }
+            } else {
+                collectCountryCounts(values, into); // вложенная группа фасетов
+            }
         }
     }
 

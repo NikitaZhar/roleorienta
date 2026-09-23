@@ -92,6 +92,11 @@ app:
       # Курируемый список кандидатов (provider/slug/baseUrl). На пилоте заполняется
       # вручную; публичные датасеты (Common Crawl / CT, A11) — следующий срез.
       seed: []
+    market:
+      # Целевой рынок пилота для гейта обнаружения (§56): английские названия стран, как
+      # их отдаёт провайдер (Workday — фасет Location_Country). Нет публикаций на рынке →
+      # кандидат OUT_OF_MARKET. Пустой список — гейт рынка выключен.
+      countries: "Slovakia,Slovak Republic,Austria"
     cc:
       # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54, §55).
       index-base-url: https://index.commoncrawl.org

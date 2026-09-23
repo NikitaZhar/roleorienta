@@ -74,7 +74,8 @@ class WorkdayDiscoveryStubTest {
         SourceAdapterRegistry registry = new SourceAdapterRegistry(List.of(new WorkdayAdapter(httpClient)));
         candidateRepository = mock(EmployerCandidateRepository.class);
         registrar = mock(EmployerSourceRegistrar.class);
-        handler = new DiscoverEmployerJobHandler(registry, candidateRepository, registrar);
+        handler = new DiscoverEmployerJobHandler(registry, candidateRepository, registrar,
+                new DiscoveryMarketProperties(java.util.List.of("Slovakia", "Austria")));
     }
 
     @AfterEach

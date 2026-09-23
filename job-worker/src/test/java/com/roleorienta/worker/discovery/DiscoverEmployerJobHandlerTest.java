@@ -25,7 +25,9 @@ import org.mockito.ArgumentCaptor;
 
 /**
  * Гейт уверенности обнаружения (§35): HIGH → авто-подключение источника и кандидат
- * CONFIRMED; LOW/NONE → очередь на подтверждение (PENDING); дедуп. Реестр адаптеров,
+ * CONFIRMED; LOW/NONE → очередь на подтверждение (PENDING); дедуп. Гейт рынка (§56):
+ * публикации на рынке → HIGH; нет → OUT_OF_MARKET; распределение неизвестно (как у
+ * Greenhouse в первых тестах) или рынок не задан → прежнее правило. Реестр адаптеров,
  * адаптер, регистратор источника и репозиторий — заглушки (без сети и БД).
  */
 class DiscoverEmployerJobHandlerTest {
@@ -35,7 +37,8 @@ class DiscoverEmployerJobHandlerTest {
     private final EmployerCandidateRepository repository = mock(EmployerCandidateRepository.class);
     private final EmployerSourceRegistrar registrar = mock(EmployerSourceRegistrar.class);
     private final DiscoverEmployerJobHandler handler =
-            new DiscoverEmployerJobHandler(registry, repository, registrar);
+            new DiscoverEmployerJobHandler(registry, repository, registrar,
+                    new DiscoveryMarketProperties(List.of("Slovakia", "Austria")));
 
     private static final String PAYLOAD =
             "{\"providerCode\":\"greenhouse\",\"slug\":\"acme\",\"baseUrl\":\"http://stub\"}";
@@ -92,6 +95,63 @@ class DiscoverEmployerJobHandlerTest {
         assertEquals(EmployerCandidateState.PENDING, saved.getState());
         assertEquals(DiscoveryConfidence.NONE, saved.getConfidence());
         assertTrue(saved.getReason().contains("boom"));
+    }
+
+    private static final List<DiscoveredPosting> ONE =
+            List.of(new DiscoveredPosting("1", "http://stub/1", "Dev"));
+
+    @Test
+    void marketPostingsGiveHighAndAutoConnect() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null,
+                java.util.Map.of("United States of America", 173, "Austria", 2)));
+        when(registrar.register(any(), any(), any(), any())).thenReturn(new Registration(5L, 20L));
+
+        handler.handle(message());
+
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.CONFIRMED, saved.getState());
+        assertEquals(DiscoveryConfidence.HIGH, saved.getConfidence());
+        assertTrue(saved.getReason().contains("2 из 175"), saved.getReason());
+    }
+
+    @Test
+    void noMarketPostingsGoOutOfMarketWithoutQueue() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null,
+                java.util.Map.of("United States of America", 173, "India", 28, "Poland", 15, "Czechia", 1)));
+
+        handler.handle(message());
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.OUT_OF_MARKET, saved.getState());
+        assertEquals(DiscoveryConfidence.LOW, saved.getConfidence());
+        assertTrue(saved.getReason().contains("United States of America 173, India 28, Poland 15"),
+                saved.getReason());
+    }
+
+    @Test
+    void marketMatchIgnoresCase() {
+        assertEquals(3, new DiscoveryMarketProperties(List.of(" slovakia ", "AUSTRIA"))
+                .marketCount(java.util.Map.of("Slovakia", 1, "Austria", 2, "Germany", 9)));
+    }
+
+    @Test
+    void disabledMarketKeepsOldRule() {
+        DiscoverEmployerJobHandler noMarket =
+                new DiscoverEmployerJobHandler(registry, repository, registrar, new DiscoveryMarketProperties(List.of()));
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null,
+                java.util.Map.of("United States of America", 173)));
+        when(registrar.register(any(), any(), any(), any())).thenReturn(new Registration(5L, 20L));
+
+        noMarket.handle(message());
+
+        assertEquals(EmployerCandidateState.CONFIRMED, capture().getState());
     }
 
     @Test

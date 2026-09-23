@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "note": "Заглушка списка вакансий Workday (cxs) для тенанта acme, сайт careers. Список отдаётся POST-запросом к /wday/cxs/<tenant>/<site>/jobs; тело (limit/offset/searchText) игнорируется — всегда одна страница. Структурной зарплаты нет; локация — в locationsText, деталь — на отдельном GET."
+    "note": "Заглушка списка вакансий Workday (cxs) для тенанта acme, сайт careers. Список отдаётся POST-запросом к /wday/cxs/<tenant>/<site>/jobs; тело (limit/offset/searchText) игнорируется — всегда одна страница. Фасет Location_Country (§56) — как у реального тенанта, чтобы гейт рынка видел SK/AT. Структурной зарплаты нет; локация — в locationsText, деталь — на отдельном GET."
   },
   "request": {
     "method": "POST",
@@ -23,6 +23,15 @@
           "externalPath": "/job/Vienna/Backend-Engineer-JVM_JR-1002",
           "locationsText": "Vienna, Austria",
           "postedOn": "Posted 10 Days Ago"
+        }
+      ],
+      "facets": [
+        {
+          "facetParameter": "Location_Country",
+          "values": [
+            { "id": "stub-sk", "descriptor": "Slovakia", "count": 1 },
+            { "id": "stub-at", "descriptor": "Austria", "count": 1 }
+          ]
         }
       ]
     }

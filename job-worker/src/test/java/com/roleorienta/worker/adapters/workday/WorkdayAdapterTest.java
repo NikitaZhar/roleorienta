@@ -35,6 +35,7 @@ class WorkdayAdapterTest {
     private static final String EXTERNAL_PATH = "/job/Bratislava/Senior-Java-Engineer_JR-1001";
 
     private HttpServer server;
+    private volatile String lastAcceptLanguage;
     private WorkdayAdapter adapter;
     private Source source;
 
@@ -43,12 +44,22 @@ class WorkdayAdapterTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         int port = server.getAddress().getPort();
 
-        // Список (POST): total=40 и одна публикация, независимо от тела запроса.
+        // Список (POST): total=40 и одна публикация, независимо от тела запроса. Фасеты — как у
+        // реального тенанта (§56): страны на верхнем уровне плюс вложенная группа локаций.
         server.createContext("/wday/cxs/acme/careers/jobs", exchange -> {
+            lastAcceptLanguage = exchange.getRequestHeaders().getFirst("Accept-Language");
             drain(exchange.getRequestBody());
             String body = """
                     {"total":40,"jobPostings":[
                       {"title":"Senior Java Engineer","externalPath":"%s","postedOn":"Posted 3 Days Ago"}
+                    ],"facets":[
+                      {"facetParameter":"remoteType","values":[{"descriptor":"Flex","count":45}]},
+                      {"facetParameter":"Location_Country","values":[
+                        {"id":"bc33","descriptor":"United States of America","count":30},
+                        {"id":"sk01","descriptor":"Slovakia","count":7}]},
+                      {"facetParameter":"locationMainGroup","values":[
+                        {"descriptor":"Locations","facetParameter":"locationCountry","values":[
+                          {"id":"at01","descriptor":"Austria","count":3}]}]}
                     ]}""".formatted(EXTERNAL_PATH);
             respond(exchange, body);
         });
@@ -88,6 +99,15 @@ class WorkdayAdapterTest {
         assertEquals("Senior Java Engineer", posting.rawTitle());
         assertTrue(posting.url().endsWith("/en-US/careers" + EXTERNAL_PATH),
                 "ссылка строится как /en-US/<site><externalPath>: " + posting.url());
+    }
+
+    @Test
+    void listReadsCountryFacetsIncludingNestedAndPinsEnglish() {
+        PostingsPage page = adapter.listPostings(source, null);
+
+        assertEquals(java.util.Map.of("United States of America", 30, "Slovakia", 7, "Austria", 3),
+                page.countryCounts());
+        assertEquals("en-US", lastAcceptLanguage, "названия фасетов сверяются по-английски");
     }
 
     @Test

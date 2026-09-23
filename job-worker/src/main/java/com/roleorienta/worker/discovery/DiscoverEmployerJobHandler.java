@@ -18,6 +18,8 @@ import com.roleorienta.worker.adapters.SourceAdapterRegistry;
 import com.roleorienta.worker.discovery.EmployerSourceRegistrar.Registration;
 import com.roleorienta.worker.jobs.JobMessage;
 import com.roleorienta.worker.jobs.TypedJobHandler;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -34,6 +36,10 @@ import org.springframework.stereotype.Component;
  *       заводится {@link Source} в состоянии {@code ACTIVE} через
  *       {@link EmployerSourceRegistrar} ({@code verifiedBy=AUTO}), а кандидат
  *       фиксируется как {@code CONFIRMED} — без ручного подтверждения;</li>
+ *   <li><b>гейт рынка</b> (§56): если провайдер сообщает распределение публикаций по
+ *       странам, {@code HIGH} даётся только при публикациях на целевом рынке пилота
+ *       ({@link DiscoveryMarketProperties}); без них — {@code LOW} и состояние
+ *       {@code OUT_OF_MARKET} (без очереди подтверждения);</li>
  *   <li>{@code LOW}/{@code NONE} — кандидат уходит в очередь на подтверждение
  *       ({@code PENDING}): «неуверенный не подключается вслепую и не пропадает».</li>
  * </ul>
@@ -53,20 +59,24 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private final SourceAdapterRegistry adapterRegistry;
     private final EmployerCandidateRepository candidateRepository;
     private final EmployerSourceRegistrar sourceRegistrar;
+    private final DiscoveryMarketProperties market;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * @param adapterRegistry     реестр адаптеров источников (выбор по коду провайдера)
      * @param candidateRepository очередь кандидатов
      * @param sourceRegistrar     авто-подключение уверенного кандидата
+     * @param market              целевой рынок пилота (гейт рынка, §56)
      */
     public DiscoverEmployerJobHandler(
             SourceAdapterRegistry adapterRegistry,
             EmployerCandidateRepository candidateRepository,
-            EmployerSourceRegistrar sourceRegistrar) {
+            EmployerSourceRegistrar sourceRegistrar,
+            DiscoveryMarketProperties market) {
         this.adapterRegistry = adapterRegistry;
         this.candidateRepository = candidateRepository;
         this.sourceRegistrar = sourceRegistrar;
+        this.market = market;
     }
 
     @Override
@@ -104,6 +114,11 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             log.info("DISCOVER_EMPLOYER: {}/{} → HIGH, авто-подключение (source={}), публикаций {}",
                     payload.providerCode(), payload.slug(),
                     registration.sourceId(), assessment.postingCount());
+        } else if (assessment.outOfMarket()) {
+            candidate.setState(EmployerCandidateState.OUT_OF_MARKET);
+            candidateRepository.save(candidate);
+            log.info("DISCOVER_EMPLOYER: {}/{} → вне рынка ({})",
+                    payload.providerCode(), payload.slug(), assessment.reason());
         } else {
             candidate.setState(EmployerCandidateState.PENDING);
             candidateRepository.save(candidate);
@@ -123,16 +138,44 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             SourceAdapter adapter = adapterRegistry.forProviderCode(payload.providerCode());
             PostingsPage page = adapter.listPostings(probeSource(payload), null);
             int count = page.postings().size();
-            if (count > 0) {
-                return new Assessment(DiscoveryConfidence.HIGH,
-                        "лента валидна, публикаций: " + count, count);
+            if (count == 0) {
+                return new Assessment(DiscoveryConfidence.LOW,
+                        "лента валидна, но пустая — требует подтверждения", 0, false);
             }
-            return new Assessment(DiscoveryConfidence.LOW,
-                    "лента валидна, но пустая — требует подтверждения", 0);
+            if (market.enabled() && !page.countryCounts().isEmpty()) {
+                return assessMarket(page.countryCounts(), count);
+            }
+            return new Assessment(DiscoveryConfidence.HIGH,
+                    "лента валидна, публикаций: " + count, count, false);
         } catch (RuntimeException e) {
             return new Assessment(DiscoveryConfidence.NONE,
-                    "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0);
+                    "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, false);
         }
+    }
+
+    /**
+     * Гейт рынка (§56, A2 — минимальная версия): провайдер сообщил распределение всех
+     * публикаций источника по странам. Есть публикации на целевом рынке → {@code HIGH};
+     * нет → {@code LOW} и {@code OUT_OF_MARKET} (без очереди подтверждения — иначе тысячи
+     * досок чужих рынков из автоматического входа затопили бы её). Обоснование называет
+     * число на рынке и главные страны — решение объяснимо.
+     */
+    private Assessment assessMarket(Map<String, Integer> countryCounts, int count) {
+        int inMarket = market.marketCount(countryCounts);
+        int total = countryCounts.values().stream().mapToInt(Integer::intValue).sum();
+        String top = countryCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(3)
+                .map(e -> e.getKey() + " " + e.getValue())
+                .collect(Collectors.joining(", "));
+        if (inMarket > 0) {
+            return new Assessment(DiscoveryConfidence.HIGH, String.format(
+                    "лента валидна; на целевом рынке %s: %d из %d; страны: %s",
+                    market.countries(), inMarket, total, top), count, false);
+        }
+        return new Assessment(DiscoveryConfidence.LOW, String.format(
+                "нет публикаций на целевом рынке %s (всего %d); страны: %s",
+                market.countries(), total, top), count, true);
     }
 
     /**
@@ -176,7 +219,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private record Payload(String providerCode, String slug, String baseUrl) {
     }
 
-    /** Результат проверки ленты кандидата. */
-    private record Assessment(DiscoveryConfidence confidence, String reason, int postingCount) {
+    /** Результат проверки ленты кандидата; {@code outOfMarket} — отсеян гейтом рынка. */
+    private record Assessment(DiscoveryConfidence confidence, String reason, int postingCount,
+                              boolean outOfMarket) {
     }
 }

@@ -7,6 +7,7 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.core5.util.Timeout;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -129,9 +130,26 @@ public class SourceHttpClient {
      * @throws SsrfBlockedException если схема запрещена или адрес не проходит проверку A13
      */
     public String postJson(String url, String jsonBody) {
+        return postJson(url, jsonBody, Map.of());
+    }
+
+    /**
+     * То же, что {@link #postJson(String, String)}, с дополнительными заголовками запроса
+     * (напр. {@code Accept-Language: en-US} — Workday локализует названия фасетов по нему,
+     * §56). {@code Content-Type}/{@code Accept} задаются методом и заголовками не
+     * переопределяются.
+     *
+     * @param url      полный адрес запроса
+     * @param jsonBody тело запроса (сериализованный JSON)
+     * @param headers  дополнительные заголовки
+     * @return тело ответа
+     * @throws SsrfBlockedException если схема запрещена или адрес не проходит проверку A13
+     */
+    public String postJson(String url, String jsonBody, Map<String, String> headers) {
         ssrfGuard.checkScheme(url);
         try {
             return restClient.post().uri(url)
+                    .headers(h -> headers.forEach(h::set))
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(jsonBody)
