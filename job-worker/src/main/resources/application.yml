@@ -92,6 +92,9 @@ app:
       # Курируемый список кандидатов (provider/slug/baseUrl). На пилоте заполняется
       # вручную; публичные датасеты (Common Crawl / CT, A11) — следующий срез.
       seed: []
+    cc:
+      # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54).
+      index-base-url: https://index.commoncrawl.org
     workday:
       # Определение site тенанта Workday по хосту из CT (A1b, WorkdaySiteResolver):
       # кандидаты имени сайта в порядке проверки, каждый — POST к cxs-ленте.

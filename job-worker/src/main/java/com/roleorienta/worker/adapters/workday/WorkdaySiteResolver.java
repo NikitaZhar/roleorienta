@@ -11,7 +11,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,6 +48,11 @@ import org.springframework.web.client.HttpClientErrorException;
  * сайт — {@code 404} с JSON {@code {"errorCode":"S21", "message":"not found:
  * Job_Posting_Site_ID=..."}}: это штатное «не этот сайт».</p>
  *
+ * <p><b>Роль после проверки входов (§54).</b> Основной вход для Workday — Common Crawl:
+ * он даёт {@code site} прямо из URL ({@link WorkdayBoard#fromCareerUrl}), а живой срез
+ * показал, что имена сайтов в основном нетиповые. Резолвер остаётся запасным путём для
+ * хостов без известного сайта (напр. редкие конкретные хосты из CT).</p>
+ *
  * <p><b>Честные границы.</b> Это проверка по словарю: тенант с нетиповым именем сайта
  * не определится — возвращается пусто, ничего не выдумывается. Резолвер не проверяет
  * непустоту ленты и принадлежность работодателю — это гейт уверенности и A2. Ответ
@@ -59,13 +63,6 @@ import org.springframework.web.client.HttpClientErrorException;
  */
 @Component
 public class WorkdaySiteResolver {
-
-    /** Вендорный шаблон хоста тенанта: {@code <tenant>.wd<N>.myworkdayjobs.com}. */
-    static final Pattern TENANT_HOST =
-            Pattern.compile("^([a-z0-9][a-z0-9_-]*)\\.wd\\d+\\.myworkdayjobs\\.com$");
-
-    /** Допустимое имя сайта после подстановки (защита пути cxs от мусора). */
-    private static final Pattern SITE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_-]*$");
 
     /** Минимальное тело списка: одна вакансия — достаточно, чтобы распознать формат. */
     private static final String PROBE_BODY =
@@ -102,7 +99,7 @@ public class WorkdaySiteResolver {
      */
     public Optional<WorkdayBoard> resolve(String host) {
         String normalized = host == null ? "" : host.strip().toLowerCase(Locale.ROOT);
-        Matcher matcher = TENANT_HOST.matcher(normalized);
+        Matcher matcher = WorkdayBoard.TENANT_HOST.matcher(normalized);
         if (!matcher.matches()) {
             return Optional.empty();
         }
@@ -147,7 +144,7 @@ public class WorkdaySiteResolver {
             String site = template.strip()
                     .replace("{tenant}", tenant)
                     .replace("{Tenant}", capitalized);
-            if (SITE.matcher(site).matches() && seen.add(site.toLowerCase(Locale.ROOT))) {
+            if (WorkdayBoard.SITE.matcher(site).matches() && seen.add(site.toLowerCase(Locale.ROOT))) {
                 result.add(site);
             }
         }
