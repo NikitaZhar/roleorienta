@@ -301,7 +301,11 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
-     * Разбирает деталь ({@code jobPostingInfo}): локация и описание (HTML → текст).
+     * Разбирает деталь ({@code jobPostingInfo}): локация и описание (HTML → текст), а также
+     * структурные поля (§65, проверено на живых тенантах 2026-09-23): {@code country.descriptor}
+     * (страна основной локации), {@code remoteType} (есть не у всех — напр. {@code Hybrid}),
+     * {@code startDate} (дата публикации {@code YYYY-MM-DD}; {@code postedOn} — лишь
+     * «Posted 30+ Days Ago»), {@code additionalLocations} (массив строк у многолокационных).
      * Зарплата не разбирается (у Workday нет структурного поля) — {@code compensation}
      * и {@code rawCompensation} остаются {@code null}, зарплата извлекается из текста
      * описания в следующем срезе (§6).
@@ -313,9 +317,32 @@ public class WorkdayAdapter implements SourceAdapter {
             JsonNode info = objectMapper.readTree(response).path("jobPostingInfo");
             String rawLocation = textOrNull(info.path("location"));
             String rawDescription = descriptionText(info.path("jobDescription"));
-            return new FetchedPosting(rawLocation, null, null, rawDescription);
+            List<String> additional = new ArrayList<>();
+            for (JsonNode location : info.path("additionalLocations")) {
+                String value = textOrNull(location);
+                if (value != null) {
+                    additional.add(value.strip());
+                }
+            }
+            return new FetchedPosting(rawLocation, null, null, rawDescription,
+                    textOrNull(info.path("country").path("descriptor")),
+                    textOrNull(info.path("remoteType")),
+                    parseDate(textOrNull(info.path("startDate"))),
+                    additional);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать деталь Workday", e);
+        }
+    }
+
+    /** Дата {@code YYYY-MM-DD} или {@code null}, если поля нет или формат иной. */
+    private static java.time.LocalDate parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(value.strip());
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
         }
     }
 

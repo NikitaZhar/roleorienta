@@ -49,4 +49,51 @@ class LocationNormalizerTest {
         assertThat(normalizer.normalize(null)).isEqualTo(NormalizedLocation.ABSENT);
         assertThat(normalizer.normalize("   ")).isEqualTo(NormalizedLocation.ABSENT);
     }
+
+    /** Реальные строки Workday со стенда (§64/§65). */
+    @Test
+    void workdayCityRegionCountryTakesFirstAndLast() {
+        NormalizedLocation vienna = normalizer.normalize("Vienna, Vienna, Austria");
+        assertThat(vienna.city()).isEqualTo("Vienna");
+        assertThat(vienna.country()).isEqualTo("Austria");
+        assertThat(normalizer.normalize("Kosice, Kosicky kraj, Slovakia").city()).isEqualTo("Kosice");
+        assertThat(normalizer.normalize("Guntramsdorf, Lower Austria, Austria").city()).isEqualTo("Guntramsdorf");
+    }
+
+    @Test
+    void usStateCodeMeansUnitedStates() {
+        NormalizedLocation houston = normalizer.normalize("Houston, TX");
+        assertThat(houston.city()).isEqualTo("Houston");
+        assertThat(houston.country()).isEqualTo(LocationNormalizer.USA);
+        assertThat(normalizer.normalize("Bratislava, SK").country())
+                .as("SK — не код штата США").isEqualTo("SK");
+    }
+
+    @Test
+    void sourceCountryAndRemoteTypeWin() {
+        NormalizedLocation hybrid = normalizer.normalize("Vienna, Vienna, Austria", "Austria", "Hybrid");
+        assertThat(hybrid.city()).isEqualTo("Vienna");
+        assertThat(hybrid.country()).isEqualTo("Austria");
+        assertThat(hybrid.modality()).isEqualTo(WorkModality.HYBRID);
+
+        NormalizedLocation remote = normalizer.normalize("Remote - Austria", "Austria", null);
+        assertThat(remote.city()).isNull();
+        assertThat(remote.country()).as("страну источника сохраняем и для remote").isEqualTo("Austria");
+        assertThat(remote.modality()).isEqualTo(WorkModality.REMOTE);
+
+        assertThat(normalizer.normalize("SVK - BL - BRATISLAVA", "Slovakia", null).country()).isEqualTo("Slovakia");
+        assertThat(normalizer.normalize("Vienna, Austria", "Austria", null).modality())
+                .as("без remoteType и слов — неизвестно, не офис").isEqualTo(WorkModality.UNKNOWN);
+    }
+
+    @Test
+    void remoteTypeMapping() {
+        assertThat(LocationNormalizer.modalityOf("Hybrid")).isEqualTo(WorkModality.HYBRID);
+        assertThat(LocationNormalizer.modalityOf("Flex")).isEqualTo(WorkModality.HYBRID);
+        assertThat(LocationNormalizer.modalityOf("Fully Remote")).isEqualTo(WorkModality.REMOTE);
+        assertThat(LocationNormalizer.modalityOf("On-site")).isEqualTo(WorkModality.ONSITE);
+        assertThat(LocationNormalizer.modalityOf("Onsite")).isEqualTo(WorkModality.ONSITE);
+        assertThat(LocationNormalizer.modalityOf("Something")).isNull();
+        assertThat(LocationNormalizer.modalityOf(null)).isNull();
+    }
 }

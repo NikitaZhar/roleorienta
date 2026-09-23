@@ -65,9 +65,11 @@ class PostingApiIntegrationTest {
 
         long idA = jdbcTemplate.queryForObject(
                 "INSERT INTO job_posting (source_id, external_id, url, raw_title, first_seen_at, last_seen_at, "
-                        + "city, country, work_modality, salary_max, salary_currency, seniority, experience_years_min) "
+                        + "city, country, work_modality, salary_max, salary_currency, seniority, experience_years_min, "
+                        + "posted_on, additional_locations) "
                         + "VALUES (?, 'A', 'http://stub/A', 'Posting A', now(), now(), "
-                        + "'Berlin', 'Germany', 'UNKNOWN', 110000, 'EUR', 'SENIOR', 5) RETURNING id",
+                        + "'Berlin', 'Germany', 'UNKNOWN', 110000, 'EUR', 'SENIOR', 5, "
+                        + "DATE '2026-09-10', 'Vienna, Austria; Bratislava, Slovakia') RETURNING id",
                 Long.class, sourceId);
         idB = jdbcTemplate.queryForObject(
                 "INSERT INTO job_posting (source_id, external_id, url, raw_title, first_seen_at, last_seen_at, "
@@ -158,6 +160,8 @@ class PostingApiIntegrationTest {
                 .andExpect(jsonPath("$.city").value("Berlin"))
                 .andExpect(jsonPath("$.seniority").value("SENIOR"))
                 .andExpect(jsonPath("$.experienceYearsMin").value(5))
+                .andExpect(jsonPath("$.postedOn").value("2026-09-10"))
+                .andExpect(jsonPath("$.additionalLocations").value("Vienna, Austria; Bratislava, Slovakia"))
                 .andExpect(jsonPath("$.languages.length()").value(1))
                 .andExpect(jsonPath("$.languages[0].languageCode").value("en"))
                 .andExpect(jsonPath("$.skills.length()").value(2))

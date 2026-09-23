@@ -74,6 +74,10 @@ class WorkdayAdapterTest {
                     {"jobPostingInfo":{
                       "location":"Bratislava, Slovakia",
                       "startDate":"2026-09-01",
+                      "postedOn":"Posted 13 Days Ago",
+                      "remoteType":"Hybrid",
+                      "country":{"descriptor":"Slovakia","id":"d2f2"},
+                      "additionalLocations":["Vienna, Austria","Cambridge, United Kingdom"],
                       "jobDescription":"<p>Spring Boot required. English required.</p>"
                     }}""";
             respond(exchange, body);
@@ -133,6 +137,16 @@ class WorkdayAdapterTest {
         // Структурной зарплаты у Workday нет — адаптер не выдумывает диапазон (§6, A09).
         assertNull(detail.compensation());
         assertNull(detail.rawCompensation());
+    }
+
+    @Test
+    void detailStructuredFields() {
+        FetchedPosting detail = adapter.getPosting(source, EXTERNAL_PATH);
+
+        assertEquals("Slovakia", detail.country());
+        assertEquals("Hybrid", detail.remoteType());
+        assertEquals(java.time.LocalDate.of(2026, 9, 1), detail.postedOn(), "startDate, не «Posted 13 Days Ago»");
+        assertEquals(java.util.List.of("Vienna, Austria", "Cambridge, United Kingdom"), detail.additionalLocations());
     }
 
     private static void respond(com.sun.net.httpserver.HttpExchange exchange, String body) throws java.io.IOException {

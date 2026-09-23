@@ -122,6 +122,14 @@ public class JobPosting {
     @Column(name = "experience_years_min")
     private Integer experienceYearsMin;
 
+    /** Дата публикации по данным источника (Workday {@code startDate}), либо {@code null} (не сообщается, §65). */
+    @Column(name = "posted_on")
+    private java.time.LocalDate postedOn;
+
+    /** Дополнительные локации многолокационной вакансии через «; », либо {@code null} (§65). */
+    @Column(name = "additional_locations")
+    private String additionalLocations;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -171,6 +179,12 @@ public class JobPosting {
 
     public Instant getDetailFetchedAt() { return detailFetchedAt; }
     public void setDetailFetchedAt(Instant detailFetchedAt) { this.detailFetchedAt = detailFetchedAt; }
+
+    public java.time.LocalDate getPostedOn() { return postedOn; }
+    public void setPostedOn(java.time.LocalDate postedOn) { this.postedOn = postedOn; }
+
+    public String getAdditionalLocations() { return additionalLocations; }
+    public void setAdditionalLocations(String additionalLocations) { this.additionalLocations = additionalLocations; }
 
     public BigDecimal getSalaryMin() { return salaryMin; }
     public void setSalaryMin(BigDecimal salaryMin) { this.salaryMin = salaryMin; }

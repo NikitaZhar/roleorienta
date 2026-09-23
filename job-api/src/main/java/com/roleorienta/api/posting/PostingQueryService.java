@@ -129,6 +129,7 @@ public class PostingQueryService {
                 posting.getSalaryMin(), posting.getSalaryMax(), posting.getSalaryCurrency(),
                 posting.getSalaryPeriod(), posting.getSalaryBasis(), posting.getSeniority(),
                 posting.getExperienceYearsMin(), posting.getRawDescription(),
+                posting.getAdditionalLocations(), posting.getPostedOn(),
                 posting.getFirstSeenAt(), posting.getLastSeenAt(), posting.getDetailFetchedAt(),
                 languages, skills);
     }
@@ -142,7 +143,7 @@ public class PostingQueryService {
                 posting.getId(), posting.getExternalId(), posting.getRawTitle(), posting.getUrl(),
                 posting.getCity(), posting.getCountry(), posting.getWorkModality(),
                 posting.getSalaryMin(), posting.getSalaryMax(), posting.getSalaryCurrency(),
-                posting.getSeniority(), posting.getExperienceYearsMin(),
+                posting.getSeniority(), posting.getExperienceYearsMin(), posting.getPostedOn(),
                 posting.getFirstSeenAt(), posting.getLastSeenAt(),
                 marker == null ? null : marker.getState(),
                 marker != null && marker.getSeenAt() != null);

@@ -11,5 +11,7 @@ package com.roleorienta.core.domain;
 public enum WorkModality {
     REMOTE,
     HYBRID,
+    /** Работа в офисе — только если источник сообщает это явно (Workday {@code remoteType: On-site}, §65). */
+    ONSITE,
     UNKNOWN
 }

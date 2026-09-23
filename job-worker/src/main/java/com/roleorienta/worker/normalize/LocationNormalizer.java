@@ -1,43 +1,99 @@
 package com.roleorienta.worker.normalize;
 
 import com.roleorienta.core.domain.WorkModality;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Нормализатор локации (§6): приводит свободную строку локации источника к
- * {@link NormalizedLocation}, соблюдая правило «неизвестное — явно, без догадок».
+ * Нормализатор локации (§6): приводит локацию источника к {@link NormalizedLocation},
+ * соблюдая правило «неизвестное — явно, без догадок».
  *
- * <p>В отличие от зарплаты, Greenhouse отдаёт локацию только свободной строкой
- * ({@code location.name}), без структурированных город/страна/формат. Поэтому разбор
- * эвристический и намеренно осторожный: формат работы берётся лишь по явным словам
- * ({@code remote}/{@code hybrid}); их отсутствие даёт {@link WorkModality#UNKNOWN},
- * а не «офис». Город и страна разбираются лишь для обычного места (модальность
- * {@code UNKNOWN}), чтобы строки вроде {@code "Remote, EU"} не превращались в
- * город={@code Remote}. Логика вынесена в отдельный компонент, чтобы правила были в
- * одном месте, как у {@link SalaryNormalizer}.</p>
+ * <p><b>Свободная строка</b> (Greenhouse — только {@code location.name}): формат работы —
+ * лишь по явным словам ({@code remote}/{@code hybrid}), их отсутствие даёт
+ * {@link WorkModality#UNKNOWN}, а не «офис». Город и страна разбираются для обычного места:
+ * «Город, Страна» и «Город, Регион, Страна» (формат Workday, §65) — город первый сегмент,
+ * страна последний; «Город, ST» с кодом штата США — страна «United States of America».
+ * Для remote/hybrid-строк город не разбирается («Remote, EU» ≠ город Remote).</p>
+ *
+ * <p><b>Структурные поля источника</b> (§65, Workday) главнее эвристики: страна основной
+ * локации ({@code country.descriptor}) и формат работы ({@code remoteType}: Remote → REMOTE,
+ * Hybrid/Flex → HYBRID, On-site → ONSITE). Офис ({@code ONSITE}) ставится только по явному
+ * сообщению источника, никогда по отсутствию слова.</p>
  */
 @Component
 public class LocationNormalizer {
 
-    /** Разделитель «город, страна» в свободной строке локации. */
-    private static final String CITY_COUNTRY_SEPARATOR = ",";
+    /** Страна для локаций вида «City, ST» с кодом штата США. */
+    static final String USA = "United States of America";
+
+    /** Коды штатов США и округа Колумбия (строго заглавными). */
+    private static final Set<String> US_STATES = Set.of(
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+            "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM",
+            "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA",
+            "WV", "WI", "WY");
 
     /**
      * @param rawLocation свободная строка локации из адаптера или {@code null}
      * @return нормализованная локация ({@link NormalizedLocation#ABSENT}, если строки нет)
      */
     public NormalizedLocation normalize(String rawLocation) {
+        return normalize(rawLocation, null, null);
+    }
+
+    /**
+     * Нормализация с учётом структурных полей источника (§65).
+     *
+     * @param rawLocation      свободная строка локации или {@code null}
+     * @param sourceCountry    страна от источника или {@code null}
+     * @param sourceRemoteType формат работы от источника как есть или {@code null}
+     * @return нормализованная локация
+     */
+    public NormalizedLocation normalize(String rawLocation, String sourceCountry, String sourceRemoteType) {
+        String country = blankToNull(sourceCountry);
+        WorkModality structured = modalityOf(sourceRemoteType);
         if (rawLocation == null || rawLocation.isBlank()) {
-            return NormalizedLocation.ABSENT;
+            if (country == null && structured == null) {
+                return NormalizedLocation.ABSENT;
+            }
+            return new NormalizedLocation(null, country, structured == null ? WorkModality.UNKNOWN : structured);
         }
         String value = rawLocation.strip();
-        WorkModality modality = detectModality(value);
-        if (modality != WorkModality.UNKNOWN) {
-            // remote/hybrid: город/страна из строки не разбираем (иначе «Remote, EU»
-            // дал бы город=Remote) — оставляем явное «неизвестно».
-            return new NormalizedLocation(null, null, modality);
+        WorkModality fromText = detectModality(value);
+        if (fromText != WorkModality.UNKNOWN) {
+            // remote/hybrid в строке: город не разбираем («Remote, EU» ≠ город Remote);
+            // страна — только если её сообщил источник.
+            return new NormalizedLocation(null, country, structured == null ? fromText : structured);
         }
-        return splitCityCountry(value);
+        NormalizedLocation split = splitCityCountry(value);
+        return new NormalizedLocation(
+                split.city(),
+                country != null ? country : split.country(),
+                structured == null ? WorkModality.UNKNOWN : structured);
+    }
+
+    /**
+     * Формат работы от источника: Remote → REMOTE, Hybrid/Flex → HYBRID, On-site/Onsite/
+     * Office → ONSITE; иное или {@code null} → {@code null} (не сообщено).
+     */
+    static WorkModality modalityOf(String remoteType) {
+        if (remoteType == null || remoteType.isBlank()) {
+            return null;
+        }
+        String v = remoteType.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        if (v.contains("remote")) {
+            return WorkModality.REMOTE;
+        }
+        if (v.contains("hybrid") || v.startsWith("flex")) {
+            return WorkModality.HYBRID;
+        }
+        if (v.startsWith("onsite") || v.equals("office") || v.equals("inoffice")) {
+            return WorkModality.ONSITE;
+        }
+        return null;
     }
 
     /**
@@ -45,7 +101,7 @@ public class LocationNormalizer {
      * иначе {@code hybrid} → HYBRID, иначе UNKNOWN (отсутствие слова ≠ офис).
      */
     private WorkModality detectModality(String value) {
-        String lower = value.toLowerCase();
+        String lower = value.toLowerCase(Locale.ROOT);
         if (lower.contains("remote")) {
             return WorkModality.REMOTE;
         }
@@ -56,20 +112,27 @@ public class LocationNormalizer {
     }
 
     /**
-     * Разбирает обычное место вида «City, Country»: делит по последней запятой на
-     * город (слева) и страну (справа). Без запятой — вся строка считается городом,
-     * страна {@code null}. Модальность остаётся {@link WorkModality#UNKNOWN}.
+     * Разбирает обычное место: сегменты через запятую; один сегмент — город; иначе город —
+     * первый сегмент, страна — последний («Vienna, Vienna, Austria» → Vienna/Austria);
+     * последний сегмент — код штата США → страна {@link #USA}.
      */
     private NormalizedLocation splitCityCountry(String value) {
-        int separator = value.lastIndexOf(CITY_COUNTRY_SEPARATOR);
-        if (separator < 0) {
-            return new NormalizedLocation(value, null, WorkModality.UNKNOWN);
+        List<String> parts = Arrays.stream(value.split(","))
+                .map(String::strip)
+                .filter(p -> !p.isEmpty())
+                .toList();
+        if (parts.isEmpty()) {
+            return new NormalizedLocation(null, null, WorkModality.UNKNOWN);
         }
-        String city = value.substring(0, separator).strip();
-        String country = value.substring(separator + 1).strip();
-        return new NormalizedLocation(
-                city.isEmpty() ? null : city,
-                country.isEmpty() ? null : country,
-                WorkModality.UNKNOWN);
+        if (parts.size() == 1) {
+            return new NormalizedLocation(parts.get(0), null, WorkModality.UNKNOWN);
+        }
+        String last = parts.get(parts.size() - 1);
+        String country = US_STATES.contains(last) ? USA : last;
+        return new NormalizedLocation(parts.get(0), country, WorkModality.UNKNOWN);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 }

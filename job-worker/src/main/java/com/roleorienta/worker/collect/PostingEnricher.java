@@ -70,7 +70,8 @@ public class PostingEnricher {
      */
     public void enrich(JobPosting posting, FetchedPosting detail, Instant at) {
         NormalizedSalary salary = salaryNormalizer.normalize(detail.compensation());
-        NormalizedLocation location = locationNormalizer.normalize(detail.rawLocation());
+        NormalizedLocation location = locationNormalizer.normalize(
+                detail.rawLocation(), detail.country(), detail.remoteType());
         ExtractedExperience experience = experienceExtractor.extract(detail.rawDescription());
 
         // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
@@ -89,15 +90,21 @@ public class PostingEnricher {
         posting.setSeniority(experience.level());
         posting.setExperienceYearsMin(experience.yearsMin());
         posting.setRawDescription(detail.rawDescription());
+        if (detail.postedOn() != null) {
+            posting.setPostedOn(detail.postedOn());   // источник не сообщил — прежнее значение не затираем
+        }
+        posting.setAdditionalLocations(detail.additionalLocations().isEmpty()
+                ? null : String.join("; ", detail.additionalLocations()));
         posting.setDetailFetchedAt(at);
 
         PostingRequirementWriter.RequirementCounts counts =
                 requirementWriter.write(posting, detail.rawDescription());
 
-        log.info("Обогащение публикации {}: локация={} (город={}, страна={}, формат={}), "
-                        + "зарплата={} {}–{} (период={}, база={}), опыт={}/лет≥{}, языков={}, навыков={}",
+        log.info("Обогащение публикации {}: локация={} (город={}, страна={}, формат={}, доп. локаций={}), "
+                        + "опубликовано={}, зарплата={} {}–{} (период={}, база={}), опыт={}/лет≥{}, языков={}, навыков={}",
                 posting.getExternalId(), detail.rawLocation(), location.city(), location.country(),
-                location.modality(), salary.currency(), salary.min(), salary.max(),
+                location.modality(), detail.additionalLocations().size(), detail.postedOn(),
+                salary.currency(), salary.min(), salary.max(),
                 salary.period(), salary.basis(), experience.level(), experience.yearsMin(),
                 counts.languages(), counts.skills());
     }

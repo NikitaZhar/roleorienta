@@ -2,8 +2,8 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-22
-Статус: проверка собранных вакансий Workday глазами пользователя через REST (§64, только документация) — лента и фильтр country=Slovakia/Austria работают; дефекты нормализации: город «Vienna, Vienna», страна «TX» у US-локаций, формат работы почти всегда UNKNOWN, сеньорность у Workday в основном UNKNOWN, дата публикации не берётся, зарплата у AT-вакансий не извлечена. Дальше — срез качества данных Workday.
-Прежний статус: ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
+Статус: структурные поля детали Workday (§65) — страна (country.descriptor), формат (remoteType → REMOTE/HYBRID/ONSITE), дата публикации (startDate → posted_on, V27), доп. локации (additional_locations, V27); город «Город, Регион, Страна» → первый сегмент, «City, ST» → United States of America; postedOn/additionalLocations в API. Компиляция/тесты в среде ИИ не запускались — их выполняет владелец.
+Прежний статус: проверка вакансий Workday через REST, список дефектов нормализации (§64); ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -3789,6 +3789,47 @@ Developer - Cybersecurity», «Product Owner / Lead - DevOps Team»), Snap 1 и�
 
 Срез «качество данных Workday» (вариант А): п.1–7; порядок — по влиянию на фильтры ленты
 (страна/город, формат, дата, зарплата AT).
+
+## §65 — Качество данных Workday: страна, город, формат работы, дата, доп. локации
+
+Пункты 1–3 и 7 из §64.2. Перед кодом структура детали Workday проверена на 4 живых
+вакансиях (`target/wd-detail.sh`, Hitachi/IQVIA/Snap): в `jobPostingInfo` есть
+`country: {descriptor, id}`, `jobRequisitionLocation.country.alpha2Code`, `remoteType`
+(только у части вакансий, напр. «Hybrid»), `startDate` (`YYYY-MM-DD`; `postedOn` — лишь
+«Posted 30+ Days Ago»), `additionalLocations` (массив строк у многолокационных — у IQVIA
+«Livingston, UK» + Vienna, Bratislava и ещё 4).
+
+### 65.1 Код
+
+- `FetchedPosting` + `country`, `remoteType`, `postedOn`, `additionalLocations`
+  (4-аргументный конструктор сохранён — Greenhouse не затронут).
+- `WorkdayAdapter.parseDetail` заполняет их из полей выше.
+- `LocationNormalizer`: структурные поля источника главнее эвристики; город —
+  **первый** сегмент строки, страна — последний («Vienna, Vienna, Austria» → Vienna /
+  Austria); последний сегмент — код штата США → «United States of America» («Houston, TX»);
+  `remoteType`: Remote → REMOTE, Hybrid/Flex → HYBRID, On-site → ONSITE (новое значение
+  `WorkModality.ONSITE` — **только** по явному сообщению источника, не по отсутствию слова);
+  для remote/hybrid-строк страна источника сохраняется, город — нет.
+- `JobPosting` + `postedOn` (дата публикации по источнику, не затирается пустым значением),
+  `additionalLocations` (через «; »); миграция **V27** (`posted_on DATE` с индексом,
+  `additional_locations TEXT`).
+- API: `postedOn` в строке ленты и карточке, `additionalLocations` в карточке.
+
+### 65.2 Что проверяют тесты
+
+`LocationNormalizerTest` — реальные строки Workday (Vienna/Kosice/Guntramsdorf), «Houston,
+TX» → США, «Bratislava, SK» не США, страна и формат источника главнее, «Remote - Austria» с
+страной, без `remoteType` — UNKNOWN (не офис), маппинг `remoteType`. `WorkdayAdapterTest.
+detailStructuredFields` — страна, формат, `startDate` (не «Posted 13 Days Ago»), доп. локации.
+`PostingApiIntegrationTest` — `postedOn` и `additionalLocations` в карточке. Компиляция/тесты
+в среде ИИ не запускались — их выполняет владелец.
+
+### 65.3 Что НЕ вошло
+
+Фильтр/сортировка ленты по `postedOn`; фильтр страны с учётом доп. локаций (сейчас
+`country=` — только основная; IQVIA «UK + Bratislava» по Slovakia не найдётся); зарплата
+AT (§64.2 п.6) — отдельным срезом; перечитывание уже собранных публикаций на стенде
+(новые поля заполнятся при следующей детали).
 
 ## Куда смотреть дальше
 
