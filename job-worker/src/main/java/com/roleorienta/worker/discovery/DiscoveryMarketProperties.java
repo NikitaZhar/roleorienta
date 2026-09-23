@@ -17,20 +17,56 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * (Workday — фасет {@code Location_Country} при {@code Accept-Language: en-US}).
  * Сравнение без учёта регистра. Пустой список — гейт рынка выключен.</p>
  *
- * <p>{@code locationTerms} — слова, по которым локация работодателя (офис/город, как его
- * называет тенант) относится к рынку: города, страны, ISO-коды. Нужны, когда провайдер
- * не отдаёт фасет стран (у Workday — тенанты с одной страной, §59). Совпадение — целым
- * словом, без учёта регистра ({@code "AUT.9.Vienna"}, {@code "Bratislava, SK"}).</p>
+ * <p><b>Локации</b> (когда фасета стран нет, §59) делятся на три вида (§61):</p>
+ * <ul>
+ *   <li>{@code locationTerms} — <b>однозначные</b> признаки рынка: страны, коды AUT/SVK,
+ *       земли (Styria, Tyrol …) и города, которых нет в других странах в заметном числе
+ *       (Bratislava, Graz, Linz …). Любая локация с таким словом — на рынке;</li>
+ *   <li>{@code ambiguousLocationTerms} — <b>неоднозначные</b> города: «Vienna» — это и Вена,
+ *       и десяток городков США (Vienna, VA / WV / GA). Без однозначного признака рядом
+ *       локация не засчитывается как рынок: с маркером США («VA», «USA», «Virginia») —
+ *       отбрасывается, без маркера («Vienna») — считается неоднозначной (кандидат уходит
+ *       на ручную проверку, а не подключается);</li>
+ *   <li>прочие — не рынок.</li>
+ * </ul>
+ * <p>Совпадение — целым словом, без учёта регистра. Найдено прогоном по ~1000 доскам
+ * Workday: 11 из 24 «рыночных по локациям» оказались Vienna в Вирджинии/Западной
+ * Вирджинии/Джорджии.</p>
  *
- * @param countries     названия стран целевого рынка
- * @param locationTerms слова-признаки локации на рынке
+ * @param countries              названия стран целевого рынка
+ * @param locationTerms          однозначные признаки локации на рынке
+ * @param ambiguousLocationTerms неоднозначные города (засчитываются только с признаком страны)
  */
 @ConfigurationProperties(prefix = "app.discovery.market")
 public record DiscoveryMarketProperties(
         @DefaultValue({"Slovakia", "Slovak Republic", "Austria"}) List<String> countries,
         @DefaultValue({"Slovakia", "Slovak Republic", "Slovensko", "Bratislava", "Kosice", "Košice",
-                "Zilina", "Žilina", "Austria", "Österreich", "Vienna", "Wien", "Graz", "Linz",
-                "Salzburg", "Innsbruck", "SVK", "AUT"}) List<String> locationTerms) {
+                "Zilina", "Žilina", "Austria", "Österreich", "Wien", "Graz", "Linz", "Salzburg",
+                "Innsbruck", "Styria", "Steiermark", "Upper Austria", "Oberösterreich", "Tyrol", "Tirol",
+                "Carinthia", "Kärnten", "SVK", "AUT"}) List<String> locationTerms,
+        @DefaultValue({"Vienna"}) List<String> ambiguousLocationTerms) {
+
+    /**
+     * Маркеры США в названии локации: двухбуквенные коды штатов (строго заглавными, целым
+     * словом) и слова. Нужны только чтобы отбросить неоднозначные города («Vienna, VA»).
+     */
+    private static final Pattern US_MARKER = Pattern.compile(
+            "(?<![\\p{L}\\p{N}])(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN"
+                    + "|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+                    + "|US|USA|U\\.S\\.)(?![\\p{L}\\p{N}])"
+                    + "|(?i:united states|virginia|georgia|ohio|maryland|illinois|missouri|new york)");
+
+    /**
+     * Итог сверки локаций с рынком.
+     *
+     * @param marketCount     публикаций в однозначно рыночных локациях
+     * @param ambiguousCount  публикаций в неоднозначных локациях (без маркера страны)
+     * @param marketLocations рыночные локации (для объяснения решения)
+     * @param ambiguousLocations неоднозначные локации
+     */
+    public record LocationMatch(int marketCount, int ambiguousCount,
+                                List<String> marketLocations, List<String> ambiguousLocations) {
+    }
 
     /**
      * Рынок только из стран (признаки локаций = названия стран) — для тестов.
@@ -43,29 +79,50 @@ public record DiscoveryMarketProperties(
      * @return свойства рынка
      */
     public static DiscoveryMarketProperties ofCountries(List<String> countries) {
-        return new DiscoveryMarketProperties(countries, countries);
+        return new DiscoveryMarketProperties(countries, countries, List.of());
     }
 
     /**
-     * Сколько публикаций источника приходится на локации рынка (совпадение слова-признака
-     * целым словом в названии локации).
+     * Сверяет локации работодателя с рынком (§61): однозначные признаки → рынок;
+     * неоднозначные города без маркера США → неоднозначно; с маркером США → не рынок.
+     *
+     * @param locationCounts распределение публикаций по локациям
+     * @return счётчики и сами локации
+     */
+    public LocationMatch matchLocations(Map<String, Integer> locationCounts) {
+        Pattern strong = wholeWords(locationTerms);
+        Pattern ambiguous = wholeWords(ambiguousLocationTerms);
+        int market = 0;
+        int unsure = 0;
+        List<String> marketLocations = new java.util.ArrayList<>();
+        List<String> unsureLocations = new java.util.ArrayList<>();
+        for (Map.Entry<String, Integer> e : locationCounts.entrySet()) {
+            String location = e.getKey();
+            if (strong != null && strong.matcher(location).find()) {
+                market += e.getValue();
+                marketLocations.add(location + " " + e.getValue());
+            } else if (ambiguous != null && ambiguous.matcher(location).find()
+                    && !US_MARKER.matcher(location).find()) {
+                unsure += e.getValue();
+                unsureLocations.add(location + " " + e.getValue());
+            }
+        }
+        return new LocationMatch(market, unsure, List.copyOf(marketLocations), List.copyOf(unsureLocations));
+    }
+
+    /**
+     * Сколько публикаций источника приходится на однозначно рыночные локации
+     * (см. {@link #matchLocations}).
      *
      * @param locationCounts распределение публикаций по локациям
      * @return сумма по локациям рынка
      */
     public int marketLocationCount(Map<String, Integer> locationCounts) {
-        Pattern terms = locationPattern();
-        if (terms == null) {
-            return 0;
-        }
-        return locationCounts.entrySet().stream()
-                .filter(e -> terms.matcher(e.getKey()).find())
-                .mapToInt(Map.Entry::getValue)
-                .sum();
+        return matchLocations(locationCounts).marketCount();
     }
 
-    private Pattern locationPattern() {
-        String alternatives = locationTerms.stream()
+    private static Pattern wholeWords(List<String> terms) {
+        String alternatives = terms.stream()
                 .map(String::strip)
                 .filter(t -> !t.isEmpty())
                 .map(Pattern::quote)

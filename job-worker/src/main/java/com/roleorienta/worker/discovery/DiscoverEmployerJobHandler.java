@@ -187,22 +187,33 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
 
     /**
      * Гейт рынка по локациям (§59): фасета стран нет — у Workday так бывает у тенантов с
-     * одной страной, — но есть все локации работодателя со счётчиками. Локация с признаком
-     * рынка (город/страна/код) → {@code HIGH}; ни одной → {@code OUT_OF_MARKET} (причина
-     * называет главные локации — видно, что это за страна).
+     * одной страной, — но есть все локации работодателя со счётчиками (§61):
+     * однозначно рыночная локация → {@code HIGH}, причина называет <b>совпавшие</b> локации;
+     * только неоднозначные («Vienna» без страны) → {@code LOW}/{@code PENDING} на ручную
+     * проверку; ни одной → {@code OUT_OF_MARKET} (причина — главные локации).
      */
     private Assessment assessMarketByLocations(Map<String, Integer> locationCounts, int count) {
-        int inMarket = market.marketLocationCount(locationCounts);
+        DiscoveryMarketProperties.LocationMatch match = market.matchLocations(locationCounts);
         int total = locationCounts.values().stream().mapToInt(Integer::intValue).sum();
         String top = topOf(locationCounts);
-        if (inMarket > 0) {
+        if (match.marketCount() > 0) {
             return new Assessment(DiscoveryConfidence.HIGH, String.format(
-                    "лента валидна; фасета стран нет, по локациям на рынке: %d из %d; локации: %s",
-                    inMarket, total, top), count, false);
+                    "лента валидна; фасета стран нет, по локациям на рынке: %d из %d; совпали: %s",
+                    match.marketCount(), total, firstOf(match.marketLocations())), count, false);
+        }
+        if (match.ambiguousCount() > 0) {
+            return new Assessment(DiscoveryConfidence.LOW, String.format(
+                    "только неоднозначные локации (%d из %d): %s — страна не указана, требует проверки; "
+                            + "главные локации: %s",
+                    match.ambiguousCount(), total, firstOf(match.ambiguousLocations()), top), count, false);
         }
         return new Assessment(DiscoveryConfidence.LOW, String.format(
                 "нет локаций на целевом рынке (фасета стран нет — вероятно, одна страна; всего %d); локации: %s",
                 total, top), count, true);
+    }
+
+    private static String firstOf(java.util.List<String> items) {
+        return items.stream().limit(3).collect(Collectors.joining(", "));
     }
 
     private static String topOf(Map<String, Integer> counts) {

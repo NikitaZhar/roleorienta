@@ -113,9 +113,12 @@ app:
       # их отдаёт провайдер (Workday — фасет Location_Country). Нет публикаций на рынке →
       # кандидат OUT_OF_MARKET. Пустой список — гейт рынка выключен.
       countries: "Slovakia,Slovak Republic,Austria"
-      # Признаки локации на рынке — когда фасета стран нет (у Workday: тенант с одной
-      # страной, §59). Совпадение целым словом, без учёта регистра.
-      location-terms: "Slovakia,Slovak Republic,Slovensko,Bratislava,Kosice,Košice,Zilina,Žilina,Austria,Österreich,Vienna,Wien,Graz,Linz,Salzburg,Innsbruck,SVK,AUT"
+      # Однозначные признаки локации на рынке — когда фасета стран нет (у Workday: тенант с
+      # одной страной, §59/§61): страны, коды, земли, города без «тёзок» за рубежом.
+      location-terms: "Slovakia,Slovak Republic,Slovensko,Bratislava,Kosice,Košice,Zilina,Žilina,Austria,Österreich,Wien,Graz,Linz,Salzburg,Innsbruck,Styria,Steiermark,Upper Austria,Oberösterreich,Tyrol,Tirol,Carinthia,Kärnten,SVK,AUT"
+      # Неоднозначные города (есть «тёзки» в США: Vienna, VA/WV/GA): с маркером США —
+      # не рынок; без страны — кандидат на ручную проверку, не авто-подключение (§61).
+      ambiguous-location-terms: "Vienna"
     cc:
       # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54, §55).
       index-base-url: https://index.commoncrawl.org

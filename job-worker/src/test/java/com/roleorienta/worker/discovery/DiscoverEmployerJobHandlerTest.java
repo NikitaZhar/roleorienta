@@ -39,7 +39,7 @@ class DiscoverEmployerJobHandlerTest {
     private final DiscoverEmployerJobHandler handler =
             new DiscoverEmployerJobHandler(registry, repository, registrar,
                     new DiscoveryMarketProperties(List.of("Slovakia", "Austria"),
-                            List.of("Slovakia", "Austria", "Bratislava", "Vienna", "Wien", "AUT")));
+                            List.of("Slovakia", "Austria", "Bratislava", "Wien", "Graz", "AUT"), List.of("Vienna")));
 
     private static final String PAYLOAD =
             "{\"providerCode\":\"greenhouse\",\"slug\":\"acme\",\"baseUrl\":\"http://stub\"}";
@@ -180,12 +180,56 @@ class DiscoverEmployerJobHandlerTest {
         EmployerCandidate saved = capture();
         assertEquals(EmployerCandidateState.CONFIRMED, saved.getState());
         assertTrue(saved.getReason().contains("на рынке: 4 из 6"), saved.getReason());
+        assertTrue(saved.getReason().contains("совпали: AUT.9.Vienna 4"), "причина называет совпавшие локации");
+    }
+
+    /** Реальные локации из прогона по ~1000 доскам Workday (§61). */
+    @Test
+    void viennaInTheUsIsNotTheMarket() {
+        DiscoveryMarketProperties m = new DiscoveryMarketProperties(List.of("Slovakia", "Austria"),
+                List.of("Slovakia", "Austria", "Bratislava", "Wien", "Graz", "Salzburg", "Styria", "AUT"),
+                List.of("Vienna"));
+        java.util.Map<String, Integer> locations = new java.util.LinkedHashMap<>();
+        locations.put("Vienna, VA", 1);
+        locations.put("VA - Vienna", 6);
+        locations.put("US-VA-Vienna", 10);
+        locations.put("Vienna, Virginia", 1);
+        locations.put("JD: 00676 Vienna, West Virginia (Grand Central Mall)", 2);
+        locations.put("Store 01111 Vienna, WV-Vienna,WV 26105", 1);
+        locations.put("Store 06440 Vienna GA", 1);
+        locations.put("Vienna, VA, USA (Pike 7 Plaza - J.Crew Factory)", 4);
+
+        DiscoveryMarketProperties.LocationMatch us = m.matchLocations(locations);
+        assertEquals(0, us.marketCount());
+        assertEquals(0, us.ambiguousCount(), "с маркером США — не рынок и не неоднозначно");
+
+        DiscoveryMarketProperties.LocationMatch at = m.matchLocations(java.util.Map.of(
+                "Vienna, Austria", 3, "AUT-Vienna Am Europlatz 5", 1, "Remote - Austria", 4,
+                "Graz, Styria", 1, "SV-Bratislava", 1, "Vienna", 2));
+        assertEquals(10, at.marketCount());
+        assertEquals(2, at.ambiguousCount(), "голая «Vienna» — неоднозначно");
+    }
+
+    @Test
+    void onlyAmbiguousLocationsGoToManualReview() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null, java.util.Map.of(),
+                java.util.Map.of("Vienna", 4, "Charlotte", 700)));
+
+        handler.handle(message());
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.PENDING, saved.getState());
+        assertTrue(saved.getReason().contains("неоднозначные локации (4 из 704): Vienna 4"), saved.getReason());
     }
 
     @Test
     void locationTermsMatchWholeWordsOnly() {
         DiscoveryMarketProperties m = new DiscoveryMarketProperties(List.of("Austria"),
-                List.of("Austria", "Wien", "Košice", "AUT"));
+                List.of("Austria", "Wien", "Košice", "AUT"), List.of());
 
         assertEquals(1, m.marketLocationCount(java.util.Map.of("Bratislava, KOŠICE office", 1)));
         assertEquals(2, m.marketLocationCount(java.util.Map.of("AUT.9.Vienna", 2)));
