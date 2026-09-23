@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.roleorienta.core.domain.Source;
 import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.FetchedPosting;
+import com.roleorienta.worker.adapters.MarketScope;
 import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.http.SourceHttpClient;
@@ -95,19 +96,135 @@ public class WorkdayAdapter implements SourceAdapter {
     @Override
     public PostingsPage listPostings(Source source, String cursor) {
         int offset = parseOffset(cursor);
-        String url = cxsPath(source) + "/jobs";
-        String body = requestBody(offset);
-        String response = httpClient.postJson(url, body, LIST_HEADERS);
-        return parseList(source, response, offset);
+        String response = postList(source, offset, null);
+        return parseList(source, response, offset, null);
     }
 
     /**
-     * Тело POST-запроса списка: {@code {"appliedFacets":{},"limit":20,"offset":N,"searchText":""}}.
+     * Сбор только по рынку (§62). Workday фильтрует на своей стороне по {@code appliedFacets},
+     * но id значений фасетов у каждого тенанта свои — поэтому первый вызов (курсор
+     * {@code null}) сначала читает фасеты без фильтра и выбирает рыночные значения:
+     * страны ({@code Location_Country}) или, если фасета стран нет (тенант с одной страной),
+     * однозначно рыночные локации ({@code locations}). Затем — список с этим фильтром.
+     * Рыночных значений нет — пустая страница без курсора (собирать нечего). Выбранный
+     * фильтр едет в курсоре ({@code "<offset>|<facet>=<id>,<id>"}), поэтому следующие
+     * страницы идут сразу с фильтром, без повторного чтения фасетов.
+     */
+    @Override
+    public PostingsPage listPostings(Source source, String cursor, MarketScope scope) {
+        if (scope == null || !scope.restricted()) {
+            return listPostings(source, cursor);
+        }
+        AppliedFacet filter;
+        int offset;
+        if (cursor == null || cursor.isBlank()) {
+            JsonNode facets = readTree(postList(source, 0, null)).path("facets");
+            filter = marketFacet(facets, scope);
+            if (filter == null) {
+                return new PostingsPage(List.of(), null);
+            }
+            offset = 0;
+        } else {
+            int bar = cursor.indexOf('|');
+            offset = parseOffset(bar < 0 ? cursor : cursor.substring(0, bar));
+            filter = bar < 0 ? null : AppliedFacet.parse(cursor.substring(bar + 1));
+        }
+        return parseList(source, postList(source, offset, filter), offset, filter);
+    }
+
+    /**
+     * Фильтр рынка из фасетов ответа: сначала страны, иначе локации. {@code null} — на
+     * рынке ничего нет.
+     */
+    static AppliedFacet marketFacet(JsonNode facets, MarketScope scope) {
+        AppliedFacet byCountry = collectFacetIds(facets, COUNTRY_FACET, scope.isMarketCountry());
+        if (byCountry != null) {
+            return byCountry;
+        }
+        return collectFacetIds(facets, LOCATIONS_FACET, scope.isMarketLocation());
+    }
+
+    /**
+     * id значений фасета (по шаблону {@code facetParameter}, с учётом вложенных групп), чей
+     * {@code descriptor} подходит под предикат. {@code null} — фасета нет или подходящих
+     * значений нет.
+     */
+    static AppliedFacet collectFacetIds(JsonNode facets, Pattern facetParameter,
+                                        java.util.function.Predicate<String> accept) {
+        if (!facets.isArray()) {
+            return null;
+        }
+        for (JsonNode facet : facets) {
+            String parameter = facet.path("facetParameter").asText("");
+            JsonNode values = facet.path("values");
+            if (facetParameter.matcher(parameter).matches()) {
+                List<String> ids = new ArrayList<>();
+                for (JsonNode value : values) {
+                    String id = textOrNull(value.path("id"));
+                    String descriptor = textOrNull(value.path("descriptor"));
+                    if (id != null && descriptor != null && accept.test(descriptor.strip())) {
+                        ids.add(id);
+                    }
+                }
+                if (!ids.isEmpty()) {
+                    return new AppliedFacet(parameter, List.copyOf(ids));
+                }
+            } else {
+                AppliedFacet nested = collectFacetIds(values, facetParameter, accept);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Фильтр Workday {@code appliedFacets}: параметр фасета и выбранные id.
+     *
+     * @param parameter {@code facetParameter} (напр. {@code Location_Country}, {@code locations})
+     * @param ids       id значений
+     */
+    record AppliedFacet(String parameter, List<String> ids) {
+
+        String encode() {
+            return parameter + "=" + String.join(",", ids);
+        }
+
+        static AppliedFacet parse(String encoded) {
+            int eq = encoded.indexOf('=');
+            if (eq <= 0 || eq == encoded.length() - 1) {
+                return null;
+            }
+            return new AppliedFacet(encoded.substring(0, eq), List.of(encoded.substring(eq + 1).split(",")));
+        }
+    }
+
+    private String postList(Source source, int offset, AppliedFacet filter) {
+        return httpClient.postJson(cxsPath(source) + "/jobs", requestBody(offset, filter), LIST_HEADERS);
+    }
+
+    private JsonNode readTree(String json) {
+        try {
+            return objectMapper.readTree(json);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Не удалось разобрать список Workday", e);
+        }
+    }
+
+    /**
+     * Тело POST-запроса списка: {@code {"appliedFacets":{…},"limit":20,"offset":N,"searchText":""}};
+     * фильтр рынка — {@code {"<facetParameter>":["id",…]}} (§62).
      * Собирается через {@link ObjectMapper}, чтобы не экранировать JSON вручную.
      */
-    private String requestBody(int offset) {
+    private String requestBody(int offset, AppliedFacet filter) {
         ObjectNode body = objectMapper.createObjectNode();
-        body.set("appliedFacets", objectMapper.createObjectNode());
+        ObjectNode applied = objectMapper.createObjectNode();
+        if (filter != null) {
+            com.fasterxml.jackson.databind.node.ArrayNode ids = applied.putArray(filter.parameter());
+            filter.ids().forEach(ids::add);
+        }
+        body.set("appliedFacets", applied);
         body.put("limit", PAGE_LIMIT);
         body.put("offset", offset);
         body.put("searchText", "");
@@ -120,7 +237,7 @@ public class WorkdayAdapter implements SourceAdapter {
      *
      * @throws IllegalStateException если тело не разбирается как ожидаемый JSON
      */
-    private PostingsPage parseList(Source source, String response, int offset) {
+    private PostingsPage parseList(Source source, String response, int offset, AppliedFacet filter) {
         try {
             JsonNode root = objectMapper.readTree(response);
             int total = root.path("total").asInt(0);
@@ -137,7 +254,7 @@ public class WorkdayAdapter implements SourceAdapter {
             }
             int nextOffset = offset + PAGE_LIMIT;
             String nextCursor = (!postings.isEmpty() && nextOffset < total)
-                    ? String.valueOf(nextOffset) : null;
+                    ? nextOffset + (filter == null ? "" : "|" + filter.encode()) : null;
             Map<String, Integer> countries = new LinkedHashMap<>();
             collectFacetCounts(root.path("facets"), COUNTRY_FACET, countries);
             Map<String, Integer> locations = new LinkedHashMap<>();
@@ -271,7 +388,7 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /** Текст узла или {@code null}, если узел отсутствует/пуст (явное «неизвестно»). */
-    private String textOrNull(JsonNode node) {
+    private static String textOrNull(JsonNode node) {
         if (node.isMissingNode() || node.isNull()) {
             return null;
         }

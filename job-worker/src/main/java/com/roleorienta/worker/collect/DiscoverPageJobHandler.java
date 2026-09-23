@@ -20,11 +20,16 @@ import com.roleorienta.worker.outbox.OutboxEventRepository;
 import com.roleorienta.worker.scheduling.CrawlRunRepository;
 import com.roleorienta.worker.scheduling.CrawlTaskRepository;
 import com.roleorienta.worker.scheduling.SourceRepository;
+import com.roleorienta.worker.adapters.MarketScope;
+import com.roleorienta.worker.discovery.DiscoveryMarketProperties;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,6 +40,12 @@ import org.springframework.stereotype.Component;
  * задание и outbox-событие создаются в той же транзакции, тем же паттерном, что у
  * планировщика. Так первое звено запускает второе через штатную магистраль (§13).
  * В конце отмечает обход и своё задание завершёнными.</p>
+ *
+ * <p><b>Только рынок и пагинация (§62).</b> Лента читается в области целевого рынка
+ * ({@link DiscoveryMarketProperties#toScope()}): адаптер, умеющий фильтровать на стороне
+ * провайдера (Workday), отдаёт только публикации SK/AT — у крупного работодателя это
+ * единицы-десятки вместо тысяч. Страницы читаются по курсору до его конца, но не больше
+ * {@code app.collect.max-list-pages} за обход (бюджет запросов, A29).</p>
  *
  * <p><b>Границы транзакции (пилот, Этап 1).</b> Метод вызывается внутри транзакции
  * слушателя (общей с фиксацией ключа идемпотентности), поэтому HTTP-вызов адаптера
@@ -52,6 +63,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
     private final JobPostingRepository jobPostingRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final SourceAdapterRegistry adapterRegistry;
+    private final MarketScope marketScope;
+    private final int maxListPages;
 
     /** Разбор и формирование тел заданий (JSON). Создаётся локально (как в {@code SourceScheduler}). */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -63,6 +76,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
      * @param jobPostingRepository  публикации
      * @param outboxEventRepository outbox (для постановки FETCH_POSTING)
      * @param adapterRegistry       реестр адаптеров источников
+     * @param market                целевой рынок (область сбора, §62)
+     * @param maxListPages          потолок страниц ленты за один обход
      */
     public DiscoverPageJobHandler(
             SourceRepository sourceRepository,
@@ -70,13 +85,17 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
             CrawlTaskRepository crawlTaskRepository,
             JobPostingRepository jobPostingRepository,
             OutboxEventRepository outboxEventRepository,
-            SourceAdapterRegistry adapterRegistry) {
+            SourceAdapterRegistry adapterRegistry,
+            DiscoveryMarketProperties market,
+            @Value("${app.collect.max-list-pages:10}") int maxListPages) {
         this.sourceRepository = sourceRepository;
         this.crawlRunRepository = crawlRunRepository;
         this.crawlTaskRepository = crawlTaskRepository;
         this.jobPostingRepository = jobPostingRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.adapterRegistry = adapterRegistry;
+        this.marketScope = market.toScope();
+        this.maxListPages = maxListPages;
     }
 
     @Override
@@ -109,10 +128,22 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
         }
 
         SourceAdapter adapter = adapterRegistry.forProviderCode(source.getProvider().getCode());
-        PostingsPage page = adapter.listPostings(source, null);
+        List<DiscoveredPosting> discovered = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            PostingsPage page = adapter.listPostings(source, cursor, marketScope);
+            discovered.addAll(page.postings());
+            cursor = page.nextCursor();
+            pages++;
+        } while (cursor != null && pages < maxListPages);
+        if (cursor != null) {
+            log.info("DISCOVER_PAGE: источник {} — достигнут потолок {} страниц, остаток — в следующем обходе",
+                    source.getId(), maxListPages);
+        }
 
         Instant now = Instant.now();
-        for (DiscoveredPosting posting : page.postings()) {
+        for (DiscoveredPosting posting : discovered) {
             jobPostingRepository.upsert(
                     source.getId(),
                     posting.externalId(),
@@ -130,9 +161,9 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
         task.setState(CrawlTaskState.SUCCEEDED);
         crawlTaskRepository.save(task);
 
-        log.info("DISCOVER_PAGE: источник {} ({}), обнаружено публикаций {}, поставлено FETCH_POSTING {}",
-                source.getId(), source.getProvider().getCode(),
-                page.postings().size(), page.postings().size());
+        log.info("DISCOVER_PAGE: источник {} ({}){}, страниц {}, обнаружено публикаций {}, поставлено FETCH_POSTING {}",
+                source.getId(), source.getProvider().getCode(), marketScope.restricted() ? " [рынок]" : "",
+                pages, discovered.size(), discovered.size());
     }
 
     /**

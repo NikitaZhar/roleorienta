@@ -37,6 +37,21 @@ public interface SourceAdapter {
     PostingsPage listPostings(Source source, String cursor);
 
     /**
+     * Перечисляет публикации источника, ограниченные рынком (§62). Адаптер, умеющий
+     * фильтровать на стороне провайдера, отдаёт только публикации рынка; по умолчанию
+     * область игнорируется — отдаётся всё, как {@link #listPostings(Source, String)}
+     * (Greenhouse: лента одна и маленькая).
+     *
+     * @param source источник сбора
+     * @param cursor курсор из предыдущего вызова этого же метода или {@code null}
+     * @param scope  рынок; {@link MarketScope#ALL} — без ограничения
+     * @return страница публикаций рынка и курсор следующей страницы
+     */
+    default PostingsPage listPostings(Source source, String cursor, MarketScope scope) {
+        return listPostings(source, cursor);
+    }
+
+    /**
      * Получает детальную страницу одной публикации и возвращает добранные поля
      * (те, которых нет в ленте-списке; §5, «деталь из detail-endpoint, а не из
      * списка»). Поля возвращаются сырыми — нормализация выполняется в следующем срезе.

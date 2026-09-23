@@ -66,7 +66,8 @@ class InactiveSourceJobsTest {
         pausedSource();
         when(runs.findById(5L)).thenReturn(Optional.of(run));
 
-        new DiscoverPageJobHandler(sources, runs, tasks, postings, outbox, adapters).handle(new JobMessage("k",
+        new DiscoverPageJobHandler(sources, runs, tasks, postings, outbox, adapters,
+                com.roleorienta.worker.discovery.DiscoveryMarketProperties.ofCountries(java.util.List.of("Austria")), 10).handle(new JobMessage("k",
                 "DISCOVER_PAGE", "{\"taskId\":1,\"sourceId\":9,\"crawlRunId\":5}"));
 
         verifyNoInteractions(adapters, outbox);

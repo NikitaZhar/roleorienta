@@ -83,6 +83,24 @@ public record DiscoveryMarketProperties(
     }
 
     /**
+     * Рынок как область сбора (§62): страна — по списку {@code countries}, локация — только
+     * <b>однозначные</b> признаки (неоднозначная «Vienna» в сбор не попадает). Пустой список
+     * стран — без ограничения.
+     *
+     * @return область для адаптеров
+     */
+    public com.roleorienta.worker.adapters.MarketScope toScope() {
+        if (!enabled()) {
+            return com.roleorienta.worker.adapters.MarketScope.ALL;
+        }
+        java.util.Set<String> marketCountries = normalized();
+        Pattern strong = wholeWords(locationTerms);
+        return new com.roleorienta.worker.adapters.MarketScope(
+                country -> country != null && marketCountries.contains(country.strip().toLowerCase(Locale.ROOT)),
+                location -> location != null && strong != null && strong.matcher(location).find());
+    }
+
+    /**
      * Сверяет локации работодателя с рынком (§61): однозначные признаки → рынок;
      * неоднозначные города без маркера США → неоднозначно; с маркером США → не рынок.
      *
