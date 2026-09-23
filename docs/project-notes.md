@@ -3824,6 +3824,23 @@ detailStructuredFields` — страна, формат, `startDate` (не «Post
 `PostingApiIntegrationTest` — `postedOn` и `additionalLocations` в карточке. Компиляция/тесты
 в среде ИИ не запускались — их выполняет владелец.
 
+### 65.2a Стенд
+
+Перезапрос деталей 6 вакансий ниши: Hitachi — город `Vienna` (было «Vienna, Vienna»),
+страна Austria, **формат HYBRID** (`remoteType`), опубликовано 2026-07-07/16; Snap — Vienna,
+2026-07-23; DXC — страна Austria и дата 2026-09-01, но город «AUT - VIENNA» (формат части
+тенантов «КОД - [Регион -] ГОРОД») → добавлен разбор: последний сегмент через « - »,
+заглавные → «Vienna» (тест `countryCodedWorkdayLocations`). Скрипты стенда (`target/*.sh`)
+останавливали воркер через `pkill -f 'spring-boot:run'` — это гасило и API, поэтому
+проверка через REST не прошла; исправлено на `'job-worker spring-boot:run'`.
+
+**Повтор со свежей деталью** (окно планировщика 1 мин): через REST — DXC `city=Vienna`
+(было «AUT - VIENNA»), Hitachi `Vienna`/`HYBRID`/`postedOn` 2026-07-07 и 07-16, Snap
+`postedOn` 2026-07-23. Публикации, для которых деталь в этом прогоне не запрашивалась (вне
+ниши — «Software Project Manager», «Student Worker»), сохраняют прежние значения
+(«Vienna, Vienna», `postedOn=null`) до следующей детали — ожидаемо: нормализация
+применяется при получении детали.
+
 ### 65.3 Что НЕ вошло
 
 Фильтр/сортировка ленты по `postedOn`; фильтр страны с учётом доп. локаций (сейчас

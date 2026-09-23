@@ -60,6 +60,19 @@ class LocationNormalizerTest {
         assertThat(normalizer.normalize("Guntramsdorf, Lower Austria, Austria").city()).isEqualTo("Guntramsdorf");
     }
 
+    /** Формат «КОД - [Регион -] ГОРОД» (DXC, Ecolab) — реальные строки со стенда (§65). */
+    @Test
+    void countryCodedWorkdayLocations() {
+        NormalizedLocation dxc = normalizer.normalize("AUT - VIENNA", "Austria", null);
+        assertThat(dxc.city()).isEqualTo("Vienna");
+        assertThat(dxc.country()).isEqualTo("Austria");
+        assertThat(normalizer.normalize("SVK - BL - BRATISLAVA", "Slovakia", null).city()).isEqualTo("Bratislava");
+        assertThat(normalizer.normalize("AUT - Styria - Graz", "Austria", null).city()).isEqualTo("Graz");
+        assertThat(normalizer.normalize("Remote - Austria").modality()).isEqualTo(WorkModality.REMOTE);
+        assertThat(normalizer.normalize("Store - Main Street").city()).as("не код страны — как есть")
+                .isEqualTo("Store - Main Street");
+    }
+
     @Test
     void usStateCodeMeansUnitedStates() {
         NormalizedLocation houston = normalizer.normalize("Houston, TX");

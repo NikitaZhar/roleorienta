@@ -125,11 +125,33 @@ public class LocationNormalizer {
             return new NormalizedLocation(null, null, WorkModality.UNKNOWN);
         }
         if (parts.size() == 1) {
-            return new NormalizedLocation(parts.get(0), null, WorkModality.UNKNOWN);
+            return new NormalizedLocation(codedCity(parts.get(0)), null, WorkModality.UNKNOWN);
         }
         String last = parts.get(parts.size() - 1);
         String country = US_STATES.contains(last) ? USA : last;
         return new NormalizedLocation(parts.get(0), country, WorkModality.UNKNOWN);
+    }
+
+    /** Коды стран ISO alpha-3 в начале строки вида «AUT - VIENNA», «SVK - BL - BRATISLAVA». */
+    private static final java.util.regex.Pattern CODED = java.util.regex.Pattern.compile("^[A-Z]{3}\\s+-\\s+.+");
+
+    /**
+     * Город из строки «КОД - [Регион -] ГОРОД» (формат части тенантов Workday — DXC, Ecolab,
+     * §65): последний сегмент через « - »; ЗАГЛАВНЫЕ приводятся к «Bratislava». Иная строка —
+     * как есть.
+     */
+    static String codedCity(String value) {
+        if (!CODED.matcher(value).matches()) {
+            return value;
+        }
+        String[] parts = value.split("\\s+-\\s+");
+        String city = parts[parts.length - 1].strip();
+        if (city.equals(city.toUpperCase(Locale.ROOT))) {
+            city = Arrays.stream(city.toLowerCase(Locale.ROOT).split(" "))
+                    .map(w -> w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                    .collect(java.util.stream.Collectors.joining(" "));
+        }
+        return city;
     }
 
     private static String blankToNull(String value) {
