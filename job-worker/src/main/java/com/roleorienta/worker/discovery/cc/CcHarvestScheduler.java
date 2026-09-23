@@ -7,6 +7,7 @@ import com.roleorienta.worker.discovery.EmployerCandidateRepository;
 import com.roleorienta.worker.discovery.cc.HarvestStore.BoardState;
 import com.roleorienta.worker.discovery.cc.HarvestStore.Cursor;
 import com.roleorienta.worker.discovery.cc.HarvestStore.PendingBoard;
+import com.roleorienta.worker.http.SourceBackoffException;
 import com.roleorienta.worker.lock.PostgresLeaderLock;
 import com.roleorienta.worker.outbox.OutboxEventRepository;
 import java.util.Collection;
@@ -89,7 +90,8 @@ public class CcHarvestScheduler {
     public void runOnce() {
         try {
             collect();
-        } catch (CommonCrawlIndexClient.IncompleteIndexPageException | HttpServerErrorException unstable) {
+        } catch (CommonCrawlIndexClient.IncompleteIndexPageException | HttpServerErrorException
+                | SourceBackoffException unstable) {
             // Штатная нестабильность общего CDX-сервера (§55.5a): обрыв ответа, 502/503.
             // Страница не засчитана, курсор на месте — без стектрейса, чтобы не шуметь в логе.
             log.warn("CC-гарвест: индекс временно недоступен, повтор на следующем тике: {}", unstable.getMessage());

@@ -80,6 +80,22 @@ app:
     # Размер окна расписания, мс (по умолчанию 15 минут): в пределах одного окна
     # источник планируется один раз.
     window-ms: 900000
+  source:
+    pacing:
+      # Вежливость к источникам (§57, B1-минимум): не чаще одного запроса за интервал на
+      # домен (все тенанты *.myworkdayjobs.com — один домен: общая инфраструктура Workday).
+      # Темп — на процесс воркера; при N репликах суммарная частота ×N.
+      default-interval-ms: 1000
+      intervals-ms:
+        "[myworkdayjobs.com]": 2000
+        "[commoncrawl.org]": 3000
+        # Cert Spotter без ключа — 10 запросов в час.
+        "[certspotter.com]": 360000
+      # Дольше этого поток слота не ждёт — задание откладывается (SourceBackoffException).
+      max-wait-ms: 20000
+      # Потолок паузы по Retry-After и пауза при 429 без заголовка.
+      max-backoff-ms: 3600000
+      default-retry-after-ms: 60000
   discovery:
     harvest:
       # Гарвест-вход обнаружения (§36): периодически подаёт кандидатов из seed.
@@ -97,6 +113,9 @@ app:
       # их отдаёт провайдер (Workday — фасет Location_Country). Нет публикаций на рынке →
       # кандидат OUT_OF_MARKET. Пустой список — гейт рынка выключен.
       countries: "Slovakia,Slovak Republic,Austria"
+      # Признаки локации на рынке — когда фасета стран нет (у Workday: тенант с одной
+      # страной, §59). Совпадение целым словом, без учёта регистра.
+      location-terms: "Slovakia,Slovak Republic,Slovensko,Bratislava,Kosice,Košice,Zilina,Žilina,Austria,Österreich,Vienna,Wien,Graz,Linz,Salzburg,Innsbruck,SVK,AUT"
     cc:
       # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54, §55).
       index-base-url: https://index.commoncrawl.org

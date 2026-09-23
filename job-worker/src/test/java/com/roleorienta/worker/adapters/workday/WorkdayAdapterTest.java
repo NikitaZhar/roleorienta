@@ -59,7 +59,10 @@ class WorkdayAdapterTest {
                         {"id":"sk01","descriptor":"Slovakia","count":7}]},
                       {"facetParameter":"locationMainGroup","values":[
                         {"descriptor":"Locations","facetParameter":"locationCountry","values":[
-                          {"id":"at01","descriptor":"Austria","count":3}]}]}
+                          {"id":"at01","descriptor":"Austria","count":3}]},
+                        {"descriptor":"Locations","facetParameter":"locations","values":[
+                          {"id":"l1","descriptor":"AUT.9.Vienna","count":3},
+                          {"id":"l2","descriptor":"Arizona - Home Teleworkers","count":12}]}]}
                     ]}""".formatted(EXTERNAL_PATH);
             respond(exchange, body);
         });
@@ -108,6 +111,8 @@ class WorkdayAdapterTest {
         assertEquals(java.util.Map.of("United States of America", 30, "Slovakia", 7, "Austria", 3),
                 page.countryCounts());
         assertEquals("en-US", lastAcceptLanguage, "названия фасетов сверяются по-английски");
+        assertEquals(java.util.Map.of("AUT.9.Vienna", 3, "Arizona - Home Teleworkers", 12), page.locationCounts(),
+                "вложенный фасет locations (§59)");
     }
 
     @Test

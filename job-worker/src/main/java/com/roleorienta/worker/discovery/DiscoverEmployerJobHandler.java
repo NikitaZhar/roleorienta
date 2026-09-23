@@ -18,11 +18,15 @@ import com.roleorienta.worker.adapters.SourceAdapterRegistry;
 import com.roleorienta.worker.discovery.EmployerSourceRegistrar.Registration;
 import com.roleorienta.worker.jobs.JobMessage;
 import com.roleorienta.worker.jobs.TypedJobHandler;
+import com.roleorienta.worker.http.SourceBackoffException;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * Обработчик задания {@code DISCOVER_EMPLOYER} — обнаружение работодателей с гейтом
@@ -132,6 +136,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * Проверяет ленту кандидата и возвращает уверенность/обоснование. Ошибки чтения
      * и разбора перехватываются: кандидат всё равно попадает в очередь с
      * уверенностью {@code NONE} — обнаружение не должно падать на «плохом» кандидате.
+     * Исключение — временные сбои источника ({@link #isTransient}): они пробрасываются,
+     * и задание повторяется (§57).
      */
     private Assessment assess(Payload payload) {
         try {
@@ -145,12 +151,66 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             if (market.enabled() && !page.countryCounts().isEmpty()) {
                 return assessMarket(page.countryCounts(), count);
             }
+            if (market.enabled() && adapter.reportsCountries()) {
+                if (!page.locationCounts().isEmpty()) {
+                    return assessMarketByLocations(page.locationCounts(), count);
+                }
+                // Ни стран, ни локаций (§58): рынок не проверен — не подключаем вслепую.
+                return new Assessment(DiscoveryConfidence.LOW,
+                        "лента валидна (" + count + "), но распределение по странам не получено — "
+                                + "рынок не проверен, требует подтверждения", count, false);
+            }
             return new Assessment(DiscoveryConfidence.HIGH,
                     "лента валидна, публикаций: " + count, count, false);
         } catch (RuntimeException e) {
+            if (isTransient(e)) {
+                // Сбой источника, а не свойство ленты (§57): не записываем кандидата как NONE
+                // (дедуп не дал бы проверить его снова) — пусть задание повторит брокер.
+                throw e;
+            }
             return new Assessment(DiscoveryConfidence.NONE,
                     "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, false);
         }
+    }
+
+    /**
+     * Временный сбой источника: пауза вежливости, {@code 429}, {@code 5xx}, сетевой сбой
+     * или тайм-аут. В отличие от «лента не разбирается» или {@code 404}, он ничего не
+     * говорит о кандидате.
+     */
+    static boolean isTransient(RuntimeException e) {
+        return e instanceof SourceBackoffException
+                || e instanceof HttpServerErrorException
+                || e instanceof HttpClientErrorException.TooManyRequests
+                || e instanceof ResourceAccessException;
+    }
+
+    /**
+     * Гейт рынка по локациям (§59): фасета стран нет — у Workday так бывает у тенантов с
+     * одной страной, — но есть все локации работодателя со счётчиками. Локация с признаком
+     * рынка (город/страна/код) → {@code HIGH}; ни одной → {@code OUT_OF_MARKET} (причина
+     * называет главные локации — видно, что это за страна).
+     */
+    private Assessment assessMarketByLocations(Map<String, Integer> locationCounts, int count) {
+        int inMarket = market.marketLocationCount(locationCounts);
+        int total = locationCounts.values().stream().mapToInt(Integer::intValue).sum();
+        String top = topOf(locationCounts);
+        if (inMarket > 0) {
+            return new Assessment(DiscoveryConfidence.HIGH, String.format(
+                    "лента валидна; фасета стран нет, по локациям на рынке: %d из %d; локации: %s",
+                    inMarket, total, top), count, false);
+        }
+        return new Assessment(DiscoveryConfidence.LOW, String.format(
+                "нет локаций на целевом рынке (фасета стран нет — вероятно, одна страна; всего %d); локации: %s",
+                total, top), count, true);
+    }
+
+    private static String topOf(Map<String, Integer> counts) {
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(3)
+                .map(e -> e.getKey() + " " + e.getValue())
+                .collect(Collectors.joining(", "));
     }
 
     /**

@@ -38,7 +38,8 @@ class DiscoverEmployerJobHandlerTest {
     private final EmployerSourceRegistrar registrar = mock(EmployerSourceRegistrar.class);
     private final DiscoverEmployerJobHandler handler =
             new DiscoverEmployerJobHandler(registry, repository, registrar,
-                    new DiscoveryMarketProperties(List.of("Slovakia", "Austria")));
+                    new DiscoveryMarketProperties(List.of("Slovakia", "Austria"),
+                            List.of("Slovakia", "Austria", "Bratislava", "Vienna", "Wien", "AUT")));
 
     private static final String PAYLOAD =
             "{\"providerCode\":\"greenhouse\",\"slug\":\"acme\",\"baseUrl\":\"http://stub\"}";
@@ -134,15 +135,74 @@ class DiscoverEmployerJobHandlerTest {
     }
 
     @Test
+    void providerThatReportsCountriesButSentNoneIsNotConnectedBlindly() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null)); // ни стран, ни локаций
+
+        handler.handle(message());
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.PENDING, saved.getState());
+        assertEquals(DiscoveryConfidence.LOW, saved.getConfidence());
+        assertTrue(saved.getReason().contains("рынок не проверен"), saved.getReason());
+    }
+
+    @Test
+    void singleCountryTenantIsJudgedByLocations() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        // Реальная форма у тенанта aaaie (§59): стран нет, локации — штаты США.
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null, java.util.Map.of(),
+                java.util.Map.of("Arizona - Home Teleworkers", 12, "Alabama - Home Teleworkers", 9)));
+
+        handler.handle(message());
+
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.OUT_OF_MARKET, saved.getState());
+        assertTrue(saved.getReason().contains("Arizona - Home Teleworkers 12"), saved.getReason());
+    }
+
+    @Test
+    void marketLocationWithoutCountryFacetGivesHigh() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null, java.util.Map.of(),
+                java.util.Map.of("AUT.9.Vienna", 4, "Brno", 2)));
+        when(registrar.register(any(), any(), any(), any())).thenReturn(new Registration(5L, 20L));
+
+        handler.handle(message());
+
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.CONFIRMED, saved.getState());
+        assertTrue(saved.getReason().contains("на рынке: 4 из 6"), saved.getReason());
+    }
+
+    @Test
+    void locationTermsMatchWholeWordsOnly() {
+        DiscoveryMarketProperties m = new DiscoveryMarketProperties(List.of("Austria"),
+                List.of("Austria", "Wien", "Košice", "AUT"));
+
+        assertEquals(1, m.marketLocationCount(java.util.Map.of("Bratislava, KOŠICE office", 1)));
+        assertEquals(2, m.marketLocationCount(java.util.Map.of("AUT.9.Vienna", 2)));
+        assertEquals(0, m.marketLocationCount(java.util.Map.of("Autauga County, AL", 5, "Wiener Neustadt Str, Berlin", 1)),
+                "AUT внутри слова и Wien внутри Wiener не считаются");
+    }
+
+    @Test
     void marketMatchIgnoresCase() {
-        assertEquals(3, new DiscoveryMarketProperties(List.of(" slovakia ", "AUSTRIA"))
+        assertEquals(3, DiscoveryMarketProperties.ofCountries(List.of(" slovakia ", "AUSTRIA"))
                 .marketCount(java.util.Map.of("Slovakia", 1, "Austria", 2, "Germany", 9)));
     }
 
     @Test
     void disabledMarketKeepsOldRule() {
         DiscoverEmployerJobHandler noMarket =
-                new DiscoverEmployerJobHandler(registry, repository, registrar, new DiscoveryMarketProperties(List.of()));
+                new DiscoverEmployerJobHandler(registry, repository, registrar, DiscoveryMarketProperties.ofCountries(List.of()));
         when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
         when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
         when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null,
@@ -152,6 +212,32 @@ class DiscoverEmployerJobHandlerTest {
         noMarket.handle(message());
 
         assertEquals(EmployerCandidateState.CONFIRMED, capture().getState());
+    }
+
+    @Test
+    void transientSourceFailureIsRetriedNotRecorded() {
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.listPostings(any(), any())).thenThrow(
+                new com.roleorienta.worker.http.SourceBackoffException("myworkdayjobs.com", java.time.Duration.ofSeconds(90)));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.roleorienta.worker.http.SourceBackoffException.class, () -> handler.handle(message()));
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void transientClassification() {
+        assertTrue(DiscoverEmployerJobHandler.isTransient(new org.springframework.web.client.HttpServerErrorException(
+                org.springframework.http.HttpStatus.BAD_GATEWAY)));
+        assertTrue(DiscoverEmployerJobHandler.isTransient(org.springframework.web.client.HttpClientErrorException.create(
+                org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "", null, null, null)));
+        assertTrue(DiscoverEmployerJobHandler.isTransient(new org.springframework.web.client.ResourceAccessException("timeout")));
+        org.junit.jupiter.api.Assertions.assertFalse(DiscoverEmployerJobHandler.isTransient(
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "", null, null, null)));
+        org.junit.jupiter.api.Assertions.assertFalse(DiscoverEmployerJobHandler.isTransient(new IllegalStateException("parse")));
     }
 
     @Test

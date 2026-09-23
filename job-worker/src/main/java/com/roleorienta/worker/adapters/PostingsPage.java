@@ -19,15 +19,34 @@ import java.util.Map;
  * страны на английском, значение — число публикаций. Пустая карта — провайдер распределения
  * не сообщает (напр. Greenhouse): гейт рынка тогда не применяется.</p>
  *
- * @param postings      публикации на этой странице
- * @param nextCursor    курсор следующей страницы или {@code null}, если это последняя страница
- * @param countryCounts публикации источника по странам; пусто — неизвестно
+ *
+ * <p>{@code locationCounts} — распределение публикаций по <b>локациям</b> (офис/город/регион
+ * как их называет работодатель), если провайдер его отдаёт (Workday — вложенный фасет
+ * {@code locations}, §59). Нужен, когда фасета стран нет: Workday не показывает его у
+ * тенантов с одной страной.</p>
+ *
+ * @param postings       публикации на этой странице
+ * @param nextCursor     курсор следующей страницы или {@code null}, если это последняя страница
+ * @param countryCounts  публикации источника по странам; пусто — неизвестно
+ * @param locationCounts публикации источника по локациям; пусто — неизвестно
  */
 public record PostingsPage(List<DiscoveredPosting> postings, String nextCursor,
-                           Map<String, Integer> countryCounts) {
+                           Map<String, Integer> countryCounts, Map<String, Integer> locationCounts) {
 
     public PostingsPage {
         countryCounts = countryCounts == null ? Map.of() : Map.copyOf(countryCounts);
+        locationCounts = locationCounts == null ? Map.of() : Map.copyOf(locationCounts);
+    }
+
+    /**
+     * Страница с распределением по странам, без локаций.
+     *
+     * @param postings      публикации на этой странице
+     * @param nextCursor    курсор следующей страницы или {@code null}
+     * @param countryCounts публикации источника по странам
+     */
+    public PostingsPage(List<DiscoveredPosting> postings, String nextCursor, Map<String, Integer> countryCounts) {
+        this(postings, nextCursor, countryCounts, Map.of());
     }
 
     /**
@@ -37,6 +56,6 @@ public record PostingsPage(List<DiscoveredPosting> postings, String nextCursor,
      * @param nextCursor курсор следующей страницы или {@code null}
      */
     public PostingsPage(List<DiscoveredPosting> postings, String nextCursor) {
-        this(postings, nextCursor, Map.of());
+        this(postings, nextCursor, Map.of(), Map.of());
     }
 }

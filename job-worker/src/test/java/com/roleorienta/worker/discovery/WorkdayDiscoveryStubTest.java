@@ -53,14 +53,18 @@ class WorkdayDiscoveryStubTest {
         int port = server.getAddress().getPort();
         baseUrl = "http://127.0.0.1:" + port;
 
-        // Стаб списка Workday (POST): total=2 и две вакансии SK/AT.
+        // Стаб списка Workday (POST): total=2, две вакансии SK/AT и фасет стран — как у
+        // реального многостранового тенанта (§56); без фасета Workday-доска не подключается
+        // вслепую (§58).
         server.createContext("/wday/cxs/acme/careers/jobs", exchange -> {
             drain(exchange.getRequestBody());
             String body = """
                     {"total":2,"jobPostings":[
                       {"title":"Senior Java Engineer","externalPath":"/job/Bratislava/Senior-Java-Engineer_JR-1001"},
                       {"title":"Backend Engineer (JVM)","externalPath":"/job/Vienna/Backend-Engineer-JVM_JR-1002"}
-                    ]}""";
+                    ],"facets":[{"facetParameter":"Location_Country","values":[
+                      {"id":"sk","descriptor":"Slovakia","count":1},
+                      {"id":"at","descriptor":"Austria","count":1}]}]}""";
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
@@ -75,7 +79,7 @@ class WorkdayDiscoveryStubTest {
         candidateRepository = mock(EmployerCandidateRepository.class);
         registrar = mock(EmployerSourceRegistrar.class);
         handler = new DiscoverEmployerJobHandler(registry, candidateRepository, registrar,
-                new DiscoveryMarketProperties(java.util.List.of("Slovakia", "Austria")));
+                DiscoveryMarketProperties.ofCountries(java.util.List.of("Slovakia", "Austria")));
     }
 
     @AfterEach

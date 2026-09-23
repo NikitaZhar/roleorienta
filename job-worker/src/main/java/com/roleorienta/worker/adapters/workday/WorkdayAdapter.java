@@ -64,6 +64,9 @@ public class WorkdayAdapter implements SourceAdapter {
     /** Фасет со странами: {@code Location_Country} (встречается и {@code locationCountry}). */
     private static final Pattern COUNTRY_FACET = Pattern.compile("(?i).*country.*");
 
+    /** Фасет с локациями: {@code locations} (внутри группы {@code locationMainGroup}, §59). */
+    private static final Pattern LOCATIONS_FACET = Pattern.compile("(?i)locations?");
+
     /** Жёсткий потолок размера страницы Workday: значения выше молча дают пустой ответ. */
     private static final int PAGE_LIMIT = 20;
 
@@ -82,6 +85,11 @@ public class WorkdayAdapter implements SourceAdapter {
     @Override
     public String providerCode() {
         return PROVIDER_CODE;
+    }
+
+    @Override
+    public boolean reportsCountries() {
+        return true;
     }
 
     @Override
@@ -131,29 +139,31 @@ public class WorkdayAdapter implements SourceAdapter {
             String nextCursor = (!postings.isEmpty() && nextOffset < total)
                     ? String.valueOf(nextOffset) : null;
             Map<String, Integer> countries = new LinkedHashMap<>();
-            collectCountryCounts(root.path("facets"), countries);
-            return new PostingsPage(postings, nextCursor, countries);
+            collectFacetCounts(root.path("facets"), COUNTRY_FACET, countries);
+            Map<String, Integer> locations = new LinkedHashMap<>();
+            collectFacetCounts(root.path("facets"), LOCATIONS_FACET, locations);
+            return new PostingsPage(postings, nextCursor, countries, locations);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать список Workday", e);
         }
     }
 
     /**
-     * Распределение публикаций по странам из фасетов ответа списка (§56). Фасет стран
-     * ({@code facetParameter} содержит «country») бывает на верхнем уровне или вложен в
-     * группу (напр. {@code locationMainGroup}, у значений которой свои {@code facetParameter}
-     * и {@code values}) — поэтому обход рекурсивный. Считаются значения с текстовым
+     * Распределение публикаций по значениям фасета, чей {@code facetParameter} подходит под
+     * шаблон (страны §56, локации §59). Фасет бывает на верхнем уровне или вложен в группу
+     * (напр. {@code locationMainGroup}, у значений которой свои {@code facetParameter} и
+     * {@code values}) — поэтому обход рекурсивный. Считаются значения с текстовым
      * {@code descriptor} и числовым {@code count}; одинаковые названия суммируются.
-     * Фасетов нет — карта остаётся пустой («неизвестно»).
+     * Фасета нет — карта остаётся пустой («неизвестно»).
      */
-    static void collectCountryCounts(JsonNode facets, Map<String, Integer> into) {
+    static void collectFacetCounts(JsonNode facets, Pattern facetParameter, Map<String, Integer> into) {
         if (!facets.isArray()) {
             return;
         }
         for (JsonNode facet : facets) {
             String parameter = facet.path("facetParameter").asText("");
             JsonNode values = facet.path("values");
-            if (COUNTRY_FACET.matcher(parameter).matches()) {
+            if (facetParameter.matcher(parameter).matches()) {
                 for (JsonNode value : values) {
                     if (value.path("descriptor").isTextual() && value.path("count").isNumber()) {
                         into.merge(value.path("descriptor").asText().strip(),
@@ -161,7 +171,7 @@ public class WorkdayAdapter implements SourceAdapter {
                     }
                 }
             } else {
-                collectCountryCounts(values, into); // вложенная группа фасетов
+                collectFacetCounts(values, facetParameter, into); // вложенная группа фасетов
             }
         }
     }

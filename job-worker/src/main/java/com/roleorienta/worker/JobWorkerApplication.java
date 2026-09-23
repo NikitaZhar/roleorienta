@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import com.roleorienta.worker.discovery.DiscoveryHarvestProperties;
 import com.roleorienta.worker.discovery.DiscoveryMarketProperties;
 import com.roleorienta.worker.discovery.cc.CcHarvestProperties;
+import com.roleorienta.worker.http.SourcePacingProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -24,7 +25,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 // (Source, CrawlRun, CrawlTask). Явно указываем JPA оба пакета для поиска сущностей.
 @EntityScan({"com.roleorienta.worker", "com.roleorienta.core.domain"})
 @EnableConfigurationProperties({
-        DiscoveryHarvestProperties.class, CcHarvestProperties.class, DiscoveryMarketProperties.class})
+        DiscoveryHarvestProperties.class, CcHarvestProperties.class, DiscoveryMarketProperties.class,
+        SourcePacingProperties.class})
 public class JobWorkerApplication {
 
     /**

@@ -46,4 +46,16 @@ public interface SourceAdapter {
      * @return добранные детальные поля публикации
      */
     FetchedPosting getPosting(Source source, String externalId);
+
+    /**
+     * Сообщает ли провайдер распределение публикаций по странам
+     * ({@link PostingsPage#countryCounts()}). Если да, а распределение в ответе пустое,
+     * рынок источника <b>не проверен</b> — гейт обнаружения не подключает его вслепую
+     * (§58). Провайдеры без такого распределения (Greenhouse) — {@code false}.
+     *
+     * @return {@code true}, если адаптер заполняет {@code countryCounts}
+     */
+    default boolean reportsCountries() {
+        return false;
+    }
 }
