@@ -1,11 +1,13 @@
 package com.roleorienta.worker.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +17,8 @@ import org.junit.jupiter.api.Test;
  * клиент читает тело с локального сервера и следует за редиректом — каждый переход
  * проходит тот же резолвер (ре-валидация, A13). Строгая политика loopback запрещает
  * (см. {@link SourceHttpClientSsrfTest}); permissive нужна только чтобы поднять
- * локальный сервер в тесте.
+ * локальный сервер в тесте. Потолок размера тела (B2, §71): тело ровно на пределе читается,
+ * больше предела — {@link SourceHttpClient.ResponseTooLargeException}.
  */
 class SourceHttpClientFetchTest {
 
@@ -56,5 +59,19 @@ class SourceHttpClientFetchTest {
     @Test
     void followsRedirect() {
         assertEquals("OK-BODY", client.getBody("http://127.0.0.1:" + port + "/redir"));
+    }
+
+    @Test
+    void bodyAtLimitIsReadAndLargerIsRejected() {
+        // «OK-BODY» — 7 байт: при потолке 7 читается, при потолке 6 — отклоняется.
+        String url = "http://127.0.0.1:" + port + "/jobs";
+        assertEquals("OK-BODY", limitedClient(7).getBody(url));
+        assertThrows(SourceHttpClient.ResponseTooLargeException.class, () -> limitedClient(6).getBody(url));
+    }
+
+    private SourceHttpClient limitedClient(int maxBodyBytes) {
+        return new SourceHttpClient(new SsrfGuard(new AddressPolicy(true)),
+                new SourceHttpProperties(1000, 1000, 5, maxBodyBytes),
+                RequestPacer.unpaced(), new SourcePacingProperties(0, Map.of(), Long.MAX_VALUE, 0, 0));
     }
 }

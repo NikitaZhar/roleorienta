@@ -7,6 +7,10 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.core5.util.Timeout;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -15,11 +19,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRequest;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.DefaultResponseErrorHandler;
+import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -41,41 +48,53 @@ import org.springframework.web.client.RestClientResponseException;
  * {@link RestClient} превращает в исключение — оно поднимается обработчику как
  * неуспех задания (повтор, затем DLQ).</p>
  *
- * <p>Ограничение: жёсткий потолок размера тела ответа (стриминговый) в этот срез
- * не входит — время ограничено тайм-аутами; см. project-notes §32 «Что НЕ вошло».</p>
+ * <p><b>Потолок размера тела (B2, §71).</b> Тело читается потоком не больше
+ * {@link SourceHttpProperties#maxBodyBytes()} байт; если источник отдаёт больше — запрос
+ * отклоняется {@link ResponseTooLargeException}, не дочитывая и не держа в памяти остаток
+ * (защита от «бесконечного» или огромного ответа, §9). Поэтому ответ читается через
+ * {@code exchange}, а не {@code retrieve().body(String.class)}: неуспешный статус
+ * обрабатывается тем же {@link DefaultResponseErrorHandler}, что и у {@code retrieve()} —
+ * исключения (напр. {@code HttpClientErrorException.TooManyRequests}) прежние. Кодировка —
+ * из {@code Content-Type}, без неё — UTF-8.</p>
  */
 @Component
 public class SourceHttpClient {
 
+    /** Потолок тела по умолчанию (как в {@link SourceHttpProperties}), байт — 5 МБ. */
+    static final int DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+    /** Обработчик неуспешных статусов — тот же, что у {@code retrieve()}. */
+    private static final ResponseErrorHandler STATUS_ERRORS = new DefaultResponseErrorHandler();
+
     private final SsrfGuard ssrfGuard;
     private final RestClient restClient;
+    private final int maxBodyBytes;
     private final RequestPacer pacer;
     private final long defaultRetryAfterMs;
 
     /**
-     * @param ssrfGuard        контур защиты от SSRF (§9, A13)
-     * @param connectTimeoutMs тайм-аут установления соединения, мс
-     * @param readTimeoutMs    тайм-аут чтения ответа, мс
-     * @param maxRedirects     максимум переходов по редиректам (каждый ре-валидируется)
-     * @param pacer            темп запросов к источникам (вежливость, §57)
-     * @param pacing           настройки темпа (пауза по умолчанию при 429 без {@code Retry-After})
+     * @param ssrfGuard контур защиты от SSRF (§9, A13)
+     * @param http      тайм-ауты, редиректы и потолок размера тела ответа
+     * @param pacer     темп запросов к источникам (вежливость, §57)
+     * @param pacing    настройки темпа (пауза по умолчанию при 429 без {@code Retry-After})
      */
     @Autowired
     public SourceHttpClient(
             SsrfGuard ssrfGuard,
-            @Value("${app.collect.http.connect-timeout-ms:5000}") long connectTimeoutMs,
-            @Value("${app.collect.http.read-timeout-ms:15000}") long readTimeoutMs,
-            @Value("${app.collect.http.max-redirects:5}") int maxRedirects,
+            SourceHttpProperties http,
             RequestPacer pacer,
             SourcePacingProperties pacing) {
         this.ssrfGuard = ssrfGuard;
-        this.restClient = buildRestClient(ssrfGuard, connectTimeoutMs, readTimeoutMs, maxRedirects);
+        this.restClient = buildRestClient(ssrfGuard, http.connectTimeoutMs(), http.readTimeoutMs(),
+                http.maxRedirects());
+        this.maxBodyBytes = http.maxBodyBytes();
         this.pacer = pacer;
         this.defaultRetryAfterMs = pacing.defaultRetryAfterMs();
     }
 
     /**
-     * Клиент без темпа запросов — для тестов против локальных заглушек.
+     * Клиент без темпа запросов и с потолком тела по умолчанию — для тестов против
+     * локальных заглушек.
      *
      * @param ssrfGuard        контур защиты от SSRF
      * @param connectTimeoutMs тайм-аут соединения, мс
@@ -83,8 +102,8 @@ public class SourceHttpClient {
      * @param maxRedirects     максимум переходов по редиректам
      */
     public SourceHttpClient(SsrfGuard ssrfGuard, long connectTimeoutMs, long readTimeoutMs, int maxRedirects) {
-        this(ssrfGuard, connectTimeoutMs, readTimeoutMs, maxRedirects, RequestPacer.unpaced(),
-                new SourcePacingProperties(0, Map.of(), Long.MAX_VALUE, 0, 0));
+        this(ssrfGuard, new SourceHttpProperties(connectTimeoutMs, readTimeoutMs, maxRedirects, DEFAULT_MAX_BODY_BYTES),
+                RequestPacer.unpaced(), new SourcePacingProperties(0, Map.of(), Long.MAX_VALUE, 0, 0));
     }
 
     private static RestClient buildRestClient(
@@ -126,7 +145,7 @@ public class SourceHttpClient {
      *                             (в т.ч. после редиректа) не проходит проверку A13
      */
     public String getBody(String url) {
-        return execute(url, () -> restClient.get().uri(url).retrieve().body(String.class));
+        return execute(url, () -> restClient.get().uri(url).exchange(this::readBody));
     }
 
     /**
@@ -140,7 +159,7 @@ public class SourceHttpClient {
      */
     public String getJson(String url) {
         return execute(url, () ->
-                restClient.get().uri(url).accept(MediaType.APPLICATION_JSON).retrieve().body(String.class));
+                restClient.get().uri(url).accept(MediaType.APPLICATION_JSON).exchange(this::readBody));
     }
 
     /**
@@ -178,8 +197,7 @@ public class SourceHttpClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(jsonBody)
-                .retrieve()
-                .body(String.class));
+                .exchange(this::readBody));
     }
 
     /**
@@ -199,6 +217,38 @@ public class SourceHttpClient {
             throw e;
         } catch (RuntimeException e) {
             throw unwrapSsrf(e);
+        }
+    }
+
+    /**
+     * Ответ источника: неуспешный статус → то же исключение, что у {@code retrieve()};
+     * иначе тело не больше {@link #maxBodyBytes} байт как строка.
+     *
+     * @throws ResponseTooLargeException если тело больше потолка (остаток не читается)
+     * @throws IOException               ошибка чтения (RestClient оборачивает её в
+     *                                   {@code ResourceAccessException})
+     */
+    private String readBody(HttpRequest request, ClientHttpResponse response) throws IOException {
+        if (STATUS_ERRORS.hasError(response)) {
+            STATUS_ERRORS.handleError(request.getURI(), request.getMethod(), response);
+        }
+        byte[] body;
+        try (InputStream stream = response.getBody()) {
+            body = stream.readNBytes(maxBodyBytes + 1);
+        }
+        if (body.length > maxBodyBytes) {
+            throw new ResponseTooLargeException(request.getURI() + ": тело ответа больше "
+                    + maxBodyBytes + " байт");
+        }
+        MediaType type = response.getHeaders().getContentType();
+        Charset charset = type != null && type.getCharset() != null ? type.getCharset() : StandardCharsets.UTF_8;
+        return new String(body, charset);
+    }
+
+    /** Тело ответа источника больше потолка {@link SourceHttpProperties#maxBodyBytes()} (B2). */
+    public static class ResponseTooLargeException extends IllegalStateException {
+        ResponseTooLargeException(String message) {
+            super(message);
         }
     }
 

@@ -171,8 +171,10 @@ SuccessFactors, SmartRecruiters; ADR-17). Инфраструктура дост�
       источника (фасеты Workday), а не обрезкой очереди.
       *Статус:* вежливость построена (`RequestPacer`, project-notes §57); бюджет
       деталей — со сбором по рынку.
-- [ ] **B2. Потолок размера тела ответа** в `SourceHttpClient` (стриминговый) —
+- [x] **B2. Потолок размера тела ответа** в `SourceHttpClient` (стриминговый) —
       часть SSRF-контура пилота (§9).
+      *Статус 2026-09-24:* построено (`app.collect.http.max-body-bytes`, 5 МБ;
+      project-notes §71).
 - [ ] **B3. Ротация сессии при логине** (`changeSessionId`) — session fixation.
 - [ ] **B4. Потолок попыток в outbox** → статус FAILED/карантин, исключение из
       выборки `claimUnpublished`.

@@ -55,7 +55,8 @@ class SourceHttpClientRetryAfterTest {
 
     private SourceHttpClient client() {
         SourcePacingProperties props = new SourcePacingProperties(0, Map.of(), 5_000, 3_600_000, 60_000);
-        return new SourceHttpClient(new SsrfGuard(new AddressPolicy(true)), 1000, 1000, 5,
+        return new SourceHttpClient(new SsrfGuard(new AddressPolicy(true)),
+                new SourceHttpProperties(1000, 1000, 5, SourceHttpClient.DEFAULT_MAX_BODY_BYTES),
                 new RequestPacer(props), props);
     }
 

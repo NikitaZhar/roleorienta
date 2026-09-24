@@ -7,6 +7,7 @@ import com.roleorienta.worker.discovery.DiscoveryHarvestProperties;
 import com.roleorienta.worker.discovery.DiscoveryMarketProperties;
 import com.roleorienta.worker.discovery.cc.CcHarvestProperties;
 import com.roleorienta.worker.http.SourcePacingProperties;
+import com.roleorienta.worker.http.SourceHttpProperties;
 import com.roleorienta.worker.collect.NicheFilterProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -27,7 +28,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EntityScan({"com.roleorienta.worker", "com.roleorienta.core.domain"})
 @EnableConfigurationProperties({
         DiscoveryHarvestProperties.class, CcHarvestProperties.class, DiscoveryMarketProperties.class,
-        SourcePacingProperties.class, NicheFilterProperties.class})
+        SourcePacingProperties.class, SourceHttpProperties.class, NicheFilterProperties.class})
 public class JobWorkerApplication {
 
     /**
