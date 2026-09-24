@@ -12,6 +12,7 @@ import com.roleorienta.core.domain.ProviderKind;
 import com.roleorienta.core.domain.Source;
 import com.roleorienta.core.domain.SourceKind;
 import com.roleorienta.core.domain.SourceState;
+import com.roleorienta.worker.adapters.BoardProfile;
 import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
@@ -135,8 +136,9 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         candidate.setState(assessment.state());
 
         if (assessment.state() == EmployerCandidateState.CONFIRMED) {
+            String companyName = assessment.companyName() != null ? assessment.companyName() : payload.slug();
             Registration registration = sourceRegistrar.register(
-                    payload.providerCode(), payload.slug(), payload.baseUrl(), payload.slug());
+                    payload.providerCode(), payload.slug(), payload.baseUrl(), companyName);
             candidate.setCompanyId(registration.companyId());
             candidate.setSourceId(registration.sourceId());
             candidateRepository.save(candidate);
@@ -185,24 +187,35 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * доски не открылась (кроме временного сбоя) — сомнение, а не {@code UNREACHABLE}: лента
      * ведь читается.
      *
-     * @return прежняя оценка или {@code LOW}/{@code PENDING} с причиной сомнения
+     * @return прежняя оценка с именем работодателя из описания доски (A3, §80) или
+     *         {@code LOW}/{@code PENDING} с причиной сомнения
      */
     private Assessment withOwnership(SourceAdapter adapter, Source probe, Assessment assessment) {
         if (assessment.state() != EmployerCandidateState.CONFIRMED) {
             return assessment;
         }
-        Optional<String> doubt;
+        Optional<BoardProfile> profile;
         try {
-            doubt = adapter.boardProfile(probe).flatMap(ownership::doubt);
+            profile = adapter.boardProfile(probe);
         } catch (RuntimeException e) {
             if (isTransient(e)) {
                 throw e;
             }
-            doubt = Optional.of("страница доски не открылась: " + e.getMessage());
+            return doubtful(assessment, "страница доски не открылась: " + e.getMessage());
         }
-        return doubt.map(reason -> new Assessment(DiscoveryConfidence.LOW, reason + "; " + assessment.reason(),
-                        assessment.postingCount(), EmployerCandidateState.PENDING))
-                .orElse(assessment);
+        if (profile.isEmpty()) {
+            return assessment;
+        }
+        Optional<String> doubt = ownership.doubt(profile.get());
+        if (doubt.isPresent()) {
+            return doubtful(assessment, doubt.get());
+        }
+        return assessment.named(ownership.ownerName(profile.get()).orElse(null));
+    }
+
+    private static Assessment doubtful(Assessment assessment, String doubt) {
+        return new Assessment(DiscoveryConfidence.LOW, doubt + "; " + assessment.reason(),
+                assessment.postingCount(), EmployerCandidateState.PENDING);
     }
 
     /**
@@ -388,9 +401,18 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * Результат проверки ленты кандидата. {@code state} — итоговое состояние кандидата:
      * {@code CONFIRMED} — подключить (только при {@code HIGH}), {@code OUT_OF_MARKET} —
      * отсеян гейтом рынка, {@code UNREACHABLE} — доски нет или доступ закрыт, {@code PENDING} —
-     * на ручную проверку.
+     * на ручную проверку. {@code companyName} — имя работодателя из описания доски (A3, §80);
+     * {@code null} — не известно, компания получит slug.
      */
     private record Assessment(DiscoveryConfidence confidence, String reason, int postingCount,
-                              EmployerCandidateState state) {
+                              EmployerCandidateState state, String companyName) {
+
+        Assessment(DiscoveryConfidence confidence, String reason, int postingCount, EmployerCandidateState state) {
+            this(confidence, reason, postingCount, state, null);
+        }
+
+        Assessment named(String name) {
+            return new Assessment(confidence, reason, postingCount, state, name);
+        }
     }
 }

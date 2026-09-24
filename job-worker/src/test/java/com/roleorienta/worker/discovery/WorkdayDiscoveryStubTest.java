@@ -107,14 +107,15 @@ class WorkdayDiscoveryStubTest {
     @Test
     void workdayCandidateAutoConnectsFromStubFeed() {
         when(candidateRepository.existsByProviderCodeAndSlug("workday", "acme/careers")).thenReturn(false);
-        when(registrar.register("workday", "acme/careers", baseUrl, "acme/careers"))
+        when(registrar.register("workday", "acme/careers", baseUrl, "Acme"))
                 .thenReturn(new Registration(5L, 20L));
 
         String payload = "{\"providerCode\":\"workday\",\"slug\":\"acme/careers\",\"baseUrl\":\"" + baseUrl + "\"}";
         handler.handle(new JobMessage("key-workday-1", "DISCOVER_EMPLOYER", payload));
 
-        // Лента прочитана по-настоящему и признана уверенной → авто-подключение источника.
-        verify(registrar).register("workday", "acme/careers", baseUrl, "acme/careers");
+        // Лента прочитана по-настоящему и признана уверенной → авто-подключение источника;
+        // имя компании — написание тенанта в описании доски (A3, §80).
+        verify(registrar).register("workday", "acme/careers", baseUrl, "Acme");
 
         ArgumentCaptor<EmployerCandidate> captor = ArgumentCaptor.forClass(EmployerCandidate.class);
         verify(candidateRepository).save(captor.capture());

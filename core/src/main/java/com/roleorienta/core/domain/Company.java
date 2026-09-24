@@ -32,6 +32,13 @@ public class Company {
     @Column(name = "primary_domain")
     private String primaryDomain;
 
+    /**
+     * Ключ идентичности работодателя из обнаружения (A3, §80): {@link #identityKey}. Уникален;
+     * {@code null} — компания заведена не обнаружением.
+     */
+    @Column(name = "identity_key")
+    private String identityKey;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -49,6 +56,25 @@ public class Company {
     public String getPrimaryDomain() { return primaryDomain; }
     public void setPrimaryDomain(String primaryDomain) { this.primaryDomain = primaryDomain; }
 
+    public String getIdentityKey() { return identityKey; }
+    public void setIdentityKey(String identityKey) { this.identityKey = identityKey; }
+
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    /**
+     * Ключ идентичности работодателя (A3, §80): код провайдера и владелец доски — часть slug
+     * до первого {@code '/'} в нижнем регистре. У Workday это тенант: {@code lilly/LLY} и
+     * {@code lilly/External} — один работодатель; у Greenhouse slug без {@code '/'} — сам
+     * slug. Одинаково вычисляется в job-api (ручное подтверждение) и job-worker (авто).
+     *
+     * @param providerCode код системы найма
+     * @param slug         идентификатор доски у провайдера
+     * @return ключ вида {@code workday:lilly}
+     */
+    public static String identityKey(String providerCode, String slug) {
+        int slash = slug.indexOf('/');
+        String owner = slash >= 0 ? slug.substring(0, slash) : slug;
+        return providerCode + ":" + owner.strip().toLowerCase(java.util.Locale.ROOT);
+    }
 }

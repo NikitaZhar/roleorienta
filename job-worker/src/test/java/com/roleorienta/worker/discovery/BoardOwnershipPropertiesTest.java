@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Проверка принадлежности доски (A2, §79): тенант назван в описании — подтверждено; нет
- * описания, признак агентства или описание не называет тенант — сомнение.
+ * описания, признак агентства или описание не называет тенант — сомнение; имя владельца
+ * из описания (A3, §80).
  */
 class BoardOwnershipPropertiesTest {
 
@@ -44,5 +45,15 @@ class BoardOwnershipPropertiesTest {
         assertTrue(ownership.doubt(new BoardProfile("jnj",
                 "Johnson & Johnson is a healthcare company.")).orElseThrow()
                 .startsWith("описание доски не называет владельца"));
+    }
+
+    @Test
+    void ownerNameIsTenantSpelledAsInDescription() {
+        assertEquals(Optional.of("Tobii Dynavox"), ownership.ownerName(new BoardProfile("tobiidynavox",
+                "At Tobii Dynavox we empower people with disabilities.")));
+        assertEquals(Optional.of("IQVIA"), ownership.ownerName(new BoardProfile("iqvia",
+                "IQVIA is a leading global provider.")));
+        assertEquals(Optional.empty(), ownership.ownerName(new BoardProfile("jnj",
+                "Johnson & Johnson is a healthcare company.")));
     }
 }

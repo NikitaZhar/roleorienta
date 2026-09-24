@@ -25,7 +25,9 @@ import org.springframework.stereotype.Component;
  * сущностями core.</p>
  *
  * <p>Дедуп (§5): если источник для пары (провайдер, slug) уже есть, он
- * переиспользуется, а не создаётся заново. Вызов идёт внутри транзакции обработчика.</p>
+ * переиспользуется, а не создаётся заново. Компания ищется по ключу идентичности
+ * ({@link Company#identityKey}, A3, §80): второй сайт того же тенанта Workday получает новый
+ * источник, но прежнюю компанию. Вызов идёт внутри транзакции обработчика.</p>
  */
 @Component
 public class EmployerSourceRegistrar {
@@ -52,8 +54,8 @@ public class EmployerSourceRegistrar {
      * @param providerCode код системы найма
      * @param slug         идентификатор доски у провайдера
      * @param baseUrl      базовый адрес ленты
-     * @param companyName  имя компании (в обнаружении — обычно slug, имя из ленты
-     *                     не всегда доступно)
+     * @param companyName  имя для новой компании (из описания доски, A3; иначе slug);
+     *                     у уже известной компании имя не меняется
      * @return идентификаторы заведённых компании и источника
      */
     public Registration register(String providerCode, String slug, String baseUrl, String companyName) {
@@ -65,9 +67,9 @@ public class EmployerSourceRegistrar {
         Provider provider = providers.findByCode(providerCode)
                 .orElseGet(() -> createProvider(providerCode));
 
-        Company company = new Company();
-        company.setName(companyName);
-        companies.save(company);
+        String identityKey = Company.identityKey(providerCode, slug);
+        Company company = companies.findByIdentityKey(identityKey)
+                .orElseGet(() -> createCompany(companyName, identityKey));
 
         Source source = new Source();
         source.setProvider(provider);
@@ -85,6 +87,13 @@ public class EmployerSourceRegistrar {
         companySources.save(link);
 
         return new Registration(company.getId(), source.getId());
+    }
+
+    private Company createCompany(String name, String identityKey) {
+        Company company = new Company();
+        company.setName(name);
+        company.setIdentityKey(identityKey);
+        return companies.save(company);
     }
 
     private Provider createProvider(String code) {

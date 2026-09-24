@@ -20,7 +20,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-/** Материализация источника из уверенного кандидата (§35): создание и дедуп. */
+/** Материализация источника из уверенного кандидата (§35): создание и дедуп источника и компании (A3). */
 class EmployerSourceRegistrarTest {
 
     private final ProviderRepository providers = mock(ProviderRepository.class);
@@ -36,6 +36,7 @@ class EmployerSourceRegistrarTest {
                 .thenReturn(Optional.empty());
         when(providers.findByCode("greenhouse")).thenReturn(Optional.empty());
         when(providers.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(companies.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         registrar.register("greenhouse", "acme", "http://stub", "Acme");
 
@@ -52,6 +53,7 @@ class EmployerSourceRegistrarTest {
         ArgumentCaptor<Company> companyCaptor = ArgumentCaptor.forClass(Company.class);
         verify(companies).save(companyCaptor.capture());
         assertEquals("Acme", companyCaptor.getValue().getName());
+        assertEquals("greenhouse:acme", companyCaptor.getValue().getIdentityKey());
 
         ArgumentCaptor<CompanySource> linkCaptor = ArgumentCaptor.forClass(CompanySource.class);
         verify(companySources).save(linkCaptor.capture());
@@ -72,5 +74,29 @@ class EmployerSourceRegistrarTest {
         verify(sources, never()).save(any());
         verify(companySources, never()).save(any());
         verify(providers, never()).save(any());
+    }
+
+    @Test
+    void secondSiteOfSameTenantReusesCompany() {
+        Company lilly = new Company();
+        lilly.setId(7L);
+        when(sources.findByProvider_CodeAndExternalRef("workday", "lilly/External")).thenReturn(Optional.empty());
+        when(providers.findByCode("workday")).thenReturn(Optional.of(new Provider()));
+        when(companies.findByIdentityKey("workday:lilly")).thenReturn(Optional.of(lilly));
+
+        Registration registration = registrar.register("workday", "lilly/External", "http://stub", "Lilly");
+
+        assertEquals(7L, registration.companyId());
+        verify(companies, never()).save(any());
+        verify(sources).save(any());
+        ArgumentCaptor<CompanySource> linkCaptor = ArgumentCaptor.forClass(CompanySource.class);
+        verify(companySources).save(linkCaptor.capture());
+        assertEquals(lilly, linkCaptor.getValue().getCompany());
+    }
+
+    @Test
+    void identityKeyIsProviderAndLowercaseTenant() {
+        assertEquals("workday:lilly", Company.identityKey("workday", "Lilly/LLY"));
+        assertEquals("greenhouse:acme", Company.identityKey("greenhouse", "acme"));
     }
 }

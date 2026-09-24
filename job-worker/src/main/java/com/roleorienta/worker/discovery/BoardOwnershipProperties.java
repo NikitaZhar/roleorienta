@@ -20,6 +20,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *   <li>описание не называет владельца: тенант не встречается в тексте, если сравнивать
  *       только буквы и цифры без учёта регистра («tobiidynavox» ↔ «Tobii Dynavox»).</li>
  * </ul>
+ * <p>Совпавшее написание владельца — имя новой компании ({@link #ownerName}, A3, §80).</p>
  * <p>Любое сомнение — не отказ: кандидат уходит на ручную проверку, а не подключается
  * автоматически.</p>
  *
@@ -56,6 +57,54 @@ public record BoardOwnershipProperties(
             return Optional.of("описание доски не называет владельца «" + profile.owner() + "»");
         }
         return Optional.empty();
+    }
+
+    /**
+     * Имя работодателя из описания доски (A3, §80): то написание владельца, которое нашла
+     * проверка {@link #doubt} — фрагмент описания с начала слова, чьи буквы и цифры без учёта
+     * регистра совпадают с тенантом («tobiidynavox» → «Tobii Dynavox», «iqvia» → «IQVIA»).
+     *
+     * @param profile сведения о доске от провайдера
+     * @return имя как в описании; пусто — владелец в описании не найден
+     */
+    public Optional<String> ownerName(BoardProfile profile) {
+        String owner = lettersAndDigits(profile.owner());
+        String text = profile.description();
+        if (owner.length() < MIN_OWNER_LENGTH || text == null) {
+            return Optional.empty();
+        }
+        for (int start = 0; start < text.length(); start++) {
+            if (isWordStart(text, start)) {
+                Optional<String> name = matchFrom(text, start, owner);
+                if (name.isPresent()) {
+                    return name;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Фрагмент от {@code start}, буквы и цифры которого (без регистра) равны {@code owner}. */
+    private static Optional<String> matchFrom(String text, int start, String owner) {
+        StringBuilder seen = new StringBuilder();
+        for (int end = start; end < text.length(); end++) {
+            char current = text.charAt(end);
+            if (Character.isLetterOrDigit(current)) {
+                seen.append(Character.toLowerCase(current));
+                if (!owner.startsWith(seen.toString())) {
+                    return Optional.empty();
+                }
+                if (seen.length() == owner.length()) {
+                    return Optional.of(text.substring(start, end + 1));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean isWordStart(String text, int index) {
+        return Character.isLetterOrDigit(text.charAt(index))
+                && (index == 0 || !Character.isLetterOrDigit(text.charAt(index - 1)));
     }
 
     private static String lettersAndDigits(String value) {

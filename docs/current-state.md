@@ -4,8 +4,8 @@
 сессии. История решений — в [project-notes](project-notes.md), правила — в
 [рабочем контракте](working-contract.md) и [регламенте сессии](session-protocol.md).
 
-**Обновлено:** 2026-09-24, после §79.
-**Срезов с последнего аудита: 3** (последний аудит — §76).
+**Обновлено:** 2026-09-24, после §80.
+**Срезов с последнего аудита: 4** (последний аудит — §76).
 
 ## Назначение и границы
 
@@ -17,7 +17,7 @@ SPA, покрытие площадками, снимки, дайджест/email
 
 ## Стек и запуск
 
-Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V27, ведёт `job-api`), RabbitMQ
+Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V28, ведёт `job-api`), RabbitMQ
 (transactional outbox, publisher confirms, DLQ), Maven multi-module, Testcontainers в тестах,
 CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.sh` (Postgres, RabbitMQ
 в Docker), `./scripts/run-api.sh` (:8080), `./scripts/run-worker.sh` (:8081).
@@ -45,7 +45,8 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
    Перед авто-подключением — принадлежность доски (A2, §79): `SourceAdapter.boardProfile`
    (Workday: тенант + `og:description` страницы доски) сверяет `BoardOwnershipProperties`;
    нет описания, признак агентства, тенант не назван — `PENDING`.
-   Итог кандидата: `CONFIRMED` (HIGH → `EmployerSourceRegistrar` заводит `Source` ACTIVE),
+   Итог кандидата: `CONFIRMED` (HIGH → `EmployerSourceRegistrar` заводит `Source` ACTIVE;
+   компания — по ключу `Company.identityKey` «провайдер:тенант», имя — из описания доски, §80),
    `OUT_OF_MARKET`, `UNREACHABLE` (403/404/410/422, §74), `PENDING` (ручная проверка).
 3. **Сбор.** Планировщик (`DiscoverPageEnqueuer`) → `DISCOVER_PAGE` (`DiscoverPageJobHandler`: лента только рынка —
    фильтр Workday `appliedFacets`, все публикации сохраняются) → `FETCH_POSTING` только для
@@ -84,10 +85,10 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 
 ## Статус плана (приоритеты — `roleorienta-plan-korrektirovka.md`)
 
-- Сделано: A1 (вход Common Crawl включён, §72–§74), A2 для Workday (§79), B1 (темп, §57), B2 (потолок ответа, §71);
+- Сделано: A1 (вход Common Crawl включён, §72–§74), A2 для Workday (§79), A3 внутри провайдера (§80), B1 (темп, §57), B2 (потолок ответа, §71);
   качество данных Workday (зарплата, локации, уровень, дата — §65–§70); лента с фильтрами и
   сортировкой по дате.
 - Checkstyle в сборке (§78); ArchUnit — позже.
-- Далее: A3 (имя компании и дедуп).
+- Далее: по плану — A5 (`CoverageAssessment`); дедуп между провайдерами — открыт.
 - Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A5–A7 (покрытие, снимки,
   дайджест).

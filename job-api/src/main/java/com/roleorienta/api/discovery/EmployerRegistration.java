@@ -44,19 +44,26 @@ public class EmployerRegistration {
     }
 
     /**
-     * Заводит компанию, источник и связь для кандидата.
+     * Заводит источник и связь для кандидата; компанию — только если работодатель ещё не
+     * известен по ключу идентичности ({@link Company#identityKey}, A3, §80: второй сайт того
+     * же тенанта Workday — та же компания).
      *
      * @param candidate   кандидат (провайдер, slug, базовый адрес)
-     * @param companyName имя компании; пусто — используется slug
+     * @param companyName имя новой компании; пусто — используется slug; у известной компании
+     *                    имя не меняется
      * @return идентификаторы заведённых компании и источника
      */
     public Link register(EmployerCandidate candidate, String companyName) {
         Provider provider = providers.findByCode(candidate.getProviderCode())
                 .orElseGet(() -> createProvider(candidate.getProviderCode()));
 
-        Company company = new Company();
-        company.setName(StringUtils.hasText(companyName) ? companyName : candidate.getSlug());
-        companies.save(company);
+        String identityKey = Company.identityKey(candidate.getProviderCode(), candidate.getSlug());
+        Company company = companies.findByIdentityKey(identityKey).orElseGet(() -> {
+            Company created = new Company();
+            created.setName(StringUtils.hasText(companyName) ? companyName : candidate.getSlug());
+            created.setIdentityKey(identityKey);
+            return companies.save(created);
+        });
 
         Source source = new Source();
         source.setProvider(provider);
