@@ -29,6 +29,12 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
      * Страница ленты: публикации со строго большим {@code id} (курсор), удовлетворяющие
      * необязательным фильтрам, по возрастанию {@code id}.
      *
+     * <p>Фильтр по дате записан как {@code :#{#filter.postedFrom == null} = true or …}: признак
+     * «фильтр не задан» вычисляется в Java (булев параметр), а сама дата стоит только в сравнении
+     * с {@code postedOn}, откуда Hibernate берёт её тип. Условие {@code :дата is null} не
+     * работает: у пустого параметра без контекста типа нет, и PostgreSQL получает его как
+     * {@code bytea} или не может определить тип.</p>
+     *
      * <p>Каждое поле {@link PostingFilter} применяется только если оно не {@code null}
      * (условие вида «параметр null ИЛИ совпадает»). Курсор — стабильный монотонный
      * {@code id} (ключ {@code IDENTITY}); фильтры — по индексированным нормализованным
@@ -47,8 +53,12 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
             where p.id > :cursor
               and (:#{#filter.workModality} is null or p.workModality = :#{#filter.workModality})
               and (:#{#filter.seniority} is null or p.seniority = :#{#filter.seniority})
-              and (:#{#filter.country} is null or lower(p.country) = lower(:#{#filter.country}))
-              and (:#{#filter.minSalary} is null or p.salaryMax >= :#{#filter.minSalary})
+              and (:#{#filter.country} is null or lower(p.country) = lower(:#{#filter.country})
+                   or concat(lower(p.additionalLocations), ';')
+                      like concat('%, ', lower(:#{#filter.country}), ';%'))
+              and (:#{#filter.minSalary} is null
+                   or coalesce(p.salaryMax, p.salaryMin) >= :#{#filter.minSalary})
+              and (:#{#filter.postedFrom == null} = true or p.postedOn >= :#{#filter.postedFrom})
               and (:hiddenForUserId is null or not exists (
                       select 1 from SavedPosting sp
                       where sp.posting = p and sp.user.id = :hiddenForUserId

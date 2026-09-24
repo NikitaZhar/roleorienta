@@ -43,7 +43,7 @@ import org.springframework.security.core.Authentication;
  */
 class PostingQueryServiceTest {
 
-    private static final PostingFilter NO_FILTER = new PostingFilter(null, null, null, null);
+    private static final PostingFilter NO_FILTER = new PostingFilter(null, null, null, null, null);
 
     private final PostingReadRepository postingRepository = mock(PostingReadRepository.class);
     private final PostingLanguageReadRepository languageRepository = mock(PostingLanguageReadRepository.class);
@@ -123,7 +123,7 @@ class PostingQueryServiceTest {
         ArgumentCaptor<PostingFilter> captor = ArgumentCaptor.forClass(PostingFilter.class);
         when(postingRepository.search(eq(0L), captor.capture(), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of());
-        PostingFilter filter = new PostingFilter(WorkModality.REMOTE, SeniorityLevel.SENIOR, "Germany", null);
+        PostingFilter filter = new PostingFilter(WorkModality.REMOTE, SeniorityLevel.SENIOR, "Germany", null, null);
 
         service.list(null, 10, filter, null, false);
 

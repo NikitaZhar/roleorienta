@@ -27,6 +27,8 @@ public final class PostingDtos {
      * Строка ленты — компактный набор полей публикации. Поля {@code viewer*} — персонализация
      * под вошедшего пользователя (§31): его отношение к публикации. Для анонимного запроса
      * {@code viewerState = null} и {@code viewerSeen = false} (лента не персонализирована).
+     * {@code salaryPeriod}/{@code salaryBasis} — чтобы месячная и годовая суммы в ленте
+     * различались (§68).
      */
     public record Summary(
             Long id,
@@ -39,6 +41,8 @@ public final class PostingDtos {
             BigDecimal salaryMin,
             BigDecimal salaryMax,
             String salaryCurrency,
+            SalaryPeriod salaryPeriod,
+            SalaryBasis salaryBasis,
             SeniorityLevel seniority,
             Integer experienceYearsMin,
             java.time.LocalDate postedOn,

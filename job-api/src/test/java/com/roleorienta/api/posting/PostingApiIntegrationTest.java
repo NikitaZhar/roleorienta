@@ -152,6 +152,49 @@ class PostingApiIntegrationTest {
     }
 
     @Test
+    void filterByCountryMatchesAdditionalLocations() throws Exception {
+        // У A основная страна Germany, доп. локации «Vienna, Austria; Bratislava, Slovakia» (§68).
+        mockMvc.perform(get("/api/v1/postings").param("country", "slovakia"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].externalId").value("A"));
+        // Страна — последний сегмент записи, не подстрока: «Vienna» — город, не страна.
+        mockMvc.perform(get("/api/v1/postings").param("country", "Vienna"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
+    void filterByMinSalaryTakesLowerBoundWhenUpperIsUnknownAndRowShowsPeriod() throws Exception {
+        // D «от 120000 в год» (только нижняя граница, §66) проходит порог 100000; E «от 90000» — нет.
+        Long sourceId = jdbcTemplate.queryForObject("SELECT id FROM source LIMIT 1", Long.class);
+        jdbcTemplate.update(
+                "INSERT INTO job_posting (source_id, external_id, url, raw_title, first_seen_at, last_seen_at, "
+                        + "salary_min, salary_currency, salary_period, salary_basis) VALUES "
+                        + "(?, 'D', 'http://stub/D', 'Posting D', now(), now(), 120000, 'EUR', 'YEAR', 'GROSS'), "
+                        + "(?, 'E', 'http://stub/E', 'Posting E', now(), now(), 90000, 'EUR', 'YEAR', 'GROSS')",
+                sourceId, sourceId);
+        mockMvc.perform(get("/api/v1/postings").param("minSalary", "100000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(3))
+                .andExpect(jsonPath("$.items[2].externalId").value("D"))
+                .andExpect(jsonPath("$.items[2].salaryPeriod").value("YEAR"))
+                .andExpect(jsonPath("$.items[2].salaryBasis").value("GROSS"));
+    }
+
+    @Test
+    void filterByPostedFrom() throws Exception {
+        // Дата публикации есть только у A (2026-09-10); публикации без даты под фильтр не попадают.
+        mockMvc.perform(get("/api/v1/postings").param("postedFrom", "2026-09-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].externalId").value("A"));
+        mockMvc.perform(get("/api/v1/postings").param("postedFrom", "2026-09-11"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
     void cardReturnsFieldsLanguagesAndSkills() throws Exception {
         // Навыки отсортированы по имени: "C#" раньше "Java".
         mockMvc.perform(get("/api/v1/postings/{id}", cardId))
