@@ -25,7 +25,8 @@ import org.mockito.ArgumentCaptor;
 
 /**
  * Гейт уверенности обнаружения (§35): HIGH → авто-подключение источника и кандидат
- * CONFIRMED; LOW/NONE → очередь на подтверждение (PENDING); дедуп. Гейт рынка (§56):
+ * CONFIRMED; LOW/NONE → очередь на подтверждение (PENDING); недоступная доска (403/404/410/422) →
+ * UNREACHABLE (§74); дедуп. Гейт рынка (§56):
  * публикации на рынке → HIGH; нет → OUT_OF_MARKET; распределение неизвестно (как у
  * Greenhouse в первых тестах) или рынок не задан → прежнее правило. Реестр адаптеров,
  * адаптер, регистратор источника и репозиторий — заглушки (без сети и БД).
@@ -304,6 +305,38 @@ class DiscoverEmployerJobHandlerTest {
                 com.roleorienta.worker.http.SourceBackoffException.class, () -> handler.handle(message()));
 
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void goneOrForbiddenBoardIsUnreachableNotQueued() {
+        // Стенд §73: 404/403/422 на POST списка — доски по адресу из индекса нет (§74).
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.listPostings(any(), any())).thenThrow(org.springframework.web.client.HttpClientErrorException.create(
+                org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "Unprocessable Entity", null, null, null));
+
+        handler.handle(message());
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.UNREACHABLE, saved.getState());
+        assertEquals(DiscoveryConfidence.NONE, saved.getConfidence());
+        assertTrue(saved.getReason().startsWith("лента недоступна"), saved.getReason());
+    }
+
+    @Test
+    void unreachableClassification() {
+        for (org.springframework.http.HttpStatus status : List.of(org.springframework.http.HttpStatus.FORBIDDEN,
+                org.springframework.http.HttpStatus.NOT_FOUND, org.springframework.http.HttpStatus.GONE,
+                org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY)) {
+            assertTrue(DiscoverEmployerJobHandler.isUnreachable(
+                    org.springframework.web.client.HttpClientErrorException.create(status, "", null, null, null)), status.toString());
+        }
+        // 400/401 и «лента не разбирается» — не приговор доске: на ручную проверку.
+        org.junit.jupiter.api.Assertions.assertFalse(DiscoverEmployerJobHandler.isUnreachable(
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "", null, null, null)));
+        org.junit.jupiter.api.Assertions.assertFalse(DiscoverEmployerJobHandler.isUnreachable(new IllegalStateException("parse")));
     }
 
     @Test

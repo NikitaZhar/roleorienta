@@ -48,6 +48,9 @@ import org.springframework.web.client.ResourceAccessException;
  *       {@code OUT_OF_MARKET} (без очереди подтверждения); нет фасета стран — по фасету
  *       локаций (§59), нет и его — по локациям вакансий первой страницы (§73: выборка,
  *       иначе тенанты без фасетов засоряли очередь ручной проверки);</li>
+ *   <li>лента не открывается окончательно ({@code 403}/{@code 404}/{@code 410}/{@code 422},
+ *       §74) — {@code NONE} и состояние {@code UNREACHABLE}: доски по адресу из индекса нет
+ *       или доступ закрыт, в очередь подтверждения не попадает;</li>
  *   <li>{@code LOW}/{@code NONE} — кандидат уходит в очередь на подтверждение
  *       ({@code PENDING}): «неуверенный не подключается вслепую и не пропадает».</li>
  * </ul>
@@ -63,6 +66,9 @@ import org.springframework.web.client.ResourceAccessException;
 public class DiscoverEmployerJobHandler implements TypedJobHandler {
 
     private static final Logger log = LoggerFactory.getLogger(DiscoverEmployerJobHandler.class);
+
+    /** Ответы, после которых доска считается недоступной (см. {@link #isUnreachable}). */
+    private static final java.util.Set<Integer> UNREACHABLE_STATUSES = java.util.Set.of(403, 404, 410, 422);
 
     /** Сводка Workday вместо локации: «2 Locations», «18 Locations». */
     private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+\\s+Locations?", Pattern.CASE_INSENSITIVE);
@@ -114,35 +120,29 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         candidate.setConfidence(assessment.confidence());
         candidate.setReason(assessment.reason());
         candidate.setPostingCount(assessment.postingCount());
+        candidate.setState(assessment.state());
 
-        if (assessment.confidence() == DiscoveryConfidence.HIGH) {
+        if (assessment.state() == EmployerCandidateState.CONFIRMED) {
             Registration registration = sourceRegistrar.register(
                     payload.providerCode(), payload.slug(), payload.baseUrl(), payload.slug());
-            candidate.setState(EmployerCandidateState.CONFIRMED);
             candidate.setCompanyId(registration.companyId());
             candidate.setSourceId(registration.sourceId());
             candidateRepository.save(candidate);
             log.info("DISCOVER_EMPLOYER: {}/{} → HIGH, авто-подключение (source={}), публикаций {}",
                     payload.providerCode(), payload.slug(),
                     registration.sourceId(), assessment.postingCount());
-        } else if (assessment.outOfMarket()) {
-            candidate.setState(EmployerCandidateState.OUT_OF_MARKET);
-            candidateRepository.save(candidate);
-            log.info("DISCOVER_EMPLOYER: {}/{} → вне рынка ({})",
-                    payload.providerCode(), payload.slug(), assessment.reason());
-        } else {
-            candidate.setState(EmployerCandidateState.PENDING);
-            candidateRepository.save(candidate);
-            log.info("DISCOVER_EMPLOYER: {}/{} → {} ({}), в очередь на подтверждение",
-                    payload.providerCode(), payload.slug(),
-                    assessment.confidence(), assessment.reason());
+            return;
         }
+        candidateRepository.save(candidate);
+        log.info("DISCOVER_EMPLOYER: {}/{} → {} {} ({})", payload.providerCode(), payload.slug(),
+                assessment.state(), assessment.confidence(), assessment.reason());
     }
 
     /**
-     * Проверяет ленту кандидата и возвращает уверенность/обоснование. Ошибки чтения
-     * и разбора перехватываются: кандидат всё равно попадает в очередь с
-     * уверенностью {@code NONE} — обнаружение не должно падать на «плохом» кандидате.
+     * Проверяет ленту кандидата и возвращает уверенность, обоснование и итоговое состояние.
+     * Ошибки чтения и разбора перехватываются — обнаружение не должно падать на «плохом»
+     * кандидате: доска недоступна ({@link #isUnreachable}) — {@code UNREACHABLE}, прочие —
+     * {@code NONE} в очередь подтверждения.
      * Исключение — временные сбои источника ({@link #isTransient}): они пробрасываются,
      * и задание повторяется (§57).
      */
@@ -153,7 +153,7 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             int count = page.postings().size();
             if (count == 0) {
                 return new Assessment(DiscoveryConfidence.LOW,
-                        "лента валидна, но пустая — требует подтверждения", 0, false);
+                        "лента валидна, но пустая — требует подтверждения", 0, EmployerCandidateState.PENDING);
             }
             if (market.enabled() && !page.countryCounts().isEmpty()) {
                 return assessMarket(page.countryCounts(), count);
@@ -168,24 +168,40 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
                     Assessment bySample = assessMarketByLocations(sample, count);
                     return new Assessment(bySample.confidence(),
                             "по вакансиям первой страницы (фасетов нет): " + bySample.reason(),
-                            bySample.postingCount(), bySample.outOfMarket());
+                            bySample.postingCount(), bySample.state());
                 }
                 // Ни стран, ни локаций (§58): рынок не проверен — не подключаем вслепую.
                 return new Assessment(DiscoveryConfidence.LOW,
                         "лента валидна (" + count + "), но распределение по странам не получено — "
-                                + "рынок не проверен, требует подтверждения", count, false);
+                                + "рынок не проверен, требует подтверждения", count, EmployerCandidateState.PENDING);
             }
             return new Assessment(DiscoveryConfidence.HIGH,
-                    "лента валидна, публикаций: " + count, count, false);
+                    "лента валидна, публикаций: " + count, count, EmployerCandidateState.CONFIRMED);
         } catch (RuntimeException e) {
             if (isTransient(e)) {
                 // Сбой источника, а не свойство ленты (§57): не записываем кандидата как NONE
                 // (дедуп не дал бы проверить его снова) — пусть задание повторит брокер.
                 throw e;
             }
+            if (isUnreachable(e)) {
+                // Доски по этому адресу нет или доступ закрыт (§74): человеку проверять нечего.
+                return new Assessment(DiscoveryConfidence.NONE,
+                        "лента недоступна: " + e.getMessage(), 0, EmployerCandidateState.UNREACHABLE);
+            }
             return new Assessment(DiscoveryConfidence.NONE,
-                    "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, false);
+                    "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, EmployerCandidateState.PENDING);
         }
+    }
+
+    /**
+     * Доска недоступна окончательно: {@code 403} (доступ закрыт), {@code 404}/{@code 410} (сайта
+     * нет), {@code 422} (Workday так отвечает на несуществующий сайт/тенант — проверено на
+     * стенде §73/§74: страница такого тенанта уводит на community.workday.com). Повтор не
+     * поможет, ручная проверка — тоже.
+     */
+    static boolean isUnreachable(RuntimeException e) {
+        return e instanceof HttpClientErrorException client
+                && UNREACHABLE_STATUSES.contains(client.getStatusCode().value());
     }
 
     /**
@@ -214,17 +230,17 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         if (match.marketCount() > 0) {
             return new Assessment(DiscoveryConfidence.HIGH, String.format(
                     "лента валидна; фасета стран нет, по локациям на рынке: %d из %d; совпали: %s",
-                    match.marketCount(), total, firstOf(match.marketLocations())), count, false);
+                    match.marketCount(), total, firstOf(match.marketLocations())), count, EmployerCandidateState.CONFIRMED);
         }
         if (match.ambiguousCount() > 0) {
             return new Assessment(DiscoveryConfidence.LOW, String.format(
                     "только неоднозначные локации (%d из %d): %s — страна не указана, требует проверки; "
                             + "главные локации: %s",
-                    match.ambiguousCount(), total, firstOf(match.ambiguousLocations()), top), count, false);
+                    match.ambiguousCount(), total, firstOf(match.ambiguousLocations()), top), count, EmployerCandidateState.PENDING);
         }
         return new Assessment(DiscoveryConfidence.LOW, String.format(
                 "нет локаций на целевом рынке (фасета стран нет — вероятно, одна страна; всего %d); локации: %s",
-                total, top), count, true);
+                total, top), count, EmployerCandidateState.OUT_OF_MARKET);
     }
 
     /**
@@ -272,11 +288,11 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         if (inMarket > 0) {
             return new Assessment(DiscoveryConfidence.HIGH, String.format(
                     "лента валидна; на целевом рынке %s: %d из %d; страны: %s",
-                    market.countries(), inMarket, total, top), count, false);
+                    market.countries(), inMarket, total, top), count, EmployerCandidateState.CONFIRMED);
         }
         return new Assessment(DiscoveryConfidence.LOW, String.format(
                 "нет публикаций на целевом рынке %s (всего %d); страны: %s",
-                market.countries(), total, top), count, true);
+                market.countries(), total, top), count, EmployerCandidateState.OUT_OF_MARKET);
     }
 
     /**
@@ -320,8 +336,13 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private record Payload(String providerCode, String slug, String baseUrl) {
     }
 
-    /** Результат проверки ленты кандидата; {@code outOfMarket} — отсеян гейтом рынка. */
+    /**
+     * Результат проверки ленты кандидата. {@code state} — итоговое состояние кандидата:
+     * {@code CONFIRMED} — подключить (только при {@code HIGH}), {@code OUT_OF_MARKET} —
+     * отсеян гейтом рынка, {@code UNREACHABLE} — доски нет или доступ закрыт, {@code PENDING} —
+     * на ручную проверку.
+     */
     private record Assessment(DiscoveryConfidence confidence, String reason, int postingCount,
-                              boolean outOfMarket) {
+                              EmployerCandidateState state) {
     }
 }
