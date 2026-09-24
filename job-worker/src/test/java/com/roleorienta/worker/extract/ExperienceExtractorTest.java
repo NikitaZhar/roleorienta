@@ -88,4 +88,32 @@ class ExperienceExtractorTest {
         assertThat(extractor.extract(null).yearsMin()).isNull();
         assertThat(extractor.extract("   ").level()).isEqualTo(SeniorityLevel.UNKNOWN);
     }
+
+    @Test
+    void titleLevelWinsOverAmbiguousDescription() {
+        // Реальный случай Workday (§69): уровень в заголовке, в описании — посторонние «senior/junior».
+        ExtractedExperience experience = extractor.extract("Senior Technical Architect - Healthcare (m/w/d)",
+                "You will advise senior management and mentor junior colleagues. 5+ years of experience.");
+        assertThat(experience.level()).isEqualTo(SeniorityLevel.SENIOR);
+        assertThat(experience.yearsMin()).isEqualTo(5);
+    }
+
+    @Test
+    void descriptionUsedWhenTitleHasNoLevel() {
+        assertThat(extractor.extract("Software Developer - Cybersecurity (f/m/d)",
+                "We are looking for a junior developer.").level()).isEqualTo(SeniorityLevel.JUNIOR);
+    }
+
+    @Test
+    void ambiguousTitleFallsBackToDescription() {
+        assertThat(extractor.extract("Junior/Senior Java Engineer", "Senior role in our team.").level())
+                .isEqualTo(SeniorityLevel.SENIOR);
+    }
+
+    @Test
+    void titleLevelWithoutDescription() {
+        ExtractedExperience experience = extractor.extract("Junior Electrical Designer", null);
+        assertThat(experience.level()).isEqualTo(SeniorityLevel.JUNIOR);
+        assertThat(experience.yearsMin()).isNull();
+    }
 }

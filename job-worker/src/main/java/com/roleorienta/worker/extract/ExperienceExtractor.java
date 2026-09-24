@@ -19,6 +19,12 @@ import org.springframework.stereotype.Component;
  * несколько разных (напр. «junior or senior») — {@link SeniorityLevel#UNKNOWN}
  * (обязательность конкретного уровня из текста не следует — не угадываем).</p>
  *
+ * <p><b>Заголовок главнее описания (§69).</b> Уровень сначала ищется в заголовке публикации
+ * («Senior Technical Architect»), и только если там его нет (или найдено сразу несколько) —
+ * в тексте описания. В описаниях Workday уровни встречаются в постороннем смысле
+ * («senior management», «junior colleagues»), и правило «ровно один уровень в тексте» давало
+ * {@code UNKNOWN} даже у вакансий с уровнем в заголовке.</p>
+ *
  * <p>Число лет извлекается только по типовым конструкциям, привязанным к требованию,
  * чтобы не принять произвольное «N лет» за опыт:
  * {@code «N+ years/yrs»} (плюс подразумевает минимум) и
@@ -50,24 +56,43 @@ public class ExperienceExtractor {
             "(\\d+)\\s*\\+\\s*(?:years?|yrs?)", Pattern.CASE_INSENSITIVE);
 
     /**
-     * Извлекает требование к опыту из текста описания.
+     * Извлекает требование к опыту из текста описания (без заголовка).
      *
      * @param description текст описания или {@code null}
      * @return уровень (никогда не {@code null}; при отсутствии сигнала — {@code UNKNOWN})
      *         и минимальное число лет ({@code null}, если не указано)
      */
     public ExtractedExperience extract(String description) {
-        if (description == null || description.isBlank()) {
-            return new ExtractedExperience(SeniorityLevel.UNKNOWN, null);
+        return extract(null, description);
+    }
+
+    /**
+     * Извлекает требование к опыту: уровень — из заголовка, а если в нём уровня нет или он
+     * неоднозначен — из описания; число лет — из описания.
+     *
+     * @param title       заголовок публикации или {@code null}
+     * @param description текст описания или {@code null}
+     * @return уровень (никогда не {@code null}; при отсутствии сигнала — {@code UNKNOWN})
+     *         и минимальное число лет ({@code null}, если не указано)
+     */
+    public ExtractedExperience extract(String title, String description) {
+        SeniorityLevel fromTitle = isBlank(title) ? SeniorityLevel.UNKNOWN : extractLevel(title);
+        if (isBlank(description)) {
+            return new ExtractedExperience(fromTitle, null);
         }
-        return new ExtractedExperience(extractLevel(description), extractYears(description));
+        SeniorityLevel level = fromTitle != SeniorityLevel.UNKNOWN ? fromTitle : extractLevel(description);
+        return new ExtractedExperience(level, extractYears(description));
+    }
+
+    private static boolean isBlank(String text) {
+        return text == null || text.isBlank();
     }
 
     /**
      * Определяет уровень: ровно один найденный → он; ноль или несколько разных → UNKNOWN.
      */
-    private SeniorityLevel extractLevel(String description) {
-        String lower = description.toLowerCase();
+    private SeniorityLevel extractLevel(String text) {
+        String lower = text.toLowerCase();
         Set<SeniorityLevel> found = EnumSet.noneOf(SeniorityLevel.class);
         for (Map.Entry<SeniorityLevel, List<String>> level : LEVEL_CUES.entrySet()) {
             for (String cue : level.getValue()) {

@@ -79,7 +79,7 @@ public class PostingEnricher {
         NormalizedSalary salary = resolved.salary();
         NormalizedLocation location = locationNormalizer.normalize(
                 detail.rawLocation(), detail.country(), detail.remoteType());
-        ExtractedExperience experience = experienceExtractor.extract(detail.rawDescription());
+        ExtractedExperience experience = experienceExtractor.extract(posting.getRawTitle(), detail.rawDescription());
 
         // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
         recordChanges(posting, detail.rawLocation(), location, salary, experience, at);
