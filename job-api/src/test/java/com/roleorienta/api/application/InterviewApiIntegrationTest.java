@@ -221,7 +221,7 @@ class InterviewApiIntegrationTest {
         // Отклик стартует в APPLIED.
         mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPLIED"));
+                .andExpect(jsonPath("$.application.status").value("APPLIED"));
 
         mockMvc.perform(post("/api/v1/applications/{id}/interviews", applicationId)
                         .with(csrf()).session(session)
@@ -232,6 +232,6 @@ class InterviewApiIntegrationTest {
         // §45: назначение собеседования подняло отклик до INTERVIEWING.
         mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("INTERVIEWING"));
+                .andExpect(jsonPath("$.application.status").value("INTERVIEWING"));
     }
 }

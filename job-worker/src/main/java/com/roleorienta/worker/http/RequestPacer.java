@@ -58,16 +58,21 @@ public class RequestPacer {
      */
     @Autowired
     public RequestPacer(SourcePacingProperties properties) {
-        this(properties.defaultIntervalMs(), properties.intervalsMs(), properties.maxWaitMs(),
-                properties.maxBackoffMs(), Clock.systemUTC(), Thread::sleep);
+        this(properties, Clock.systemUTC(), Thread::sleep);
     }
 
-    RequestPacer(long defaultIntervalMs, Map<String, Long> intervalsMs, long maxWaitMs,
-                 long maxBackoffMs, Clock clock, Sleeper sleeper) {
-        this.defaultIntervalMs = defaultIntervalMs;
-        this.intervalsMs = Map.copyOf(intervalsMs);
-        this.maxWaitMs = maxWaitMs;
-        this.maxBackoffMs = maxBackoffMs;
+    /**
+     * Пейсер с подменяемыми часами и ожиданием — для тестов.
+     *
+     * @param properties настройки темпа
+     * @param clock      часы
+     * @param sleeper    ожидание
+     */
+    RequestPacer(SourcePacingProperties properties, Clock clock, Sleeper sleeper) {
+        this.defaultIntervalMs = properties.defaultIntervalMs();
+        this.intervalsMs = Map.copyOf(properties.intervalsMs());
+        this.maxWaitMs = properties.maxWaitMs();
+        this.maxBackoffMs = properties.maxBackoffMs();
         this.clock = clock;
         this.sleeper = sleeper;
     }
@@ -78,7 +83,8 @@ public class RequestPacer {
      * @return пейсер с нулевым интервалом
      */
     public static RequestPacer unpaced() {
-        return new RequestPacer(0, Map.of(), Long.MAX_VALUE, 0, Clock.systemUTC(), millis -> { });
+        return new RequestPacer(new SourcePacingProperties(0, Map.of(), Long.MAX_VALUE, 0, 0),
+                Clock.systemUTC(), millis -> { });
     }
 
     /**

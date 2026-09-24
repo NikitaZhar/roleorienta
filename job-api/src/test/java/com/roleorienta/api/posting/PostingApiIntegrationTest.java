@@ -102,7 +102,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(3))
-                .andExpect(jsonPath("$.items[0].externalId").value("A"))
+                .andExpect(jsonPath("$.items[0].head.externalId").value("A"))
                 .andExpect(jsonPath("$.nextCursor").isEmpty());
     }
 
@@ -116,7 +116,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("limit", "2").param("cursor", String.valueOf(idB)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("C"))
+                .andExpect(jsonPath("$.items[0].head.externalId").value("C"))
                 .andExpect(jsonPath("$.nextCursor").isEmpty());
     }
 
@@ -125,7 +125,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("workModality", "REMOTE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("B"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("B"));
     }
 
     @Test
@@ -140,7 +140,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("seniority", "SENIOR"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("A"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("A"));
     }
 
     @Test
@@ -157,7 +157,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("country", "slovakia"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("A"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("A"));
         // Страна — последний сегмент записи, не подстрока: «Vienna» — город, не страна.
         mockMvc.perform(get("/api/v1/postings").param("country", "Vienna"))
                 .andExpect(status().isOk())
@@ -177,9 +177,9 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("minSalary", "100000"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(3))
-                .andExpect(jsonPath("$.items[2].externalId").value("D"))
-                .andExpect(jsonPath("$.items[2].salaryPeriod").value("YEAR"))
-                .andExpect(jsonPath("$.items[2].salaryBasis").value("GROSS"));
+                .andExpect(jsonPath("$.items[2].head.externalId").value("D"))
+                .andExpect(jsonPath("$.items[2].facts.salary.period").value("YEAR"))
+                .andExpect(jsonPath("$.items[2].facts.salary.basis").value("GROSS"));
     }
 
     @Test
@@ -188,7 +188,7 @@ class PostingApiIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("postedFrom", "2026-09-10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("A"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("A"));
         mockMvc.perform(get("/api/v1/postings").param("postedFrom", "2026-09-11"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0));
@@ -200,8 +200,8 @@ class PostingApiIntegrationTest {
         String firstPage = mockMvc.perform(get("/api/v1/postings").param("sort", "POSTED").param("limit", "2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
-                .andExpect(jsonPath("$.items[0].externalId").value("A"))
-                .andExpect(jsonPath("$.items[1].externalId").value("C"))
+                .andExpect(jsonPath("$.items[0].head.externalId").value("A"))
+                .andExpect(jsonPath("$.items[1].head.externalId").value("C"))
                 .andExpect(jsonPath("$.nextCursor").isNumber())
                 .andReturn().getResponse().getContentAsString();
         String cursor = firstPage.replaceAll(".*\"nextCursor\":(\\d+).*", "$1");
@@ -209,7 +209,7 @@ class PostingApiIntegrationTest {
                         .param("cursor", cursor))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("B"))
+                .andExpect(jsonPath("$.items[0].head.externalId").value("B"))
                 .andExpect(jsonPath("$.nextCursor").isEmpty());
     }
 
@@ -218,19 +218,19 @@ class PostingApiIntegrationTest {
         // Навыки отсортированы по имени: "C#" раньше "Java".
         mockMvc.perform(get("/api/v1/postings/{id}", cardId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.externalId").value("A"))
-                .andExpect(jsonPath("$.city").value("Berlin"))
-                .andExpect(jsonPath("$.seniority").value("SENIOR"))
-                .andExpect(jsonPath("$.experienceYearsMin").value(5))
-                .andExpect(jsonPath("$.postedOn").value("2026-09-10"))
-                .andExpect(jsonPath("$.additionalLocations").value("Vienna, Austria; Bratislava, Slovakia"))
-                .andExpect(jsonPath("$.languages.length()").value(1))
-                .andExpect(jsonPath("$.languages[0].languageCode").value("en"))
-                .andExpect(jsonPath("$.skills.length()").value(2))
-                .andExpect(jsonPath("$.skills[0].skill").value("C#"))
-                .andExpect(jsonPath("$.skills[0].stance").value("NEGATED"))
-                .andExpect(jsonPath("$.skills[1].skill").value("Java"))
-                .andExpect(jsonPath("$.skills[1].stance").value("REQUESTED"));
+                .andExpect(jsonPath("$.head.externalId").value("A"))
+                .andExpect(jsonPath("$.facts.location.city").value("Berlin"))
+                .andExpect(jsonPath("$.facts.experience.seniority").value("SENIOR"))
+                .andExpect(jsonPath("$.facts.experience.yearsMin").value(5))
+                .andExpect(jsonPath("$.facts.timeline.postedOn").value("2026-09-10"))
+                .andExpect(jsonPath("$.facts.location.additional").value("Vienna, Austria; Bratislava, Slovakia"))
+                .andExpect(jsonPath("$.requirements.languages.length()").value(1))
+                .andExpect(jsonPath("$.requirements.languages[0].languageCode").value("en"))
+                .andExpect(jsonPath("$.requirements.skills.length()").value(2))
+                .andExpect(jsonPath("$.requirements.skills[0].skill").value("C#"))
+                .andExpect(jsonPath("$.requirements.skills[0].stance").value("NEGATED"))
+                .andExpect(jsonPath("$.requirements.skills[1].skill").value("Java"))
+                .andExpect(jsonPath("$.requirements.skills[1].stance").value("REQUESTED"));
     }
 
     @Test

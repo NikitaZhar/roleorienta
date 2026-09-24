@@ -49,7 +49,7 @@ RabbitMQ:
 | Очередь   | RabbitMQ, Spring AMQP |
 | Сборка    | Maven (многомодульный), образы — `spring-boot:build-image` (buildpacks) |
 | Тесты     | JUnit 5, Testcontainers (реальные PostgreSQL и RabbitMQ) |
-| CI        | GitHub Actions (компиляция + тесты) |
+| CI        | GitHub Actions (Checkstyle + компиляция + тесты) |
 
 Требования Spring Boot 4.1: Java 17–26, Maven 3.6.3+, Spring Framework 7.0.9+.
 
@@ -65,6 +65,7 @@ roleorienta/
 ├── job-worker/              # фоновый обработчик (Spring Boot + AMQP)
 ├── docker-compose.yml       # профиль local-pilot
 ├── infra/source-stub/       # маппинги заглушки источника (WireMock)
+├── config/checkstyle/       # правила Checkstyle (≤5 параметров, ≤5 полей записи)
 ├── .github/workflows/ci.yml # базовый CI
 └── .env.example             # локальные значения для docker compose
 ```
@@ -74,7 +75,7 @@ roleorienta/
 Требуется JDK 21 и Maven 3.6.3+ (или обёртка при её добавлении).
 
 ```bash
-# компиляция + тесты (тесты поднимают PostgreSQL и RabbitMQ через Testcontainers — нужен Docker)
+# Checkstyle + компиляция + тесты (Checkstyle на фазе validate; тесты поднимают PostgreSQL и RabbitMQ через Testcontainers — нужен Docker)
 mvn verify
 
 # только компиляция и упаковка без тестов
@@ -133,10 +134,10 @@ docker compose up
 
 ## Что пока НЕ реализовано (следующие задачи)
 
-Ядро ценности Этапа 1: автоматический вход обнаружения по вендорным шаблонам
-(Common Crawl / Certificate Transparency), проверка принадлежности ленты
-работодателю в гейте уверенности, дедуп работодателей между входами;
-дополнительные вендор-адаптеры (Workday, SAP SuccessFactors, SmartRecruiters);
+Ядро ценности Этапа 1: проверка принадлежности ленты работодателю в гейте
+уверенности, дедуп работодателей между входами (автоматический вход Common Crawl для
+Workday уже работает); дополнительные вендор-адаптеры (SAP SuccessFactors,
+SmartRecruiters);
 `CoverageAssessment` и признак «скрытой» в ленте; `SourceSnapshot` (S3); дайджест
 изменений + email; SPA-фронтенд с trust-панелью.
 

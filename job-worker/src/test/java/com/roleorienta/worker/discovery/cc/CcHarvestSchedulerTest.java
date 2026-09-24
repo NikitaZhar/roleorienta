@@ -59,8 +59,12 @@ class CcHarvestSchedulerTest {
     }
 
     private CcHarvestScheduler scheduler(int pagesPerPass, int maxFanOut) {
-        return new CcHarvestScheduler(new CcHarvestProperties(PATTERN, 1, pagesPerPass, maxFanOut, 900),
-                index, store, candidates, outbox, leaderLock);
+        CcHarvestProperties properties = new CcHarvestProperties(PATTERN, 1, pagesPerPass, maxFanOut, 900);
+        return new CcHarvestScheduler(properties, index, store, fanOut(properties));
+    }
+
+    private BoardFanOut fanOut(CcHarvestProperties properties) {
+        return new BoardFanOut(properties, store, candidates, outbox, leaderLock);
     }
 
     @Test
@@ -174,7 +178,7 @@ class CcHarvestSchedulerTest {
                 new PendingBoard(2, "workday", "3m/Search", "https://3m.wd1.myworkdayjobs.com")));
         when(candidates.existsByProviderCodeAndSlugIgnoreCase("workday", "amgen/Careers")).thenReturn(true);
 
-        scheduler(1, 2).fanOutBatch();
+        fanOut(new CcHarvestProperties(PATTERN, 1, 1, 2, 900)).runBatch();
 
         ArgumentCaptor<OutboxEvent> event = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outbox, times(1)).save(event.capture());

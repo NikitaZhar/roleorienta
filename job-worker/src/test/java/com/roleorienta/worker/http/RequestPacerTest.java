@@ -45,7 +45,8 @@ class RequestPacerTest {
     private final List<Long> sleeps = new ArrayList<>();
 
     private RequestPacer pacer(long defaultInterval, Map<String, Long> intervals, long maxWait, long maxBackoff) {
-        return new RequestPacer(defaultInterval, intervals, maxWait, maxBackoff, clock, ms -> {
+        SourcePacingProperties properties = new SourcePacingProperties(defaultInterval, intervals, maxWait, maxBackoff, 0);
+        return new RequestPacer(properties, clock, ms -> {
             sleeps.add(ms);
             clock.millis += ms;
         });

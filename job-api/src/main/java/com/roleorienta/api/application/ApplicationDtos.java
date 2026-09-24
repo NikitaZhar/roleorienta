@@ -47,17 +47,19 @@ public final class ApplicationDtos {
         }
     }
 
-    /** Карточка отклика с заметками. */
-    public record ApplicationCardResponse(Long id, Long postingId, String status,
-                                          long version, Instant createdAt, List<NoteResponse> notes) {
+    /**
+     * Карточка отклика с заметками (§78: поля отклика — в {@link ApplicationResponse}).
+     *
+     * @param application отклик
+     * @param version     версия для предусловия {@code If-Match} (A19)
+     * @param notes       заметки
+     */
+    public record ApplicationCardResponse(ApplicationResponse application, long version, List<NoteResponse> notes) {
 
         static ApplicationCardResponse of(Application application, List<ApplicationNote> notes) {
             return new ApplicationCardResponse(
-                    application.getId(),
-                    application.getPosting().getId(),
-                    application.getStatus().name(),
+                    ApplicationResponse.of(application),
                     application.getVersion(),
-                    application.getCreatedAt(),
                     notes.stream().map(NoteResponse::of).toList());
         }
     }

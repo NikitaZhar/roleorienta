@@ -135,7 +135,8 @@ public class GreenhouseAdapter implements SourceAdapter {
 
             JsonNode ranges = root.path("pay_input_ranges");
             if (!ranges.isArray() || ranges.size() == 0) {
-                return new FetchedPosting(rawLocation, null, null, rawDescription);
+                return new FetchedPosting(FetchedPosting.SourceLocation.of(rawLocation),
+                        FetchedPosting.SourcePay.NONE, rawDescription, null);
             }
             JsonNode range = ranges.get(0);
             BigDecimal min = centsToAmount(range.path("min_cents"));
@@ -143,7 +144,8 @@ public class GreenhouseAdapter implements SourceAdapter {
             String currency = textOrNull(range.path("currency_type"));
             CompensationRange compensation = new CompensationRange(min, max, currency);
             String rawCompensation = displayCompensation(textOrNull(range.path("title")), min, max, currency);
-            return new FetchedPosting(rawLocation, rawCompensation, compensation, rawDescription);
+            return new FetchedPosting(FetchedPosting.SourceLocation.of(rawLocation),
+                    new FetchedPosting.SourcePay(rawCompensation, compensation), rawDescription, null);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать деталь Greenhouse", e);
         }

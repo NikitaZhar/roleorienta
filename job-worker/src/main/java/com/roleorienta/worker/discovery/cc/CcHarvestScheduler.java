@@ -2,14 +2,8 @@ package com.roleorienta.worker.discovery.cc;
 
 import com.roleorienta.worker.adapters.workday.WorkdayAdapter;
 import com.roleorienta.worker.adapters.workday.WorkdayBoard;
-import com.roleorienta.worker.discovery.DiscoverEmployerPayload;
-import com.roleorienta.worker.discovery.EmployerCandidateRepository;
-import com.roleorienta.worker.discovery.cc.HarvestStore.BoardState;
 import com.roleorienta.worker.discovery.cc.HarvestStore.Cursor;
-import com.roleorienta.worker.discovery.cc.HarvestStore.PendingBoard;
 import com.roleorienta.worker.http.SourceBackoffException;
-import com.roleorienta.worker.lock.PostgresLeaderLock;
-import com.roleorienta.worker.outbox.OutboxEventRepository;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,7 +29,7 @@ import org.springframework.web.client.HttpServerErrorException;
  *       дедупом). Коллекция
  *       обойдена до конца — сеть не трогается до следующей коллекции (кроме одного
  *       запроса {@code collinfo.json}).</li>
- *   <li><b>Fan-out</b> ({@link #fanOut()}): под leader-lock (ключ {@value #FANOUT_LOCK_KEY},
+ *   <li><b>Fan-out</b> ({@link BoardFanOut}): под leader-lock (ключ {@value BoardFanOut#FANOUT_LOCK_KEY},
  *       только БД, короткая транзакция) берёт до {@code maxFanOut} досок {@code NEW}; если
  *       кандидат с такой доской уже есть (без учёта регистра) — {@code SKIPPED}, иначе
  *       ставит {@code DISCOVER_EMPLOYER} через outbox — {@code ENQUEUED}. Дальше —
@@ -61,31 +55,25 @@ public class CcHarvestScheduler {
     /** Код входа — ключ строки {@code harvest_cursor} и метка досок. */
     static final String INPUT_CODE = "cc-workday";
 
-    /** Ключ advisory-лока fan-out (реестр ключей: 1001 источники, 1002 seed, 1003 матчер — D4). */
-    static final long FANOUT_LOCK_KEY = 1004L;
-
     private static final Logger log = LoggerFactory.getLogger(CcHarvestScheduler.class);
 
     private final CcHarvestProperties properties;
     private final CommonCrawlIndexClient indexClient;
     private final HarvestStore store;
-    private final EmployerCandidateRepository candidateRepository;
-    private final OutboxEventRepository outboxEventRepository;
-    private final PostgresLeaderLock leaderLock;
+    private final BoardFanOut fanOut;
 
-    public CcHarvestScheduler(
-            CcHarvestProperties properties,
-            CommonCrawlIndexClient indexClient,
-            HarvestStore store,
-            EmployerCandidateRepository candidateRepository,
-            OutboxEventRepository outboxEventRepository,
-            PostgresLeaderLock leaderLock) {
+    /**
+     * @param properties  шаблон индекса, размер страницы, бюджеты прохода
+     * @param indexClient клиент индекса Common Crawl
+     * @param store       накопитель досок и курсор обхода
+     * @param fanOut      фаза передачи досок в контур обнаружения
+     */
+    public CcHarvestScheduler(CcHarvestProperties properties, CommonCrawlIndexClient indexClient,
+                              HarvestStore store, BoardFanOut fanOut) {
         this.properties = properties;
         this.indexClient = indexClient;
         this.store = store;
-        this.candidateRepository = candidateRepository;
-        this.outboxEventRepository = outboxEventRepository;
-        this.leaderLock = leaderLock;
+        this.fanOut = fanOut;
     }
 
     /**
@@ -103,7 +91,7 @@ public class CcHarvestScheduler {
         } catch (RuntimeException e) {
             log.warn("CC-гарвест: сбор из индекса не удался, повтор на следующем тике", e);
         }
-        fanOut();
+        fanOut.run();
     }
 
     /**
@@ -168,34 +156,5 @@ public class CcHarvestScheduler {
             WorkdayBoard.fromCareerUrl(url).ifPresent(b -> byKey.putIfAbsent(b.dedupKey(), b));
         }
         return byKey.values();
-    }
-
-    /**
-     * Фаза fan-out под leader-lock.
-     *
-     * @return {@code true}, если эта реплика была лидером и выполнила фазу
-     */
-    boolean fanOut() {
-        return leaderLock.runIfLeader(FANOUT_LOCK_KEY, this::fanOutBatch);
-    }
-
-    /** Одна пачка fan-out; выполняется в транзакции leader-lock. */
-    void fanOutBatch() {
-        int enqueued = 0;
-        int skipped = 0;
-        for (PendingBoard board : store.lockNewBoards(properties.maxFanOut())) {
-            if (candidateRepository.existsByProviderCodeAndSlugIgnoreCase(board.providerCode(), board.slug())) {
-                store.mark(board.id(), BoardState.SKIPPED);
-                skipped++;
-                continue;
-            }
-            outboxEventRepository.save(
-                    DiscoverEmployerPayload.event(board.providerCode(), board.slug(), board.baseUrl()));
-            store.mark(board.id(), BoardState.ENQUEUED);
-            enqueued++;
-        }
-        if (enqueued + skipped > 0) {
-            log.info("CC-гарвест: поставлено DISCOVER_EMPLOYER {}, пропущено (кандидат есть) {}", enqueued, skipped);
-        }
     }
 }

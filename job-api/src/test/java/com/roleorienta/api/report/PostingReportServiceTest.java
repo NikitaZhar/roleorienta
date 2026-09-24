@@ -61,7 +61,7 @@ class PostingReportServiceTest {
         assertEquals(owner, captor.getValue().getReporter());
         assertEquals(PostingReportReason.BROKEN_LINK, captor.getValue().getReason());
         assertEquals(PostingReportStatus.OPEN, captor.getValue().getStatus());
-        assertEquals("BROKEN_LINK", response.reason());
+        assertEquals("BROKEN_LINK", response.complaint().reason());
         assertEquals("OPEN", response.status());
         assertEquals(10L, response.postingId());
     }
@@ -80,7 +80,7 @@ class PostingReportServiceTest {
         ReportResponse response = service.create(auth, 10L, PostingReportReason.OUTDATED, "изменил мнение");
 
         verify(reports, never()).save(any());
-        assertEquals("DUPLICATE", response.reason());
+        assertEquals("DUPLICATE", response.complaint().reason());
     }
 
     @Test
@@ -106,7 +106,7 @@ class PostingReportServiceTest {
         List<ReportResponse> response = service.list(auth);
 
         assertEquals(1, response.size());
-        assertEquals("OTHER", response.get(0).reason());
+        assertEquals("OTHER", response.get(0).complaint().reason());
     }
 
     private PostingReport buildReport(PostingReportStatus status) {
@@ -149,7 +149,7 @@ class PostingReportServiceTest {
         AdminReportResponse response = service.triage(7L, PostingReportStatus.RESOLVED);
 
         assertEquals(PostingReportStatus.RESOLVED, report.getStatus());
-        assertEquals("RESOLVED", response.status());
+        assertEquals("RESOLVED", response.report().status());
         verify(reports).save(report);
     }
 
@@ -184,7 +184,7 @@ class PostingReportServiceTest {
         PostingReport report = buildReport(PostingReportStatus.RESOLVED);
         when(reports.findById(7L)).thenReturn(Optional.of(report));
         AdminReportResponse response = service.triage(7L, PostingReportStatus.RESOLVED);
-        assertEquals("RESOLVED", response.status());
+        assertEquals("RESOLVED", response.report().status());
         verify(reports, never()).save(any());
     }
 }

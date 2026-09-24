@@ -104,8 +104,8 @@ class SavedPostingFeedIntegrationTest {
         mockMvc.perform(get("/api/v1/postings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
-                .andExpect(jsonPath("$.items[0].viewerState").isEmpty())
-                .andExpect(jsonPath("$.items[0].viewerSeen").value(false));
+                .andExpect(jsonPath("$.items[0].viewer.state").isEmpty())
+                .andExpect(jsonPath("$.items[0].viewer.seen").value(false));
     }
 
     @Test
@@ -117,7 +117,7 @@ class SavedPostingFeedIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].externalId").value("P2"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("P2"));
     }
 
     @Test
@@ -129,8 +129,8 @@ class SavedPostingFeedIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").param("includeHidden", "true").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
-                .andExpect(jsonPath("$.items[0].externalId").value("P1"))
-                .andExpect(jsonPath("$.items[0].viewerState").value("HIDDEN"));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("P1"))
+                .andExpect(jsonPath("$.items[0].viewer.state").value("HIDDEN"));
     }
 
     @Test
@@ -144,10 +144,10 @@ class SavedPostingFeedIntegrationTest {
         mockMvc.perform(get("/api/v1/postings").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
-                .andExpect(jsonPath("$.items[0].externalId").value("P1"))
-                .andExpect(jsonPath("$.items[0].viewerState").isEmpty())
-                .andExpect(jsonPath("$.items[1].externalId").value("P2"))
-                .andExpect(jsonPath("$.items[1].viewerState").value("SAVED"))
-                .andExpect(jsonPath("$.items[1].viewerSeen").value(true));
+                .andExpect(jsonPath("$.items[0].head.externalId").value("P1"))
+                .andExpect(jsonPath("$.items[0].viewer.state").isEmpty())
+                .andExpect(jsonPath("$.items[1].head.externalId").value("P2"))
+                .andExpect(jsonPath("$.items[1].viewer.state").value("SAVED"))
+                .andExpect(jsonPath("$.items[1].viewer.seen").value(true));
     }
 }

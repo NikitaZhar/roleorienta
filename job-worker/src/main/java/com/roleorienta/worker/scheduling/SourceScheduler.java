@@ -1,23 +1,13 @@
 package com.roleorienta.worker.scheduling;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.core.domain.CrawlRunState;
-import com.roleorienta.core.domain.CrawlTask;
-import com.roleorienta.core.domain.CrawlTaskState;
-import com.roleorienta.core.domain.CrawlTaskType;
 import com.roleorienta.core.domain.Source;
 import com.roleorienta.core.domain.SourceState;
 import com.roleorienta.worker.lock.PostgresLeaderLock;
-import com.roleorienta.worker.outbox.OutboxEvent;
-import com.roleorienta.worker.outbox.OutboxEventRepository;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,7 +15,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>Под leader-lock (чтобы при нескольких репликах планировала только одна) для
  * каждого активного источника создаёт в текущем окне расписания обход
- * ({@code crawl_run}), задание ({@code crawl_task}) и outbox-событие — всё в
+ * ({@code crawl_run}), задание ({@code crawl_task}) и outbox-событие ({@link DiscoverPageEnqueuer}) — всё в
  * одной транзакции. Идемпотентность обеспечивает уникальный ключ
  * {@code (source, окно)}: повторный тик в том же окне не создаёт дублей. Событие
  * далее доставляется существующей магистралью (публикатор → очередь → потребитель).</p>
@@ -46,33 +36,25 @@ public class SourceScheduler {
 
     private final SourceRepository sourceRepository;
     private final CrawlRunRepository crawlRunRepository;
-    private final CrawlTaskRepository crawlTaskRepository;
-    private final OutboxEventRepository outboxEventRepository;
+    private final DiscoverPageEnqueuer enqueuer;
     private final PostgresLeaderLock leaderLock;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final long windowSizeMs;
 
     /**
-     * @param sourceRepository      источники
-     * @param crawlRunRepository    обходы
-     * @param crawlTaskRepository   задания
-     * @param outboxEventRepository outbox
-     * @param leaderLock            leader-lock роли планировщика
-     * @param windowSizeMs          размер окна расписания, мс
+     * @param sourceRepository   источники
+     * @param crawlRunRepository обходы
+     * @param enqueuer           постановка задания {@code DISCOVER_PAGE} и события
+     * @param leaderLock         leader-lock роли планировщика
+     * @param properties         настройки планировщика (размер окна расписания)
      */
-    public SourceScheduler(
-            SourceRepository sourceRepository,
-            CrawlRunRepository crawlRunRepository,
-            CrawlTaskRepository crawlTaskRepository,
-            OutboxEventRepository outboxEventRepository,
-            PostgresLeaderLock leaderLock,
-            @Value("${app.scheduler.window-ms:900000}") long windowSizeMs) {
+    public SourceScheduler(SourceRepository sourceRepository, CrawlRunRepository crawlRunRepository,
+                           DiscoverPageEnqueuer enqueuer, PostgresLeaderLock leaderLock,
+                           SchedulerProperties properties) {
         this.sourceRepository = sourceRepository;
         this.crawlRunRepository = crawlRunRepository;
-        this.crawlTaskRepository = crawlTaskRepository;
-        this.outboxEventRepository = outboxEventRepository;
+        this.enqueuer = enqueuer;
         this.leaderLock = leaderLock;
-        this.windowSizeMs = windowSizeMs;
+        this.windowSizeMs = properties.windowMs();
     }
 
     /**
@@ -96,16 +78,7 @@ public class SourceScheduler {
         for (Source source : sources) {
             if (crawlRunRepository.insertIfAbsent(source.getId(), windowStart, CrawlRunState.SCHEDULED.name()) == 1) {
                 Long runId = crawlRunRepository.findId(source.getId(), windowStart);
-                CrawlTask task = crawlTaskRepository.save(new CrawlTask(
-                        crawlRunRepository.getReferenceById(runId),
-                        CrawlTaskType.DISCOVER_PAGE,
-                        CrawlTaskState.SCHEDULED));
-                outboxEventRepository.save(new OutboxEvent(
-                        "CrawlTask",
-                        String.valueOf(task.getId()),
-                        CrawlTaskType.DISCOVER_PAGE.name(),
-                        payload(task.getId(), runId, source.getId(), windowStart),
-                        null));
+                enqueuer.enqueue(crawlRunRepository.getReferenceById(runId), source.getId(), windowStart);
                 scheduled++;
             }
         }
@@ -121,22 +94,5 @@ public class SourceScheduler {
     private Instant currentWindowStart() {
         long now = Instant.now().toEpochMilli();
         return Instant.ofEpochMilli(now - (now % windowSizeMs));
-    }
-
-    /**
-     * Формирует JSON-тело события задания.
-     */
-    private String payload(Long taskId, Long crawlRunId, Long sourceId, Instant windowStart) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("taskId", taskId);
-        body.put("crawlRunId", crawlRunId);
-        body.put("sourceId", sourceId);
-        body.put("type", CrawlTaskType.DISCOVER_PAGE.name());
-        body.put("windowStart", windowStart.toString());
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload задания", e);
-        }
     }
 }

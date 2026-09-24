@@ -74,17 +74,20 @@ public class PostingEnricher {
      * @param at      момент сбора (в историю и в {@code detail_fetched_at})
      */
     public void enrich(JobPosting posting, FetchedPosting detail, Instant at) {
+        FetchedPosting.SourceLocation sourceLocation = detail.location();
+        String description = detail.description();
         ExtractedSalary resolved = salaryNormalizer.resolve(
-                detail.compensation(), detail.rawCompensation(), detail.rawDescription());
+                detail.pay().range(), detail.pay().raw(), description);
         NormalizedSalary salary = resolved.salary();
         NormalizedLocation location = locationNormalizer.normalize(
-                detail.rawLocation(), detail.country(), detail.remoteType());
-        ExtractedExperience experience = experienceExtractor.extract(posting.getRawTitle(), detail.rawDescription());
+                sourceLocation.raw(), sourceLocation.country(), sourceLocation.remoteType());
+        ExtractedExperience experience = experienceExtractor.extract(posting.getRawTitle(), description);
 
         // Прежние значения — до перезаписи, чтобы зафиксировать реальные изменения (§6).
-        recordChanges(posting, detail.rawLocation(), location, salary, experience, at);
+        recordLocationChanges(posting, sourceLocation.raw(), location, at);
+        recordValueChanges(posting, salary, experience, at);
 
-        posting.setRawLocation(detail.rawLocation());
+        posting.setRawLocation(sourceLocation.raw());
         posting.setCity(location.city());
         posting.setCountry(location.country());
         posting.setWorkModality(location.modality());
@@ -96,32 +99,32 @@ public class PostingEnricher {
         posting.setSalaryBasis(salary.basis());
         posting.setSeniority(experience.level());
         posting.setExperienceYearsMin(experience.yearsMin());
-        posting.setRawDescription(detail.rawDescription());
+        posting.setRawDescription(description);
         if (detail.postedOn() != null) {
             posting.setPostedOn(detail.postedOn());   // источник не сообщил — прежнее значение не затираем
         }
-        posting.setAdditionalLocations(detail.additionalLocations().isEmpty()
-                ? null : String.join("; ", detail.additionalLocations()));
+        posting.setAdditionalLocations(sourceLocation.additional().isEmpty()
+                ? null : String.join("; ", sourceLocation.additional()));
         posting.setDetailFetchedAt(at);
 
         PostingRequirementWriter.RequirementCounts counts =
-                requirementWriter.write(posting, detail.rawDescription());
+                requirementWriter.write(posting, description);
 
         log.info("Обогащение публикации {}: локация={} (город={}, страна={}, формат={}, доп. локаций={}), "
                         + "опубликовано={}, зарплата={} {}–{} (период={}, база={}), опыт={}/лет≥{}, языков={}, навыков={}",
-                posting.getExternalId(), detail.rawLocation(), location.city(), location.country(),
-                location.modality(), detail.additionalLocations().size(), detail.postedOn(),
+                posting.getExternalId(), sourceLocation.raw(), location.city(), location.country(),
+                location.modality(), sourceLocation.additional().size(), detail.postedOn(),
                 salary.currency(), salary.min(), salary.max(),
                 salary.period(), salary.basis(), experience.level(), experience.yearsMin(),
                 counts.languages(), counts.skills());
     }
 
     /**
-     * Фиксирует изменения детальных полей относительно прежних значений публикации
-     * (сравнение до перезаписи). Пишутся только реальные смены (см. {@link PostingRevisionRecorder}).
+     * Фиксирует изменения локации относительно прежних значений публикации (сравнение до
+     * перезаписи). Пишутся только реальные смены (см. {@link PostingRevisionRecorder}).
      */
-    private void recordChanges(JobPosting posting, String newLocation, NormalizedLocation location,
-                               NormalizedSalary salary, ExtractedExperience experience, Instant at) {
+    private void recordLocationChanges(JobPosting posting, String newLocation, NormalizedLocation location,
+                                       Instant at) {
         revisionRecorder.recordIfChanged(posting, "raw_location",
                 posting.getRawLocation(), newLocation, at);
         revisionRecorder.recordIfChanged(posting, "city",
@@ -130,6 +133,11 @@ public class PostingEnricher {
                 posting.getCountry(), location.country(), at);
         revisionRecorder.recordIfChanged(posting, "work_modality",
                 name(posting.getWorkModality()), name(location.modality()), at);
+    }
+
+    /** Фиксирует изменения зарплаты и требуемого опыта (как {@link #recordLocationChanges}). */
+    private void recordValueChanges(JobPosting posting, NormalizedSalary salary, ExtractedExperience experience,
+                                    Instant at) {
         revisionRecorder.recordIfChanged(posting, "salary_min",
                 str(posting.getSalaryMin()), str(salary.min()), at);
         revisionRecorder.recordIfChanged(posting, "salary_max",

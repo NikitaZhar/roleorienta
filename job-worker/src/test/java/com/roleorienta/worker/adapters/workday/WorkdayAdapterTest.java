@@ -133,22 +133,22 @@ class WorkdayAdapterTest {
     void detailParsesLocationAndDescriptionWithoutSalary() {
         FetchedPosting detail = adapter.getPosting(source, EXTERNAL_PATH);
 
-        assertEquals("Bratislava, Slovakia", detail.rawLocation());
-        assertTrue(detail.rawDescription().contains("Spring Boot required"),
-                "описание снято из HTML: " + detail.rawDescription());
+        assertEquals("Bratislava, Slovakia", detail.location().raw());
+        assertTrue(detail.description().contains("Spring Boot required"),
+                "описание снято из HTML: " + detail.description());
         // Структурной зарплаты у Workday нет — адаптер не выдумывает диапазон (§6, A09).
-        assertNull(detail.compensation());
-        assertNull(detail.rawCompensation());
+        assertNull(detail.pay().range());
+        assertNull(detail.pay().raw());
     }
 
     @Test
     void detailStructuredFields() {
         FetchedPosting detail = adapter.getPosting(source, EXTERNAL_PATH);
 
-        assertEquals("Slovakia", detail.country());
-        assertEquals("Hybrid", detail.remoteType());
+        assertEquals("Slovakia", detail.location().country());
+        assertEquals("Hybrid", detail.location().remoteType());
         assertEquals(java.time.LocalDate.of(2026, 9, 1), detail.postedOn(), "startDate, не «Posted 13 Days Ago»");
-        assertEquals(java.util.List.of("Vienna, Austria", "Cambridge, United Kingdom"), detail.additionalLocations());
+        assertEquals(java.util.List.of("Vienna, Austria", "Cambridge, United Kingdom"), detail.location().additional());
     }
 
     private static void respond(com.sun.net.httpserver.HttpExchange exchange, String body) throws java.io.IOException {

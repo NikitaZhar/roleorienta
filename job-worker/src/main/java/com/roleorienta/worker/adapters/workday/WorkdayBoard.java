@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 /**
  * Найденная доска вакансий Workday: всё, что нужно {@link WorkdayAdapter}, чтобы читать
  * ленту (§5, ADR-17). Получается из URL страницы карьеры ({@link #fromCareerUrl}, вход
- * Common Crawl) или словарным резолвом по хосту ({@link WorkdaySiteResolver}).
+ * Common Crawl).
  *
  * @param tenant  тенант — левая метка хоста {@code <tenant>.wd<N>.myworkdayjobs.com}
  *                (технический идентификатор, <b>не</b> имя работодателя — A2/A11)

@@ -1,10 +1,18 @@
 package com.roleorienta.api.posting;
 
 import com.roleorienta.api.posting.PostingDtos.Card;
+import com.roleorienta.api.posting.PostingDtos.Experience;
+import com.roleorienta.api.posting.PostingDtos.Facts;
+import com.roleorienta.api.posting.PostingDtos.Head;
 import com.roleorienta.api.posting.PostingDtos.Language;
+import com.roleorienta.api.posting.PostingDtos.Location;
 import com.roleorienta.api.posting.PostingDtos.Page;
+import com.roleorienta.api.posting.PostingDtos.Requirements;
+import com.roleorienta.api.posting.PostingDtos.Salary;
 import com.roleorienta.api.posting.PostingDtos.Skill;
 import com.roleorienta.api.posting.PostingDtos.Summary;
+import com.roleorienta.api.posting.PostingDtos.Timeline;
+import com.roleorienta.api.posting.PostingDtos.Viewer;
 import com.roleorienta.api.saved.SavedPosting;
 import com.roleorienta.core.domain.JobPosting;
 import com.roleorienta.core.domain.PostingLanguage;
@@ -133,15 +141,8 @@ public class PostingQueryService {
         List<Skill> skills = skillRepository
                 .findByJobPosting_IdOrderBySkillAsc(posting.getId())
                 .stream().map(PostingQueryService::toSkill).toList();
-        return new Card(
-                posting.getId(), posting.getExternalId(), posting.getRawTitle(), posting.getUrl(),
-                posting.getRawLocation(), posting.getCity(), posting.getCountry(), posting.getWorkModality(),
-                posting.getSalaryMin(), posting.getSalaryMax(), posting.getSalaryCurrency(),
-                posting.getSalaryPeriod(), posting.getSalaryBasis(), posting.getSeniority(),
-                posting.getExperienceYearsMin(), posting.getRawDescription(),
-                posting.getAdditionalLocations(), posting.getPostedOn(),
-                posting.getFirstSeenAt(), posting.getLastSeenAt(), posting.getDetailFetchedAt(),
-                languages, skills);
+        return new Card(head(posting), facts(posting), posting.getRawDescription(),
+                new Requirements(languages, skills));
     }
 
     /**
@@ -149,15 +150,26 @@ public class PostingQueryService {
      * маркер вошедшего пользователя на этой публикации или {@code null} (аноним/без пометки).
      */
     private static Summary toSummary(JobPosting posting, SavedPosting marker) {
-        return new Summary(
-                posting.getId(), posting.getExternalId(), posting.getRawTitle(), posting.getUrl(),
-                posting.getCity(), posting.getCountry(), posting.getWorkModality(),
-                posting.getSalaryMin(), posting.getSalaryMax(), posting.getSalaryCurrency(),
-                posting.getSalaryPeriod(), posting.getSalaryBasis(),
-                posting.getSeniority(), posting.getExperienceYearsMin(), posting.getPostedOn(),
-                posting.getFirstSeenAt(), posting.getLastSeenAt(),
-                marker == null ? null : marker.getState(),
-                marker != null && marker.getSeenAt() != null);
+        Viewer viewer = marker == null
+                ? new Viewer(null, false)
+                : new Viewer(marker.getState(), marker.getSeenAt() != null);
+        return new Summary(head(posting), facts(posting), viewer);
+    }
+
+    private static Head head(JobPosting posting) {
+        return new Head(posting.getId(), posting.getExternalId(), posting.getRawTitle(), posting.getUrl());
+    }
+
+    /** Нормализованные сведения — одинаково для строки ленты и карточки. */
+    private static Facts facts(JobPosting posting) {
+        return new Facts(
+                new Location(posting.getCity(), posting.getCountry(), posting.getWorkModality(),
+                        posting.getRawLocation(), posting.getAdditionalLocations()),
+                new Salary(posting.getSalaryMin(), posting.getSalaryMax(), posting.getSalaryCurrency(),
+                        posting.getSalaryPeriod(), posting.getSalaryBasis()),
+                new Experience(posting.getSeniority(), posting.getExperienceYearsMin()),
+                new Timeline(posting.getPostedOn(), posting.getFirstSeenAt(), posting.getLastSeenAt(),
+                        posting.getDetailFetchedAt()));
     }
 
     private static Language toLanguage(PostingLanguage language) {

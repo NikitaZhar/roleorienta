@@ -119,14 +119,14 @@ class PostingReportApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(reportBody("BROKEN_LINK", "ссылка ведёт на 404")))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.reason").value("BROKEN_LINK"))
+                .andExpect(jsonPath("$.complaint.reason").value("BROKEN_LINK"))
                 .andExpect(jsonPath("$.status").value("OPEN"))
                 .andExpect(jsonPath("$.postingId").value(postingId));
 
         mockMvc.perform(get("/api/v1/reports").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].reason").value("BROKEN_LINK"));
+                .andExpect(jsonPath("$[0].complaint.reason").value("BROKEN_LINK"));
     }
 
     @Test
@@ -142,7 +142,7 @@ class PostingReportApiIntegrationTest {
         mockMvc.perform(get("/api/v1/reports").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].reason").value("DUPLICATE"));
+                .andExpect(jsonPath("$[0].complaint.reason").value("DUPLICATE"));
     }
 
     @Test

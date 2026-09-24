@@ -1,47 +1,58 @@
 package com.roleorienta.worker.adapters;
 
+import java.time.LocalDate;
+import java.util.List;
+
 /**
  * Детальные поля публикации, добранные адаптером с detail-endpoint (§5 техдока).
  *
- * <p>Содержит поля, которых нет в ленте-списке и ради которых делается отдельный
- * запрос детали: локация, сырая строка зарплаты (для показа/хранения как есть),
- * структурированный зарплатный диапазон {@link CompensationRange} (сырьё для
- * нормализации, §6) и текст описания (снятый из HTML источника — сырьё для
- * извлечения требований и языков, §6). Отсутствующее поле — {@code null} (явное
- * «неизвестно»).</p>
+ * <p>Содержит то, чего нет в ленте-списке и ради чего делается отдельный запрос детали:
+ * локация, зарплата, текст описания (снятый из HTML источника — сырьё для извлечения
+ * требований, §6), дата публикации. Отсутствующее поле — {@code null} (явное «неизвестно»).
+ * Поля сгруппированы (§78): у каждой записи не больше 5 полей (контракт §3.10).</p>
  *
- * <p>Структурные поля, которые сообщают не все источники (§65, Workday): страна
- * основной локации, формат работы, дата публикации, прочие локации. {@code null} / пустой
- * список — источник не сообщает; тогда нормализатор разбирает свободную строку.</p>
- *
- * @param rawLocation         сырая локация или {@code null}
- * @param rawCompensation     сырая строка зарплаты для показа или {@code null}
- * @param compensation        структурированный зарплатный диапазон или {@code null}
- * @param rawDescription      текст описания вакансии или {@code null}
- * @param country             страна основной локации от источника (по-английски) или {@code null}
- * @param remoteType          формат работы от источника как есть (напр. {@code Hybrid}) или {@code null}
- * @param postedOn            дата публикации по данным источника или {@code null}
- * @param additionalLocations прочие локации многолокационной вакансии (может быть пустым)
+ * @param location    локация как её сообщил источник
+ * @param pay         зарплата как её сообщил источник
+ * @param description текст описания вакансии или {@code null}
+ * @param postedOn    дата публикации по данным источника или {@code null}
  */
-public record FetchedPosting(String rawLocation, String rawCompensation,
-                             CompensationRange compensation, String rawDescription,
-                             String country, String remoteType, java.time.LocalDate postedOn,
-                             java.util.List<String> additionalLocations) {
+public record FetchedPosting(SourceLocation location, SourcePay pay, String description, LocalDate postedOn) {
 
-    public FetchedPosting {
-        additionalLocations = additionalLocations == null ? java.util.List.of() : java.util.List.copyOf(additionalLocations);
+    /**
+     * Локация от источника. Структурные поля сообщают не все источники (§65, Workday):
+     * {@code null} / пустой список — источник не сообщает, тогда нормализатор разбирает строку.
+     *
+     * @param raw        строка локации или {@code null}
+     * @param country    страна основной локации (по-английски) или {@code null}
+     * @param remoteType формат работы как есть (напр. {@code Hybrid}) или {@code null}
+     * @param additional прочие локации многолокационной вакансии (может быть пустым)
+     */
+    public record SourceLocation(String raw, String country, String remoteType, List<String> additional) {
+
+        public SourceLocation {
+            additional = additional == null ? List.of() : List.copyOf(additional);
+        }
+
+        /**
+         * Только строка локации — источник структурных полей не сообщает (Greenhouse).
+         *
+         * @param raw строка локации или {@code null}
+         * @return локация без структурных полей
+         */
+        public static SourceLocation of(String raw) {
+            return new SourceLocation(raw, null, null, List.of());
+        }
     }
 
     /**
-     * Деталь без структурных полей (источник их не сообщает — Greenhouse).
+     * Зарплата от источника.
      *
-     * @param rawLocation     сырая локация или {@code null}
-     * @param rawCompensation сырая строка зарплаты или {@code null}
-     * @param compensation    структурированный зарплатный диапазон или {@code null}
-     * @param rawDescription  текст описания или {@code null}
+     * @param raw   строка зарплаты для показа или {@code null}
+     * @param range структурированный диапазон (сырьё для нормализации, §6) или {@code null}
      */
-    public FetchedPosting(String rawLocation, String rawCompensation,
-                          CompensationRange compensation, String rawDescription) {
-        this(rawLocation, rawCompensation, compensation, rawDescription, null, null, null, java.util.List.of());
+    public record SourcePay(String raw, CompensationRange range) {
+
+        /** Источник зарплату не сообщил. */
+        public static final SourcePay NONE = new SourcePay(null, null);
     }
 }

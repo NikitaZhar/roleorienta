@@ -126,9 +126,9 @@ class NotificationApiIntegrationTest {
         mockMvc.perform(get("/api/v1/notifications").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].postingId").value(postingId))
-                .andExpect(jsonPath("$[0].companyId").value(companyId))
-                .andExpect(jsonPath("$[0].fieldName").value("salary_min"));
+                .andExpect(jsonPath("$[0].change.postingId").value(postingId))
+                .andExpect(jsonPath("$[0].change.companyId").value(companyId))
+                .andExpect(jsonPath("$[0].change.fieldName").value("salary_min"));
     }
 
     @Test

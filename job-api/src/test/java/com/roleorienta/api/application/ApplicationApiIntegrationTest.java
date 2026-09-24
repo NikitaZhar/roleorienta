@@ -140,7 +140,7 @@ class ApplicationApiIntegrationTest {
         mockMvc.perform(get("/api/v1/applications/{id}", applicationId).session(session))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"0\""))
-                .andExpect(jsonPath("$.postingId").value(postingId))
+                .andExpect(jsonPath("$.application.postingId").value(postingId))
                 .andExpect(jsonPath("$.version").value(0))
                 .andExpect(jsonPath("$.notes.length()").value(1))
                 .andExpect(jsonPath("$.notes[0].body").value("call recruiter"));
@@ -187,7 +187,7 @@ class ApplicationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEWING\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"1\""))
-                .andExpect(jsonPath("$.status").value("INTERVIEWING"))
+                .andExpect(jsonPath("$.application.status").value("INTERVIEWING"))
                 .andExpect(jsonPath("$.version").value(1));
 
         // Повтор со старым ETag — устаревшее предусловие.

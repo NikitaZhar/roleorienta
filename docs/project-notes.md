@@ -2,8 +2,8 @@
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
 Дата: 2026-09-24
-Статус: аудит §66–§75 (§76) — PostedKeyset вынесен из репозитория, импорты, JavaDoc, настройки HTTP в yml; решение владельца — DTO и правило ≤5 параметров.
-Прежний статус: регламент сессии и current-state.md (§75); недоступная доска — UNREACHABLE (§74); обход Common Crawl — очередь, гейт без фасетов, en-us (§73); A1 — вход Common Crawl включён (§72); потолок размера тела ответа (B2, §71); лента «свежие первыми», уровень только из заголовка (§70); сеньорность — заголовок главнее описания (§69); лента — страна по доп. локациям, «от X» в minSalary, период в строке, postedFrom (§68); восстановлен рабочий контракт (§67); зарплата из текста описания Workday (§66); структурные поля детали Workday — страна, формат, дата публикации, доп. локации, V27 (§65); проверка вакансий Workday через REST, список дефектов нормализации (§64); ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
+Статус: Checkstyle в сборке — ≤5 параметров и ≤5 полей записи; оставшиеся DTO и FetchedPosting сгруппированы, крупные конструкторы разделены; очистка после удаления CT (§78).
+Прежний статус: DTO ленты и карточки сгруппированы — head/facts/viewer/requirements (§77); аудит §66–§75 (§76); регламент сессии и current-state.md (§75); недоступная доска — UNREACHABLE (§74); обход Common Crawl — очередь, гейт без фасетов, en-us (§73); A1 — вход Common Crawl включён (§72); потолок размера тела ответа (B2, §71); лента «свежие первыми», уровень только из заголовка (§70); сеньорность — заголовок главнее описания (§69); лента — страна по доп. локациям, «от X» в minSalary, период в строке, postedFrom (§68); восстановлен рабочий контракт (§67); зарплата из текста описания Workday (§66); структурные поля детали Workday — страна, формат, дата публикации, доп. локации, V27 (§65); проверка вакансий Workday через REST, список дефектов нормализации (§64); ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -4277,6 +4277,97 @@ Crawl, гейт, регламент). Новой функциональност�
 
 Checkstyle/ArchUnit (регламент §6) ещё не введены — следующий срез. Счётчик срезов в
 `current-state.md` сброшен в 0.
+
+## §77 — DTO ленты и карточки: поля сгруппированы (≤5 на запись)
+
+Решение владельца по §76.3: правило «≤5 параметров» (контракт §3.10) действует и для DTO —
+«19 полей в строке ленты читать невозможно». Изменён формат JSON ленты и карточки (с разрешения
+владельца).
+
+### 77.1 Новая форма
+
+`PostingDtos`: строка ленты и карточка собираются из одних и тех же частей, у каждой записи ≤5 полей.
+
+```
+Summary = { head, facts, viewer }
+Card    = { head, facts, description, requirements }
+head         = { id, externalId, title, url }
+facts        = { location, salary, experience, timeline }
+location     = { city, country, workModality, raw, additional }
+salary       = { min, max, currency, period, basis }
+experience   = { seniority, yearsMin }
+timeline     = { postedOn, firstSeenAt, lastSeenAt, detailFetchedAt }
+viewer       = { state, seen }
+requirements = { languages[], skills[] }
+```
+
+Было: `Summary` — 19 плоских полей, `Card` — 23. JSON: `items[0].head.title`,
+`items[0].facts.salary.min`, `items[0].viewer.state`, карточка — `facts.location.city`,
+`requirements.skills[0].skill`. В строке ленты теперь есть и исходная локация, доп. локации и
+время чтения детали (раньше — только в карточке): части общие, отдельная «урезанная» локация
+дала бы вторую запись того же смысла.
+
+`PostingQueryService`: сборка частей — `head(posting)` и `facts(posting)`, общие для ленты и
+карточки; `Viewer` — из маркера пользователя (без маркера — `state = null`, `seen = false`).
+
+### 77.2 Тесты и стенды
+
+`PostingApiIntegrationTest`, `SavedPostingFeedIntegrationTest` — пути JSON по новой форме;
+`PostingQueryServiceTest` — аксессоры. Проверяемое поведение (фильтры, порядок, курсор,
+персонализация) не менялось. Скрипты стенда (`target/stand-feed.sh`, `stand-salary.sh`,
+`view-api.sh`) переведены на новую форму. README по §0.2 не затронут (форма JSON в нём не описана).
+
+### 77.3 Что НЕ вошло
+
+Остальные записи с >5 полями — `EmployerCandidateDtos.CandidateResponse` (11),
+`PostingReportDtos.AdminReportResponse` (7), `NotificationResponse`, `ReportResponse`,
+`ApplicationCardResponse` (по 6), `FetchedPosting` в воркере (8) — следующим срезом вместе с
+Checkstyle, который будет это правило проверять.
+
+## §78 — Checkstyle в сборке; записи ≤5 полей; очистка после удаления CT
+
+**Зачем.** Правило контракта §3.10 (≤5 параметров, ≤5 полей записи, включая DTO) нарушалось
+незаметно: в §77 нашлась запись на 19 полей. Теперь нарушение ломает сборку, а не ждёт аудита.
+
+**Checkstyle.** `config/checkstyle/checkstyle.xml`: `ParameterNumber` (max 5, методы и
+конструкторы, переопределённые методы не считаются) и `RecordComponentNumber` (max 5).
+Подключён в корневом `pom.xml` (`maven-checkstyle-plugin` 3.6.0, Checkstyle 10.21.4),
+фаза `validate`, включая тестовый код, `failOnViolation`. Итог в логе:
+`You have 0 Checkstyle violations`. ArchUnit (вторая половина C4) — позже.
+
+**Записи ≤5 полей.**
+- `EmployerCandidateDtos.CandidateResponse` → `{id, board, verdict, link, createdAt}`;
+  `Board(providerCode, slug, baseUrl)`, `Verdict(state, confidence, reason, postingCount)`,
+  `Link(companyId, sourceId)`.
+- `NotificationDtos.NotificationResponse` → `{id, change, readAt, createdAt}`,
+  `Change(postingId, companyId, fieldName)`.
+- `PostingReportDtos.ReportResponse` → `{id, postingId, complaint, status, createdAt}`,
+  `Complaint(reason, comment)`; `AdminReportResponse` → `{report, reporterEmail}`.
+- `ApplicationDtos.ApplicationCardResponse` → `{application, version, notes}` (ETag по-прежнему
+  из `version`).
+- `FetchedPosting` (воркер) → `{location, pay, description, postedOn}`:
+  `SourceLocation(raw, country, remoteType, additional)` и `SourcePay(raw, range)`, `SourcePay.NONE`.
+  Адаптеры Greenhouse/Workday и `PostingEnricher` переведены; в `PostingEnricher`
+  `recordChanges` разделён на `recordLocationChanges` и `recordValueChanges`.
+
+**Конструкторы ≤5 параметров** (поведение не менялось, код перенесён):
+- `SourceScheduler` — постановка `DISCOVER_PAGE` вынесена в `DiscoverPageEnqueuer`; размер окна —
+  `SchedulerProperties` (`app.scheduler.window-ms`, по умолчанию 900000).
+- `EmployerDiscoveryService` — заведение провайдера/компании/источника/связи вынесено в
+  `EmployerRegistration.register`.
+- `CcHarvestScheduler` — фаза fan-out вынесена в `BoardFanOut` (leader-lock 1004).
+- `DiscoverPageJobHandler` — `CrawlBookkeeping` (источник, обход, отметка итога) и
+  `PostingIntake` (сохранение, ниша, дневной бюджет, постановка `FETCH_POSTING`).
+- `RequestPacer` — пакетный конструктор принимает `SourcePacingProperties`.
+
+**Формат JSON** (админ-очередь, жалобы, уведомления, карточка отклика) изменился — поля
+вложены; тесты переведены на новые пути (`$.verdict.state`, `$.link.sourceId`,
+`$.report.status`, `$.complaint.reason`, `$[0].change.*`, `$.application.status`).
+
+**Очистка.** Владелец удалил `discovery/ct` (CertSpotter) и `WorkdaySiteResolver` с тестами и
+`cj.txt`. Убраны: темп `certspotter.com` и блок `app.discovery.workday` в `application.yml`,
+ссылки в JavaDoc (`CommonCrawlIndexClient`, `WorkdayBoard`), CT/Workday в README как «будущее».
+`.gitignore`: `cj.txt`, `*.cookies`. Шапка плана — «утверждён владельцем и действует».
 
 ## Куда смотреть дальше
 

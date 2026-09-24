@@ -24,9 +24,8 @@ import org.springframework.web.client.HttpClientErrorException;
  * конкретный хост тенанта (Workday выпускает сертификаты {@code *.wdN.myworkdayjobs.com}),
  * то есть CT тенантов Workday не перечисляет. Индекс Common Crawl хранит <b>полные URL</b>
  * страниц карьеры ({@code https://<tenant>.wdN.myworkdayjobs.com/<locale>/<site>/job/...}),
- * поэтому даёт пару {@code tenant/site} сразу, включая нетиповые имена сайтов, которые
- * словарный {@code WorkdaySiteResolver} не угадал бы (первый срез индекса: 3000 URL →
- * 116 досок).</p>
+ * поэтому даёт пару {@code tenant/site} сразу, включая нетиповые имена сайтов (первый срез
+ * индекса: 3000 URL → 116 досок).</p>
  *
  * <p><b>API.</b> Коллекции — {@code GET <base>/collinfo.json} (первая в списке —
  * свежайшая, напр. {@code CC-MAIN-2026-39}). Поиск —

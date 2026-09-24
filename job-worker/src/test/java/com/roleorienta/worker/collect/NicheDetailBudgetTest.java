@@ -90,9 +90,9 @@ class NicheDetailBudgetTest {
     }
 
     private void handle() {
-        new DiscoverPageJobHandler(sources, runs, tasks, postings, outbox, adapters,
-                DiscoveryMarketProperties.ofCountries(List.of("Slovakia", "Austria")), 10, NICHE,
-                Clock.fixed(now, ZoneOffset.UTC))
+        new DiscoverPageJobHandler(new CrawlBookkeeping(sources, runs, tasks), adapters,
+                DiscoveryMarketProperties.ofCountries(List.of("Slovakia", "Austria")), 10,
+                new PostingIntake(postings, tasks, outbox, NICHE, Clock.fixed(now, ZoneOffset.UTC)))
                 .handle(new JobMessage("k", "DISCOVER_PAGE", "{\"taskId\":1,\"sourceId\":7,\"crawlRunId\":5}"));
     }
 

@@ -28,3 +28,7 @@ bin/
 
 # Временные файлы FUSE-монтирования
 .fuse_hidden*
+
+# Cookie-файлы curl (сессии локального API; не для репозитория)
+cj.txt
+*.cookies

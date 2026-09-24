@@ -20,33 +20,37 @@ public final class PostingReportDtos {
     }
 
     /** Жалоба в ответе. */
-    public record ReportResponse(Long id, Long postingId, String reason, String status,
-                                 String comment, Instant createdAt) {
+    public record ReportResponse(Long id, Long postingId, Complaint complaint, String status, Instant createdAt) {
 
         static ReportResponse of(PostingReport report) {
             return new ReportResponse(
                     report.getId(),
                     report.getPosting().getId(),
-                    report.getReason().name(),
+                    new Complaint(report.getReason().name(), report.getComment()),
                     report.getStatus().name(),
-                    report.getComment(),
                     report.getCreatedAt());
         }
     }
 
-    /** Жалоба в админ-очереди разбора (§47): с автором для контекста. */
-    public record AdminReportResponse(Long id, Long postingId, String reporterEmail, String reason,
-                                      String status, String comment, Instant createdAt) {
+    /**
+     * Суть жалобы (§78: поля сгруппированы).
+     *
+     * @param reason  типовая причина
+     * @param comment комментарий автора или {@code null}
+     */
+    public record Complaint(String reason, String comment) {
+    }
+
+    /**
+     * Жалоба в админ-очереди разбора (§47): жалоба и её автор для контекста.
+     *
+     * @param report        жалоба
+     * @param reporterEmail email автора
+     */
+    public record AdminReportResponse(ReportResponse report, String reporterEmail) {
 
         static AdminReportResponse of(PostingReport report) {
-            return new AdminReportResponse(
-                    report.getId(),
-                    report.getPosting().getId(),
-                    report.getReporter().getEmail(),
-                    report.getReason().name(),
-                    report.getStatus().name(),
-                    report.getComment(),
-                    report.getCreatedAt());
+            return new AdminReportResponse(ReportResponse.of(report), report.getReporter().getEmail());
         }
     }
 }

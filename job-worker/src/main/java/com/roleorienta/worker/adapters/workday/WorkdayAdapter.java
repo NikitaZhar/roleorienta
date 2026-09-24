@@ -325,11 +325,12 @@ public class WorkdayAdapter implements SourceAdapter {
                     additional.add(value.strip());
                 }
             }
-            return new FetchedPosting(rawLocation, null, null, rawDescription,
+            FetchedPosting.SourceLocation location = new FetchedPosting.SourceLocation(rawLocation,
                     textOrNull(info.path("country").path("descriptor")),
                     textOrNull(info.path("remoteType")),
-                    parseDate(textOrNull(info.path("startDate"))),
                     additional);
+            return new FetchedPosting(location, FetchedPosting.SourcePay.NONE, rawDescription,
+                    parseDate(textOrNull(info.path("startDate"))));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Не удалось разобрать деталь Workday", e);
         }

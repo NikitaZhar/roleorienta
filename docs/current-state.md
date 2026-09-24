@@ -4,8 +4,8 @@
 сессии. История решений — в [project-notes](project-notes.md), правила — в
 [рабочем контракте](working-contract.md) и [регламенте сессии](session-protocol.md).
 
-**Обновлено:** 2026-09-24, после §76.
-**Срезов с последнего аудита: 0** (последний аудит — §76).
+**Обновлено:** 2026-09-24, после §78.
+**Срезов с последнего аудита: 2** (последний аудит — §76).
 
 ## Назначение и границы
 
@@ -39,26 +39,29 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 
 1. **Обнаружение.** `CcHarvestScheduler` (включён, §72) читает страницу индекса Common Crawl
    `*.myworkdayjobs.com` → доски в `harvested_board`; новая страница — только когда очередь
-   `NEW` меньше `max-fan-out` (§73). Fan-out ставит `DISCOVER_EMPLOYER` через outbox.
+   `NEW` меньше `max-fan-out` (§73). `BoardFanOut` ставит `DISCOVER_EMPLOYER` через outbox.
 2. **Гейт.** `DiscoverEmployerJobHandler`: читает первую страницу ленты; рынок — по фасету
    стран, иначе фасету локаций, иначе локациям вакансий первой страницы (§56–§59, §73).
    Итог кандидата: `CONFIRMED` (HIGH → `EmployerSourceRegistrar` заводит `Source` ACTIVE),
    `OUT_OF_MARKET`, `UNREACHABLE` (403/404/410/422, §74), `PENDING` (ручная проверка).
-3. **Сбор.** Планировщик → `DISCOVER_PAGE` (`DiscoverPageJobHandler`: лента только рынка —
+3. **Сбор.** Планировщик (`DiscoverPageEnqueuer`) → `DISCOVER_PAGE` (`DiscoverPageJobHandler`: лента только рынка —
    фильтр Workday `appliedFacets`, все публикации сохраняются) → `FETCH_POSTING` только для
-   ниши (`NicheFilterProperties`) и в пределах дневного бюджета на источник (§63).
+   ниши (`NicheFilterProperties`) и в пределах дневного бюджета на источник (`PostingIntake`, §63).
 4. **Обогащение.** `PostingEnricher`: `LocationNormalizer` (город/страна/формат, доп. локации),
    `SalaryNormalizer.resolve` (структурная зарплата, иначе `SalaryTextExtractor` по тексту, §66),
    `ExperienceExtractor` (уровень — только из заголовка, годы — из описания, §70), языки и
    навыки (`PostingRequirementWriter`), история изменений (`PostingRevisionRecorder`).
 5. **Лента.** `GET /api/v1/postings`: фильтры `PostingFilter` (формат, уровень, страна с доп.
    локациями, `minSalary` с «от X», `postedFrom`), порядок `FeedPaging.sort` = `ID` | `POSTED`
-   (keyset «дата + id» — `PostedKeyset`, §70); карточка `GET /api/v1/postings/{id}`.
+   (keyset «дата + id» — `PostedKeyset`, §70); карточка `GET /api/v1/postings/{id}`. JSON сгруппирован
+   (§77): строка — `{head, facts, viewer}`, карточка — `{head, facts, description, requirements}`;
+   `facts` = `{location, salary, experience, timeline}`.
 
 ## Соглашения кода (кратко; полностью — контракт §3)
 
-- ≤5 параметров у методов/конструкторов — группировать в записи (`PostingFilter`, `FeedPaging`,
-  `*Properties`).
+- ≤5 параметров у методов/конструкторов и ≤5 полей у записей, **включая DTO** — группировать во
+  вложенные записи (`PostingFilter`, `FeedPaging`, `PostingDtos.Facts`, `*Properties`) или выносить
+  компонент. Проверяет Checkstyle (`config/checkstyle/checkstyle.xml`, фаза validate, §78).
 - Настройки — `@ConfigurationProperties`-записи с `@DefaultValue`, регистрируются в
   `JobWorkerApplication`; значения и комментарии — в `application.yml`.
 - Репозитории — только запросы; логика (курсоры, преобразования) — в сервисах и записях-значениях.
@@ -81,8 +84,7 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 - Сделано: A1 (вход Common Crawl включён, §72–§74), B1 (темп, §57), B2 (потолок ответа, §71);
   качество данных Workday (зарплата, локации, уровень, дата — §65–§70); лента с фильтрами и
   сортировкой по дате.
-- Далее: автоматические проверки CI (C4: Checkstyle + ArchUnit, регламент §6; ждёт решения
-  владельца о DTO и правиле ≤5 параметров, §76.3) → A2 (принадлежность доски работодателю) →
-  A3 (имя компании и дедуп).
+- Checkstyle в сборке (§78); ArchUnit — позже.
+- Далее: A2 (принадлежность доски работодателю) → A3 (имя компании и дедуп).
 - Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A5–A7 (покрытие, снимки,
   дайджест).

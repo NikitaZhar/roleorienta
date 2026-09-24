@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Автоматическая проверка правил рабочего контракта (§3.10) в сборке (регламент сессии §6, §78).
+  Нарушение — ошибка `mvn verify`. Подавлять нельзя без разрешения владельца.
+  Правила: не больше 5 параметров у методов и конструкторов; не больше 5 полей у записей
+  (record), включая DTO.
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <module name="TreeWalker">
+        <module name="ParameterNumber">
+            <property name="max" value="5"/>
+            <property name="ignoreOverriddenMethods" value="true"/>
+            <property name="tokens" value="METHOD_DEF, CTOR_DEF"/>
+        </module>
+        <module name="RecordComponentNumber">
+            <property name="max" value="5"/>
+        </module>
+    </module>
+</module>

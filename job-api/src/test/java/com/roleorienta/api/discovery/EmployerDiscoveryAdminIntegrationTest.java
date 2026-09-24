@@ -114,8 +114,8 @@ class EmployerDiscoveryAdminIntegrationTest {
         mockMvc.perform(get(BASE).session(admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("acme"))
-                .andExpect(jsonPath("$[0].state").value("PENDING"));
+                .andExpect(jsonPath("$[0].board.slug").value("acme"))
+                .andExpect(jsonPath("$[0].verdict.state").value("PENDING"));
     }
 
     @Test
@@ -138,8 +138,8 @@ class EmployerDiscoveryAdminIntegrationTest {
         mockMvc.perform(post(BASE + "/{id}/confirm", id).with(csrf()).session(admin)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"companyName\":\"Acme Inc\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("CONFIRMED"))
-                .andExpect(jsonPath("$.sourceId").isNotEmpty());
+                .andExpect(jsonPath("$.verdict.state").value("CONFIRMED"))
+                .andExpect(jsonPath("$.link.sourceId").isNotEmpty());
 
         Integer sources = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM source WHERE external_ref = 'acme' AND state = 'ACTIVE'", Integer.class);

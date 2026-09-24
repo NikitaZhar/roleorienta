@@ -181,8 +181,8 @@ class PostingQueryServiceTest {
         Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
-            assertThat(s.viewerState()).isEqualTo(SavedState.SAVED);
-            assertThat(s.viewerSeen()).isTrue();
+            assertThat(s.viewer().state()).isEqualTo(SavedState.SAVED);
+            assertThat(s.viewer().seen()).isTrue();
         });
     }
 
@@ -194,8 +194,8 @@ class PostingQueryServiceTest {
         Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
-            assertThat(s.viewerState()).isNull();
-            assertThat(s.viewerSeen()).isFalse();
+            assertThat(s.viewer().state()).isNull();
+            assertThat(s.viewer().seen()).isFalse();
         });
     }
 
@@ -214,13 +214,13 @@ class PostingQueryServiceTest {
         Optional<Card> card = service.card(5L);
 
         assertThat(card).isPresent();
-        assertThat(card.get().city()).isEqualTo("Berlin");
-        assertThat(card.get().seniority()).isEqualTo(SeniorityLevel.SENIOR);
-        assertThat(card.get().experienceYearsMin()).isEqualTo(5);
-        assertThat(card.get().languages())
+        assertThat(card.get().facts().location().city()).isEqualTo("Berlin");
+        assertThat(card.get().facts().experience().seniority()).isEqualTo(SeniorityLevel.SENIOR);
+        assertThat(card.get().facts().experience().yearsMin()).isEqualTo(5);
+        assertThat(card.get().requirements().languages())
                 .extracting(PostingDtos.Language::languageCode, PostingDtos.Language::modality)
                 .containsExactly(tuple("en", LanguageModality.REQUIRED));
-        assertThat(card.get().skills())
+        assertThat(card.get().requirements().skills())
                 .extracting(Skill::skill, Skill::stance)
                 .containsExactly(tuple("Java", SkillStance.REQUESTED));
     }

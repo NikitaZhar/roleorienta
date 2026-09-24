@@ -145,7 +145,7 @@ class AdminReportApiIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/reports").session(admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].status").value("OPEN"))
+                .andExpect(jsonPath("$[0].report.status").value("OPEN"))
                 .andExpect(jsonPath("$[0].reporterEmail").value(USER));
 
         mockMvc.perform(get("/api/v1/admin/reports").param("status", "RESOLVED").session(admin))
@@ -155,7 +155,7 @@ class AdminReportApiIntegrationTest {
         mockMvc.perform(patch("/api/v1/admin/reports/{id}", reportId).with(csrf()).session(admin)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"RESOLVED\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RESOLVED"));
+                .andExpect(jsonPath("$.report.status").value("RESOLVED"));
 
         mockMvc.perform(get("/api/v1/admin/reports").param("status", "OPEN").session(admin))
                 .andExpect(status().isOk())
