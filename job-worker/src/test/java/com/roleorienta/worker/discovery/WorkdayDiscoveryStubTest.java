@@ -1,7 +1,10 @@
 package com.roleorienta.worker.discovery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,7 +35,8 @@ import org.mockito.ArgumentCaptor;
  * проходят через настоящий {@link SourceAdapterRegistry} и
  * {@link DiscoverEmployerJobHandler}. Запись источника ({@link EmployerSourceRegistrar},
  * у него свой тест) и репозиторий кандидатов замоканы — проверяется именно решение
- * гейта уверенности для Workday: валидная непустая лента → HIGH → авто-подключение.
+ * гейта уверенности для Workday: валидная непустая лента → HIGH → авто-подключение;
+ * страница доски без описания или с признаком агентства → ручная проверка (A2, §79).
  *
  * <p>Отличие от {@link DiscoverEmployerJobHandlerTest} (там адаптер замокан): здесь
  * лента Workday читается по-настоящему (POST {@code /wday/cxs/acme/careers/jobs}),
@@ -46,6 +50,8 @@ class WorkdayDiscoveryStubTest {
     private EmployerCandidateRepository candidateRepository;
     private EmployerSourceRegistrar registrar;
     private String baseUrl;
+    /** Мета-тег описания на странице доски {@code /careers} (A2, §79); пусто — тега нет. */
+    private volatile String boardMeta = "<meta property=\"og:description\" content=\"Acme is a software company.\">";
 
     @BeforeEach
     void setUp() throws Exception {
@@ -72,6 +78,16 @@ class WorkdayDiscoveryStubTest {
                 os.write(bytes);
             }
         });
+        // Страница доски (GET /careers): описание работодателя для проверки принадлежности (A2).
+        server.createContext("/careers", exchange -> {
+            byte[] bytes = ("<html><head><title></title>" + boardMeta + "</head></html>")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.start();
 
         SourceHttpClient httpClient = new SourceHttpClient(new SsrfGuard(new AddressPolicy(true)), 1000, 1000, 5);
@@ -79,7 +95,8 @@ class WorkdayDiscoveryStubTest {
         candidateRepository = mock(EmployerCandidateRepository.class);
         registrar = mock(EmployerSourceRegistrar.class);
         handler = new DiscoverEmployerJobHandler(registry, candidateRepository, registrar,
-                DiscoveryMarketProperties.ofCountries(java.util.List.of("Slovakia", "Austria")));
+                DiscoveryMarketProperties.ofCountries(java.util.List.of("Slovakia", "Austria")),
+                new BoardOwnershipProperties(List.of("staffing", "personalvermittlung")));
     }
 
     @AfterEach
@@ -107,6 +124,36 @@ class WorkdayDiscoveryStubTest {
         assertEquals(2, saved.getPostingCount());
         assertEquals(20L, saved.getSourceId());
         assertEquals(5L, saved.getCompanyId());
+    }
+
+    @Test
+    void agencyBoardGoesToManualReview() {
+        boardMeta = "<meta property=\"og:description\" content=\"Acme Staffing places talent with our clients.\">";
+        EmployerCandidate saved = handleAcme();
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        assertEquals(EmployerCandidateState.PENDING, saved.getState());
+        assertEquals(DiscoveryConfidence.LOW, saved.getConfidence());
+        assertTrue(saved.getReason().startsWith("похоже на кадровое агентство"), saved.getReason());
+    }
+
+    @Test
+    void boardWithoutDescriptionGoesToManualReview() {
+        boardMeta = "";
+        EmployerCandidate saved = handleAcme();
+
+        verify(registrar, never()).register(any(), any(), any(), any());
+        assertEquals(EmployerCandidateState.PENDING, saved.getState());
+        assertTrue(saved.getReason().startsWith("владелец доски не подтверждён"), saved.getReason());
+    }
+
+    private EmployerCandidate handleAcme() {
+        when(candidateRepository.existsByProviderCodeAndSlug("workday", "acme/careers")).thenReturn(false);
+        String payload = "{\"providerCode\":\"workday\",\"slug\":\"acme/careers\",\"baseUrl\":\"" + baseUrl + "\"}";
+        handler.handle(new JobMessage("key-workday-2", "DISCOVER_EMPLOYER", payload));
+        ArgumentCaptor<EmployerCandidate> captor = ArgumentCaptor.forClass(EmployerCandidate.class);
+        verify(candidateRepository).save(captor.capture());
+        return captor.getValue();
     }
 
     private static void drain(InputStream in) throws java.io.IOException {

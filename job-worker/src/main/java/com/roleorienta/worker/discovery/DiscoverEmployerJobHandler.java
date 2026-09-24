@@ -23,6 +23,7 @@ import com.roleorienta.worker.http.SourceBackoffException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -51,6 +52,10 @@ import org.springframework.web.client.ResourceAccessException;
  *       {@code OUT_OF_MARKET} (без очереди подтверждения); нет фасета стран — по фасету
  *       локаций (§59), нет и его — по локациям вакансий первой страницы (§73: выборка,
  *       иначе тенанты без фасетов засоряли очередь ручной проверки);</li>
+ *   <li><b>принадлежность доски</b> (A2, §79): перед авто-подключением сведения о доске от
+ *       провайдера ({@link SourceAdapter#boardProfile}) сверяются
+ *       {@link BoardOwnershipProperties}; сомнение (нет описания, признак кадрового
+ *       агентства, описание не называет владельца) — {@code LOW} и {@code PENDING};</li>
  *   <li>лента не открывается окончательно ({@code 403}/{@code 404}/{@code 410}/{@code 422},
  *       §74) — {@code NONE} и состояние {@code UNREACHABLE}: доски по адресу из индекса нет
  *       или доступ закрыт, в очередь подтверждения не попадает;</li>
@@ -80,6 +85,7 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private final EmployerCandidateRepository candidateRepository;
     private final EmployerSourceRegistrar sourceRegistrar;
     private final DiscoveryMarketProperties market;
+    private final BoardOwnershipProperties ownership;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -87,16 +93,19 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * @param candidateRepository очередь кандидатов
      * @param sourceRegistrar     авто-подключение уверенного кандидата
      * @param market              целевой рынок пилота (гейт рынка, §56)
+     * @param ownership           проверка принадлежности доски (A2, §79)
      */
     public DiscoverEmployerJobHandler(
             SourceAdapterRegistry adapterRegistry,
             EmployerCandidateRepository candidateRepository,
             EmployerSourceRegistrar sourceRegistrar,
-            DiscoveryMarketProperties market) {
+            DiscoveryMarketProperties market,
+            BoardOwnershipProperties ownership) {
         this.adapterRegistry = adapterRegistry;
         this.candidateRepository = candidateRepository;
         this.sourceRegistrar = sourceRegistrar;
         this.market = market;
+        this.ownership = ownership;
     }
 
     @Override
@@ -152,34 +161,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private Assessment assess(Payload payload) {
         try {
             SourceAdapter adapter = adapterRegistry.forProviderCode(payload.providerCode());
-            PostingsPage page = adapter.listPostings(probeSource(payload), null);
-            int count = page.postings().size();
-            if (count == 0) {
-                return new Assessment(DiscoveryConfidence.LOW,
-                        "лента валидна, но пустая — требует подтверждения", 0, EmployerCandidateState.PENDING);
-            }
-            if (market.enabled() && !page.countryCounts().isEmpty()) {
-                return assessMarket(page.countryCounts(), count);
-            }
-            if (market.enabled() && adapter.reportsCountries()) {
-                if (!page.locationCounts().isEmpty()) {
-                    return assessMarketByLocations(page.locationCounts(), count);
-                }
-                Map<String, Integer> sample = locationsOnPage(page.postings());
-                if (!sample.isEmpty()) {
-                    // Нет фасетов (§73): локации вакансий первой страницы — выборка, не вся лента.
-                    Assessment bySample = assessMarketByLocations(sample, count);
-                    return new Assessment(bySample.confidence(),
-                            "по вакансиям первой страницы (фасетов нет): " + bySample.reason(),
-                            bySample.postingCount(), bySample.state());
-                }
-                // Ни стран, ни локаций (§58): рынок не проверен — не подключаем вслепую.
-                return new Assessment(DiscoveryConfidence.LOW,
-                        "лента валидна (" + count + "), но распределение по странам не получено — "
-                                + "рынок не проверен, требует подтверждения", count, EmployerCandidateState.PENDING);
-            }
-            return new Assessment(DiscoveryConfidence.HIGH,
-                    "лента валидна, публикаций: " + count, count, EmployerCandidateState.CONFIRMED);
+            Source probe = probeSource(payload);
+            return withOwnership(adapter, probe, assessFeed(adapter, probe));
         } catch (RuntimeException e) {
             if (isTransient(e)) {
                 // Сбой источника, а не свойство ленты (§57): не записываем кандидата как NONE
@@ -194,6 +177,68 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             return new Assessment(DiscoveryConfidence.NONE,
                     "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, EmployerCandidateState.PENDING);
         }
+    }
+
+    /**
+     * Проверка принадлежности доски (A2, §79) — только для кандидата, которого гейт готов
+     * подключить: один дополнительный запрос на подключаемую доску, а не на каждую. Страница
+     * доски не открылась (кроме временного сбоя) — сомнение, а не {@code UNREACHABLE}: лента
+     * ведь читается.
+     *
+     * @return прежняя оценка или {@code LOW}/{@code PENDING} с причиной сомнения
+     */
+    private Assessment withOwnership(SourceAdapter adapter, Source probe, Assessment assessment) {
+        if (assessment.state() != EmployerCandidateState.CONFIRMED) {
+            return assessment;
+        }
+        Optional<String> doubt;
+        try {
+            doubt = adapter.boardProfile(probe).flatMap(ownership::doubt);
+        } catch (RuntimeException e) {
+            if (isTransient(e)) {
+                throw e;
+            }
+            doubt = Optional.of("страница доски не открылась: " + e.getMessage());
+        }
+        return doubt.map(reason -> new Assessment(DiscoveryConfidence.LOW, reason + "; " + assessment.reason(),
+                        assessment.postingCount(), EmployerCandidateState.PENDING))
+                .orElse(assessment);
+    }
+
+    /**
+     * Оценка ленты: пустая — {@code LOW}; есть распределение по странам/локациям — гейт рынка;
+     * иначе валидная непустая лента — {@code HIGH}. Исключения чтения ленты разбирает
+     * {@link #assess}.
+     */
+    private Assessment assessFeed(SourceAdapter adapter, Source probe) {
+        PostingsPage page = adapter.listPostings(probe, null);
+        int count = page.postings().size();
+        if (count == 0) {
+            return new Assessment(DiscoveryConfidence.LOW,
+                    "лента валидна, но пустая — требует подтверждения", 0, EmployerCandidateState.PENDING);
+        }
+        if (market.enabled() && !page.countryCounts().isEmpty()) {
+            return assessMarket(page.countryCounts(), count);
+        }
+        if (market.enabled() && adapter.reportsCountries()) {
+            if (!page.locationCounts().isEmpty()) {
+                return assessMarketByLocations(page.locationCounts(), count);
+            }
+            Map<String, Integer> sample = locationsOnPage(page.postings());
+            if (!sample.isEmpty()) {
+                // Нет фасетов (§73): локации вакансий первой страницы — выборка, не вся лента.
+                Assessment bySample = assessMarketByLocations(sample, count);
+                return new Assessment(bySample.confidence(),
+                        "по вакансиям первой страницы (фасетов нет): " + bySample.reason(),
+                        bySample.postingCount(), bySample.state());
+            }
+            // Ни стран, ни локаций (§58): рынок не проверен — не подключаем вслепую.
+            return new Assessment(DiscoveryConfidence.LOW,
+                    "лента валидна (" + count + "), но распределение по странам не получено — "
+                            + "рынок не проверен, требует подтверждения", count, EmployerCandidateState.PENDING);
+        }
+        return new Assessment(DiscoveryConfidence.HIGH,
+                "лента валидна, публикаций: " + count, count, EmployerCandidateState.CONFIRMED);
     }
 
     /**

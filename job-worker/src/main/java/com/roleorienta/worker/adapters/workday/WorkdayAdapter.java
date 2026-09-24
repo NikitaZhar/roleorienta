@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.roleorienta.core.domain.Source;
+import com.roleorienta.worker.adapters.BoardProfile;
 import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.FetchedPosting;
 import com.roleorienta.worker.adapters.MarketScope;
@@ -14,8 +15,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Component;
 
 /**
@@ -91,6 +94,24 @@ public class WorkdayAdapter implements SourceAdapter {
     @Override
     public boolean reportsCountries() {
         return true;
+    }
+
+    /**
+     * Сведения о доске (A2, §79): владелец — тенант (поддомен {@code <tenant>.wdN.myworkdayjobs.com}
+     * выдаётся самому клиенту Workday), описание — {@code og:description} страницы доски
+     * {@code <base_url>/<site>}. Имени работодателя Workday не отдаёт: {@code <title>} и
+     * {@code og:title} пустые, {@code hiringOrganization} в детали пустой (проверено на IQVIA
+     * 2026-09-24).
+     *
+     * @param source источник с {@code external_ref} = {@code "<tenant>/<site>"}
+     * @return тенант и описание (пустая строка, если мета-тега нет)
+     */
+    @Override
+    public Optional<BoardProfile> boardProfile(Source source) {
+        String url = stripTrailingSlash(source.getBaseUrl()) + "/" + siteOf(source.getExternalRef());
+        Element meta = Jsoup.parse(httpClient.getBody(url)).selectFirst("meta[property=og:description]");
+        String description = meta == null ? "" : meta.attr("content").strip();
+        return Optional.of(new BoardProfile(tenantOf(source.getExternalRef()), description));
     }
 
     @Override
@@ -367,6 +388,13 @@ public class WorkdayAdapter implements SourceAdapter {
         String baseUrl = stripTrailingSlash(source.getBaseUrl());
         String site = siteOf(source.getExternalRef());
         return baseUrl + "/en-US/" + site + externalPath;
+    }
+
+    /** Тенант из {@code external_ref} = {@code "<tenant>/<site>"}. */
+    private String tenantOf(String externalRef) {
+        String ref = trimSlashes(externalRef);
+        int slash = ref.indexOf('/');
+        return slash >= 0 ? ref.substring(0, slash) : ref;
     }
 
     /** Сегмент {@code site} из {@code external_ref} = {@code "<tenant>/<site>"}. */

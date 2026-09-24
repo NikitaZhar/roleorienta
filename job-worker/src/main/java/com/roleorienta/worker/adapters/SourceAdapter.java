@@ -1,6 +1,7 @@
 package com.roleorienta.worker.adapters;
 
 import com.roleorienta.core.domain.Source;
+import java.util.Optional;
 
 /**
  * Единый контракт адаптера источника (§5 техдока).
@@ -72,5 +73,18 @@ public interface SourceAdapter {
      */
     default boolean reportsCountries() {
         return false;
+    }
+
+    /**
+     * Сведения о доске от самого провайдера (A2, §79): кто владелец доски и как работодатель
+     * себя описывает. Гейт обнаружения сверяет их, прежде чем подключить доску автоматически.
+     * Выполняет HTTP-запрос через тот же защищённый клиент, что и лента.
+     *
+     * @param source источник (в гейте — непостоянная проба)
+     * @return сведения о доске; {@code Optional.empty()} — провайдер их не даёт (Greenhouse),
+     *         проверка принадлежности не выполняется
+     */
+    default Optional<BoardProfile> boardProfile(Source source) {
+        return Optional.empty();
     }
 }

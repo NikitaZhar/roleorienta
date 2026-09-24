@@ -136,6 +136,11 @@ app:
       # Неоднозначные города (есть «тёзки» в США: Vienna, VA/WV/GA): с маркером США —
       # не рынок; без страны — кандидат на ручную проверку, не авто-подключение (§61).
       ambiguous-location-terms: "Vienna"
+    ownership:
+      # Проверка принадлежности доски перед авто-подключением (A2, §79): признаки кадрового
+      # агентства в описании страницы доски (подстрока без учёта регистра). Найден признак —
+      # кандидат на ручную проверку: агентство публикует вакансии чужих работодателей.
+      agency-markers: "staffing,recruitment agency,recruiting agency,employment agency,personalvermittlung,personaldienstleist,zeitarbeit,arbeitskräfteüberlassung,on behalf of our client"
     cc:
       # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54, §55).
       index-base-url: https://index.commoncrawl.org

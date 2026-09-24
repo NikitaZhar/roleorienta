@@ -40,7 +40,8 @@ class DiscoverEmployerJobHandlerTest {
     private final DiscoverEmployerJobHandler handler =
             new DiscoverEmployerJobHandler(registry, repository, registrar,
                     new DiscoveryMarketProperties(List.of("Slovakia", "Austria"),
-                            List.of("Slovakia", "Austria", "Bratislava", "Wien", "Graz", "AUT"), List.of("Vienna")));
+                            List.of("Slovakia", "Austria", "Bratislava", "Wien", "Graz", "AUT"), List.of("Vienna")),
+                    new BoardOwnershipProperties(List.of("staffing")));
 
     private static final String PAYLOAD =
             "{\"providerCode\":\"greenhouse\",\"slug\":\"acme\",\"baseUrl\":\"http://stub\"}";
@@ -282,7 +283,8 @@ class DiscoverEmployerJobHandlerTest {
     @Test
     void disabledMarketKeepsOldRule() {
         DiscoverEmployerJobHandler noMarket =
-                new DiscoverEmployerJobHandler(registry, repository, registrar, DiscoveryMarketProperties.ofCountries(List.of()));
+                new DiscoverEmployerJobHandler(registry, repository, registrar, DiscoveryMarketProperties.ofCountries(List.of()),
+                        new BoardOwnershipProperties(List.of("staffing")));
         when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
         when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
         when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(ONE, null,
