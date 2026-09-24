@@ -63,6 +63,16 @@ class WorkdayBoardTest {
     }
 
     @Test
+    void consecutiveLocalesAreSkipped() {
+        // §81: стенд §80 — salesforce/en-us, capitalone/en-Uk уходили в UNREACHABLE.
+        assertEquals(Optional.of("External_Career_Site"),
+                WorkdayBoard.fromCareerUrl("https://salesforce.wd12.myworkdayjobs.com/en-US/en-us/External_Career_Site/job/x")
+                        .map(WorkdayBoard::site));
+        assertTrue(WorkdayBoard.fromCareerUrl("https://salesforce.wd12.myworkdayjobs.com/en-US/en-us").isEmpty());
+        assertTrue(WorkdayBoard.fromCareerUrl("https://capitalone.wd12.myworkdayjobs.com/en-US/en-Uk").isEmpty());
+    }
+
+    @Test
     void twoLetterUppercaseSiteIsNotALocale() {
         assertEquals(Optional.of("AU"),
                 WorkdayBoard.fromCareerUrl("https://american.wd1.myworkdayjobs.com/AU/job/Sydney/x")

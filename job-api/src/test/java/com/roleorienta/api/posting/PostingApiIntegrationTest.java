@@ -98,6 +98,25 @@ class PostingApiIntegrationTest {
 
 
     @Test
+    void coverageUnknownByDefaultAndFilterBySiteOnly() throws Exception {
+        // A5, §81: без оценки — «не проверено»; coverage=SITE_ONLY — только «скрытые».
+        jdbcTemplate.update("INSERT INTO coverage_assessment (job_posting_id, state, checked_platforms) "
+                + "VALUES (?, 'SITE_ONLY', 'profesia.sk')", cardId);
+        mockMvc.perform(get("/api/v1/postings").param("coverage", "SITE_ONLY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].coverage.state").value("SITE_ONLY"))
+                .andExpect(jsonPath("$.items[0].coverage.checkedPlatforms").value("profesia.sk"));
+        mockMvc.perform(get("/api/v1/postings").param("coverage", "UNKNOWN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].coverage.state").value("UNKNOWN"));
+        mockMvc.perform(get("/api/v1/postings/{id}", cardId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coverage.state").value("SITE_ONLY"));
+    }
+
+    @Test
     void feedReturnsAllPostingsWithoutCursorWhenFewer() throws Exception {
         mockMvc.perform(get("/api/v1/postings"))
                 .andExpect(status().isOk())

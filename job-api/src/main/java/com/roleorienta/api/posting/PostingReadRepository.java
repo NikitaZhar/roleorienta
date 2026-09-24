@@ -1,5 +1,6 @@
 package com.roleorienta.api.posting;
 
+import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.core.domain.JobPosting;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +44,8 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
      *
      * @param cursor          {@code id} последней публикации предыдущей страницы (0 — с начала)
      * @param filter          необязательные фильтры (поля {@code null} игнорируются)
+     * @param coverage        состояние покрытия (A5, §81) или {@code null} — не фильтровать;
+     *                        {@code UNKNOWN} включает публикации без оценки
      * @param hiddenForUserId id пользователя, чьи скрытые публикации исключить из выборки
      *                        (§31); {@code null} — не исключать (аноним или includeHidden)
      * @param limit           сколько строк вернуть (размер страницы, +1 для определения продолжения)
@@ -51,6 +54,7 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
     @Query("select p from JobPosting p where p.id > :cursor and " + FILTERS + " order by p.id asc")
     List<JobPosting> search(@Param("cursor") long cursor,
                             @Param("filter") PostingFilter filter,
+                            @Param("coverage") CoverageState coverage,
                             @Param("hiddenForUserId") Long hiddenForUserId,
                             Limit limit);
 
@@ -71,6 +75,7 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
      *
      * @param after           ключ последней публикации предыдущей страницы
      * @param filter          необязательные фильтры (поля {@code null} игнорируются)
+     * @param coverage        состояние покрытия или {@code null} (см. {@link #search})
      * @param hiddenForUserId id пользователя, чьи скрытые публикации исключить, или {@code null}
      * @param limit           сколько строк вернуть (размер страницы, +1 для определения продолжения)
      * @return публикации: свежие первыми, без даты — в конце
@@ -82,11 +87,15 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
             + " order by coalesce(p.postedOn, :#{#after.noDate()}) desc, p.id desc")
     List<JobPosting> searchByPosted(@Param("after") PostedKeyset after,
                                     @Param("filter") PostingFilter filter,
+                                    @Param("coverage") CoverageState coverage,
                                     @Param("hiddenForUserId") Long hiddenForUserId,
                                     Limit limit);
 
     /**
      * Условия фильтров ленты (JPQL), общие для {@link #search} и {@link #searchByPosted}.
+     * Покрытие (A5, §81): {@code coverage} задан — только публикации с такой оценкой; для
+     * {@code UNKNOWN} — ещё и публикации без оценки (нет записи = не проверено). Признак
+     * «запрошено UNKNOWN» вычисляется в Java (SpEL), как у даты.
      * Константа, чтобы одни и те же фильтры не расходились между двумя порядками ленты.
      */
     String FILTERS = """
@@ -98,6 +107,11 @@ public interface PostingReadRepository extends Repository<JobPosting, Long> {
               and (:#{#filter.minSalary} is null
                    or coalesce(p.salaryMax, p.salaryMin) >= :#{#filter.minSalary})
               and (:#{#filter.postedFrom == null} = true or p.postedOn >= :#{#filter.postedFrom})
+              and (:coverage is null
+                   or exists (select 1 from CoverageAssessment ca
+                              where ca.posting = p and ca.state = :coverage)
+                   or (:#{#coverage != null and #coverage.name() == 'UNKNOWN'} = true
+                       and not exists (select 1 from CoverageAssessment cu where cu.posting = p)))
               and (:hiddenForUserId is null or not exists (
                       select 1 from SavedPosting sp
                       where sp.posting = p and sp.user.id = :hiddenForUserId

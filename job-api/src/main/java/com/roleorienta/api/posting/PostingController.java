@@ -2,6 +2,7 @@ package com.roleorienta.api.posting;
 
 import com.roleorienta.api.posting.PostingDtos.Card;
 import com.roleorienta.api.posting.PostingDtos.Page;
+import com.roleorienta.core.domain.CoverageState;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +47,8 @@ public class PostingController {
      *                       поля необязательны, берутся из query-параметров
      * @param includeHidden  для вошедшего: включать ли скрытые им публикации (по умолчанию нет)
      * @param filter         необязательные фильтры ленты (§7.3); поля берутся из query-параметров
+     * @param coverage       необязательный фильтр покрытия (A5, §81): {@code coverage=SITE_ONLY} —
+     *                       только «скрытые»; {@code UNKNOWN} — не проверенные
      * @param authentication текущий пользователь или {@code null} (аноним)
      * @return страница ленты и курсор следующей
      */
@@ -54,8 +57,9 @@ public class PostingController {
             FeedPaging paging,
             @RequestParam(required = false, defaultValue = "false") boolean includeHidden,
             PostingFilter filter,
+            @RequestParam(required = false) CoverageState coverage,
             Authentication authentication) {
-        return postingQueryService.list(paging, filter, authentication, includeHidden);
+        return postingQueryService.list(paging, filter, coverage, authentication, includeHidden);
     }
 
     /**

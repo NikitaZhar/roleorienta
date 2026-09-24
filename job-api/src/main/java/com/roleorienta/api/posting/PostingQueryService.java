@@ -1,6 +1,7 @@
 package com.roleorienta.api.posting;
 
 import com.roleorienta.api.posting.PostingDtos.Card;
+import com.roleorienta.api.posting.PostingDtos.Coverage;
 import com.roleorienta.api.posting.PostingDtos.Experience;
 import com.roleorienta.api.posting.PostingDtos.Facts;
 import com.roleorienta.api.posting.PostingDtos.Head;
@@ -14,12 +15,15 @@ import com.roleorienta.api.posting.PostingDtos.Summary;
 import com.roleorienta.api.posting.PostingDtos.Timeline;
 import com.roleorienta.api.posting.PostingDtos.Viewer;
 import com.roleorienta.api.saved.SavedPosting;
+import com.roleorienta.core.domain.CoverageAssessment;
+import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.core.domain.JobPosting;
 import com.roleorienta.core.domain.PostingLanguage;
 import com.roleorienta.core.domain.PostingSkill;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Limit;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -52,22 +56,26 @@ public class PostingQueryService {
     private final PostingLanguageReadRepository languageRepository;
     private final PostingSkillReadRepository skillRepository;
     private final FeedPersonalization personalization;
+    private final CoverageReadRepository coverageRepository;
 
     /**
      * @param postingRepository  публикации
      * @param languageRepository языковые требования публикации
      * @param skillRepository    требования-навыки публикации
      * @param personalization    персонализация ленты под вошедшего пользователя (§31)
+     * @param coverageRepository оценки покрытия площадками (A5, §81)
      */
     public PostingQueryService(
             PostingReadRepository postingRepository,
             PostingLanguageReadRepository languageRepository,
             PostingSkillReadRepository skillRepository,
-            FeedPersonalization personalization) {
+            FeedPersonalization personalization,
+            CoverageReadRepository coverageRepository) {
         this.postingRepository = postingRepository;
         this.languageRepository = languageRepository;
         this.skillRepository = skillRepository;
         this.personalization = personalization;
+        this.coverageRepository = coverageRepository;
     }
 
     /**
@@ -80,12 +88,13 @@ public class PostingQueryService {
      * @param paging         курсор ({@code null} — с начала), размер страницы ({@code null} →
      *                       {@link #DEFAULT_LIMIT}, обрезается до {@link #MAX_LIMIT}) и порядок
      * @param filter         необязательные фильтры (поля {@code null} не применяются)
+     * @param coverage       состояние покрытия (A5) или {@code null}; {@code SITE_ONLY} — «только скрытые»
      * @param authentication текущая аутентификация или {@code null} (анонимный запрос)
      * @param includeHidden  для вошедшего: включать ли скрытые им публикации (по умолчанию нет, §7.3)
      * @return элементы страницы и курсор следующей ({@code nextCursor = null} — страниц больше нет)
      */
     @Transactional(readOnly = true)
-    public Page list(FeedPaging paging, PostingFilter filter,
+    public Page list(FeedPaging paging, PostingFilter filter, CoverageState coverage,
                      Authentication authentication, boolean includeHidden) {
         int size = pageSize(paging.limit());
         boolean byPosted = paging.sortOrDefault() == FeedPaging.Sort.POSTED;
@@ -95,9 +104,9 @@ public class PostingQueryService {
 
         List<JobPosting> rows = byPosted
                 ? postingRepository.searchByPosted(PostedKeyset.fromCursor(paging.cursor()),
-                        filter, hiddenForUserId, Limit.of(size + 1))
+                        filter, coverage, hiddenForUserId, Limit.of(size + 1))
                 : postingRepository.search(paging.cursor() == null ? 0L : paging.cursor(),
-                        filter, hiddenForUserId, Limit.of(size + 1));
+                        filter, coverage, hiddenForUserId, Limit.of(size + 1));
 
         Long nextCursor = null;
         if (rows.size() > size) {
@@ -108,9 +117,13 @@ public class PostingQueryService {
 
         List<Long> ids = rows.stream().map(JobPosting::getId).toList();
         Map<Long, SavedPosting> markers = personalization.markersByPostingId(userId, ids);
+        Map<Long, Coverage> coverages = ids.isEmpty() ? Map.of()
+                : coverageRepository.findByPosting_IdIn(ids).stream().collect(Collectors.toMap(
+                        assessment -> assessment.getPosting().getId(), PostingQueryService::toCoverage));
 
         List<Summary> items = rows.stream()
-                .map(posting -> toSummary(posting, markers.get(posting.getId())))
+                .map(posting -> toSummary(posting, markers.get(posting.getId()),
+                        coverages.getOrDefault(posting.getId(), Coverage.NOT_CHECKED)))
                 .toList();
         return new Page(items, nextCursor);
     }
@@ -141,19 +154,26 @@ public class PostingQueryService {
         List<Skill> skills = skillRepository
                 .findByJobPosting_IdOrderBySkillAsc(posting.getId())
                 .stream().map(PostingQueryService::toSkill).toList();
+        Coverage coverage = coverageRepository.findByPosting_Id(posting.getId())
+                .map(PostingQueryService::toCoverage).orElse(Coverage.NOT_CHECKED);
         return new Card(head(posting), facts(posting), posting.getRawDescription(),
-                new Requirements(languages, skills));
+                new Requirements(languages, skills), coverage);
     }
 
     /**
      * Отображает публикацию в строку ленты с персональной пометкой. {@code marker} —
      * маркер вошедшего пользователя на этой публикации или {@code null} (аноним/без пометки).
      */
-    private static Summary toSummary(JobPosting posting, SavedPosting marker) {
+    private static Summary toSummary(JobPosting posting, SavedPosting marker, Coverage coverage) {
         Viewer viewer = marker == null
                 ? new Viewer(null, false)
                 : new Viewer(marker.getState(), marker.getSeenAt() != null);
-        return new Summary(head(posting), facts(posting), viewer);
+        return new Summary(head(posting), facts(posting), viewer, coverage);
+    }
+
+    private static Coverage toCoverage(CoverageAssessment assessment) {
+        return new Coverage(assessment.getState(), assessment.getCheckedPlatforms(), assessment.getReason(),
+                assessment.getCheckedAt());
     }
 
     private static Head head(JobPosting posting) {

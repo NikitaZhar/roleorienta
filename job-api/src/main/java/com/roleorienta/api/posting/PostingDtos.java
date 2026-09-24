@@ -1,6 +1,7 @@
 package com.roleorienta.api.posting;
 
 import com.roleorienta.api.saved.SavedState;
+import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.core.domain.LanguageMention;
 import com.roleorienta.core.domain.LanguageModality;
 import com.roleorienta.core.domain.RequirementModality;
@@ -21,7 +22,8 @@ import java.util.List;
  * <p><b>Поля сгруппированы по смыслу (§77).</b> Строка ленты и карточка собираются из одних и
  * тех же частей — {@link Head} (что за публикация) и {@link Facts} (где, сколько платят, какой
  * опыт, когда); у каждой записи не больше 5 полей (контракт §3.10). JSON повторяет группировку:
- * {@code items[0].head.title}, {@code items[0].facts.salary.min}, {@code items[0].viewer.state}.</p>
+ * {@code items[0].head.title}, {@code items[0].facts.salary.min}, {@code items[0].viewer.state},
+ * {@code items[0].coverage.state} (A5, §81).</p>
  */
 public final class PostingDtos {
 
@@ -105,13 +107,31 @@ public final class PostingDtos {
     }
 
     /**
+     * Покрытие публикации площадками (A5, ADR-15): результат сравнения, а не факт.
+     * {@code UNKNOWN} — не проверено; отрицательный результат читается ограниченно: «не найдена
+     * на {@code checkedPlatforms} при проверке {@code checkedAt}».
+     *
+     * @param state            состояние покрытия
+     * @param checkedPlatforms проверенные площадки или {@code null}
+     * @param reason           причина состояния (для {@code UNKNOWN} — почему не проверено)
+     * @param checkedAt        когда выполнено сравнение или {@code null}
+     */
+    public record Coverage(CoverageState state, String checkedPlatforms, String reason, Instant checkedAt) {
+
+        /** Публикация без оценки: сравнение с площадками не выполнялось. */
+        public static final Coverage NOT_CHECKED =
+                new Coverage(CoverageState.UNKNOWN, null, "сравнение с площадками не выполнялось", null);
+    }
+
+    /**
      * Строка ленты.
      *
-     * @param head   что за публикация
-     * @param facts  нормализованные сведения
-     * @param viewer отношение вошедшего пользователя
+     * @param head     что за публикация
+     * @param facts    нормализованные сведения
+     * @param viewer   отношение вошедшего пользователя
+     * @param coverage покрытие площадками (A5)
      */
-    public record Summary(Head head, Facts facts, Viewer viewer) {
+    public record Summary(Head head, Facts facts, Viewer viewer, Coverage coverage) {
     }
 
     /** Языковое требование в карточке (A07): факт упоминания и обязательность раздельно. */
@@ -138,8 +158,9 @@ public final class PostingDtos {
      * @param facts        нормализованные сведения
      * @param description  текст описания или {@code null}
      * @param requirements языки и навыки
+     * @param coverage     покрытие площадками (A5)
      */
-    public record Card(Head head, Facts facts, String description, Requirements requirements) {
+    public record Card(Head head, Facts facts, String description, Requirements requirements, Coverage coverage) {
     }
 
     /** Страница ленты: элементы и курсор следующей страницы ({@code null} — конец). */

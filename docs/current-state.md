@@ -4,8 +4,8 @@
 сессии. История решений — в [project-notes](project-notes.md), правила — в
 [рабочем контракте](working-contract.md) и [регламенте сессии](session-protocol.md).
 
-**Обновлено:** 2026-09-24, после §80.
-**Срезов с последнего аудита: 4** (последний аудит — §76).
+**Обновлено:** 2026-09-24, после §81.
+**Срезов с последнего аудита: 5** (последний аудит — §76).
 
 ## Назначение и границы
 
@@ -17,7 +17,7 @@ SPA, покрытие площадками, снимки, дайджест/email
 
 ## Стек и запуск
 
-Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V28, ведёт `job-api`), RabbitMQ
+Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V29, ведёт `job-api`), RabbitMQ
 (transactional outbox, publisher confirms, DLQ), Maven multi-module, Testcontainers в тестах,
 CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.sh` (Postgres, RabbitMQ
 в Docker), `./scripts/run-api.sh` (:8080), `./scripts/run-worker.sh` (:8081).
@@ -58,8 +58,10 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 5. **Лента.** `GET /api/v1/postings`: фильтры `PostingFilter` (формат, уровень, страна с доп.
    локациями, `minSalary` с «от X», `postedFrom`), порядок `FeedPaging.sort` = `ID` | `POSTED`
    (keyset «дата + id» — `PostedKeyset`, §70); карточка `GET /api/v1/postings/{id}`. JSON сгруппирован
-   (§77): строка — `{head, facts, viewer}`, карточка — `{head, facts, description, requirements}`;
-   `facts` = `{location, salary, experience, timeline}`.
+   (§77): строка — `{head, facts, viewer, coverage}`, карточка — `{head, facts, description,
+   requirements, coverage}`; `facts` = `{location, salary, experience, timeline}`. Покрытие (A5,
+   §81): `CoverageAssessment` на публикацию, нет записи — `UNKNOWN`; фильтр `coverage=SITE_ONLY`
+   («только скрытые») / `UNKNOWN`; записи пока не создаются — площадка не выбрана.
 
 ## Соглашения кода (кратко; полностью — контракт §3)
 
@@ -89,6 +91,7 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
   качество данных Workday (зарплата, локации, уровень, дата — §65–§70); лента с фильтрами и
   сортировкой по дате.
 - Checkstyle в сборке (§78); ArchUnit — позже.
-- Далее: по плану — A5 (`CoverageAssessment`); дедуп между провайдерами — открыт.
+- A5 — скелет (§81). Далее: выбор эталонной площадки SK/AT, её адаптер и сравнение (A5);
+  дедуп между провайдерами — открыт.
 - Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A5–A7 (покрытие, снимки,
   дайджест).

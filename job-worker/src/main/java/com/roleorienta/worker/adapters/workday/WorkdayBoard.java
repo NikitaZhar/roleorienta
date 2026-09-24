@@ -30,6 +30,9 @@ public record WorkdayBoard(String tenant, String site, String baseUrl) {
      * Язык — строчный; регион — в любом регистре: в индексе Common Crawl встречается и
      * {@code en-us} (стенд §72: {@code uline/en-us} → 404, §73). Двухбуквенный сайт в
      * верхнем регистре (реальный пример — {@code american/AU}) локалью не считается.
+     * Ведущие локали пропускаются все подряд (§81): в индексе есть адреса вида
+     * {@code /en-US/en-us/...}, из-за них доски {@code salesforce/en-us}, {@code capitalone/en-Uk}
+     * уходили в {@code UNREACHABLE}. Нет сайта после локалей — доски нет.
      */
     private static final Pattern LOCALE = Pattern.compile("^[a-z]{2}(-[A-Za-z]{2})?$");
 
@@ -102,7 +105,10 @@ public record WorkdayBoard(String tenant, String site, String baseUrl) {
         if (segments.isEmpty()) {
             return Optional.empty();
         }
-        int index = LOCALE.matcher(segments.get(0)).matches() ? 1 : 0;
+        int index = 0;
+        while (index < segments.size() && LOCALE.matcher(segments.get(index)).matches()) {
+            index++; // локалей подряд может быть несколько: /en-US/en-us/<site> (стенд §80)
+        }
         if (index >= segments.size()) {
             return Optional.empty();
         }

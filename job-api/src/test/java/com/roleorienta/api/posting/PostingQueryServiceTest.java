@@ -14,6 +14,8 @@ import com.roleorienta.api.posting.PostingDtos.Card;
 import com.roleorienta.api.posting.PostingDtos.Page;
 import com.roleorienta.api.posting.PostingDtos.Skill;
 import com.roleorienta.api.posting.PostingDtos.Summary;
+import com.roleorienta.core.domain.CoverageAssessment;
+import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.api.saved.SavedPosting;
 import com.roleorienta.api.saved.SavedState;
 import com.roleorienta.core.domain.JobPosting;
@@ -49,8 +51,9 @@ class PostingQueryServiceTest {
     private final PostingLanguageReadRepository languageRepository = mock(PostingLanguageReadRepository.class);
     private final PostingSkillReadRepository skillRepository = mock(PostingSkillReadRepository.class);
     private final FeedPersonalization personalization = mock(FeedPersonalization.class);
+    private final CoverageReadRepository coverageRepository = mock(CoverageReadRepository.class);
     private final PostingQueryService service = new PostingQueryService(
-            postingRepository, languageRepository, skillRepository, personalization);
+            postingRepository, languageRepository, skillRepository, personalization, coverageRepository);
 
     /** По умолчанию — анонимный запрос: пользователя нет, маркеров нет. */
     {
@@ -64,10 +67,10 @@ class PostingQueryServiceTest {
         for (long id = 1; id <= 21; id++) {
             rows.add(posting(id));
         }
-        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(rows);
 
-        Page page = service.list(new FeedPaging(null, null, null), NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, null, null), NO_FILTER, null, null, false);
 
         assertThat(page.items()).hasSize(20);
         assertThat(page.nextCursor()).isEqualTo(20L);
@@ -76,10 +79,10 @@ class PostingQueryServiceTest {
     @Test
     void noCursorWhenLastPage() {
         List<JobPosting> rows = List.of(posting(1), posting(2), posting(3));
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(rows);
 
-        Page page = service.list(new FeedPaging(null, 20, null), NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, 20, null), NO_FILTER, null, null, false);
 
         assertThat(page.items()).hasSize(3);
         assertThat(page.nextCursor()).isNull();
@@ -87,10 +90,10 @@ class PostingQueryServiceTest {
 
     @Test
     void cursorIsPassedThrough() {
-        when(postingRepository.search(eq(42L), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(eq(42L), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of());
 
-        Page page = service.list(new FeedPaging(42L, 10, null), NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(42L, 10, null), NO_FILTER, null, null, false);
 
         assertThat(page.items()).isEmpty();
         assertThat(page.nextCursor()).isNull();
@@ -99,10 +102,10 @@ class PostingQueryServiceTest {
     @Test
     void limitClampedToMaximum() {
         ArgumentCaptor<Limit> captor = ArgumentCaptor.forClass(Limit.class);
-        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), captor.capture()))
+        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), captor.capture()))
                 .thenReturn(List.of());
 
-        service.list(new FeedPaging(null, 1000, null), NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 1000, null), NO_FILTER, null, null, false);
 
         assertThat(captor.getValue().max()).isEqualTo(101);
     }
@@ -110,10 +113,10 @@ class PostingQueryServiceTest {
     @Test
     void limitClampedToMinimum() {
         ArgumentCaptor<Limit> captor = ArgumentCaptor.forClass(Limit.class);
-        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), captor.capture()))
+        when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), captor.capture()))
                 .thenReturn(List.of());
 
-        service.list(new FeedPaging(null, 0, null), NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 0, null), NO_FILTER, null, null, false);
 
         assertThat(captor.getValue().max()).isEqualTo(2);
     }
@@ -121,11 +124,11 @@ class PostingQueryServiceTest {
     @Test
     void filterIsPassedThrough() {
         ArgumentCaptor<PostingFilter> captor = ArgumentCaptor.forClass(PostingFilter.class);
-        when(postingRepository.search(eq(0L), captor.capture(), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(eq(0L), captor.capture(), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of());
         PostingFilter filter = new PostingFilter(WorkModality.REMOTE, SeniorityLevel.SENIOR, "Germany", null, null);
 
-        service.list(new FeedPaging(null, 10, null), filter, null, false);
+        service.list(new FeedPaging(null, 10, null), filter, null, null, false);
 
         assertThat(captor.getValue()).isEqualTo(filter);
     }
@@ -133,10 +136,10 @@ class PostingQueryServiceTest {
     @Test
     void anonymousFeedIsNotFilteredByHidden() {
         ArgumentCaptor<Long> captor = ArgumentCaptor.forClass(Long.class);
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(new FeedPaging(null, 10, null), NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, null, null, false);
 
         assertThat(captor.getValue()).as("аноним → скрытые не исключаются").isNull();
     }
@@ -146,10 +149,10 @@ class PostingQueryServiceTest {
         Authentication auth = mock(Authentication.class);
         when(personalization.currentUserId(auth)).thenReturn(7L);
         ArgumentCaptor<Long> captor = ArgumentCaptor.forClass(Long.class);
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, false);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, null, auth, false);
 
         assertThat(captor.getValue()).isEqualTo(7L);
     }
@@ -159,10 +162,10 @@ class PostingQueryServiceTest {
         Authentication auth = mock(Authentication.class);
         when(personalization.currentUserId(auth)).thenReturn(7L);
         ArgumentCaptor<Long> captor = ArgumentCaptor.forClass(Long.class);
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, true);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, null, auth, true);
 
         assertThat(captor.getValue()).as("includeHidden=true → не исключаем").isNull();
     }
@@ -171,14 +174,14 @@ class PostingQueryServiceTest {
     void summaryIsAnnotatedWithViewerMarker() {
         Authentication auth = mock(Authentication.class);
         when(personalization.currentUserId(auth)).thenReturn(7L);
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of(posting(5L)));
         SavedPosting marker = new SavedPosting();
         marker.setState(SavedState.SAVED);
         marker.setSeenAt(Instant.now());
         when(personalization.markersByPostingId(eq(7L), anyList())).thenReturn(Map.of(5L, marker));
 
-        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, false);
+        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, auth, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
             assertThat(s.viewer().state()).isEqualTo(SavedState.SAVED);
@@ -188,10 +191,10 @@ class PostingQueryServiceTest {
 
     @Test
     void summaryHasNoViewerMarkerForAnonymous() {
-        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of(posting(5L)));
 
-        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, null, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
             assertThat(s.viewer().state()).isNull();
@@ -268,5 +271,23 @@ class PostingQueryServiceTest {
                 .isLessThanOrEqualTo(1L << 53);
         assertThat(PostedKeyset.fromCursor(undated.toCursor())).isEqualTo(undated);
         assertThat(PostedKeyset.fromCursor(null)).isEqualTo(PostedKeyset.FIRST_PAGE);
+    }
+
+    @Test
+    void coverageDefaultsToNotCheckedAndMapsAssessment() {
+        JobPosting checked = posting(1L);
+        CoverageAssessment assessment = new CoverageAssessment();
+        assessment.setPosting(checked);
+        assessment.setState(CoverageState.SITE_ONLY);
+        assessment.setCheckedPlatforms("profesia.sk");
+        when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(CoverageState.class),
+                nullable(Long.class), any(Limit.class))).thenReturn(List.of(checked, posting(2L)));
+        when(coverageRepository.findByPosting_IdIn(List.of(1L, 2L))).thenReturn(List.of(assessment));
+
+        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, null, false);
+
+        assertThat(page.items()).extracting(s -> s.coverage().state())
+                .containsExactly(CoverageState.SITE_ONLY, CoverageState.UNKNOWN);
+        assertThat(page.items().get(0).coverage().checkedPlatforms()).isEqualTo("profesia.sk");
     }
 }
