@@ -20,7 +20,10 @@ import com.roleorienta.worker.discovery.EmployerSourceRegistrar.Registration;
 import com.roleorienta.worker.jobs.JobMessage;
 import com.roleorienta.worker.jobs.TypedJobHandler;
 import com.roleorienta.worker.http.SourceBackoffException;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -68,7 +71,7 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private static final Logger log = LoggerFactory.getLogger(DiscoverEmployerJobHandler.class);
 
     /** Ответы, после которых доска считается недоступной (см. {@link #isUnreachable}). */
-    private static final java.util.Set<Integer> UNREACHABLE_STATUSES = java.util.Set.of(403, 404, 410, 422);
+    private static final Set<Integer> UNREACHABLE_STATUSES = Set.of(403, 404, 410, 422);
 
     /** Сводка Workday вместо локации: «2 Locations», «18 Locations». */
     private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+\\s+Locations?", Pattern.CASE_INSENSITIVE);
@@ -247,8 +250,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * Локации вакансий страницы со счётчиками (§73) — для тенантов без фасетов. Сводки вида
      * «2 Locations» пропускаются: из них страну не узнать.
      */
-    private static Map<String, Integer> locationsOnPage(java.util.List<DiscoveredPosting> postings) {
-        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+    private static Map<String, Integer> locationsOnPage(List<DiscoveredPosting> postings) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
         for (DiscoveredPosting posting : postings) {
             String location = posting.rawLocation();
             if (location != null && !location.isBlank() && !LOCATIONS_SUMMARY.matcher(location).matches()) {
@@ -258,7 +261,7 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         return counts;
     }
 
-    private static String firstOf(java.util.List<String> items) {
+    private static String firstOf(List<String> items) {
         return items.stream().limit(3).collect(Collectors.joining(", "));
     }
 

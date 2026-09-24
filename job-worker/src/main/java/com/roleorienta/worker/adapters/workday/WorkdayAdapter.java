@@ -309,7 +309,7 @@ public class WorkdayAdapter implements SourceAdapter {
      * «Posted 30+ Days Ago»), {@code additionalLocations} (массив строк у многолокационных).
      * Зарплата не разбирается (у Workday нет структурного поля) — {@code compensation}
      * и {@code rawCompensation} остаются {@code null}; зарплату из текста описания извлекает
-     * {@code PostingEnricher} через {@code SalaryTextExtractor} (§66).
+     * {@code SalaryNormalizer.resolve} (запасной путь — {@code SalaryTextExtractor}, §66).
      *
      * @throws IllegalStateException если тело не разбирается как ожидаемый JSON
      */

@@ -14,7 +14,6 @@ import com.roleorienta.api.posting.PostingDtos.Card;
 import com.roleorienta.api.posting.PostingDtos.Page;
 import com.roleorienta.api.posting.PostingDtos.Skill;
 import com.roleorienta.api.posting.PostingDtos.Summary;
-import com.roleorienta.api.posting.PostingReadRepository.PostedKeyset;
 import com.roleorienta.api.saved.SavedPosting;
 import com.roleorienta.api.saved.SavedState;
 import com.roleorienta.core.domain.JobPosting;

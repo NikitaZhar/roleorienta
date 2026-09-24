@@ -60,6 +60,13 @@ management:
 # сюда для внешней конфигурации — §3.4 боевого контракта).
 app:
   collect:
+    http:
+      # HTTP-клиент сбора (SourceHttpProperties, §71): тайм-ауты, редиректы (каждый
+      # ре-валидируется SSRF-контуром) и потолок размера тела ответа — больше отклоняется.
+      connect-timeout-ms: 5000
+      read-timeout-ms: 15000
+      max-redirects: 5
+      max-body-bytes: 5242880
     # Потолок страниц ленты источника за один обход DISCOVER_PAGE (§62; Workday — 20 на
     # страницу). Лента читается только в области целевого рынка (app.discovery.market).
     max-list-pages: 10
