@@ -1,9 +1,9 @@
 ---
 Документ: Техническое описание проекта
 Продукт: приложение для поиска, мониторинга и анализа вакансий
-Дата: 2026-09-22
-Статус: структурные поля детали Workday (§65) — страна (country.descriptor), формат (remoteType → REMOTE/HYBRID/ONSITE), дата публикации (startDate → posted_on, V27), доп. локации (additional_locations, V27); город «Город, Регион, Страна» → первый сегмент, «City, ST» → United States of America; postedOn/additionalLocations в API. Компиляция/тесты в среде ИИ не запускались — их выполняет владелец.
-Прежний статус: проверка вакансий Workday через REST, список дефектов нормализации (§64); ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
+Дата: 2026-09-24
+Статус: зарплата из текста описания Workday (§66) — SalaryTextExtractor (EN/DE/SK формулировки SK/AT: «Mindestgehalt … brutto pro Monat», «starts at € 60.000 gross p.a.», диапазоны, «EUR/mesiac»), структурное поле источника главнее (SalaryNormalizer.resolve), фрагмент — в raw_compensation. Сборка Maven в среде ИИ недоступна — тесты зарплаты прогнаны отдельно (26/26); полный прогон — владелец.
+Прежний статус: структурные поля детали Workday — страна, формат, дата публикации, доп. локации, V27 (§65); проверка вакансий Workday через REST, список дефектов нормализации (§64); ниша и дневной бюджет деталей (§63); сбор только по рынку — Workday appliedFacets, пагинация (§62); прогон гейта по ~1000 доскам Workday, 44 с SK/AT, «Vienna» неоднозначна (§61); задания сбора по неактивному источнику снимаются (§60); вежливость RequestPacer + Retry-After (§57); гейт рынка без фасета стран — по локациям (§58–59); вежливость к источникам — RequestPacer, Retry-After, без авто-повторов HttpClient (§57); гейт рынка по фасету стран Workday, OUT_OF_MARKET (§56); автоматический вход Workday по Common Crawl — V26, HarvestStore, CcHarvestScheduler, выключен до B1/B2 (§55); вход Workday — Common Crawl вместо CT, CommonCrawlIndexClient и WorkdayBoard.fromCareerUrl (§54); Workday site-резолв по словарю через cxs (§53, A1b-1); CT-клиент CertSpotterClient (§52, A1a); Workday сквозь обнаружение end-to-end на заглушке (§51); первый энтерпрайз-адаптер Workday (§50); протокол Этапа 0 (§49); ревизия документации — вендор-инклюзивный охват и ADR-17/18 (§48); интеграция персональных маркеров в ленту (§31); персональные маркеры (§30); аутентификация (§29); REST-чтение и фильтры (§26–28); извлечение по таксономии/опыт/stance (§20–25); нормализация зарплаты/локации и история (§17–19); конвейер сбора (§13–16)
 ---
 
 # Техническое описание проекта: файлы и конструкции
@@ -3847,6 +3847,95 @@ detailStructuredFields` — страна, формат, `startDate` (не «Post
 `country=` — только основная; IQVIA «UK + Bratislava» по Slovakia не найдётся); зарплата
 AT (§64.2 п.6) — отдельным срезом; перечитывание уже собранных публикаций на стенде
 (новые поля заполнятся при следующей детали).
+
+## §66 — Зарплата из текста описания (Workday SK/AT)
+
+Пункт 6 из §64.2. У Workday нет структурного поля зарплаты; до этого среза зарплату давал
+только Greenhouse (`pay_input_ranges`), и у 281 из 284 публикаций стенда её не было.
+
+### 66.1 Сначала — реальные тексты
+
+Облачная среда ассистента до Workday не достаёт (прокси), поэтому описания сняты через
+встроенный браузер тем же API cxs, что и у адаптера (2026-09-24): Hitachi 18, DXC 16,
+IQVIA 20, Snap 3 вакансии SK/AT. Итог:
+
+- **Сумма есть почти везде, и не только в Австрии.** Hitachi AT — 11 из 12, DXC — 16 из 16
+  (AT и SK), IQVIA SK — 4 из 7 с суммой, Snap — ни у одной (только «compensation packages»).
+- **Формулировки** (EN/DE/SK): «Das Mindestgrundgehalt gemäß des Kollektivvertrages … startet
+  bei EUR 3.348,62 brutto pro Monat», «Mindestgehalt … (3.775,25 € in Vollzeit)» (без слова о
+  периоде), «kollektivvertragliche Mindestgehalt von 76 216 EUR p.a. brutto», «The salary for
+  this position starts at € 60.000 gross p.a.», «from EUR 3000 – 4500 gross per month»,
+  «from 36,400 to 44,200 EUR/annual», «when annualized, is €32,200.00 - €48,400.00»,
+  «Mzdové podmienky (brutto) 2 000 EUR/mesiac», «Monthly gross salary: starting at 3.000 EUR».
+- **Ловушки**: «Essenszuschuss i. H. v. 8€», «Cafeteria benefit of CZK 7,000», «meal vouchers
+  (CZK 110 per day)», «2–3% of salary», пустые шаблоны IQVIA «$0.00 - $0.00» и «range for this
+  role is The actual…».
+
+### 66.2 Код
+
+- `normalize/SalaryTextExtractor` — правила (ADR-13, без ML). Денежное выражение: сумма с
+  разделителями `3.348,62` / `76 216` / `32,200.00` / `3.775, 25`, валюта до или после
+  (`EUR € USD $ CZK Kč CHF GBP £`), суффикс `k`, диапазон через `- – to bis až`. Кандидат
+  принимается, если рядом (150 символов до, 80 после) есть слово о зарплате (salary, Gehalt,
+  Vergütung, pay, compensation, gross, brutto, mzda …), прямо перед суммой нет слов о
+  льготах (Zuschuss, meal, voucher, cafeteria, bonus, pension …), сразу после — `% / billion /
+  Mio`, и сумма не нулевая. Берётся первый прошедший.
+- **Честность A09.** Период (YEAR/MONTH/WEEK/DAY/HOUR) и база (GROSS/NET) — только по явным
+  словам рядом; иначе `UNKNOWN` («3.775,25 € in Vollzeit» — период неизвестен, хотя по смыслу
+  месячный). Форма: диапазон → min+max; «from / ab / starts at / startet bei / Mindest- /
+  minimum / od» перед суммой или «can be higher / Überzahlung / najnižšou» после → только
+  min; «up to / bis zu» прямо перед → только max; иначе точная (min = max).
+- `normalize/ExtractedSalary` — зарплата + фрагмент текста вокруг суммы. Оба класса — в пакете
+  `normalize`, рядом с `SalaryNormalizer`/`NormalizedSalary`: в пакете `extract` получилась бы
+  циклическая зависимость пакетов `normalize` ↔ `extract` (контракт §3.3).
+- `SalaryNormalizer.resolve(range, rawCompensation, description)` — структурный диапазон
+  главнее, без него — текст. Сделано внутри нормализатора, а не новой зависимостью
+  `PostingEnricher`: у того уже 5 параметров конструктора (контракт §3.10).
+- `PostingEnricher` — берёт зарплату через `resolve`; в `raw_compensation` пишется фрагмент
+  текста (напр. «…Mindestgehalt von 76 216 EUR p.a. brutto…») — видно, откуда число, и можно
+  отличить ошибку извлечения от отсутствия суммы в оригинале.
+
+```mermaid
+flowchart LR
+  D[деталь FetchedPosting] --> R{структурный диапазон есть?}
+  R -- да --> S[SalaryNormalizer.normalize<br/>raw_compensation = строка источника]
+  R -- нет --> T[SalaryTextExtractor.extract<br/>raw_compensation = фрагмент текста]
+  S --> P[PostingEnricher: salary_* в job_posting]
+  T --> P
+```
+
+**Найдено вне области среза (не исправлено, нужно решение владельца).** Фильтр ленты
+`minSalary` (`PostingReadRepository.search`) сравнивает только `salary_max`. У зарплат «от X»
+верхней границы нет (`salary_max = NULL`) — а это большинство SK/AT, — поэтому такие
+вакансии фильтром `minSalary` не находятся. Минимальное исправление:
+`coalesce(p.salaryMax, p.salaryMin) >= :minSalary` + интеграционный тест.
+
+### 66.3 Что проверяют тесты
+
+`normalize/SalaryTextExtractorTest` — 20 тестов на дословных фрагментах из 66.1: разбор сумм, форма,
+период/база и UNKNOWN без слов, отсев льгот, процентов, оборотов, нулевых шаблонов, чисел
+без валюты. `SalaryNormalizerTest` — структурный диапазон главнее текста, без него — текст
+с фрагментом, нет нигде — `ABSENT`. Сборка Maven в среде ИИ недоступна
+(нет доступа к Maven Central): тесты зарплаты прогнаны отдельно на javac с минимальной
+подменой JUnit/AssertJ — 26/26; полный `mvn verify` (компиляция модулей, все тесты)
+выполняет владелец. README по §0.2 не затронут (сводка не меняется).
+
+### 66.4 Стенд
+
+`target/stand-salary.sh` (вне git): 5 досок, ниша снята (`APP_COLLECT_NICHE_INCLUDE=,` и
+`APP_COLLECT_NICHE_EXCLUDE=,` — список из пустых слов, пустые отбрасываются, значит ниша не
+ограничена и деталь приходит у всех вакансий рынка), бюджет 1000, 5 мин; отчёт
+`target/stand-salary.txt` — доля с зарплатой по стране, суммы с фрагментами, SK/AT без суммы
+со ссылками, карточка через REST. Результат — отдельной записью.
+
+### 66.5 Что НЕ вошло
+
+Исправление фильтра `minSalary` для «от X» (см. 66.2, ждёт решения); сравнение зарплат разных периодов/валют в фильтре (месячная 3 348 и годовая 60 000
+сравниваются как числа; A09 требует только совместимые единицы) — отдельный срез вместе с
+осью «форма» (`exact/range/min_only/max_only`, сейчас выводится из null в min/max) и
+компонентом (`base/bonus`; бонус «15%» не извлекается); признак «не указана (ожидается по
+закону)» (бизнес-ТЗ) — нужен `MarketProfile`; уже собранные публикации получат зарплату при
+следующей детали.
 
 ## Куда смотреть дальше
 

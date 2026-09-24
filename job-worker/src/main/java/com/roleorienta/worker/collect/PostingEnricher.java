@@ -6,6 +6,7 @@ import com.roleorienta.core.domain.WorkModality;
 import com.roleorienta.worker.adapters.FetchedPosting;
 import com.roleorienta.worker.extract.ExperienceExtractor;
 import com.roleorienta.worker.extract.ExtractedExperience;
+import com.roleorienta.worker.normalize.ExtractedSalary;
 import com.roleorienta.worker.normalize.LocationNormalizer;
 import com.roleorienta.worker.normalize.NormalizedLocation;
 import com.roleorienta.worker.normalize.NormalizedSalary;
@@ -20,6 +21,10 @@ import org.springframework.stereotype.Component;
  * Обогащение публикации детальными данными: нормализация полей (зарплата, локация,
  * уровень опыта), запись структурированных требований (языки §6/A07, навыки §6/A08) и
  * фиксация истории изменений.
+ *
+ * <p>Зарплата: структурное поле источника главнее, при его отсутствии (Workday) — сумма из
+ * текста описания ({@link SalaryNormalizer#resolve}, §66); найденный фрагмент текста пишется
+ * в {@code raw_compensation} — видно, откуда взято число.</p>
  *
  * <p>Обработчик {@code FetchPostingJobHandler} занимается только оркестрацией задания, а
  * доменное обогащение живёт здесь. Извлечение и запись требований из текста описания
@@ -69,7 +74,9 @@ public class PostingEnricher {
      * @param at      момент сбора (в историю и в {@code detail_fetched_at})
      */
     public void enrich(JobPosting posting, FetchedPosting detail, Instant at) {
-        NormalizedSalary salary = salaryNormalizer.normalize(detail.compensation());
+        ExtractedSalary resolved = salaryNormalizer.resolve(
+                detail.compensation(), detail.rawCompensation(), detail.rawDescription());
+        NormalizedSalary salary = resolved.salary();
         NormalizedLocation location = locationNormalizer.normalize(
                 detail.rawLocation(), detail.country(), detail.remoteType());
         ExtractedExperience experience = experienceExtractor.extract(detail.rawDescription());
@@ -81,7 +88,7 @@ public class PostingEnricher {
         posting.setCity(location.city());
         posting.setCountry(location.country());
         posting.setWorkModality(location.modality());
-        posting.setRawCompensation(detail.rawCompensation());
+        posting.setRawCompensation(resolved.fragment());
         posting.setSalaryMin(salary.min());
         posting.setSalaryMax(salary.max());
         posting.setSalaryCurrency(salary.currency());
