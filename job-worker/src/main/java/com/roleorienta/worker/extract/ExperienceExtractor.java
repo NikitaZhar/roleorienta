@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Извлечение требования к опыту из текста описания правилами (§6, A08; ADR-13 — без ML).
+ * Извлечение требования к опыту правилами (§6, A08; ADR-13 — без ML): уровень — из заголовка
+ * публикации, число лет — из текста описания.
  *
  * <p>Уровень (seniority) и число лет — раздельно (A08). Уровень определяется по явным
  * словам (границы слова, без регистра): {@code junior} → JUNIOR;
@@ -19,11 +20,11 @@ import org.springframework.stereotype.Component;
  * несколько разных (напр. «junior or senior») — {@link SeniorityLevel#UNKNOWN}
  * (обязательность конкретного уровня из текста не следует — не угадываем).</p>
  *
- * <p><b>Заголовок главнее описания (§69).</b> Уровень сначала ищется в заголовке публикации
- * («Senior Technical Architect»), и только если там его нет (или найдено сразу несколько) —
- * в тексте описания. В описаниях Workday уровни встречаются в постороннем смысле
- * («senior management», «junior colleagues»), и правило «ровно один уровень в тексте» давало
- * {@code UNKNOWN} даже у вакансий с уровнем в заголовке.</p>
+ * <p><b>Уровень — только из заголовка (§69–§70).</b> В описаниях уровни встречаются в
+ * постороннем смысле («report to senior management», «mentor junior colleagues»): на стенде
+ * §69 это давало ложный SENIOR у «Contracts Analyst 1», «Attorney 1» и т.п. Поэтому если в
+ * заголовке уровня нет (или найдено сразу несколько) — {@code UNKNOWN}, описание для уровня
+ * не используется (неизвестное не угадывается).</p>
  *
  * <p>Число лет извлекается только по типовым конструкциям, привязанным к требованию,
  * чтобы не принять произвольное «N лет» за опыт:
@@ -56,19 +57,7 @@ public class ExperienceExtractor {
             "(\\d+)\\s*\\+\\s*(?:years?|yrs?)", Pattern.CASE_INSENSITIVE);
 
     /**
-     * Извлекает требование к опыту из текста описания (без заголовка).
-     *
-     * @param description текст описания или {@code null}
-     * @return уровень (никогда не {@code null}; при отсутствии сигнала — {@code UNKNOWN})
-     *         и минимальное число лет ({@code null}, если не указано)
-     */
-    public ExtractedExperience extract(String description) {
-        return extract(null, description);
-    }
-
-    /**
-     * Извлекает требование к опыту: уровень — из заголовка, а если в нём уровня нет или он
-     * неоднозначен — из описания; число лет — из описания.
+     * Извлекает требование к опыту: уровень — из заголовка, число лет — из описания.
      *
      * @param title       заголовок публикации или {@code null}
      * @param description текст описания или {@code null}
@@ -76,12 +65,9 @@ public class ExperienceExtractor {
      *         и минимальное число лет ({@code null}, если не указано)
      */
     public ExtractedExperience extract(String title, String description) {
-        SeniorityLevel fromTitle = isBlank(title) ? SeniorityLevel.UNKNOWN : extractLevel(title);
-        if (isBlank(description)) {
-            return new ExtractedExperience(fromTitle, null);
-        }
-        SeniorityLevel level = fromTitle != SeniorityLevel.UNKNOWN ? fromTitle : extractLevel(description);
-        return new ExtractedExperience(level, extractYears(description));
+        SeniorityLevel level = isBlank(title) ? SeniorityLevel.UNKNOWN : extractLevel(title);
+        Integer years = isBlank(description) ? null : extractYears(description);
+        return new ExtractedExperience(level, years);
     }
 
     private static boolean isBlank(String text) {

@@ -42,8 +42,8 @@ public class PostingController {
     /**
      * Лента публикаций с курсорной пагинацией.
      *
-     * @param cursor         {@code id} последней публикации предыдущей страницы (необязателен)
-     * @param limit          размер страницы (необязателен; по умолчанию/максимум задаёт сервис)
+     * @param paging         курсор, размер страницы и порядок ({@code sort=ID|POSTED}); все
+     *                       поля необязательны, берутся из query-параметров
      * @param includeHidden  для вошедшего: включать ли скрытые им публикации (по умолчанию нет)
      * @param filter         необязательные фильтры ленты (§7.3); поля берутся из query-параметров
      * @param authentication текущий пользователь или {@code null} (аноним)
@@ -51,12 +51,11 @@ public class PostingController {
      */
     @GetMapping
     public Page list(
-            @RequestParam(required = false) Long cursor,
-            @RequestParam(required = false) Integer limit,
+            FeedPaging paging,
             @RequestParam(required = false, defaultValue = "false") boolean includeHidden,
             PostingFilter filter,
             Authentication authentication) {
-        return postingQueryService.list(cursor, limit, filter, authentication, includeHidden);
+        return postingQueryService.list(paging, filter, authentication, includeHidden);
     }
 
     /**

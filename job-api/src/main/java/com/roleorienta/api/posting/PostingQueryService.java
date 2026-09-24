@@ -5,6 +5,7 @@ import com.roleorienta.api.posting.PostingDtos.Language;
 import com.roleorienta.api.posting.PostingDtos.Page;
 import com.roleorienta.api.posting.PostingDtos.Skill;
 import com.roleorienta.api.posting.PostingDtos.Summary;
+import com.roleorienta.api.posting.PostingReadRepository.PostedKeyset;
 import com.roleorienta.api.saved.SavedPosting;
 import com.roleorienta.core.domain.JobPosting;
 import com.roleorienta.core.domain.PostingLanguage;
@@ -22,7 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Читает через узкие репозитории и отображает сущности в DTO (контракт §3.3: логика
  * чтения — в сервисе, контроллер тонкий, репозитории без бизнес-логики). Транзакции —
- * только на чтение ({@code readOnly}). Курсор ленты — стабильный монотонный {@code id}.</p>
+ * только на чтение ({@code readOnly}). Курсор ленты — стабильный монотонный {@code id}
+ * (или ключ «дата + id» при порядке «свежие первыми», §70).</p>
  *
  * <p><b>Персонализация ленты (§31).</b> Для вошедшего пользователя из выборки исключаются
  * скрытые им публикации (если не запрошено обратное), а каждый элемент помечается его
@@ -64,27 +66,36 @@ public class PostingQueryService {
     /**
      * Возвращает страницу ленты публикаций, персонализированную под вошедшего пользователя.
      *
-     * @param cursor         {@code id} последней публикации предыдущей страницы, либо {@code null} — с начала
-     * @param limit          желаемый размер страницы; {@code null} → {@link #DEFAULT_LIMIT}, обрезается до {@link #MAX_LIMIT}
+     * <p>Порядок {@code ID} — по возрастанию {@code id}, курсор — {@code id}; порядок
+     * {@code POSTED} — свежие первыми (§70), курсор — ключ «дата + id», упакованный в число
+     * ({@link PostedKeyset#toCursor}).</p>
+     *
+     * @param paging         курсор ({@code null} — с начала), размер страницы ({@code null} →
+     *                       {@link #DEFAULT_LIMIT}, обрезается до {@link #MAX_LIMIT}) и порядок
      * @param filter         необязательные фильтры (поля {@code null} не применяются)
      * @param authentication текущая аутентификация или {@code null} (анонимный запрос)
      * @param includeHidden  для вошедшего: включать ли скрытые им публикации (по умолчанию нет, §7.3)
      * @return элементы страницы и курсор следующей ({@code nextCursor = null} — страниц больше нет)
      */
     @Transactional(readOnly = true)
-    public Page list(Long cursor, Integer limit, PostingFilter filter,
+    public Page list(FeedPaging paging, PostingFilter filter,
                      Authentication authentication, boolean includeHidden) {
-        int size = pageSize(limit);
-        long after = cursor == null ? 0L : cursor;
+        int size = pageSize(paging.limit());
+        boolean byPosted = paging.sortOrDefault() == FeedPaging.Sort.POSTED;
 
         Long userId = personalization.currentUserId(authentication);
         Long hiddenForUserId = (userId != null && !includeHidden) ? userId : null;
 
-        List<JobPosting> rows = postingRepository.search(after, filter, hiddenForUserId, Limit.of(size + 1));
+        List<JobPosting> rows = byPosted
+                ? postingRepository.searchByPosted(PostedKeyset.fromCursor(paging.cursor()),
+                        filter, hiddenForUserId, Limit.of(size + 1))
+                : postingRepository.search(paging.cursor() == null ? 0L : paging.cursor(),
+                        filter, hiddenForUserId, Limit.of(size + 1));
 
         Long nextCursor = null;
         if (rows.size() > size) {
-            nextCursor = rows.get(size - 1).getId();
+            JobPosting last = rows.get(size - 1);
+            nextCursor = byPosted ? PostedKeyset.of(last).toCursor() : last.getId();
             rows = rows.subList(0, size);
         }
 

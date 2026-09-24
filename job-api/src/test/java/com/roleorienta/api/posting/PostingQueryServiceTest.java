@@ -14,6 +14,7 @@ import com.roleorienta.api.posting.PostingDtos.Card;
 import com.roleorienta.api.posting.PostingDtos.Page;
 import com.roleorienta.api.posting.PostingDtos.Skill;
 import com.roleorienta.api.posting.PostingDtos.Summary;
+import com.roleorienta.api.posting.PostingReadRepository.PostedKeyset;
 import com.roleorienta.api.saved.SavedPosting;
 import com.roleorienta.api.saved.SavedState;
 import com.roleorienta.core.domain.JobPosting;
@@ -67,7 +68,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(rows);
 
-        Page page = service.list(null, null, NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, null, null), NO_FILTER, null, false);
 
         assertThat(page.items()).hasSize(20);
         assertThat(page.nextCursor()).isEqualTo(20L);
@@ -79,7 +80,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(rows);
 
-        Page page = service.list(null, 20, NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, 20, null), NO_FILTER, null, false);
 
         assertThat(page.items()).hasSize(3);
         assertThat(page.nextCursor()).isNull();
@@ -90,7 +91,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(eq(42L), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of());
 
-        Page page = service.list(42L, 10, NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(42L, 10, null), NO_FILTER, null, false);
 
         assertThat(page.items()).isEmpty();
         assertThat(page.nextCursor()).isNull();
@@ -102,7 +103,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), captor.capture()))
                 .thenReturn(List.of());
 
-        service.list(null, 1000, NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 1000, null), NO_FILTER, null, false);
 
         assertThat(captor.getValue().max()).isEqualTo(101);
     }
@@ -113,7 +114,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(eq(0L), any(PostingFilter.class), nullable(Long.class), captor.capture()))
                 .thenReturn(List.of());
 
-        service.list(null, 0, NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 0, null), NO_FILTER, null, false);
 
         assertThat(captor.getValue().max()).isEqualTo(2);
     }
@@ -125,7 +126,7 @@ class PostingQueryServiceTest {
                 .thenReturn(List.of());
         PostingFilter filter = new PostingFilter(WorkModality.REMOTE, SeniorityLevel.SENIOR, "Germany", null, null);
 
-        service.list(null, 10, filter, null, false);
+        service.list(new FeedPaging(null, 10, null), filter, null, false);
 
         assertThat(captor.getValue()).isEqualTo(filter);
     }
@@ -136,7 +137,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(null, 10, NO_FILTER, null, false);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, null, false);
 
         assertThat(captor.getValue()).as("аноним → скрытые не исключаются").isNull();
     }
@@ -149,7 +150,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(null, 10, NO_FILTER, auth, false);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, false);
 
         assertThat(captor.getValue()).isEqualTo(7L);
     }
@@ -162,7 +163,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(anyLong(), any(PostingFilter.class), captor.capture(), any(Limit.class)))
                 .thenReturn(List.of());
 
-        service.list(null, 10, NO_FILTER, auth, true);
+        service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, true);
 
         assertThat(captor.getValue()).as("includeHidden=true → не исключаем").isNull();
     }
@@ -178,7 +179,7 @@ class PostingQueryServiceTest {
         marker.setSeenAt(Instant.now());
         when(personalization.markersByPostingId(eq(7L), anyList())).thenReturn(Map.of(5L, marker));
 
-        Page page = service.list(null, 10, NO_FILTER, auth, false);
+        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, auth, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
             assertThat(s.viewerState()).isEqualTo(SavedState.SAVED);
@@ -191,7 +192,7 @@ class PostingQueryServiceTest {
         when(postingRepository.search(anyLong(), any(PostingFilter.class), nullable(Long.class), any(Limit.class)))
                 .thenReturn(List.of(posting(5L)));
 
-        Page page = service.list(null, 10, NO_FILTER, null, false);
+        Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, false);
 
         assertThat(page.items()).singleElement().satisfies(s -> {
             assertThat(s.viewerState()).isNull();
@@ -255,5 +256,18 @@ class PostingQueryServiceTest {
         skill.setStance(stance);
         skill.setModality(modality);
         return skill;
+    }
+
+    @Test
+    void postedCursorRoundTripIncludingUndated() {
+        PostedKeyset dated = new PostedKeyset(java.time.LocalDate.of(2026, 9, 10), 12345L);
+        assertThat(PostedKeyset.fromCursor(dated.toCursor())).isEqualTo(dated);
+        PostedKeyset undated = new PostedKeyset(PostedKeyset.NO_DATE, 7L);
+        assertThat(undated.toCursor()).isPositive();
+        // Курсор не больше 2^53: JavaScript-клиент читает его из JSON без потери точности.
+        assertThat(new PostedKeyset(java.time.LocalDate.of(9999, 12, 31), (1L << 31) - 1).toCursor())
+                .isLessThanOrEqualTo(1L << 53);
+        assertThat(PostedKeyset.fromCursor(undated.toCursor())).isEqualTo(undated);
+        assertThat(PostedKeyset.fromCursor(null)).isEqualTo(PostedKeyset.FIRST_PAGE);
     }
 }

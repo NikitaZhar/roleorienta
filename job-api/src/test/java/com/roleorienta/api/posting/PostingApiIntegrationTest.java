@@ -195,6 +195,25 @@ class PostingApiIntegrationTest {
     }
 
     @Test
+    void sortPostedNewestFirstUndatedLastAndPaginates() throws Exception {
+        // §70: дата есть только у A — она первой; B и C без даты — в конце, по убыванию id.
+        String firstPage = mockMvc.perform(get("/api/v1/postings").param("sort", "POSTED").param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].externalId").value("A"))
+                .andExpect(jsonPath("$.items[1].externalId").value("C"))
+                .andExpect(jsonPath("$.nextCursor").isNumber())
+                .andReturn().getResponse().getContentAsString();
+        String cursor = firstPage.replaceAll(".*\"nextCursor\":(\\d+).*", "$1");
+        mockMvc.perform(get("/api/v1/postings").param("sort", "POSTED").param("limit", "2")
+                        .param("cursor", cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].externalId").value("B"))
+                .andExpect(jsonPath("$.nextCursor").isEmpty());
+    }
+
+    @Test
     void cardReturnsFieldsLanguagesAndSkills() throws Exception {
         // Навыки отсортированы по имени: "C#" раньше "Java".
         mockMvc.perform(get("/api/v1/postings/{id}", cardId))
