@@ -7,9 +7,10 @@ import org.springframework.context.annotation.Import;
 /**
  * Проверка загрузки контекста приложения job-worker на реальной базе PostgreSQL
  * (через Testcontainers): подтверждает, что автоконфигурация и JPA согласованы и
- * контекст успешно стартует.
+ * контекст успешно стартует. Обход Common Crawl (по умолчанию включён, §72) здесь выключен:
+ * тест не должен ходить в интернет.
  */
-@SpringBootTest
+@SpringBootTest(properties = "app.discovery.cc.enabled=false")
 @Import(TestcontainersConfiguration.class)
 class JobWorkerApplicationTests {
 

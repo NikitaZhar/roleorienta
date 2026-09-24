@@ -46,9 +46,14 @@ import org.springframework.web.client.HttpServerErrorException;
  * ограничен бюджетом — доски не теряются и не ставятся дважды. Сбой сбора (503 индекса,
  * тайм-аут) не мешает fan-out уже накопленного.</p>
  *
- * <p><b>Включение.</b> Тик ({@code CcHarvestTrigger}) по умолчанию выключен
- * ({@code app.discovery.cc.enabled=false}): до бюджета/rate-limit источников (B1) и потолка
- * тела ответа (B2) живой обход не включается. Проход можно вызвать напрямую.</p>
+ * <p><b>Сбор не опережает проверку (§73).</b> Страница индекса даёт ~150 досок, а fan-out
+ * за проход — {@code maxFanOut} (20): если читать страницу каждый проход, очередь {@code NEW}
+ * растёт без предела (стенд §72: 655 после 5 проходов). Поэтому новая страница читается,
+ * только когда в очереди меньше {@code maxFanOut} досок — иначе проход только передаёт
+ * накопленное.</p>
+ *
+ * <p><b>Включение.</b> Тик ({@code CcHarvestTrigger}) включён по умолчанию
+ * ({@code app.discovery.cc.enabled}, §72); в тестах выключен. Проход можно вызвать напрямую.</p>
  */
 @Component
 public class CcHarvestScheduler {
@@ -104,9 +109,16 @@ public class CcHarvestScheduler {
     /**
      * Фаза сбора под арендой.
      *
-     * @return сколько досок добавлено впервые (0 — аренда занята, обход завершён или пусто)
+     * @return сколько досок добавлено впервые (0 — очередь ещё не разобрана, аренда занята,
+     *         обход завершён или пусто)
      */
     int collect() {
+        int backlog = store.countNewBoards(INPUT_CODE);
+        if (backlog >= properties.maxFanOut()) {
+            log.info("CC-гарвест: в очереди {} досок (≥ {} за проход) — новая страница индекса не читается",
+                    backlog, properties.maxFanOut());
+            return 0;
+        }
         Optional<Cursor> lease = store.tryLease(INPUT_CODE, properties.leaseSeconds());
         if (lease.isEmpty()) {
             log.debug("CC-гарвест: проход уже идёт в другой реплике");

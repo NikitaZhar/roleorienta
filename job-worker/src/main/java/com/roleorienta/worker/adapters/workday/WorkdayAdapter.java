@@ -250,7 +250,8 @@ public class WorkdayAdapter implements SourceAdapter {
                 postings.add(new DiscoveredPosting(
                         externalPath,
                         publicUrl(source, externalPath),
-                        job.path("title").asText()));
+                        job.path("title").asText(),
+                        textOrNull(job.path("locationsText"))));
             }
             int nextOffset = offset + PAGE_LIMIT;
             String nextCursor = (!postings.isEmpty() && nextOffset < total)

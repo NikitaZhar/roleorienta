@@ -12,6 +12,7 @@ import com.roleorienta.core.domain.ProviderKind;
 import com.roleorienta.core.domain.Source;
 import com.roleorienta.core.domain.SourceKind;
 import com.roleorienta.core.domain.SourceState;
+import com.roleorienta.worker.adapters.DiscoveredPosting;
 import com.roleorienta.worker.adapters.PostingsPage;
 import com.roleorienta.worker.adapters.SourceAdapter;
 import com.roleorienta.worker.adapters.SourceAdapterRegistry;
@@ -20,6 +21,7 @@ import com.roleorienta.worker.jobs.JobMessage;
 import com.roleorienta.worker.jobs.TypedJobHandler;
 import com.roleorienta.worker.http.SourceBackoffException;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +45,9 @@ import org.springframework.web.client.ResourceAccessException;
  *   <li><b>гейт рынка</b> (§56): если провайдер сообщает распределение публикаций по
  *       странам, {@code HIGH} даётся только при публикациях на целевом рынке пилота
  *       ({@link DiscoveryMarketProperties}); без них — {@code LOW} и состояние
- *       {@code OUT_OF_MARKET} (без очереди подтверждения);</li>
+ *       {@code OUT_OF_MARKET} (без очереди подтверждения); нет фасета стран — по фасету
+ *       локаций (§59), нет и его — по локациям вакансий первой страницы (§73: выборка,
+ *       иначе тенанты без фасетов засоряли очередь ручной проверки);</li>
  *   <li>{@code LOW}/{@code NONE} — кандидат уходит в очередь на подтверждение
  *       ({@code PENDING}): «неуверенный не подключается вслепую и не пропадает».</li>
  * </ul>
@@ -59,6 +63,9 @@ import org.springframework.web.client.ResourceAccessException;
 public class DiscoverEmployerJobHandler implements TypedJobHandler {
 
     private static final Logger log = LoggerFactory.getLogger(DiscoverEmployerJobHandler.class);
+
+    /** Сводка Workday вместо локации: «2 Locations», «18 Locations». */
+    private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+\\s+Locations?", Pattern.CASE_INSENSITIVE);
 
     private final SourceAdapterRegistry adapterRegistry;
     private final EmployerCandidateRepository candidateRepository;
@@ -155,6 +162,14 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
                 if (!page.locationCounts().isEmpty()) {
                     return assessMarketByLocations(page.locationCounts(), count);
                 }
+                Map<String, Integer> sample = locationsOnPage(page.postings());
+                if (!sample.isEmpty()) {
+                    // Нет фасетов (§73): локации вакансий первой страницы — выборка, не вся лента.
+                    Assessment bySample = assessMarketByLocations(sample, count);
+                    return new Assessment(bySample.confidence(),
+                            "по вакансиям первой страницы (фасетов нет): " + bySample.reason(),
+                            bySample.postingCount(), bySample.outOfMarket());
+                }
                 // Ни стран, ни локаций (§58): рынок не проверен — не подключаем вслепую.
                 return new Assessment(DiscoveryConfidence.LOW,
                         "лента валидна (" + count + "), но распределение по странам не получено — "
@@ -210,6 +225,21 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         return new Assessment(DiscoveryConfidence.LOW, String.format(
                 "нет локаций на целевом рынке (фасета стран нет — вероятно, одна страна; всего %d); локации: %s",
                 total, top), count, true);
+    }
+
+    /**
+     * Локации вакансий страницы со счётчиками (§73) — для тенантов без фасетов. Сводки вида
+     * «2 Locations» пропускаются: из них страну не узнать.
+     */
+    private static Map<String, Integer> locationsOnPage(java.util.List<DiscoveredPosting> postings) {
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (DiscoveredPosting posting : postings) {
+            String location = posting.rawLocation();
+            if (location != null && !location.isBlank() && !LOCATIONS_SUMMARY.matcher(location).matches()) {
+                counts.merge(location.strip(), 1, Integer::sum);
+            }
+        }
+        return counts;
     }
 
     private static String firstOf(java.util.List<String> items) {

@@ -27,10 +27,11 @@ public record WorkdayBoard(String tenant, String site, String baseUrl) {
 
     /**
      * Сегмент локали в пути страницы карьеры: {@code en-US}, {@code fr-CA}, {@code de}.
-     * Регистр значим: у Workday язык строчный, регион заглавный. Двухбуквенный сайт в
+     * Язык — строчный; регион — в любом регистре: в индексе Common Crawl встречается и
+     * {@code en-us} (стенд §72: {@code uline/en-us} → 404, §73). Двухбуквенный сайт в
      * верхнем регистре (реальный пример — {@code american/AU}) локалью не считается.
      */
-    private static final Pattern LOCALE = Pattern.compile("^[a-z]{2}(-[A-Z]{2})?$");
+    private static final Pattern LOCALE = Pattern.compile("^[a-z]{2}(-[A-Za-z]{2})?$");
 
     /** Допустимое имя сайта. */
     static final Pattern SITE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_-]*$");

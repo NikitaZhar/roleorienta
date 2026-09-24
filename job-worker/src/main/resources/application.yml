@@ -134,9 +134,9 @@ app:
     cc:
       # Индекс Common Crawl (CDX Server API) — основной вход обнаружения Workday (§54, §55).
       index-base-url: https://index.commoncrawl.org
-      # Живой обход выключен по умолчанию. Условия включения B1 (темп/Retry-After, §57) и
-      # B2 (потолок тела ответа, §71) выполнены; включение — отдельным решением (A1).
-      enabled: false
+      # Живой обход включён (A1, §72): условия B1 (темп/Retry-After, §57) и B2 (потолок тела
+      # ответа, §71) выполнены. Бюджет — ниже (pages-per-pass, max-fan-out). В тестах выключен.
+      enabled: true
       # Период тика, мс.
       poll-interval-ms: 600000
       # Шаблон URL индекса.

@@ -151,6 +151,41 @@ class DiscoverEmployerJobHandlerTest {
     }
 
     @Test
+    void withoutFacetsTenantIsJudgedByPostingLocationsOfFirstPage() {
+        // Стенд §72: tamus/* — ни фасета стран, ни фасета локаций; у вакансий — «College Station, TX».
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(List.of(
+                new DiscoveredPosting("1", "http://stub/1", "Lab Technician", "College Station, TX"),
+                new DiscoveredPosting("2", "http://stub/2", "Advisor", "College Station, TX"),
+                new DiscoveredPosting("3", "http://stub/3", "Nurse", "2 Locations")), null));
+
+        handler.handle(message());
+
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.OUT_OF_MARKET, saved.getState());
+        assertTrue(saved.getReason().startsWith("по вакансиям первой страницы"), saved.getReason());
+        assertTrue(saved.getReason().contains("College Station, TX 2"), saved.getReason());
+    }
+
+    @Test
+    void onlyLocationSummariesLeaveMarketUnchecked() {
+        // «2 Locations» страны не называет — рынок по-прежнему не проверен, кандидат ждёт человека.
+        when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
+        when(registry.forProviderCode("greenhouse")).thenReturn(adapter);
+        when(adapter.reportsCountries()).thenReturn(true);
+        when(adapter.listPostings(any(), any())).thenReturn(new PostingsPage(List.of(
+                new DiscoveredPosting("1", "http://stub/1", "Engineer", "2 Locations")), null));
+
+        handler.handle(message());
+
+        EmployerCandidate saved = capture();
+        assertEquals(EmployerCandidateState.PENDING, saved.getState());
+        assertTrue(saved.getReason().contains("рынок не проверен"), saved.getReason());
+    }
+
+    @Test
     void singleCountryTenantIsJudgedByLocations() {
         when(repository.existsByProviderCodeAndSlug("greenhouse", "acme")).thenReturn(false);
         when(registry.forProviderCode("greenhouse")).thenReturn(adapter);

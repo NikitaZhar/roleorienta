@@ -64,6 +64,17 @@ class CcHarvestSchedulerTest {
     }
 
     @Test
+    void backlogStopsReadingNewPages() {
+        // §73: очередь NEW не меньше бюджета fan-out — новая страница индекса не читается.
+        when(store.countNewBoards(INPUT)).thenReturn(20);
+
+        assertEquals(0, scheduler(1, 20).collect());
+
+        verify(store, never()).tryLease(anyString(), anyLong());
+        verify(index, never()).latestCollection();
+    }
+
+    @Test
     void noLeaseMeansNoNetwork() {
         when(store.tryLease(eq(INPUT), anyLong())).thenReturn(Optional.empty());
 

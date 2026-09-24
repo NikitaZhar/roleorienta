@@ -51,7 +51,8 @@ class WorkdayAdapterTest {
             drain(exchange.getRequestBody());
             String body = """
                     {"total":40,"jobPostings":[
-                      {"title":"Senior Java Engineer","externalPath":"%s","postedOn":"Posted 3 Days Ago"}
+                      {"title":"Senior Java Engineer","externalPath":"%s","postedOn":"Posted 3 Days Ago",
+                       "locationsText":"Bratislava, Slovakia"}
                     ],"facets":[
                       {"facetParameter":"remoteType","values":[{"descriptor":"Flex","count":45}]},
                       {"facetParameter":"Location_Country","values":[
@@ -104,6 +105,7 @@ class WorkdayAdapterTest {
         var posting = page.postings().get(0);
         assertEquals(EXTERNAL_PATH, posting.externalId());
         assertEquals("Senior Java Engineer", posting.rawTitle());
+        assertEquals("Bratislava, Slovakia", posting.rawLocation(), "локация строки списка (§73)");
         assertTrue(posting.url().endsWith("/en-US/careers" + EXTERNAL_PATH),
                 "ссылка строится как /en-US/<site><externalPath>: " + posting.url());
     }

@@ -54,6 +54,15 @@ class WorkdayBoardTest {
     }
 
     @Test
+    void lowercaseRegionLocaleIsNotASite() {
+        // §73: в индексе встречается «en-us» — это локаль, а не сайт (иначе POST → 404).
+        assertEquals(
+                Optional.of(new WorkdayBoard("uline", "Uline", "https://uline.wd1.myworkdayjobs.com")),
+                WorkdayBoard.fromCareerUrl("https://uline.wd1.myworkdayjobs.com/en-us/Uline/job/x"));
+        assertTrue(WorkdayBoard.fromCareerUrl("https://uline.wd1.myworkdayjobs.com/en-us").isEmpty());
+    }
+
+    @Test
     void twoLetterUppercaseSiteIsNotALocale() {
         assertEquals(Optional.of("AU"),
                 WorkdayBoard.fromCareerUrl("https://american.wd1.myworkdayjobs.com/AU/job/Sydney/x")

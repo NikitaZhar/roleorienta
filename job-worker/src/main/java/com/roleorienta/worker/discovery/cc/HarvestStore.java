@@ -155,6 +155,19 @@ public class HarvestStore {
     }
 
     /**
+     * Сколько досок входа ждут передачи в контур обнаружения (состояние {@code NEW}).
+     *
+     * @param inputCode код входа
+     * @return число досок {@code NEW}
+     */
+    public int countNewBoards(String inputCode) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM harvested_board WHERE input_code = ? AND state = 'NEW'",
+                Integer.class, inputCode);
+        return count == null ? 0 : count;
+    }
+
+    /**
      * Переводит доску в итоговое состояние fan-out.
      *
      * @param id    идентификатор строки
