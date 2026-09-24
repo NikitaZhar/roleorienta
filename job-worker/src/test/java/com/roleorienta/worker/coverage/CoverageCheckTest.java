@@ -21,8 +21,11 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Limit;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 
-/** Проход проверки покрытия (A5, §82): запись оценок; сбой площадки — без записи. */
+/** Проход проверки покрытия (A5, §82–§83): запись оценок; 404 — «не проверено»; сбой — без записи. */
 class CoverageCheckTest {
 
     private static final Instant NOW = Instant.parse("2026-09-24T10:00:00Z");
@@ -64,6 +67,25 @@ class CoverageCheckTest {
         check.checkDue(NOW);
 
         verify(assessments, never()).save(any());
+    }
+
+    @Test
+    void noResultsPageMarksPostingsUnknownWithDate() {
+        Company dxc = company("dxctechnology/DXCJobs");
+        when(targets.companiesDue(any(), any(), any(Limit.class))).thenReturn(List.of(dxc));
+        when(targets.postingsOf(dxc, "Austria")).thenReturn(List.of(posting(20L, "Java Developer")));
+        when(assessments.findByPosting_Id(any())).thenReturn(Optional.empty());
+        when(platform.activeListings("dxctechnology")).thenThrow(HttpClientErrorException.create(
+                HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY, new byte[0], null));
+
+        check.checkDue(NOW);
+
+        ArgumentCaptor<CoverageAssessment> saved = ArgumentCaptor.forClass(CoverageAssessment.class);
+        verify(assessments).save(saved.capture());
+        assertEquals(CoverageState.UNKNOWN, saved.getValue().getState());
+        assertEquals("на karriere.at нет выдачи по «dxctechnology» при проверке 2026-09-24",
+                saved.getValue().getReason());
+        assertEquals(NOW, saved.getValue().getCheckedAt());
     }
 
     @Test

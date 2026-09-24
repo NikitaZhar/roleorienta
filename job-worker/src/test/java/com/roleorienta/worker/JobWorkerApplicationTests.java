@@ -10,7 +10,8 @@ import org.springframework.context.annotation.Import;
  * контекст успешно стартует. Обход Common Crawl (по умолчанию включён, §72) здесь выключен:
  * тест не должен ходить в интернет.
  */
-@SpringBootTest(properties = {"app.discovery.cc.enabled=false", "app.coverage.enabled=false"})
+@SpringBootTest(properties = {"app.discovery.cc.enabled=false", "app.coverage.enabled=false",
+        "app.discovery.name-backfill.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class JobWorkerApplicationTests {
 

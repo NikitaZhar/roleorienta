@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * Проход проверки покрытия площадкой (A5, §82): под leader-lock берёт до
@@ -76,27 +77,44 @@ public class CoverageCheck {
         List<Company> due = targets.companiesDue(KarriereClient.COUNTRY,
                 now.minus(properties.recheckAfterHours(), ChronoUnit.HOURS),
                 Limit.of(properties.maxCompaniesPerPass()));
+        String checkedOn = now.atOffset(ZoneOffset.UTC).toLocalDate().toString();
         for (Company company : due) {
-            String employer = searchName(company);
-            Listings listings;
-            try {
-                listings = platform.activeListings(employer);
-            } catch (RuntimeException e) {
-                log.warn("Покрытие: {} — площадка не ответила или страница не разобрана, повтор позже: {}",
-                        employer, e.getMessage());
-                continue;
-            }
-            String checkedOn = now.atOffset(ZoneOffset.UTC).toLocalDate().toString();
-            int hidden = 0;
-            List<JobPosting> postings = targets.postingsOf(company, KarriereClient.COUNTRY);
-            for (JobPosting posting : postings) {
-                Verdict verdict = CoverageMatcher.verdict(posting.getRawTitle(), employer, listings, checkedOn);
-                record(posting, verdict, now);
-                hidden += verdict.state() == CoverageState.SITE_ONLY ? 1 : 0;
-            }
-            log.info("Покрытие: {} — на {} активных {}, наших публикаций {}, только с сайта {}",
-                    employer, KarriereClient.PLATFORM, listings.items().size(), postings.size(), hidden);
+            checkCompany(company, now, checkedOn);
         }
+    }
+
+    /**
+     * Проверка одного работодателя. Площадка ответила 404 (так karriere.at отвечает на слово
+     * поиска, по которому у неё нет выдачи; стенд §82: «dxctechnology») — публикации получают
+     * {@code UNKNOWN} с причиной и датой: работодатель не занимает очередь до перепроверки.
+     * Прочие сбои — оценки не трогаются, работодатель берётся снова.
+     */
+    private void checkCompany(Company company, Instant now, String checkedOn) {
+        String employer = searchName(company);
+        List<JobPosting> postings = targets.postingsOf(company, KarriereClient.COUNTRY);
+        Listings listings;
+        try {
+            listings = platform.activeListings(employer);
+        } catch (HttpClientErrorException.NotFound e) {
+            Verdict noResults = new Verdict(CoverageState.UNKNOWN, "на " + KarriereClient.PLATFORM
+                    + " нет выдачи по «" + employer + "» при проверке " + checkedOn);
+            postings.forEach(posting -> record(posting, noResults, now));
+            log.info("Покрытие: {} — на {} нет выдачи, публикаций {} → не проверено",
+                    employer, KarriereClient.PLATFORM, postings.size());
+            return;
+        } catch (RuntimeException e) {
+            log.warn("Покрытие: {} — площадка не ответила или страница не разобрана, повтор позже: {}",
+                    employer, e.getMessage());
+            return;
+        }
+        int hidden = 0;
+        for (JobPosting posting : postings) {
+            Verdict verdict = CoverageMatcher.verdict(posting.getRawTitle(), employer, listings, checkedOn);
+            record(posting, verdict, now);
+            hidden += verdict.state() == CoverageState.SITE_ONLY ? 1 : 0;
+        }
+        log.info("Покрытие: {} — на {} активных {}, наших публикаций {}, только с сайта {}",
+                employer, KarriereClient.PLATFORM, listings.items().size(), postings.size(), hidden);
     }
 
     private void record(JobPosting posting, Verdict verdict, Instant now) {
