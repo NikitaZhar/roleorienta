@@ -88,8 +88,8 @@ public class CcHarvestScheduler {
             // Штатная нестабильность общего CDX-сервера (§55.5a): обрыв ответа, 502/503.
             // Страница не засчитана, курсор на месте — без стектрейса, чтобы не шуметь в логе.
             log.warn("CC-гарвест: индекс временно недоступен, повтор на следующем тике: {}", unstable.getMessage());
-        } catch (RuntimeException e) {
-            log.warn("CC-гарвест: сбор из индекса не удался, повтор на следующем тике", e);
+        } catch (RuntimeException exception) {
+            log.warn("CC-гарвест: сбор из индекса не удался, повтор на следующем тике", exception);
         }
         fanOut.run();
     }
@@ -153,7 +153,7 @@ public class CcHarvestScheduler {
     static Collection<WorkdayBoard> boardsOf(List<String> urls) {
         Map<String, WorkdayBoard> byKey = new LinkedHashMap<>();
         for (String url : urls) {
-            WorkdayBoard.fromCareerUrl(url).ifPresent(b -> byKey.putIfAbsent(b.dedupKey(), b));
+            WorkdayBoard.fromCareerUrl(url).ifPresent(board -> byKey.putIfAbsent(board.dedupKey(), board));
         }
         return byKey.values();
     }

@@ -35,7 +35,7 @@ import org.springframework.web.client.HttpClientErrorException;
 @ConditionalOnProperty(name = "app.discovery.name-backfill.enabled", havingValue = "true")
 public class CompanyNameBackfill {
 
-    /** Ключ advisory-лока (реестр: 1001–1004 — обнаружение и сбор, 1005 — покрытие). */
+    /** Ключ advisory-лока (реестр ключей — {@link PostgresLeaderLock}). */
     static final long NAME_BACKFILL_LOCK_KEY = 1006L;
 
     /** Компаний за проход: по одному запросу страницы доски на каждую. */
@@ -67,8 +67,8 @@ public class CompanyNameBackfill {
     public void tick() {
         try {
             run();
-        } catch (RuntimeException e) {
-            log.warn("Имена компаний: проход завершился ошибкой, повтор на следующем тике", e);
+        } catch (RuntimeException exception) {
+            log.warn("Имена компаний: проход завершился ошибкой, повтор на следующем тике", exception);
         }
     }
 
@@ -105,14 +105,14 @@ public class CompanyNameBackfill {
             Optional<BoardProfile> profile = adapters.forProviderCode(source.getProvider().getCode())
                     .boardProfile(source);
             return Optional.of(profile.flatMap(ownership::ownerName).orElse(owner));
-        } catch (HttpClientErrorException e) {
-            if (e instanceof HttpClientErrorException.TooManyRequests) {
+        } catch (HttpClientErrorException exception) {
+            if (exception instanceof HttpClientErrorException.TooManyRequests) {
                 log.warn("Имена компаний: доска {} — 429, повтор позже", source.getExternalRef());
                 return Optional.empty();
             }
             return Optional.of(owner); // страницы доски нет — имя из описания не получить
-        } catch (RuntimeException e) {
-            log.warn("Имена компаний: доска {} не ответила, повтор позже: {}", source.getExternalRef(), e.getMessage());
+        } catch (RuntimeException exception) {
+            log.warn("Имена компаний: доска {} не ответила, повтор позже: {}", source.getExternalRef(), exception.getMessage());
             return Optional.empty();
         }
     }

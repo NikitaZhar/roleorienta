@@ -37,7 +37,7 @@ import org.springframework.web.client.HttpClientErrorException;
 @Component
 public class CoverageCheck {
 
-    /** Ключ advisory-лока (реестр: 1001 источники, 1002 seed, 1003 матчер, 1004 fan-out). */
+    /** Ключ advisory-лока (реестр ключей — {@link PostgresLeaderLock}). */
     static final long COVERAGE_LOCK_KEY = 1005L;
 
     private static final Logger log = LoggerFactory.getLogger(CoverageCheck.class);
@@ -111,16 +111,16 @@ public class CoverageCheck {
         Listings listings;
         try {
             listings = platform.activeListings(employer);
-        } catch (HttpClientErrorException.NotFound e) {
+        } catch (HttpClientErrorException.NotFound exception) {
             Verdict noResults = new Verdict(CoverageState.UNKNOWN, "на " + KarriereClient.PLATFORM
                     + " нет выдачи по «" + employer + "» при проверке " + checkedOn);
             postings.forEach(posting -> record(posting, noResults, now));
             log.info("Покрытие: {} — на {} нет выдачи, публикаций {} → не проверено",
                     employer, KarriereClient.PLATFORM, postings.size());
             return;
-        } catch (RuntimeException e) {
+        } catch (RuntimeException exception) {
             log.warn("Покрытие: {} — площадка не ответила или страница не разобрана, повтор позже: {}",
-                    employer, e.getMessage());
+                    employer, exception.getMessage());
             return;
         }
         int hidden = 0;

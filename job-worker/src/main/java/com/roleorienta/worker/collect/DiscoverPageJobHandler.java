@@ -135,8 +135,8 @@ public class DiscoverPageJobHandler implements TypedJobHandler {
                     node.path("taskId").asLong(),
                     node.path("crawlRunId").asLong(),
                     node.path("sourceId").asLong());
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать тело задания DISCOVER_PAGE", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать тело задания DISCOVER_PAGE", exception);
         }
     }
 

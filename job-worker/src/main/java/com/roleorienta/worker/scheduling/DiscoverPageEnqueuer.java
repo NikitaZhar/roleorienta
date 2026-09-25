@@ -65,8 +65,8 @@ public class DiscoverPageEnqueuer {
         body.put("windowStart", windowStart.toString());
         try {
             return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload задания", e);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось сформировать payload задания", exception);
         }
     }
 }

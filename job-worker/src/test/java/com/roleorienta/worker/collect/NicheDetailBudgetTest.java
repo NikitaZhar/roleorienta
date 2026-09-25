@@ -100,7 +100,7 @@ class NicheDetailBudgetTest {
         ArgumentCaptor<OutboxEvent> events = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outbox, org.mockito.Mockito.atLeast(0)).save(events.capture());
         return events.getAllValues().stream()
-                .map(e -> e.getPayload().replaceAll(".*\"externalId\":\"([^\"]+)\".*", "$1"))
+                .map(event -> event.getPayload().replaceAll(".*\"externalId\":\"([^\"]+)\".*", "$1"))
                 .toList();
     }
 

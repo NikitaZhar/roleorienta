@@ -59,7 +59,7 @@ class SavedPostingServiceTest {
         when(posting.getId()).thenReturn(POSTING_ID);
         when(postings.findById(POSTING_ID)).thenReturn(Optional.of(posting));
 
-        when(markers.save(any(SavedPosting.class))).thenAnswer(i -> i.getArgument(0));
+        when(markers.save(any(SavedPosting.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -160,9 +160,9 @@ class SavedPostingServiceTest {
 
         List<SavedPostingResponse> result = service.listSaved(auth);
 
-        assertThat(result).singleElement().satisfies(r -> {
-            assertThat(r.postingId()).isEqualTo(POSTING_ID);
-            assertThat(r.state()).isEqualTo(SavedState.SAVED);
+        assertThat(result).singleElement().satisfies(response -> {
+            assertThat(response.postingId()).isEqualTo(POSTING_ID);
+            assertThat(response.state()).isEqualTo(SavedState.SAVED);
         });
     }
 

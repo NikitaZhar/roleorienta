@@ -68,19 +68,19 @@ final class CoverageMatcher {
         List<Listing> own = listings.items().stream()
                 .filter(listing -> !owner.isEmpty() && lettersAndDigits(listing.company()).contains(owner))
                 .toList();
-        Optional<Listing> same = own.stream().filter(l -> normalize(l.title()).equals(wanted)).findFirst();
+        Optional<Listing> same = own.stream().filter(listing -> normalize(listing.title()).equals(wanted)).findFirst();
         if (same.isPresent()) {
             return new Verdict(CoverageState.BOTH, "найдена на " + KarriereClient.PLATFORM + " (id "
                     + same.get().id() + ") при проверке " + checkedOn);
         }
         Optional<Listing> foreign = listings.items().stream()
-                .filter(l -> normalize(l.title()).equals(wanted)).findFirst();
+                .filter(listing -> normalize(listing.title()).equals(wanted)).findFirst();
         if (foreign.isPresent()) {
             return new Verdict(CoverageState.UNKNOWN, "тот же заголовок у другого юрлица на "
                     + KarriereClient.PLATFORM + ": " + foreign.get().company());
         }
         Optional<Listing> near = own.stream()
-                .filter(l -> similarity(wanted, normalize(l.title())) >= NEAR_TITLE_SIMILARITY).findFirst();
+                .filter(listing -> similarity(wanted, normalize(listing.title())) >= NEAR_TITLE_SIMILARITY).findFirst();
         if (near.isPresent()) {
             return new Verdict(CoverageState.UNKNOWN, "похожая вакансия на " + KarriereClient.PLATFORM
                     + ": «" + near.get().title() + "» — нужна проверка");

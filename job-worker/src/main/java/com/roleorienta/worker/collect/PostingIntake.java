@@ -135,8 +135,8 @@ public class PostingIntake {
         body.put("type", CrawlTaskType.FETCH_POSTING.name());
         try {
             return objectMapper.writeValueAsString(body);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload FETCH_POSTING", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось сформировать payload FETCH_POSTING", exception);
         }
     }
 }

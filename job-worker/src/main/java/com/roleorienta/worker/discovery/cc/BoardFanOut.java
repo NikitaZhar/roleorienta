@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class BoardFanOut {
 
-    /** Ключ advisory-лока fan-out (реестр ключей: 1001 источники, 1002 seed, 1003 матчер — D4). */
+    /** Ключ advisory-лока fan-out (реестр ключей — {@link PostgresLeaderLock}). */
     static final long FANOUT_LOCK_KEY = 1004L;
 
     private static final Logger log = LoggerFactory.getLogger(BoardFanOut.class);

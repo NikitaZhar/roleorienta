@@ -23,6 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
  * единственность. Поэтому она остаётся дополнением к идемпотентности планирования
  * (уникальный ключ на окно расписания), а не заменой ей. К живому тику
  * планировщика компонент подключается в инкременте планировщика заданий.</p>
+ *
+ * <p><b>Реестр ключей</b> (ключ уникален на роль; новый — следующий свободный номер, сюда же):
+ * 1001 — планировщик источников ({@code SourceScheduler}); 1002 — гарвест обнаружения
+ * ({@code DiscoveryHarvestScheduler}); 1003 — сопоставление подписок
+ * ({@code MatchSubscriptionsScheduler}); 1004 — fan-out досок Common Crawl ({@code BoardFanOut});
+ * 1005 — проверка покрытия ({@code CoverageCheck}); 1006 — имена компаний
+ * ({@code CompanyNameBackfill}).</p>
  */
 @Component
 public class PostgresLeaderLock {

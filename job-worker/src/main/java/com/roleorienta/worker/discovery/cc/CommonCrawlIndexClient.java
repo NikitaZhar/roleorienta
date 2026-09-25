@@ -47,6 +47,9 @@ import org.springframework.web.client.HttpClientErrorException;
 @Component
 public class CommonCrawlIndexClient {
 
+    /** Сколько последних символов неразборной строки индекса попадает в лог. */
+    private static final int LOG_TAIL_CHARS = 80;
+
     private static final Logger log = LoggerFactory.getLogger(CommonCrawlIndexClient.class);
 
     private final SourceHttpClient httpClient;
@@ -124,16 +127,16 @@ public class CommonCrawlIndexClient {
         }
         List<String> urls = new ArrayList<>();
         int malformed = 0;
-        for (int i = 0; i <= last; i++) {
-            String line = lines[i];
+        for (int lineIndex = 0; lineIndex <= last; lineIndex++) {
+            String line = lines[lineIndex];
             if (line.isBlank()) {
                 continue;
             }
             JsonNode node;
             try {
                 node = objectMapper.readTree(line);
-            } catch (JsonProcessingException e) {
-                if (i == last) {
+            } catch (JsonProcessingException exception) {
+                if (lineIndex == last) {
                     throw new IncompleteIndexPageException(String.format(
                             "Common Crawl %s стр. %d: ответ оборван (строк %d, байт %d, разобрано URL %d, "
                                     + "хвост: …%s)",
@@ -155,7 +158,7 @@ public class CommonCrawlIndexClient {
     }
 
     private static String tail(String line) {
-        return line.length() <= 80 ? line : line.substring(line.length() - 80);
+        return line.length() <= LOG_TAIL_CHARS ? line : line.substring(line.length() - LOG_TAIL_CHARS);
     }
 
     /** Страница индекса пришла оборванной — её нельзя засчитывать. */
@@ -175,19 +178,19 @@ public class CommonCrawlIndexClient {
         try {
             String body = httpClient.getBody(url);
             return body == null ? "" : body;
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+        } catch (HttpClientErrorException exception) {
+            if (exception.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
                 return "";
             }
-            throw e;
+            throw exception;
         }
     }
 
     private JsonNode parse(String json) {
         try {
             return objectMapper.readTree(json);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать ответ индекса Common Crawl", e);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать ответ индекса Common Crawl", exception);
         }
     }
 

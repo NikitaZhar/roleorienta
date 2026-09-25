@@ -228,8 +228,8 @@ public class WorkdayAdapter implements SourceAdapter {
     private JsonNode readTree(String json) {
         try {
             return objectMapper.readTree(json);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать список Workday", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать список Workday", exception);
         }
     }
 
@@ -282,8 +282,8 @@ public class WorkdayAdapter implements SourceAdapter {
             Map<String, Integer> locations = new LinkedHashMap<>();
             collectFacetCounts(root.path("facets"), LOCATIONS_FACET, locations);
             return new PostingsPage(postings, nextCursor, countries, locations);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать список Workday", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать список Workday", exception);
         }
     }
 
@@ -352,8 +352,8 @@ public class WorkdayAdapter implements SourceAdapter {
                     additional);
             return new FetchedPosting(location, FetchedPosting.SourcePay.NONE, rawDescription,
                     parseDate(textOrNull(info.path("startDate"))));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать деталь Workday", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать деталь Workday", exception);
         }
     }
 
@@ -364,7 +364,7 @@ public class WorkdayAdapter implements SourceAdapter {
         }
         try {
             return java.time.LocalDate.parse(value.strip());
-        } catch (java.time.format.DateTimeParseException e) {
+        } catch (java.time.format.DateTimeParseException exception) {
             return null;
         }
     }
@@ -411,8 +411,8 @@ public class WorkdayAdapter implements SourceAdapter {
         try {
             int offset = Integer.parseInt(cursor.trim());
             return Math.max(offset, 0);
-        } catch (NumberFormatException e) {
-            throw new IllegalStateException("Некорректный курсор Workday: " + cursor, e);
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("Некорректный курсор Workday: " + cursor, exception);
         }
     }
 

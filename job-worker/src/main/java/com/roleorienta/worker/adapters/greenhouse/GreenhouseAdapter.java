@@ -37,6 +37,9 @@ public class GreenhouseAdapter implements SourceAdapter {
     /** Код провайдера Greenhouse; должен совпадать с {@code Provider.code} источника. */
     public static final String PROVIDER_CODE = "greenhouse";
 
+    /** Greenhouse отдаёт зарплату в центах: сдвиг запятой на два знака. */
+    private static final int CENTS_SCALE = 2;
+
     private final SourceHttpClient httpClient;
 
     /** Разбор JSON. Создаётся локально (как в {@code SourceScheduler}), потокобезопасен. */
@@ -93,8 +96,8 @@ public class GreenhouseAdapter implements SourceAdapter {
                         job.path("title").asText()));
             }
             return result;
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать ответ Greenhouse", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать ответ Greenhouse", exception);
         }
     }
 
@@ -146,8 +149,8 @@ public class GreenhouseAdapter implements SourceAdapter {
             String rawCompensation = displayCompensation(textOrNull(range.path("title")), min, max, currency);
             return new FetchedPosting(FetchedPosting.SourceLocation.of(rawLocation),
                     new FetchedPosting.SourcePay(rawCompensation, compensation), rawDescription, null);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать деталь Greenhouse", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать деталь Greenhouse", exception);
         }
     }
 
@@ -174,7 +177,7 @@ public class GreenhouseAdapter implements SourceAdapter {
         if (cents.isMissingNode() || cents.isNull()) {
             return null;
         }
-        return BigDecimal.valueOf(cents.asLong()).movePointLeft(2);
+        return BigDecimal.valueOf(cents.asLong()).movePointLeft(CENTS_SCALE);
     }
 
     /**

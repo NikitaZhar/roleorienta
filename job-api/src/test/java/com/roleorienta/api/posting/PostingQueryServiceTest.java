@@ -183,9 +183,9 @@ class PostingQueryServiceTest {
 
         Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, auth, false);
 
-        assertThat(page.items()).singleElement().satisfies(s -> {
-            assertThat(s.viewer().state()).isEqualTo(SavedState.SAVED);
-            assertThat(s.viewer().seen()).isTrue();
+        assertThat(page.items()).singleElement().satisfies(summary -> {
+            assertThat(summary.viewer().state()).isEqualTo(SavedState.SAVED);
+            assertThat(summary.viewer().seen()).isTrue();
         });
     }
 
@@ -196,9 +196,9 @@ class PostingQueryServiceTest {
 
         Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, null, false);
 
-        assertThat(page.items()).singleElement().satisfies(s -> {
-            assertThat(s.viewer().state()).isNull();
-            assertThat(s.viewer().seen()).isFalse();
+        assertThat(page.items()).singleElement().satisfies(summary -> {
+            assertThat(summary.viewer().state()).isNull();
+            assertThat(summary.viewer().seen()).isFalse();
         });
     }
 
@@ -286,7 +286,7 @@ class PostingQueryServiceTest {
 
         Page page = service.list(new FeedPaging(null, 10, null), NO_FILTER, null, null, false);
 
-        assertThat(page.items()).extracting(s -> s.coverage().state())
+        assertThat(page.items()).extracting(summary -> summary.coverage().state())
                 .containsExactly(CoverageState.SITE_ONLY, CoverageState.UNKNOWN);
         assertThat(page.items().get(0).coverage().checkedPlatforms()).isEqualTo("profesia.sk");
     }

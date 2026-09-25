@@ -29,8 +29,8 @@ public class CoverageTrigger {
     public void tick() {
         try {
             check.run();
-        } catch (RuntimeException e) {
-            log.warn("Тик проверки покрытия завершился ошибкой, повтор на следующем тике", e);
+        } catch (RuntimeException exception) {
+            log.warn("Тик проверки покрытия завершился ошибкой, повтор на следующем тике", exception);
         }
     }
 }

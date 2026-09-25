@@ -37,6 +37,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class RequestPacer {
 
+    /** Меток в зарегистрированном домене, по которому идёт темп: {@code karriere.at}, {@code myworkdayjobs.com}. */
+    private static final int DOMAIN_LABELS = 2;
+
     private static final Logger log = LoggerFactory.getLogger(RequestPacer.class);
 
     private final long defaultIntervalMs;
@@ -98,7 +101,7 @@ public class RequestPacer {
         String host;
         try {
             host = URI.create(url).getHost();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException exception) {
             return "invalid";
         }
         if (host == null) {
@@ -109,7 +112,8 @@ public class RequestPacer {
             return host;
         }
         String[] labels = host.split("\\.");
-        return labels.length <= 2 ? host : labels[labels.length - 2] + "." + labels[labels.length - 1];
+        return labels.length <= DOMAIN_LABELS ? host
+                : labels[labels.length - DOMAIN_LABELS] + "." + labels[labels.length - 1];
     }
 
     /**
@@ -120,7 +124,7 @@ public class RequestPacer {
      */
     public void acquire(String key) {
         long interval = intervalsMs.getOrDefault(key, defaultIntervalMs);
-        AtomicLong next = nextSlot.computeIfAbsent(key, k -> new AtomicLong(0));
+        AtomicLong next = nextSlot.computeIfAbsent(key, absent -> new AtomicLong(0));
         long now = clock.millis();
         long slot;
         while (true) {
@@ -137,7 +141,7 @@ public class RequestPacer {
         if (wait > 0) {
             try {
                 sleeper.sleep(wait);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new SourceBackoffException(key, Duration.ofMillis(wait));
             }
@@ -154,7 +158,7 @@ public class RequestPacer {
     public void backoff(String key, Duration delay) {
         long capped = Math.min(Math.max(0, delay.toMillis()), maxBackoffMs);
         long until = clock.millis() + capped;
-        nextSlot.computeIfAbsent(key, k -> new AtomicLong(0)).accumulateAndGet(until, Math::max);
+        nextSlot.computeIfAbsent(key, absent -> new AtomicLong(0)).accumulateAndGet(until, Math::max);
         log.warn("Источник {} попросил паузу: следующий запрос не раньше чем через {} с", key, capped / 1000);
     }
 }

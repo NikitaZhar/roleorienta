@@ -74,6 +74,9 @@ import org.springframework.web.client.ResourceAccessException;
 @Component
 public class DiscoverEmployerJobHandler implements TypedJobHandler {
 
+    /** Сколько значений (стран, локаций) называет обоснование решения гейта. */
+    private static final int SUMMARY_ITEMS = 3;
+
     private static final Logger log = LoggerFactory.getLogger(DiscoverEmployerJobHandler.class);
 
     /** Ответы, после которых доска считается недоступной (см. {@link #isUnreachable}). */
@@ -165,19 +168,19 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
             SourceAdapter adapter = adapterRegistry.forProviderCode(payload.providerCode());
             Source probe = probeSource(payload);
             return withOwnership(adapter, probe, assessFeed(adapter, probe));
-        } catch (RuntimeException e) {
-            if (isTransient(e)) {
+        } catch (RuntimeException exception) {
+            if (isTransient(exception)) {
                 // Сбой источника, а не свойство ленты (§57): не записываем кандидата как NONE
                 // (дедуп не дал бы проверить его снова) — пусть задание повторит брокер.
-                throw e;
+                throw exception;
             }
-            if (isUnreachable(e)) {
+            if (isUnreachable(exception)) {
                 // Доски по этому адресу нет или доступ закрыт (§74): человеку проверять нечего.
                 return new Assessment(DiscoveryConfidence.NONE,
-                        "лента недоступна: " + e.getMessage(), 0, EmployerCandidateState.UNREACHABLE);
+                        "лента недоступна: " + exception.getMessage(), 0, EmployerCandidateState.UNREACHABLE);
             }
             return new Assessment(DiscoveryConfidence.NONE,
-                    "не удалось прочитать/разобрать ленту: " + e.getMessage(), 0, EmployerCandidateState.PENDING);
+                    "не удалось прочитать/разобрать ленту: " + exception.getMessage(), 0, EmployerCandidateState.PENDING);
         }
     }
 
@@ -197,11 +200,11 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
         Optional<BoardProfile> profile;
         try {
             profile = adapter.boardProfile(probe);
-        } catch (RuntimeException e) {
-            if (isTransient(e)) {
-                throw e;
+        } catch (RuntimeException exception) {
+            if (isTransient(exception)) {
+                throw exception;
             }
-            return doubtful(assessment, "страница доски не открылась: " + e.getMessage());
+            return doubtful(assessment, "страница доски не открылась: " + exception.getMessage());
         }
         if (profile.isEmpty()) {
             return assessment;
@@ -260,8 +263,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * стенде §73/§74: страница такого тенанта уводит на community.workday.com). Повтор не
      * поможет, ручная проверка — тоже.
      */
-    static boolean isUnreachable(RuntimeException e) {
-        return e instanceof HttpClientErrorException client
+    static boolean isUnreachable(RuntimeException exception) {
+        return exception instanceof HttpClientErrorException client
                 && UNREACHABLE_STATUSES.contains(client.getStatusCode().value());
     }
 
@@ -270,11 +273,11 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
      * или тайм-аут. В отличие от «лента не разбирается» или {@code 404}, он ничего не
      * говорит о кандидате.
      */
-    static boolean isTransient(RuntimeException e) {
-        return e instanceof SourceBackoffException
-                || e instanceof HttpServerErrorException
-                || e instanceof HttpClientErrorException.TooManyRequests
-                || e instanceof ResourceAccessException;
+    static boolean isTransient(RuntimeException exception) {
+        return exception instanceof SourceBackoffException
+                || exception instanceof HttpServerErrorException
+                || exception instanceof HttpClientErrorException.TooManyRequests
+                || exception instanceof ResourceAccessException;
     }
 
     /**
@@ -320,14 +323,14 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     }
 
     private static String firstOf(List<String> items) {
-        return items.stream().limit(3).collect(Collectors.joining(", "));
+        return items.stream().limit(SUMMARY_ITEMS).collect(Collectors.joining(", "));
     }
 
     private static String topOf(Map<String, Integer> counts) {
         return counts.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(3)
-                .map(e -> e.getKey() + " " + e.getValue())
+                .limit(SUMMARY_ITEMS)
+                .map(entry -> entry.getKey() + " " + entry.getValue())
                 .collect(Collectors.joining(", "));
     }
 
@@ -341,11 +344,7 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
     private Assessment assessMarket(Map<String, Integer> countryCounts, int count) {
         int inMarket = market.marketCount(countryCounts);
         int total = countryCounts.values().stream().mapToInt(Integer::intValue).sum();
-        String top = countryCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(3)
-                .map(e -> e.getKey() + " " + e.getValue())
-                .collect(Collectors.joining(", "));
+        String top = topOf(countryCounts);
         if (inMarket > 0) {
             return new Assessment(DiscoveryConfidence.HIGH, String.format(
                     "лента валидна; на целевом рынке %s: %d из %d; страны: %s",
@@ -388,8 +387,8 @@ public class DiscoverEmployerJobHandler implements TypedJobHandler {
                         "DISCOVER_EMPLOYER: в теле задания нужны providerCode, slug, baseUrl");
             }
             return new Payload(providerCode, slug, baseUrl);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать тело задания DISCOVER_EMPLOYER", e);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать тело задания DISCOVER_EMPLOYER", exception);
         }
     }
 

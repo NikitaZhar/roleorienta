@@ -87,9 +87,9 @@ class RequestPacerTest {
         RequestPacer pacer = pacer(5000, Map.of(), 3000, 60_000);
         pacer.acquire("x.com");
 
-        SourceBackoffException e = assertThrows(SourceBackoffException.class, () -> pacer.acquire("x.com"));
+        SourceBackoffException backoff = assertThrows(SourceBackoffException.class, () -> pacer.acquire("x.com"));
 
-        assertEquals("x.com", e.getPacingKey());
+        assertEquals("x.com", backoff.getPacingKey());
         assertTrue(sleeps.isEmpty(), "поток не спал");
         clock.millis += 5000;
         pacer.acquire("x.com"); // отказ не занял слот — после интервала запрос проходит сразу

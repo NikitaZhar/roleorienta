@@ -101,7 +101,7 @@ public record WorkdayBoard(String tenant, String site, String baseUrl) {
         if (path == null) {
             return Optional.empty();
         }
-        List<String> segments = Arrays.stream(path.split("/")).filter(s -> !s.isEmpty()).toList();
+        List<String> segments = Arrays.stream(path.split("/")).filter(segment -> !segment.isEmpty()).toList();
         if (segments.isEmpty()) {
             return Optional.empty();
         }
