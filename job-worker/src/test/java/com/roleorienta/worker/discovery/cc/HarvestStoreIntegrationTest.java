@@ -3,11 +3,11 @@ package com.roleorienta.worker.discovery.cc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
-import com.roleorienta.worker.adapters.workday.WorkdayBoard;
 import com.roleorienta.worker.discovery.cc.HarvestStore.BoardState;
 import com.roleorienta.worker.discovery.cc.HarvestStore.Cursor;
 import com.roleorienta.worker.discovery.cc.HarvestStore.PendingBoard;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,8 +42,9 @@ class HarvestStoreIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
-    private static WorkdayBoard board(String tenant, String site) {
-        return new WorkdayBoard(tenant, site, "https://" + tenant + ".wd1.myworkdayjobs.com");
+    private static HarvestedBoard board(String tenant, String site) {
+        String slug = tenant + "/" + site;
+        return new HarvestedBoard(slug, slug.toLowerCase(Locale.ROOT), "https://" + tenant + ".wd1.myworkdayjobs.com");
     }
 
     @Test
@@ -103,5 +104,19 @@ class HarvestStoreIntegrationTest {
         assertThat(rest).extracting(PendingBoard::slug).containsExactly("c/Three");
         assertThat(jdbc.queryForList("SELECT state FROM harvested_board ORDER BY id", String.class))
                 .containsExactly("ENQUEUED", "SKIPPED", "NEW");
+    }
+
+    @Test
+    void newBoardsAreTakenFromEachInputInTurn() {
+        store.recordPage(INPUT, "workday", new Cursor("CC-1", 1, 5, 1),
+                List.of(board("a", "One"), board("b", "Two"), board("c", "Three")));
+        store.recordPage("cc-personio-de", "personio", new Cursor("CC-1", 1, 3, 1),
+                List.of(new HarvestedBoard("towa", "towa", "https://towa.jobs.personio.de")));
+
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        List<PendingBoard> batch = tx.execute(status -> store.lockNewBoards(2));
+
+        assertThat(batch).extracting(PendingBoard::slug)
+                .as("очередь Workday не вытесняет новый вход").containsExactlyInAnyOrder("a/One", "towa");
     }
 }

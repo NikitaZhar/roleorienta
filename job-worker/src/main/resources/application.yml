@@ -145,8 +145,9 @@ app:
       # кандидат OUT_OF_MARKET. Пустой список — гейт рынка выключен.
       countries: "Slovakia,Slovak Republic,Austria"
       # Однозначные признаки локации на рынке — когда фасета стран нет (у Workday: тенант с
-      # одной страной, §59/§61): страны, коды, земли, города без «тёзок» за рубежом.
-      location-terms: "Slovakia,Slovak Republic,Slovensko,Bratislava,Kosice,Košice,Zilina,Žilina,Austria,Österreich,Wien,Graz,Linz,Salzburg,Innsbruck,Styria,Steiermark,Upper Austria,Oberösterreich,Tyrol,Tirol,Carinthia,Kärnten,SVK,AUT"
+      # одной страной, §59/§61; у Personio — офисы вакансий, §91): страны, коды, земли, города
+      # без «тёзок» за рубежом.
+      location-terms: "Slovakia,Slovak Republic,Slovensko,Bratislava,Kosice,Košice,Zilina,Žilina,Trnava,Nitra,Trenčín,Trencin,Banská Bystrica,Banska Bystrica,Prešov,Presov,Poprad,Austria,Österreich,Wien,Graz,Linz,Salzburg,Innsbruck,Klagenfurt,Villach,Wels,St. Pölten,Sankt Pölten,Steyr,Leoben,Krems,Dornbirn,Bregenz,Feldkirch,Eisenstadt,Styria,Steiermark,Upper Austria,Oberösterreich,Lower Austria,Niederösterreich,Vorarlberg,Burgenland,Tyrol,Tirol,Carinthia,Kärnten,SVK,AUT"
       # Неоднозначные города (есть «тёзки» в США: Vienna, VA/WV/GA): с маркером США —
       # не рынок; без страны — кандидат на ручную проверку, не авто-подключение (§61).
       ambiguous-location-terms: "Vienna"
@@ -168,8 +169,10 @@ app:
       enabled: true
       # Период тика, мс.
       poll-interval-ms: 600000
-      # Шаблон URL индекса.
-      url-pattern: "*.myworkdayjobs.com"
+      # Входы (CcInput, §91): Workday (*.myworkdayjobs.com) и Personio (*.jobs.personio.de/.com —
+      # система найма малого и среднего бизнеса DACH, XML-лента, которую работодатель включает сам).
+      # У каждого входа свой курсор; pages-per-pass — на каждый вход.
+      inputs: WORKDAY,PERSONIO_DE,PERSONIO_COM
       # Размер страницы CDX в блоках (~3000 URL на блок). Страница по умолчанию сервера (5
       # блоков, ~12 с) упирается в тайм-аут шлюза индекса (504 через ~10 с) — берём мельче.
       # Смена значения перезапускает обход коллекции с начала (дедуп гасит повторы).
@@ -183,7 +186,10 @@ app:
   coverage:
     # Проверка покрытия площадкой karriere.at (A5, §82): австрийские публикации сравниваются с
     # выдачей площадки по работодателю. В тестах выключена (проход запускается напрямую).
-    enabled: true
+    # ВЫКЛЮЧЕНА (§91): условия karriere.at (Nutzungsbedingungen п. 2.8.3) запрещают любое
+    # автоматическое чтение платформы (project-notes §90). Включать только с письменным
+    # разрешением площадки. Уже записанные оценки остаются.
+    enabled: false
     # Период тика, мс.
     poll-interval-ms: 1800000
     # Работодателей за проход (по одному запросу к площадке; доска другого бренда — свой запрос, §86).

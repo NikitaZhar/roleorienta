@@ -41,9 +41,13 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record DiscoveryMarketProperties(
         @DefaultValue({"Slovakia", "Slovak Republic", "Austria"}) List<String> countries,
         @DefaultValue({"Slovakia", "Slovak Republic", "Slovensko", "Bratislava", "Kosice", "Košice",
-                "Zilina", "Žilina", "Austria", "Österreich", "Wien", "Graz", "Linz", "Salzburg",
-                "Innsbruck", "Styria", "Steiermark", "Upper Austria", "Oberösterreich", "Tyrol", "Tirol",
-                "Carinthia", "Kärnten", "SVK", "AUT"}) List<String> locationTerms,
+                "Zilina", "Žilina", "Trnava", "Nitra", "Trenčín", "Trencin", "Banská Bystrica",
+                "Banska Bystrica", "Prešov", "Presov", "Poprad", "Austria", "Österreich", "Wien", "Graz",
+                "Linz", "Salzburg", "Innsbruck", "Klagenfurt", "Villach", "Wels", "St. Pölten",
+                "Sankt Pölten", "Steyr", "Leoben", "Krems", "Dornbirn", "Bregenz", "Feldkirch", "Eisenstadt",
+                "Styria", "Steiermark", "Upper Austria", "Oberösterreich", "Lower Austria",
+                "Niederösterreich", "Vorarlberg", "Burgenland", "Tyrol", "Tirol", "Carinthia", "Kärnten",
+                "SVK", "AUT"}) List<String> locationTerms,
         @DefaultValue({"Vienna"}) List<String> ambiguousLocationTerms) {
 
     /**

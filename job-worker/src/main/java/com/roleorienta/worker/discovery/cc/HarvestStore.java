@@ -1,6 +1,5 @@
 package com.roleorienta.worker.discovery.cc;
 
-import com.roleorienta.worker.adapters.workday.WorkdayBoard;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -95,10 +94,10 @@ public class HarvestStore {
      * @return сколько досок добавлено впервые
      */
     public int recordPage(String inputCode, String providerCode, Cursor position,
-                          Collection<WorkdayBoard> boards) {
+                          Collection<HarvestedBoard> boards) {
         Integer inserted = transactionTemplate.execute(status -> {
             int added = 0;
-            for (WorkdayBoard board : boards) {
+            for (HarvestedBoard board : boards) {
                 added += jdbcTemplate.update(
                         "INSERT INTO harvested_board (input_code, provider_code, slug, dedup_key, base_url) "
                                 + "VALUES (?, ?, ?, ?, ?) ON CONFLICT (provider_code, dedup_key) DO NOTHING",
@@ -139,17 +138,25 @@ public class HarvestStore {
     }
 
     /**
-     * Берёт до {@code limit} досок в состоянии {@code NEW} по порядку обнаружения с
-     * блокировкой строк ({@code FOR UPDATE SKIP LOCKED}). Вызывать внутри транзакции,
-     * в которой затем {@link #mark} меняет их состояние.
+     * Берёт до {@code limit} досок в состоянии {@code NEW} с блокировкой строк
+     * ({@code FOR UPDATE SKIP LOCKED}). Вызывать внутри транзакции, в которой затем
+     * {@link #mark} меняет их состояние.
+     *
+     * <p><b>Входы — по очереди (§92).</b> Доски берутся поровну из каждого входа: первая доска
+     * каждого входа, затем вторая и так далее, внутри входа — по порядку обнаружения. Иначе
+     * накопленная очередь одного входа (стенд §91: сотни старых досок Workday) не пускала бы в
+     * проверку доски нового входа (Personio). {@code row_number()} — во вложенном запросе:
+     * PostgreSQL не разрешает {@code FOR UPDATE} вместе с оконной функцией.</p>
      *
      * @param limit максимум досок
      * @return доски, ждущие передачи
      */
     public List<PendingBoard> lockNewBoards(int limit) {
         return jdbcTemplate.query(
-                "SELECT id, provider_code, slug, base_url FROM harvested_board WHERE state = 'NEW' "
-                        + "ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED",
+                "SELECT id, provider_code, slug, base_url FROM harvested_board WHERE id IN ("
+                        + "SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY input_code ORDER BY id) AS turn "
+                        + "FROM harvested_board WHERE state = 'NEW') queue ORDER BY turn, id LIMIT ?) "
+                        + "ORDER BY id FOR UPDATE SKIP LOCKED",
                 (rs, rowNum) -> new PendingBoard(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)),
                 limit);
     }

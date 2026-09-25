@@ -1,7 +1,5 @@
 package com.roleorienta.worker.discovery.cc;
 
-import com.roleorienta.worker.adapters.workday.WorkdayAdapter;
-import com.roleorienta.worker.adapters.workday.WorkdayBoard;
 import com.roleorienta.worker.discovery.cc.HarvestStore.Cursor;
 import com.roleorienta.worker.http.SourceBackoffException;
 import java.util.Collection;
@@ -15,14 +13,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpServerErrorException;
 
 /**
- * Автоматический вход обнаружения Workday по индексу Common Crawl (§55, A1b) — заменяет
- * ручной seed как основной поток кандидатов (§14, ADR-17).
+ * Автоматический вход обнаружения по индексу Common Crawl (§55, A1b) — заменяет ручной seed
+ * как основной поток кандидатов (§14, ADR-17). Входы — {@link CcInput}: Workday (§55), Personio
+ * (§91); у каждого свой курсор и свой бюджет страниц за проход.
  *
  * <p>Проход ({@link #runOnce()}) — две независимые фазы:</p>
  * <ol>
  *   <li><b>Сбор</b> ({@link #collect()}): под арендой {@link HarvestStore#tryLease}, <b>вне
  *       транзакции</b>, читает до {@code pagesPerPass} страниц индекса начиная с курсора,
- *       разбирает URL в доски ({@link WorkdayBoard#fromCareerUrl}, дедуп без учёта регистра)
+ *       разбирает URL в доски ({@link CcInput#board}, дедуп по ключу провайдера)
  *       и фиксирует каждую страницу вместе с продвижением курсора
  *       ({@link HarvestStore#recordPage}). Появилась новая коллекция индекса или изменён
  *       {@code page-size} — обход начинается со страницы 0 (уже известные доски гасятся
@@ -53,8 +52,6 @@ import org.springframework.web.client.HttpServerErrorException;
 public class CcHarvestScheduler {
 
     /** Код входа — ключ строки {@code harvest_cursor} и метка досок. */
-    static final String INPUT_CODE = "cc-workday";
-
     private static final Logger log = LoggerFactory.getLogger(CcHarvestScheduler.class);
 
     private final CcHarvestProperties properties;
@@ -100,26 +97,40 @@ public class CcHarvestScheduler {
      * @return сколько досок добавлено впервые (0 — очередь ещё не разобрана, аренда занята,
      *         обход завершён или пусто)
      */
+    /**
+     * Проход по всем включённым входам ({@code app.discovery.cc.inputs}); сбой одного входа
+     * прерывает проход (штатная нестабильность индекса общая для всех входов).
+     *
+     * @return сколько досок добавлено впервые
+     */
     int collect() {
-        int backlog = store.countNewBoards(INPUT_CODE);
+        int added = 0;
+        for (CcInput input : properties.inputs()) {
+            added += collect(input);
+        }
+        return added;
+    }
+
+    private int collect(CcInput input) {
+        int backlog = store.countNewBoards(input.code());
         if (backlog >= properties.maxFanOut()) {
-            log.info("CC-гарвест: в очереди {} досок (≥ {} за проход) — новая страница индекса не читается",
-                    backlog, properties.maxFanOut());
+            log.info("CC-гарвест {}: в очереди {} досок (≥ {} за проход) — новая страница индекса не читается",
+                    input.code(), backlog, properties.maxFanOut());
             return 0;
         }
-        Optional<Cursor> lease = store.tryLease(INPUT_CODE, properties.leaseSeconds());
+        Optional<Cursor> lease = store.tryLease(input.code(), properties.leaseSeconds());
         if (lease.isEmpty()) {
-            log.debug("CC-гарвест: проход уже идёт в другой реплике");
+            log.debug("CC-гарвест {}: проход уже идёт в другой реплике", input.code());
             return 0;
         }
         try {
-            return collectUnderLease(lease.get());
+            return collectUnderLease(input, lease.get());
         } finally {
-            store.releaseLease(INPUT_CODE);
+            store.releaseLease(input.code());
         }
     }
 
-    private int collectUnderLease(Cursor cursor) {
+    private int collectUnderLease(CcInput input, Cursor cursor) {
         String collection = indexClient.latestCollection();
         int pageSize = properties.pageSize();
         int pageCount = cursor.pageCount();
@@ -127,33 +138,39 @@ public class CcHarvestScheduler {
         if (!collection.equals(cursor.collection()) || pageSize != cursor.pageSize()) {
             // Новая коллекция или другой размер страницы — номера страниц курсора недействительны:
             // обход с начала, уже известные доски гасятся дедупом накопителя.
-            pageCount = indexClient.pageCount(collection, properties.urlPattern(), pageSize);
+            pageCount = indexClient.pageCount(collection, input.urlPattern(), pageSize);
             page = 0;
-            store.recordPosition(INPUT_CODE, new Cursor(collection, pageSize, pageCount, page));
-            log.info("CC-гарвест: коллекция {} (pageSize {}) — {} страниц, обход с начала",
-                    collection, pageSize, pageCount);
+            store.recordPosition(input.code(), new Cursor(collection, pageSize, pageCount, page));
+            log.info("CC-гарвест {}: коллекция {} (pageSize {}) — {} страниц, обход с начала",
+                    input.code(), collection, pageSize, pageCount);
         }
         int added = 0;
         int fetched = 0;
         while (fetched < properties.pagesPerPass() && page < pageCount) {
-            List<String> urls = indexClient.urlsOnPage(collection, properties.urlPattern(), pageSize, page);
-            Collection<WorkdayBoard> boards = boardsOf(urls);
+            List<String> urls = indexClient.urlsOnPage(collection, input.urlPattern(), pageSize, page);
+            Collection<HarvestedBoard> boards = boardsOf(input, urls);
             page++;
             fetched++;
-            int newBoards = store.recordPage(INPUT_CODE, WorkdayAdapter.PROVIDER_CODE,
+            int newBoards = store.recordPage(input.code(), input.providerCode(),
                     new Cursor(collection, pageSize, pageCount, page), boards);
             added += newBoards;
-            log.info("CC-гарвест: {} стр. {}/{} — URL {}, досок {}, новых {}",
-                    collection, page, pageCount, urls.size(), boards.size(), newBoards);
+            log.info("CC-гарвест {}: {} стр. {}/{} — URL {}, досок {}, новых {}",
+                    input.code(), collection, page, pageCount, urls.size(), boards.size(), newBoards);
         }
         return added;
     }
 
-    /** Доски из URL страницы: разбор и дедуп без учёта регистра (первое написание). */
-    static Collection<WorkdayBoard> boardsOf(List<String> urls) {
-        Map<String, WorkdayBoard> byKey = new LinkedHashMap<>();
+    /**
+     * Доски страницы индекса без повторов (ключ дедупа провайдера), в порядке первого появления.
+     *
+     * @param input вход
+     * @param urls  адреса страницы
+     * @return доски
+     */
+    static Collection<HarvestedBoard> boardsOf(CcInput input, List<String> urls) {
+        Map<String, HarvestedBoard> byKey = new LinkedHashMap<>();
         for (String url : urls) {
-            WorkdayBoard.fromCareerUrl(url).ifPresent(board -> byKey.putIfAbsent(board.dedupKey(), board));
+            input.board(url).ifPresent(board -> byKey.putIfAbsent(board.dedupKey(), board));
         }
         return byKey.values();
     }

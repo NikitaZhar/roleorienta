@@ -14,7 +14,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.roleorienta.worker.adapters.workday.WorkdayBoard;
 import com.roleorienta.worker.discovery.EmployerCandidateRepository;
 import com.roleorienta.worker.discovery.cc.HarvestStore.BoardState;
 import com.roleorienta.worker.discovery.cc.HarvestStore.Cursor;
@@ -42,7 +41,7 @@ import org.springframework.http.HttpStatus;
 class CcHarvestSchedulerTest {
 
     private static final String PATTERN = "*.myworkdayjobs.com";
-    private static final String INPUT = CcHarvestScheduler.INPUT_CODE;
+    private static final String INPUT = CcInput.WORKDAY.code();
 
     private final CommonCrawlIndexClient index = mock(CommonCrawlIndexClient.class);
     private final HarvestStore store = mock(HarvestStore.class);
@@ -59,7 +58,7 @@ class CcHarvestSchedulerTest {
     }
 
     private CcHarvestScheduler scheduler(int pagesPerPass, int maxFanOut) {
-        CcHarvestProperties properties = new CcHarvestProperties(PATTERN, 1, pagesPerPass, maxFanOut, 900);
+        CcHarvestProperties properties = new CcHarvestProperties(List.of(CcInput.WORKDAY), 1, pagesPerPass, maxFanOut, 900);
         return new CcHarvestScheduler(properties, index, store, fanOut(properties));
     }
 
@@ -178,7 +177,7 @@ class CcHarvestSchedulerTest {
                 new PendingBoard(2, "workday", "3m/Search", "https://3m.wd1.myworkdayjobs.com")));
         when(candidates.existsByProviderCodeAndSlugIgnoreCase("workday", "amgen/Careers")).thenReturn(true);
 
-        fanOut(new CcHarvestProperties(PATTERN, 1, 1, 2, 900)).runBatch();
+        fanOut(new CcHarvestProperties(List.of(CcInput.WORKDAY), 1, 1, 2, 900)).runBatch();
 
         ArgumentCaptor<OutboxEvent> event = ArgumentCaptor.forClass(OutboxEvent.class);
         verify(outbox, times(1)).save(event.capture());
@@ -189,7 +188,7 @@ class CcHarvestSchedulerTest {
 
     @Test
     void boardsOfParsesAndDedupsIgnoringSiteCase() {
-        Collection<WorkdayBoard> boards = CcHarvestScheduler.boardsOf(List.of(
+        Collection<HarvestedBoard> boards = CcHarvestScheduler.boardsOf(CcInput.WORKDAY, List.of(
                 "https://aig.wd1.myworkdayjobs.com/en-US/aig/job/a",
                 "https://aig.wd1.myworkdayjobs.com/AIG/job/b",
                 "https://aig.wd1.myworkdayjobs.com/japan",
@@ -197,6 +196,36 @@ class CcHarvestSchedulerTest {
                 "https://www.example.com/x"));
 
         assertEquals(List.of("aig/aig", "aig/japan"),
-                new ArrayList<>(boards).stream().map(WorkdayBoard::slug).toList());
+                new ArrayList<>(boards).stream().map(HarvestedBoard::slug).toList());
+    }
+
+    @Test
+    void personioInputsParseAccountFromAnyPageAndDedupAcrossDomains() {
+        Collection<HarvestedBoard> boards = CcHarvestScheduler.boardsOf(CcInput.PERSONIO_DE, List.of(
+                "https://towa.jobs.personio.de/job/1552584?language=de",
+                "https://towa.jobs.personio.de/xml",
+                "https://leonine.jobs.personio.de/",
+                "https://jobs.personio.de/",
+                "https://www.example.com/x"));
+
+        assertEquals(List.of(new HarvestedBoard("towa", "towa", "https://towa.jobs.personio.de"),
+                new HarvestedBoard("leonine", "leonine", "https://leonine.jobs.personio.de")),
+                new ArrayList<>(boards));
+        assertEquals("personio", CcInput.PERSONIO_COM.providerCode());
+        assertEquals(List.of(new HarvestedBoard("towa", "towa", "https://towa.jobs.personio.com")),
+                new ArrayList<>(CcHarvestScheduler.boardsOf(CcInput.PERSONIO_COM,
+                        List.of("https://TOWA.jobs.personio.com/job/1"))));
+    }
+
+    @Test
+    void everyEnabledInputHasItsOwnCursor() {
+        CcHarvestProperties properties = new CcHarvestProperties(
+                List.of(CcInput.WORKDAY, CcInput.PERSONIO_DE), 1, 1, 20, 900);
+        when(store.tryLease(anyString(), anyLong())).thenReturn(Optional.empty());
+
+        new CcHarvestScheduler(properties, index, store, fanOut(properties)).collect();
+
+        verify(store).tryLease(eq("cc-workday"), anyLong());
+        verify(store).tryLease(eq("cc-personio-de"), anyLong());
     }
 }
