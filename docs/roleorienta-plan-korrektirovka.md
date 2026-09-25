@@ -198,8 +198,9 @@ SuccessFactors, SmartRecruiters; ADR-17). Инфраструктура дост�
 - [ ] C1. `UNIQUE (app_user_id, job_posting_id, field_name)` на `notification` (A16).
 - [ ] C2. Ловля гонки `ApplicationService.create` → идемпотентный ответ.
 - [ ] C3. `@ControllerAdvice` с `errors[]` (JSON Pointer) для валидации (A20).
-- [ ] C4. ArchUnit-тест: внешние вызовы только через `SourceHttpClient`, XML только
-      через `SafeXml` (A13/A14 → проверяемо).
+- [x] C4. ArchUnit-тест: внешние вызовы только через `SourceHttpClient`, XML только
+      через `SafeXml` (A13/A14 → проверяемо). Сделано в §86 (`ArchitectureTest` в job-worker и
+      job-api; плюс нет циклов пакетов, контроллеры без репозиториев).
 - [ ] C5. Retention-джоб `processed_message` по `processed_at`.
 - [ ] C6. Пагинация `SourceScheduler` + короткая транзакция на единицу работы;
       N+1 в матчере → set-based `INSERT ... SELECT`.

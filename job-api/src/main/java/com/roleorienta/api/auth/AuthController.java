@@ -38,7 +38,6 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final AppUserService appUserService;
-    private final AppUserRepository users;
 
     /** Сохранение контекста безопасности в HTTP-сессию (сессия — в PostgreSQL). */
     private final SecurityContextRepository securityContextRepository =
@@ -48,15 +47,12 @@ public class AuthController {
 
     /**
      * @param authenticationManager проверка логина/пароля
-     * @param appUserService        создание пользователей
-     * @param users                 чтение пользователя для ответа {@code /me}
+     * @param appUserService        создание пользователей и чтение текущего для {@code /me}
      */
     public AuthController(AuthenticationManager authenticationManager,
-                          AppUserService appUserService,
-                          AppUserRepository users) {
+                          AppUserService appUserService) {
         this.authenticationManager = authenticationManager;
         this.appUserService = appUserService;
-        this.users = users;
     }
 
     /**
@@ -116,8 +112,7 @@ public class AuthController {
      */
     @GetMapping("/me")
     public MeResponse me(Authentication authentication) {
-        AppUser user = users.findByEmailIgnoreCase(authentication.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Сессия недействительна"));
+        AppUser user = appUserService.current(authentication.getName());
         return new MeResponse(user.getId(), user.getEmail(), user.getRole());
     }
 

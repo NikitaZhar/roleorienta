@@ -12,6 +12,7 @@ import com.roleorienta.core.domain.Company;
 import com.roleorienta.core.domain.CoverageAssessment;
 import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.core.domain.JobPosting;
+import com.roleorienta.core.domain.Source;
 import com.roleorienta.worker.coverage.KarriereClient.Listing;
 import com.roleorienta.worker.coverage.KarriereClient.Listings;
 import com.roleorienta.worker.lock.PostgresLeaderLock;
@@ -89,6 +90,28 @@ class CoverageCheckTest {
     }
 
     @Test
+    void boardOfAnotherBrandIsSearchedByBrand() {
+        Company accenture = company("Accenture");
+        JobPosting own = posting(30L, "Consultant");
+        own.setSource(source("accenture/AccentureCareers"));
+        JobPosting avanade = posting(31L, "Dynamics Developer");
+        avanade.setSource(source("accenture/AvanadeCareers"));
+        when(targets.companiesDue(any(), any(), any(Limit.class))).thenReturn(List.of(accenture));
+        when(targets.postingsOf(accenture, "Austria")).thenReturn(List.of(own, avanade));
+        when(assessments.findByPosting_Id(any())).thenReturn(Optional.empty());
+        when(platform.activeListings("Accenture")).thenReturn(new Listings(List.of(), true));
+        when(platform.activeListings("Avanade")).thenReturn(new Listings(List.of(
+                new Listing("7", "Dynamics Developer", "Avanade Deutschland GmbH")), true));
+
+        check.checkDue(NOW);
+
+        ArgumentCaptor<CoverageAssessment> saved = ArgumentCaptor.forClass(CoverageAssessment.class);
+        verify(assessments, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertEquals(CoverageState.SITE_ONLY, saved.getAllValues().get(0).getState());
+        assertEquals(CoverageState.BOTH, saved.getAllValues().get(1).getState());
+    }
+
+    @Test
     void searchNameDropsSiteFromSlugLikeName() {
         assertEquals("hitachi", CoverageCheck.searchName(company("hitachi/External")));
         assertEquals("Syneos Health", CoverageCheck.searchName(company("Syneos Health")));
@@ -98,6 +121,12 @@ class CoverageCheckTest {
         Company company = new Company();
         company.setName(name);
         return company;
+    }
+
+    private static Source source(String externalRef) {
+        Source source = new Source();
+        source.setExternalRef(externalRef);
+        return source;
     }
 
     private static JobPosting posting(long id, String title) {

@@ -23,6 +23,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Testcontainers не входит в управляемые версии Spring Boot 4.x — фиксируем BOM явно -->
         <testcontainers.version>1.21.4</testcontainers.version>
+        <!-- ArchUnit — проверка архитектурных правил тестами (регламент сессии §6, §86); версией
+             Spring Boot не управляется. Используется ядро библиотеки без собственного движка
+             JUnit: правила вызываются из обычных тестов JUnit Jupiter. https://www.archunit.org/ -->
+        <archunit.version>1.5.0</archunit.version>
     </properties>
 
     <dependencyManagement>
@@ -33,6 +37,11 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit</artifactId>
+                <version>${archunit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

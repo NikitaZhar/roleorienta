@@ -65,6 +65,20 @@ public class AppUserService {
         return true;
     }
 
+    /**
+     * Текущий пользователь по email из аутентификации (сессии).
+     *
+     * @param email email владельца сессии
+     * @return пользователь
+     * @throws ResponseStatusException {@code 401 UNAUTHORIZED}, если пользователя уже нет
+     *                                 (удалён после входа) — сессия недействительна
+     */
+    @Transactional(readOnly = true)
+    public AppUser current(String email) {
+        return users.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Сессия недействительна"));
+    }
+
     private AppUser create(String email, String rawPassword, UserRole role) {
         if (users.existsByEmailIgnoreCase(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email уже используется");

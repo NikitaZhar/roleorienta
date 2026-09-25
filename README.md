@@ -51,7 +51,7 @@ RabbitMQ:
 | Очередь   | RabbitMQ, Spring AMQP |
 | Сборка    | Maven (многомодульный), образы — `spring-boot:build-image` (buildpacks) |
 | Тесты     | JUnit 5, Testcontainers (реальные PostgreSQL и RabbitMQ) |
-| CI        | GitHub Actions (Checkstyle + компиляция + тесты) |
+| CI        | GitHub Actions (Checkstyle + компиляция + тесты, включая архитектурные правила ArchUnit) |
 
 Требования Spring Boot 4.1: Java 17–26, Maven 3.6.3+, Spring Framework 7.0.9+.
 
@@ -77,7 +77,7 @@ roleorienta/
 Требуется JDK 21 и Maven 3.6.3+ (или обёртка при её добавлении).
 
 ```bash
-# Checkstyle + компиляция + тесты (Checkstyle на фазе validate; тесты поднимают PostgreSQL и RabbitMQ через Testcontainers — нужен Docker)
+# Checkstyle + компиляция + тесты, включая ArchUnit (Checkstyle на фазе validate; тесты поднимают PostgreSQL и RabbitMQ через Testcontainers — нужен Docker)
 mvn verify
 
 # только компиляция и упаковка без тестов

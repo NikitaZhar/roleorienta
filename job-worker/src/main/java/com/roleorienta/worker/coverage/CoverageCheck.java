@@ -4,13 +4,18 @@ import com.roleorienta.core.domain.Company;
 import com.roleorienta.core.domain.CoverageAssessment;
 import com.roleorienta.core.domain.CoverageState;
 import com.roleorienta.core.domain.JobPosting;
+import com.roleorienta.core.domain.Source;
 import com.roleorienta.worker.coverage.CoverageMatcher.Verdict;
 import com.roleorienta.worker.coverage.KarriereClient.Listings;
 import com.roleorienta.worker.lock.PostgresLeaderLock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
@@ -20,7 +25,8 @@ import org.springframework.web.client.HttpClientErrorException;
 /**
  * Проход проверки покрытия площадкой (A5, §82): под leader-lock берёт до
  * {@code maxCompaniesPerPass} работодателей с австрийскими публикациями без свежей оценки,
- * по одному запросу к karriere.at на работодателя, и записывает оценку каждой публикации
+ * по одному запросу к karriere.at на работодателя (и по одному на каждую его доску другого бренда,
+ * §86), и записывает оценку каждой публикации
  * ({@link CoverageMatcher}).
  *
  * <p>Сбой запроса или разбора у работодателя — оценки не трогаются (публикации остаются
@@ -84,14 +90,24 @@ public class CoverageCheck {
     }
 
     /**
-     * Проверка одного работодателя. Площадка ответила 404 (так karriere.at отвечает на слово
-     * поиска, по которому у неё нет выдачи; стенд §82: «dxctechnology») — публикации получают
-     * {@code UNKNOWN} с причиной и датой: работодатель не занимает очередь до перепроверки.
-     * Прочие сбои — оценки не трогаются, работодатель берётся снова.
+     * Проверка одного работодателя: публикации группируются по имени для поиска
+     * ({@link #searchName}) — у досок другого бренда (§86) свой запрос к площадке.
      */
     private void checkCompany(Company company, Instant now, String checkedOn) {
-        String employer = searchName(company);
-        List<JobPosting> postings = targets.postingsOf(company, KarriereClient.COUNTRY);
+        Map<String, List<JobPosting>> bySearchName = targets.postingsOf(company, KarriereClient.COUNTRY)
+                .stream()
+                .collect(Collectors.groupingBy(posting -> searchName(company, posting.getSource()),
+                        LinkedHashMap::new, Collectors.toList()));
+        bySearchName.forEach((employer, postings) -> checkEmployer(employer, postings, now, checkedOn));
+    }
+
+    /**
+     * Один запрос к площадке и оценки публикаций. Площадка ответила 404 (так karriere.at отвечает
+     * на слово поиска, по которому у неё нет выдачи; стенд §82: «dxctechnology») — публикации
+     * получают {@code UNKNOWN} с причиной и датой: работодатель не занимает очередь до
+     * перепроверки. Прочие сбои — оценки не трогаются, работодатель берётся снова.
+     */
+    private void checkEmployer(String employer, List<JobPosting> postings, Instant now, String checkedOn) {
         Listings listings;
         try {
             listings = platform.activeListings(employer);
@@ -129,6 +145,20 @@ public class CoverageCheck {
         assessment.setCheckedAt(now);
         assessment.setMatcherVersion(CoverageMatcher.VERSION);
         assessments.save(assessment);
+    }
+
+    /**
+     * Имя для поиска публикаций доски: бренд доски, если он отличается от работодателя
+     * ({@link BoardBrand}, §86), иначе {@link #searchName(Company)}.
+     *
+     * @param company работодатель
+     * @param source  доска публикации; {@code null} — искать по имени компании
+     * @return слово поиска на площадке
+     */
+    static String searchName(Company company, Source source) {
+        return Optional.ofNullable(source)
+                .flatMap(board -> BoardBrand.of(board.getExternalRef(), company.getName()))
+                .orElseGet(() -> searchName(company));
     }
 
     /**

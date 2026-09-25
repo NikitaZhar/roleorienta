@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import com.roleorienta.api.auth.AppUser;
 import com.roleorienta.api.auth.AppUserRepository;
-import com.roleorienta.api.posting.PostingReadRepository;
 import com.roleorienta.api.saved.SavedPostingDtos.SavedPostingResponse;
 import com.roleorienta.core.domain.JobPosting;
 import java.time.Instant;
@@ -35,7 +34,7 @@ class SavedPostingServiceTest {
 
     private SavedPostingRepository markers;
     private AppUserRepository users;
-    private PostingReadRepository postings;
+    private MarkedPostingRepository postings;
     private SavedPostingService service;
 
     private Authentication auth;
@@ -46,7 +45,7 @@ class SavedPostingServiceTest {
     void setUp() {
         markers = mock(SavedPostingRepository.class);
         users = mock(AppUserRepository.class);
-        postings = mock(PostingReadRepository.class);
+        postings = mock(MarkedPostingRepository.class);
         service = new SavedPostingService(markers, users, postings);
 
         auth = mock(Authentication.class);

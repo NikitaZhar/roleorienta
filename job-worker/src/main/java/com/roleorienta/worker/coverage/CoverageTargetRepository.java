@@ -35,14 +35,15 @@ public interface CoverageTargetRepository extends Repository<Company, Long> {
                                Limit limit);
 
     /**
-     * Публикации работодателя в стране площадки.
+     * Публикации работодателя в стране площадки — вместе с доской ({@code join fetch}: имя сайта
+     * нужно для бренда доски, §86, без отдельного запроса на каждую публикацию).
      *
      * @param company работодатель
      * @param country страна площадки
      * @return публикации
      */
     @Query("""
-            select p from JobPosting p where p.country = :country and exists (
+            select p from JobPosting p join fetch p.source where p.country = :country and exists (
                 select 1 from CompanySource cs where cs.source = p.source and cs.company = :company)
             """)
     List<JobPosting> postingsOf(@Param("company") Company company, @Param("country") String country);

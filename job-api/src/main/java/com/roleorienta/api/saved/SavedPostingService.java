@@ -2,7 +2,6 @@ package com.roleorienta.api.saved;
 
 import com.roleorienta.api.auth.AppUser;
 import com.roleorienta.api.auth.AppUserRepository;
-import com.roleorienta.api.posting.PostingReadRepository;
 import com.roleorienta.api.saved.SavedPostingDtos.SavedPostingResponse;
 import com.roleorienta.core.domain.JobPosting;
 import java.time.Instant;
@@ -24,16 +23,15 @@ import org.springframework.web.server.ResponseStatusException;
  * не может прочитать или изменить маркер другого — все операции идут по id владельца.</p>
  *
  * <p>Слои соблюдены (§3.3): сервис содержит логику, репозитории — только доступ. Три
- * зависимости — в пределах лимита §3.10. Существующий {@link PostingReadRepository}
- * переиспользуется без изменений: его {@code findById} даёт и проверку существования
- * публикации (иначе {@code 404}), и саму сущность как цель связи маркера.</p>
+ * зависимости — в пределах лимита §3.10. {@link MarkedPostingRepository#findById} даёт и проверку
+ * существования публикации (иначе {@code 404}), и саму сущность как цель связи маркера.</p>
  */
 @Service
 public class SavedPostingService {
 
     private final SavedPostingRepository markers;
     private final AppUserRepository users;
-    private final PostingReadRepository postings;
+    private final MarkedPostingRepository postings;
 
     /**
      * @param markers  доступ к маркерам
@@ -42,7 +40,7 @@ public class SavedPostingService {
      */
     public SavedPostingService(SavedPostingRepository markers,
                                AppUserRepository users,
-                               PostingReadRepository postings) {
+                               MarkedPostingRepository postings) {
         this.markers = markers;
         this.users = users;
         this.postings = postings;
