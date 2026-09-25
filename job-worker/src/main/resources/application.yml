@@ -197,6 +197,23 @@ app:
     # Оценка старше — проверяется снова, ч.
     recheck-after-hours: 24
     search-url: https://www.karriere.at/jobs/
+  region:
+    # Путь «от региона и профиля к карьерной странице» (план R1, R7; §95, ADR-19): IT-компании
+    # Словакии из реестра юрлиц RPO (открытый API, CC BY 4.0) → сайт по названию, подтверждённый
+    # номером IČO на странице → карьерная страница и её тип → число вакансий и вакансий ниши.
+    # Сейчас — замер на выборке (import-limit); включается на стенде. В тестах выключен.
+    enabled: false
+    poll-interval-ms: 300000
+    # Размер выборки и бюджеты прохода.
+    import-limit: 50
+    check-batch: 5
+    lookups-per-pass: 60
+    rpo:
+      base-url: https://api.statistics.sk/rpo/v1
+      # Поиск по основному виду деятельности — полнотекстовый; профиль уточняется кодом SK NACE.
+      activity-terms: "programovanie,informačných technológií"
+      code-prefixes: "62"
+      municipalities: "Bratislava,Košice,Žilina,Banská Bystrica,Nitra,Prešov,Trnava,Trenčín"
   digest:
     match:
       # Сопоставление изменений с подписками (§39): периодически формирует уведомления.

@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code DiscoveryHarvestScheduler}); 1003 — сопоставление подписок
  * ({@code MatchSubscriptionsScheduler}); 1004 — fan-out досок Common Crawl ({@code BoardFanOut});
  * 1005 — проверка покрытия ({@code CoverageCheck}); 1006 — имена компаний
- * ({@code CompanyNameBackfill}); 1007 — дайджест по email ({@code DigestRun}).</p>
+ * ({@code CompanyNameBackfill}); 1007 — дайджест по email ({@code DigestRun}); 1008 — путь «от региона» ({@code RegionRun}).</p>
  */
 @Component
 public class PostgresLeaderLock {

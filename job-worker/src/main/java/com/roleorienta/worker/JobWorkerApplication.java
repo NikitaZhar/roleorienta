@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import com.roleorienta.worker.coverage.CoverageProperties;
 import com.roleorienta.worker.digest.DigestProperties;
+import com.roleorienta.worker.region.RegionProperties;
 import com.roleorienta.worker.discovery.BoardOwnershipProperties;
 import com.roleorienta.worker.discovery.DiscoveryHarvestProperties;
 import com.roleorienta.worker.discovery.DiscoveryMarketProperties;
@@ -34,7 +35,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         DiscoveryHarvestProperties.class, CcHarvestProperties.class, DiscoveryMarketProperties.class,
         SourcePacingProperties.class, SourceHttpProperties.class, NicheFilterProperties.class,
         SchedulerProperties.class, BoardOwnershipProperties.class,
-        CoverageProperties.class, DigestProperties.class})
+        CoverageProperties.class, DigestProperties.class, RegionProperties.class})
 public class JobWorkerApplication {
 
     /**
