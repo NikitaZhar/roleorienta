@@ -193,7 +193,7 @@ public class SourceHttpClient {
      */
     public String postJson(String url, String jsonBody, Map<String, String> headers) {
         return execute(url, () -> restClient.post().uri(url)
-                .headers(h -> headers.forEach(h::set))
+                .headers(httpHeaders -> headers.forEach(httpHeaders::set))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(jsonBody)
@@ -212,11 +212,11 @@ public class SourceHttpClient {
         pacer.acquire(key);
         try {
             return call.get();
-        } catch (RestClientResponseException e) {
-            retryAfter(e).ifPresent(delay -> pacer.backoff(key, delay));
-            throw e;
-        } catch (RuntimeException e) {
-            throw unwrapSsrf(e);
+        } catch (RestClientResponseException exception) {
+            retryAfter(exception).ifPresent(delay -> pacer.backoff(key, delay));
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw unwrapSsrf(exception);
         }
     }
 
@@ -256,13 +256,13 @@ public class SourceHttpClient {
      * Пауза, которую просит источник: {@code Retry-After} в секундах или HTTP-дате — для
      * {@code 429} и {@code 503}; {@code 429} без заголовка — пауза по умолчанию.
      */
-    Optional<Duration> retryAfter(RestClientResponseException e) {
-        int status = e.getStatusCode().value();
+    Optional<Duration> retryAfter(RestClientResponseException exception) {
+        int status = exception.getStatusCode().value();
         if (status != 429 && status != 503) {
             return Optional.empty();
         }
-        String header = e.getResponseHeaders() == null
-                ? null : e.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+        String header = exception.getResponseHeaders() == null
+                ? null : exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER);
         if (header != null && !header.isBlank()) {
             String value = header.strip();
             try {

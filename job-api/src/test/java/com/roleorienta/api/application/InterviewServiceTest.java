@@ -61,8 +61,8 @@ class InterviewServiceTest {
         return interview;
     }
 
-    private static int statusOf(ResponseStatusException e) {
-        return e.getStatusCode().value();
+    private static int statusOf(ResponseStatusException error) {
+        return error.getStatusCode().value();
     }
 
     @Test
@@ -86,9 +86,9 @@ class InterviewServiceTest {
     void scheduleForeignApplicationIsNotFound() {
         withOwner();
         when(applications.findByIdAndUser_Id(5L, 1L)).thenReturn(Optional.empty());
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.schedule(auth, 5L, FUTURE, ZONE));
-        assertEquals(404, statusOf(e));
+        assertEquals(404, statusOf(error));
         verify(interviews, never()).save(any());
     }
 
@@ -96,9 +96,9 @@ class InterviewServiceTest {
     void scheduleInvalidZoneIsBadRequest() {
         withOwner();
         ownedApplication();
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.schedule(auth, 5L, FUTURE, "Mars/Olympus"));
-        assertEquals(400, statusOf(e));
+        assertEquals(400, statusOf(error));
         verify(interviews, never()).save(any());
     }
 
@@ -106,9 +106,9 @@ class InterviewServiceTest {
     void schedulePastTimeIsBadRequest() {
         withOwner();
         ownedApplication();
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.schedule(auth, 5L, PAST, ZONE));
-        assertEquals(400, statusOf(e));
+        assertEquals(400, statusOf(error));
         verify(interviews, never()).save(any());
     }
 
@@ -130,9 +130,9 @@ class InterviewServiceTest {
     void rescheduleCancelledIsConflict() {
         withOwner();
         ownedInterview(InterviewStatus.CANCELLED);
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.reschedule(auth, 5L, 9L, FUTURE, ZONE));
-        assertEquals(409, statusOf(e));
+        assertEquals(409, statusOf(error));
         verify(interviews, never()).save(any());
     }
 

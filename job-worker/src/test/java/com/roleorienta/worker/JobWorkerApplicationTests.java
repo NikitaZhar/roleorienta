@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Import;
  * тест не должен ходить в интернет.
  */
 @SpringBootTest(properties = {"app.discovery.cc.enabled=false", "app.coverage.enabled=false",
-        "app.discovery.name-backfill.enabled=false"})
+        "app.discovery.name-backfill.enabled=false", "app.digest.mail.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class JobWorkerApplicationTests {
 

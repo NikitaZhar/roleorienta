@@ -12,6 +12,18 @@ spring:
   # Схемой владеет job-api; worker не применяет миграции (ADR-2).
   flyway:
     enabled: false
+  # SMTP для дайджеста (A7, §88). Локально — Mailpit из docker-compose (письма не уходят наружу,
+  # смотреть на http://localhost:8025). В облаке — адрес и учётные данные SMTP-провайдера через
+  # переменные окружения. Тайм-ауты обязательны: без них зависший сервер держит проход.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
   # Брокер фоновых заданий (ADR-1). Соединение ленивое: контекст стартует и при
   # недоступном брокере, а обработка/публикация возобновляются по восстановлении.
   rabbitmq:
@@ -188,3 +200,15 @@ app:
       poll-interval-ms: 60000
       # Размер пачки необработанных изменений за проход.
       batch-size: 200
+    mail:
+      # Ежедневный дайджест по email (A7, §88): новые вакансии отслеживаемых компаний и изменения
+      # их вакансий за сутки. Нет изменений — нет письма. В тестах выключен.
+      enabled: true
+      # Время запуска (cron Spring: секунды минуты часы день месяц день-недели) и часовой пояс.
+      cron: "0 50 6 * * *"
+      zone: Europe/Bratislava
+      from: ${DIGEST_MAIL_FROM:digest@roleorienta.local}
+      # Попыток отправки одного письма; после — FAILED (окно больше не отправляется).
+      max-attempts: 3
+      # Строк в разделе письма; остаток — «и ещё N».
+      max-items: 30

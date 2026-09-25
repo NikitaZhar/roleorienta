@@ -15,7 +15,7 @@ import java.util.function.Predicate;
 public record MarketScope(Predicate<String> isMarketCountry, Predicate<String> isMarketLocation) {
 
     /** Без ограничения рынком: провайдер отдаёт все публикации источника. */
-    public static final MarketScope ALL = new MarketScope(c -> true, l -> true);
+    public static final MarketScope ALL = new MarketScope(country -> true, location -> true);
 
     /** Область задана (не {@link #ALL}). */
     public boolean restricted() {

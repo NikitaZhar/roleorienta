@@ -74,7 +74,7 @@ public class SsrfGuard {
         URI uri;
         try {
             uri = new URI(url);
-        } catch (URISyntaxException e) {
+        } catch (URISyntaxException exception) {
             throw new SsrfBlockedException("Некорректный URL: " + url);
         }
         String scheme = uri.getScheme();

@@ -105,14 +105,14 @@ class SavedPostingApiIntegrationTest {
 
     @Test
     void saveThenListReturnsMarkerForOwner() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.postingId").value((int) postingId))
                 .andExpect(jsonPath("$.state").value("SAVED"));
 
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(a))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].postingId").value((int) postingId));
@@ -120,37 +120,37 @@ class SavedPostingApiIntegrationTest {
 
     @Test
     void saveIsIdempotent() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(a))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionA))
                 .andExpect(jsonPath("$.length()").value(1));
     }
 
     @Test
     void hidePersistsReason() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/hide", postingId).with(csrf()).session(a)
+        mockMvc.perform(post("/api/v1/postings/{id}/hide", postingId).with(csrf()).session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"дубликат\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("HIDDEN"))
                 .andExpect(jsonPath("$.hiddenReason").value("дубликат"));
 
         // Скрытая публикация не попадает в список сохранённых.
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(a))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionA))
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
     void hideAcceptsEmptyBody() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/hide", postingId).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/hide", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("HIDDEN"))
                 .andExpect(jsonPath("$.hiddenReason").isEmpty());
@@ -158,58 +158,58 @@ class SavedPostingApiIntegrationTest {
 
     @Test
     void removeUnsetsMarker() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(a))
+        MockHttpSession sessionA = registerAndLogin(USER_A);
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(delete("/api/v1/postings/{id}/saved", postingId).with(csrf()).session(a))
+        mockMvc.perform(delete("/api/v1/postings/{id}/saved", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(a))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionA))
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
     /** A23: маркеры разных пользователей независимы; чужой список и чужой маркер недоступны. */
     @Test
     void markersAreIsolatedPerOwner() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
-        MockHttpSession b = registerAndLogin(USER_B);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
+        MockHttpSession sessionB = registerAndLogin(USER_B);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionA))
                 .andExpect(status().isOk());
 
         // B не видит сохранённое A.
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(b))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionB))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
         // B сохраняет ту же публикацию — своя независимая строка.
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(b))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).with(csrf()).session(sessionB))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(b))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionB))
                 .andExpect(jsonPath("$.length()").value(1));
 
         // Снятие маркера у B не затрагивает маркер A.
-        mockMvc.perform(delete("/api/v1/postings/{id}/saved", postingId).with(csrf()).session(b))
+        mockMvc.perform(delete("/api/v1/postings/{id}/saved", postingId).with(csrf()).session(sessionB))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(get("/api/v1/me/saved-postings").session(a))
+        mockMvc.perform(get("/api/v1/me/saved-postings").session(sessionA))
                 .andExpect(jsonPath("$.length()").value(1));
     }
 
     @Test
     void saveOnMissingPostingReturnsProblemJson() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/save", 9_999_999L).with(csrf()).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", 9_999_999L).with(csrf()).session(sessionA))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
     }
 
     @Test
     void saveWithoutCsrfIsForbidden() throws Exception {
-        MockHttpSession a = registerAndLogin(USER_A);
+        MockHttpSession sessionA = registerAndLogin(USER_A);
 
-        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).session(a))
+        mockMvc.perform(post("/api/v1/postings/{id}/save", postingId).session(sessionA))
                 .andExpect(status().isForbidden());
     }
 

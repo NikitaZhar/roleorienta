@@ -63,8 +63,8 @@ public class DiscoveryJobEnqueuer {
         body.put("type", CrawlTaskType.DISCOVER_EMPLOYER.name());
         try {
             return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload DISCOVER_EMPLOYER", e);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось сформировать payload DISCOVER_EMPLOYER", exception);
         }
     }
 }

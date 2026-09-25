@@ -18,8 +18,9 @@
 > отклики/заметки/собеседования, отчёты об ошибках, проверка принадлежности доски Workday
 > работодателю (описание доски, признаки агентства), имя компании из описания доски и одна
 > компания на тенант Workday, покрытие австрийских вакансий площадкой karriere.at в ленте
-> («только с сайта» / «и там, и там» / «не проверено»). В работе (ядро ценности): площадка для
-> Словакии, снимки (`SourceSnapshot`), дайджест + email, SPA.
+> («только с сайта» / «и там, и там» / «не проверено»), ежедневный дайджест по email (новые
+> вакансии отслеживаемых компаний и изменения). В работе (ядро ценности): площадка для
+> Словакии, снимки (`SourceSnapshot`), SPA.
 > Охват — по вендор-адаптерам ATS, **включая энтерпрайз** (Workday, SAP
 > SuccessFactors, SmartRecruiters), а не только SMB (см. `docs/technical-design.md`,
 > ADR-17/ADR-18).
@@ -49,6 +50,7 @@ RabbitMQ:
 | Каркас    | Spring Boot 4.1.1 |
 | Данные    | PostgreSQL, Spring Data JPA, Flyway |
 | Очередь   | RabbitMQ, Spring AMQP |
+| Почта     | SMTP через Spring Mail (`spring.mail.*`); локально — Mailpit (письма не уходят наружу) |
 | Сборка    | Maven (многомодульный), образы — `spring-boot:build-image` (buildpacks) |
 | Тесты     | JUnit 5, Testcontainers (реальные PostgreSQL и RabbitMQ) |
 | CI        | GitHub Actions (Checkstyle + компиляция + тесты, включая архитектурные правила ArchUnit) |
@@ -67,7 +69,7 @@ roleorienta/
 ├── job-worker/              # фоновый обработчик (Spring Boot + AMQP)
 ├── docker-compose.yml       # профиль local-pilot
 ├── infra/source-stub/       # маппинги заглушки источника (WireMock)
-├── config/checkstyle/       # правила Checkstyle (≤5 параметров, ≤5 полей записи)
+├── config/checkstyle/       # правила Checkstyle (≤5 параметров, ≤5 полей записи, имена ≥2 символов)
 ├── .github/workflows/ci.yml # базовый CI
 └── .env.example             # локальные значения для docker compose
 ```
@@ -93,7 +95,8 @@ mvn -DskipTests package
 Требуется: запущенный Docker Desktop и JDK 21.
 
 ```bash
-./scripts/dev-up.sh       # поднять инфраструктуру (postgres:5433, rabbitmq, minio, source-stub)
+./scripts/dev-up.sh       # поднять инфраструктуру (postgres:5433, rabbitmq, minio, mailpit, source-stub)
+                          # письма дайджеста — http://localhost:8025 (Mailpit)
 ./scripts/run-api.sh      # запустить job-api  -> http://localhost:8080/actuator/health
 # ./scripts/run-worker.sh # при необходимости — job-worker -> http://localhost:8081
 # ... работа; Ctrl+C останавливает приложение ...

@@ -134,7 +134,7 @@ public class ApplicationService {
             application.setStatus(target);
             try {
                 applications.saveAndFlush(application);
-            } catch (OptimisticLockingFailureException e) {
+            } catch (OptimisticLockingFailureException exception) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Отклик изменён другим запросом, обновите и повторите");
             }
@@ -234,7 +234,7 @@ public class ApplicationService {
         }
         try {
             return Long.parseLong(value);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException exception) {
             return null;
         }
     }

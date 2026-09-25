@@ -123,8 +123,8 @@ public class FetchPostingJobHandler implements TypedJobHandler {
                     node.path("taskId").asLong(),
                     node.path("sourceId").asLong(),
                     node.path("externalId").asText());
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось разобрать тело задания FETCH_POSTING", e);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось разобрать тело задания FETCH_POSTING", exception);
         }
     }
 

@@ -35,8 +35,8 @@ public class SourceSchedulerTrigger {
     public void tick() {
         try {
             scheduler.runOnce();
-        } catch (RuntimeException e) {
-            log.warn("Тик планировщика завершился ошибкой, будет повтор на следующем тике", e);
+        } catch (RuntimeException exception) {
+            log.warn("Тик планировщика завершился ошибкой, будет повтор на следующем тике", exception);
         }
     }
 }

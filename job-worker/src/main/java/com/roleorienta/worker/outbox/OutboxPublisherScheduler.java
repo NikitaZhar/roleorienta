@@ -41,8 +41,8 @@ public class OutboxPublisherScheduler {
     public void tick() {
         try {
             publisher.publishBatch();
-        } catch (RuntimeException e) {
-            log.warn("Тик публикатора outbox завершился ошибкой, будет повтор на следующем тике", e);
+        } catch (RuntimeException exception) {
+            log.warn("Тик публикатора outbox завершился ошибкой, будет повтор на следующем тике", exception);
         }
     }
 }

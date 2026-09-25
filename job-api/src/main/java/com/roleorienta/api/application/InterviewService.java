@@ -121,7 +121,7 @@ public class InterviewService {
     private void validateZone(String zoneId) {
         try {
             ZoneId.of(zoneId);
-        } catch (DateTimeException e) {
+        } catch (DateTimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Некорректная таймзона (ожидается IANA zone id): " + zoneId);
         }

@@ -1,6 +1,6 @@
 # Профиль local-pilot (Этап 1): API + worker (планировщик + публикатор outbox +
 # обработчики), PostgreSQL, RabbitMQ, объектное хранилище (MinIO, S3-совместимое),
-# заглушка источника (WireMock).
+# ловушка писем (Mailpit), заглушка источника (WireMock).
 # Образы приложений собираются заранее: `mvn spring-boot:build-image` (см. README).
 # Значения кредов ниже — локальные значения по умолчанию для разработки, не секреты;
 # переопределяются через файл .env (см. .env.example).
@@ -57,6 +57,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # Ловушка писем для локальной разработки (дайджест A7, §88): принимает SMTP на 1025 и
+  # показывает письма в веб-интерфейсе http://localhost:8025; наружу ничего не отправляет.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   source-stub:
     image: wiremock/wiremock:latest
     command: ["--global-response-templating", "--verbose"]
@@ -100,6 +108,8 @@ services:
       # Заглушка-источник в приватной сети compose — доверенная локальная
       # интеграция (A13). Только для local-pilot; в production не задаётся.
       APP_COLLECT_HTTP_ALLOW_PRIVATE_ADDRESSES: "true"
+      MAIL_HOST: mailpit
+      MAIL_PORT: "1025"
     ports:
       - "8081:8081"
 

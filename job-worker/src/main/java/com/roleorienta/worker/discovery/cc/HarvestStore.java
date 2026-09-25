@@ -79,7 +79,7 @@ public class HarvestStore {
                 "UPDATE harvest_cursor SET lease_until = now() + make_interval(secs => ?), updated_at = now() "
                         + "WHERE input_code = ? AND (lease_until IS NULL OR lease_until < now()) "
                         + "RETURNING collection, page_size, page_count, next_page",
-                (rs, i) -> new Cursor(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4)),
+                (rs, rowNum) -> new Cursor(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4)),
                 (double) leaseSeconds, inputCode);
         return leased.stream().findFirst();
     }
@@ -150,7 +150,7 @@ public class HarvestStore {
         return jdbcTemplate.query(
                 "SELECT id, provider_code, slug, base_url FROM harvested_board WHERE state = 'NEW' "
                         + "ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED",
-                (rs, i) -> new PendingBoard(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)),
+                (rs, rowNum) -> new PendingBoard(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)),
                 limit);
     }
 

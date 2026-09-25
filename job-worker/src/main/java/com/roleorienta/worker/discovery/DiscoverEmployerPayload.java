@@ -34,8 +34,8 @@ public final class DiscoverEmployerPayload {
         String json;
         try {
             json = MAPPER.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Не удалось сформировать payload DISCOVER_EMPLOYER", e);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Не удалось сформировать payload DISCOVER_EMPLOYER", exception);
         }
         return new OutboxEvent("EmployerCandidate", slug, CrawlTaskType.DISCOVER_EMPLOYER.name(), json, null);
     }

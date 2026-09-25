@@ -53,8 +53,8 @@ class ApplicationServiceTest {
         return application;
     }
 
-    private static int statusOf(ResponseStatusException e) {
-        return e.getStatusCode().value();
+    private static int statusOf(ResponseStatusException error) {
+        return error.getStatusCode().value();
     }
 
     @Test
@@ -134,27 +134,27 @@ class ApplicationServiceTest {
     void updateStatusWithoutIfMatchIs428() {
         withOwner();
         ownedApplication(ApplicationStatus.APPLIED);
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, null));
-        assertEquals(428, statusOf(e));
+        assertEquals(428, statusOf(error));
     }
 
     @Test
     void updateStatusStaleIfMatchIs412() {
         withOwner();
         ownedApplication(ApplicationStatus.APPLIED);
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.updateStatus(auth, 5L, ApplicationStatus.INTERVIEWING, "\"7\""));
-        assertEquals(412, statusOf(e));
+        assertEquals(412, statusOf(error));
     }
 
     @Test
     void updateStatusDisallowedTransitionIs409() {
         withOwner();
         ownedApplication(ApplicationStatus.APPLIED);
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.updateStatus(auth, 5L, ApplicationStatus.OFFER, "\"0\""));
-        assertEquals(409, statusOf(e));
+        assertEquals(409, statusOf(error));
         verify(applications, never()).saveAndFlush(any());
     }
 
@@ -187,9 +187,9 @@ class ApplicationServiceTest {
         withOwner();
         when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
                 .thenReturn(Optional.empty());
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.updateNote(auth, 5L, 3L, "new"));
-        assertEquals(404, statusOf(e));
+        assertEquals(404, statusOf(error));
         verify(notes, never()).save(any());
     }
 
@@ -210,9 +210,9 @@ class ApplicationServiceTest {
         withOwner();
         when(notes.findByIdAndApplication_IdAndApplication_User_Id(3L, 5L, 1L))
                 .thenReturn(Optional.empty());
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.deleteNote(auth, 5L, 3L));
-        assertEquals(404, statusOf(e));
+        assertEquals(404, statusOf(error));
         verify(notes, never()).delete(any());
     }
     @Test

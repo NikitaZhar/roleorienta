@@ -62,14 +62,14 @@ public class AddressPolicy {
                 || addr.isMulticastAddress()) {
             return true;
         }
-        byte[] b = addr.getAddress();
+        byte[] octets = addr.getAddress();
         if (addr instanceof Inet6Address) {
             // ULA fc00::/7 — старшие 7 бит равны 1111 110x
-            int first = b[0] & 0xff;
+            int first = octets[0] & 0xff;
             return (first & 0xfe) == 0xfc;
         }
-        int b0 = b[0] & 0xff;
-        int b1 = b[1] & 0xff;
+        int b0 = octets[0] & 0xff;
+        int b1 = octets[1] & 0xff;
         // 0.0.0.0/8 — «этот хост»
         if (b0 == 0) {
             return true;
@@ -85,17 +85,17 @@ public class AddressPolicy {
      */
     private InetAddress unwrapV4Mapped(InetAddress addr) {
         if (addr instanceof Inet6Address) {
-            byte[] b = addr.getAddress();
+            byte[] octets = addr.getAddress();
             boolean prefixZero = true;
-            for (int i = 0; i < 10; i++) {
-                if (b[i] != 0) {
+            for (int index = 0; index < 10; index++) {
+                if (octets[index] != 0) {
                     prefixZero = false;
                     break;
                 }
             }
-            if (prefixZero && (b[10] & 0xff) == 0xff && (b[11] & 0xff) == 0xff) {
+            if (prefixZero && (octets[10] & 0xff) == 0xff && (octets[11] & 0xff) == 0xff) {
                 try {
-                    return InetAddress.getByAddress(new byte[] {b[12], b[13], b[14], b[15]});
+                    return InetAddress.getByAddress(new byte[] {octets[12], octets[13], octets[14], octets[15]});
                 } catch (UnknownHostException ignored) {
                     // длина 4 всегда валидна; недостижимо
                 }

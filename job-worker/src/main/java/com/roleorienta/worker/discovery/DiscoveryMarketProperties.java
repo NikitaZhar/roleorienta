@@ -114,15 +114,15 @@ public record DiscoveryMarketProperties(
         int unsure = 0;
         List<String> marketLocations = new java.util.ArrayList<>();
         List<String> unsureLocations = new java.util.ArrayList<>();
-        for (Map.Entry<String, Integer> e : locationCounts.entrySet()) {
-            String location = e.getKey();
+        for (Map.Entry<String, Integer> entry : locationCounts.entrySet()) {
+            String location = entry.getKey();
             if (strong != null && strong.matcher(location).find()) {
-                market += e.getValue();
-                marketLocations.add(location + " " + e.getValue());
+                market += entry.getValue();
+                marketLocations.add(location + " " + entry.getValue());
             } else if (ambiguous != null && ambiguous.matcher(location).find()
                     && !US_MARKER.matcher(location).find()) {
-                unsure += e.getValue();
-                unsureLocations.add(location + " " + e.getValue());
+                unsure += entry.getValue();
+                unsureLocations.add(location + " " + entry.getValue());
             }
         }
         return new LocationMatch(market, unsure, List.copyOf(marketLocations), List.copyOf(unsureLocations));
@@ -142,7 +142,7 @@ public record DiscoveryMarketProperties(
     private static Pattern wholeWords(List<String> terms) {
         String alternatives = terms.stream()
                 .map(String::strip)
-                .filter(t -> !t.isEmpty())
+                .filter(term -> !term.isEmpty())
                 .map(Pattern::quote)
                 .collect(Collectors.joining("|"));
         if (alternatives.isEmpty()) {
@@ -161,7 +161,7 @@ public record DiscoveryMarketProperties(
     public int marketCount(Map<String, Integer> countryCounts) {
         Set<String> market = normalized();
         return countryCounts.entrySet().stream()
-                .filter(e -> market.contains(e.getKey().toLowerCase(Locale.ROOT)))
+                .filter(entry -> market.contains(entry.getKey().toLowerCase(Locale.ROOT)))
                 .mapToInt(Map.Entry::getValue)
                 .sum();
     }
@@ -173,8 +173,8 @@ public record DiscoveryMarketProperties(
 
     private Set<String> normalized() {
         return countries.stream()
-                .map(c -> c.strip().toLowerCase(Locale.ROOT))
-                .filter(c -> !c.isEmpty())
+                .map(country -> country.strip().toLowerCase(Locale.ROOT))
+                .filter(country -> !country.isEmpty())
                 .collect(Collectors.toSet());
     }
 }

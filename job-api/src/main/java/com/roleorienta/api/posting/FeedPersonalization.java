@@ -70,6 +70,6 @@ public class FeedPersonalization {
             return Map.of();
         }
         return markers.findByUser_IdAndPosting_IdIn(userId, postingIds).stream()
-                .collect(Collectors.toMap(m -> m.getPosting().getId(), Function.identity()));
+                .collect(Collectors.toMap(marker -> marker.getPosting().getId(), Function.identity()));
     }
 }

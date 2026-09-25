@@ -22,7 +22,7 @@
 | Язык | пока только английский; мультиязычие (словацкий/немецкий, «english-friendly» A07) — следующим срезом |
 | Первый вендор | Workday (энтерпрайз, де-факто открытый JSON API, без ключа) |
 | Первый вход обнаружения | Индекс Common Crawl (URL `*.myworkdayjobs.com` → `tenant/site`); CT для Workday непригоден — см. п.3 |
-| Область сравнения покрытия | Австрия — karriere.at (выбрана владельцем 2026-09-24, project-notes §82); Словакия — открыто (profesia.sk: robots.txt запрещает поиск и страницы компаний) |
+| Область сравнения покрытия | Австрия — karriere.at (выбрана владельцем 2026-09-24, project-notes §82); Словакия — открыто; исследование 2026-09-25 (project-notes §88.2): profesia.sk, поиск `/praca/?search_anywhere=` robots.txt не запрещает, ждёт проверки условий использования (ранее: profesia.sk: robots.txt запрещает поиск и страницы компаний) |
 
 Обоснование выбора вендора: Swiss Re / RBI — на SAP SuccessFactors, DT-IT — на
 SmartRecruiters; ни один не на Workday. Workday взят первым как самый достижимый

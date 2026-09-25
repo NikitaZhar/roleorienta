@@ -112,10 +112,10 @@ class CommonCrawlIndexClientTest {
 
     @Test
     void truncatedResponseIsRejectedNotSilentlyShortened() {
-        CommonCrawlIndexClient.IncompleteIndexPageException e = assertThrows(
+        CommonCrawlIndexClient.IncompleteIndexPageException error = assertThrows(
                 CommonCrawlIndexClient.IncompleteIndexPageException.class,
                 () -> client.urlsOnPage("CC-MAIN-TRUNC", "*.myworkdayjobs.com", 1, 2));
-        assertTrue(e.getMessage().contains("стр. 2") && e.getMessage().contains("разобрано URL 1"), e.getMessage());
+        assertTrue(error.getMessage().contains("стр. 2") && error.getMessage().contains("разобрано URL 1"), error.getMessage());
     }
 
     @Test

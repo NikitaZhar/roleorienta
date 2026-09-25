@@ -5,8 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "Запуск инфраструктуры (postgres, rabbitmq, minio, source-stub)..."
-docker compose up -d postgres rabbitmq minio source-stub
+echo "Запуск инфраструктуры (postgres, rabbitmq, minio, mailpit, source-stub)..."
+docker compose up -d postgres rabbitmq minio mailpit source-stub
 
 echo -n "Ожидание готовности PostgreSQL"
 cid="$(docker compose ps -q postgres)"

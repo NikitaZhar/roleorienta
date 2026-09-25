@@ -293,7 +293,7 @@ public class SalaryTextExtractor {
         try {
             BigDecimal value = new BigDecimal(normalized);
             return thousands == null ? value : value.multiply(THOUSAND);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException exception) {
             return null;
         }
     }

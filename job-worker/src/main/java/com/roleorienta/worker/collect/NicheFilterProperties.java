@@ -52,7 +52,7 @@ public record NicheFilterProperties(
     private static Pattern wholeWords(List<String> terms) {
         String alternatives = terms.stream()
                 .map(String::strip)
-                .filter(t -> !t.isEmpty())
+                .filter(term -> !term.isEmpty())
                 .map(Pattern::quote)
                 .collect(Collectors.joining("|"));
         if (alternatives.isEmpty()) {

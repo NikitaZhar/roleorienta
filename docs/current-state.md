@@ -4,8 +4,8 @@
 сессии. История решений — в [project-notes](project-notes.md), правила — в
 [рабочем контракте](working-contract.md) и [регламенте сессии](session-protocol.md).
 
-**Обновлено:** 2026-09-25, после §87.
-**Срезов с последнего аудита: 0** (последний аудит — §87).
+**Обновлено:** 2026-09-25, после §88.
+**Срезов с последнего аудита: 1** (последний аудит — §87).
 
 ## Назначение и границы
 
@@ -13,13 +13,14 @@
 Workday через индекс Common Crawl), собирает вакансии целевого рынка (Словакия, Австрия),
 нормализует их и отдаёт ленту через REST. Проверяемая гипотеза — автообнаружение
 работодателей и «скрытых» вакансий (план `roleorienta-plan-korrektirovka.md`, приоритет A).
-SPA, покрытие площадками, снимки, дайджест/email — ещё не построены.
+SPA, покрытие Словакии, снимки — ещё не построены; ежедневный дайджест по email — есть (§88).
 
 ## Стек и запуск
 
-Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V30, ведёт `job-api`), RabbitMQ
+Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V31, ведёт `job-api`), RabbitMQ
 (transactional outbox, publisher confirms, DLQ), Maven multi-module, Testcontainers в тестах,
-CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.sh` (Postgres, RabbitMQ
+CI — GitHub Actions `mvn -B -ntp verify`. Почта — Spring Mail (SMTP; локально Mailpit, письма на
+http://localhost:8025). Локально: `./scripts/dev-up.sh` (Postgres, RabbitMQ, Mailpit
 в Docker), `./scripts/run-api.sh` (:8080), `./scripts/run-worker.sh` (:8081).
 
 ## Модули
@@ -33,7 +34,7 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 - **job-worker** — фоновая работа: `scheduling` (планировщик источников под leader-lock),
   `outbox`/`messaging`/`idempotency` (доставка заданий), `discovery` (обнаружение),
   `collect` (сбор и обогащение), `normalize`, `extract`, `adapters` (Greenhouse, Workday),
-  `http` (единственный HTTP-клиент), `digest` (сопоставление подписок), `lock`, `xml`.
+  `http` (единственный HTTP-клиент), `digest` (сопоставление подписок; ежедневный дайджест по email — `DigestRun`, §88), `lock`, `xml`.
 
 ## Путь данных
 
@@ -70,16 +71,21 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
    проверке [дата]»; нет выдачи (404) — `UNKNOWN` с датой (§83). Словакия — «не проверено».
    Доска другого бренда (`accenture/AvanadeCareers` → «Avanade», `BoardBrand`, §86) ищется по
    бренду — свой запрос. Компании со старым именем-slug переименовывает `CompanyNameBackfill` (lock 1006, §83).
+7. **Дайджест (A7, §88).** `DigestTrigger` (cron `app.digest.mail.cron`, 06:50 Europe/Bratislava) →
+   `DigestRun` (lock 1007): подписчику с новыми вакансиями его компаний (сначала «только с сайта»)
+   или изменениями (уведомления) в окне «с прошлого письма (иначе — с подписки) до сейчас» —
+   письмо `digest_delivery` (V31) `PENDING` → SMTP → `SENT`; сбой — повтор, после 3 попыток `FAILED`.
 
 ## Соглашения кода (кратко; полностью — контракт §3)
 
 - ≤5 параметров у методов/конструкторов и ≤5 полей у записей, **включая DTO** — группировать во
   вложенные записи (`PostingFilter`, `FeedPaging`, `PostingDtos.Facts`, `*Properties`) или выносить
-  компонент. Проверяет Checkstyle (`config/checkstyle/checkstyle.xml`, фаза validate, §78).
+  компонент. Проверяет Checkstyle (`config/checkstyle/checkstyle.xml`, фаза validate, §78); он же —
+  имена переменных, параметров, полей не короче двух символов, включая индексы циклов (§88).
 - Архитектура проверяется тестами ArchUnit (`ArchitectureTest` в job-api и job-worker, §86): нет
   циклов пакетов, HTTP воркера — только `SourceHttpClient`, XML — только `SafeXml`, контроллеры
   без репозиториев.
-- Ключи leader-lock — реестр в JavaDoc `PostgresLeaderLock` (1001–1006); новый ключ — туда же.
+- Ключи leader-lock — реестр в JavaDoc `PostgresLeaderLock` (1001–1007); новый ключ — туда же.
 - Настройки — `@ConfigurationProperties`-записи с `@DefaultValue`, регистрируются в
   `JobWorkerApplication`; значения и комментарии — в `application.yml`.
 - Репозитории — только запросы; логика (курсоры, преобразования) — в сервисах и записях-значениях.
@@ -97,7 +103,8 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 лента через REST (`stand-feed.txt`). Скрипты сами запускают и останавливают воркер; нужны
 `dev-up.sh`, для REST — `run-api.sh`. `stand-coverage.sh` — один проход проверки покрытия и
 переименования компаний (~2 мин, `coverage.txt`); `stand-brand.sh` — перепроверка досок другого
-бренда (~3 мин, `stand-brand.txt`); требует применённой V29 (её применяет
+бренда (~3 мин, `stand-brand.txt`); `stand-digest.sh` — дайджест пользователю-стенду, письма из
+Mailpit (~2 мин, `stand-digest.txt`, нужна V31); требует применённой V29 (её применяет
 `run-api.sh`).
 
 ## Статус плана (приоритеты — `roleorienta-plan-korrektirovka.md`)
@@ -106,11 +113,12 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
   качество данных Workday (зарплата, локации, уровень, дата — §65–§70); лента с фильтрами и
   сортировкой по дате.
 - Checkstyle в сборке (§78); ArchUnit в сборке (§86, план C4).
-- A5 — Австрия (karriere.at, §81–§83). Далее: площадка для Словакии;
-  дедуп между провайдерами — открыт.
+- A5 — Австрия (karriere.at, §81–§83). Словакия — profesia.sk (исследование §88.2), реализация §89
+  после проверки условий использования владельцем; дедуп между провайдерами — открыт.
+- A7 — ежедневный дайджест по email (§88).
 - Дубли компаний, заведённых до V28, объединены миграцией V30 (§85): одна компания на тенант.
 - Бренд доски ≠ тенант — поиск на площадке по бренду (§86). Аудит §77–§86 — §87.
-- Ждут решения владельца (§87.3): переименование `catch (… e)` во всём коде + правила имён в
-  Checkstyle; удаление `CompanyNameBackfill`, когда slug-имён не останется.
-- Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A5–A7 (покрытие, снимки,
-  дайджест).
+- Имена ≥2 символов — во всём коде и в Checkstyle (§88). `CompanyNameBackfill` удаляется, когда
+  slug-имён не останется (§89).
+- Следующий срез §89: A6 — снимки в S3 (MinIO + AWS SDK v2) и площадка SK.
+- Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A6 (снимки).

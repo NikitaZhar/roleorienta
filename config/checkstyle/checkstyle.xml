@@ -6,7 +6,9 @@
   Автоматическая проверка правил рабочего контракта (§3.10) в сборке (регламент сессии §6, §78).
   Нарушение — ошибка `mvn verify`. Подавлять нельзя без разрешения владельца.
   Правила: не больше 5 параметров у методов и конструкторов; не больше 5 полей у записей
-  (record), включая DTO.
+  (record), включая DTO; имена переменных, параметров (в том числе лямбд и catch), полей и
+  компонентов записей — не короче двух символов (контракт §3.1, «нет имён из одного символа»;
+  §88), индексы циклов — тоже.
 -->
 <module name="Checker">
     <property name="charset" value="UTF-8"/>
@@ -19,6 +21,31 @@
         </module>
         <module name="RecordComponentNumber">
             <property name="max" value="5"/>
+        </module>
+        <!-- Имена: строчная буква и ещё хотя бы один символ. https://checkstyle.org/checks/naming/ -->
+        <module name="LocalVariableName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="LocalFinalVariableName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="ParameterName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="LambdaParameterName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="CatchParameterName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="PatternVariableName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="RecordComponentName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
+        </module>
+        <module name="MemberName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]+$"/>
         </module>
     </module>
 </module>

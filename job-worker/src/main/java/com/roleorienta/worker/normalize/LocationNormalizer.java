@@ -83,14 +83,14 @@ public class LocationNormalizer {
         if (remoteType == null || remoteType.isBlank()) {
             return null;
         }
-        String v = remoteType.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
-        if (v.contains("remote")) {
+        String letters = remoteType.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        if (letters.contains("remote")) {
             return WorkModality.REMOTE;
         }
-        if (v.contains("hybrid") || v.startsWith("flex")) {
+        if (letters.contains("hybrid") || letters.startsWith("flex")) {
             return WorkModality.HYBRID;
         }
-        if (v.startsWith("onsite") || v.equals("office") || v.equals("inoffice")) {
+        if (letters.startsWith("onsite") || letters.equals("office") || letters.equals("inoffice")) {
             return WorkModality.ONSITE;
         }
         return null;
@@ -119,7 +119,7 @@ public class LocationNormalizer {
     private NormalizedLocation splitCityCountry(String value) {
         List<String> parts = Arrays.stream(value.split(","))
                 .map(String::strip)
-                .filter(p -> !p.isEmpty())
+                .filter(part -> !part.isEmpty())
                 .toList();
         if (parts.isEmpty()) {
             return new NormalizedLocation(null, null, WorkModality.UNKNOWN);
@@ -148,7 +148,7 @@ public class LocationNormalizer {
         String city = parts[parts.length - 1].strip();
         if (city.equals(city.toUpperCase(Locale.ROOT))) {
             city = Arrays.stream(city.toLowerCase(Locale.ROOT).split(" "))
-                    .map(w -> w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                    .map(word -> word.isEmpty() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1))
                     .collect(java.util.stream.Collectors.joining(" "));
         }
         return city;

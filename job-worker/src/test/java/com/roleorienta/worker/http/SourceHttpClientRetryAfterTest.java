@@ -65,10 +65,10 @@ class SourceHttpClientRetryAfterTest {
         SourceHttpClient client = client();
 
         assertThrows(HttpClientErrorException.TooManyRequests.class, () -> client.getBody(base + "/limited"));
-        SourceBackoffException e = assertThrows(SourceBackoffException.class, () -> client.getBody(base + "/down"));
+        SourceBackoffException backoff = assertThrows(SourceBackoffException.class, () -> client.getBody(base + "/down"));
 
         assertEquals(1, hits.get(), "второй запрос к тому же домену в сеть не ушёл");
-        assertTrue(e.getWait().toSeconds() > 100, "пауза ~120 с: " + e.getWait());
+        assertTrue(backoff.getWait().toSeconds() > 100, "пауза ~120 с: " + backoff.getWait());
     }
 
     @Test
@@ -103,11 +103,11 @@ class SourceHttpClientRetryAfterTest {
     }
 
     private static org.springframework.http.HttpHeaders headers(String retryAfter) {
-        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        org.springframework.http.HttpHeaders httpHeaders = new org.springframework.http.HttpHeaders();
         if (retryAfter != null) {
-            h.add("Retry-After", retryAfter);
+            httpHeaders.add("Retry-After", retryAfter);
         }
-        return h;
+        return httpHeaders;
     }
 
     private static void reply(com.sun.net.httpserver.HttpExchange ex, int status) throws java.io.IOException {
