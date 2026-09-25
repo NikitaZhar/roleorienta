@@ -4,8 +4,8 @@
 сессии. История решений — в [project-notes](project-notes.md), правила — в
 [рабочем контракте](working-contract.md) и [регламенте сессии](session-protocol.md).
 
-**Обновлено:** 2026-09-24, после §84.
-**Срезов с последнего аудита: 8** (последний аудит — §76).
+**Обновлено:** 2026-09-25, после §85.
+**Срезов с последнего аудита: 9** (последний аудит — §76).
 
 ## Назначение и границы
 
@@ -17,7 +17,7 @@ SPA, покрытие площадками, снимки, дайджест/email
 
 ## Стек и запуск
 
-Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V29, ведёт `job-api`), RabbitMQ
+Java 21, Spring Boot 4.1.1, PostgreSQL + Flyway (миграции V1–V30, ведёт `job-api`), RabbitMQ
 (transactional outbox, publisher confirms, DLQ), Maven multi-module, Testcontainers в тестах,
 CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.sh` (Postgres, RabbitMQ
 в Docker), `./scripts/run-api.sh` (:8080), `./scripts/run-worker.sh` (:8081).
@@ -102,9 +102,9 @@ CI — GitHub Actions `mvn -B -ntp verify`. Локально: `./scripts/dev-up.
 - Checkstyle в сборке (§78); ArchUnit — позже.
 - A5 — Австрия (karriere.at, §81–§83). Далее: площадка для Словакии;
   дедуп между провайдерами — открыт.
-- Ждут решения владельца (стенд §83, запись §84): (1) объединение дублей компаний, заведённых
-  до V28 (у тенанта несколько компаний: ABC Supply ×4, Ace Hardware); (2) бренд сайта ≠ тенант
+- Дубли компаний, заведённых до V28, объединены миграцией V30 (§85): одна компания на тенант.
+- Ждут решения владельца (запись §84): (1) бренд сайта ≠ тенант
   (accenture/AvanadeCareers, capri/Michael_Kors, pae/Amentum_Careers) — поиск на площадке по
-  тенанту даёт ложное «только с сайта»; (3) ArchUnit в CI. Аудит — через 2 среза.
+  тенанту даёт ложное «только с сайта»; (2) ArchUnit в CI. Аудит — через 1 срез.
 - Открыто: B3–B5 (безопасность входа, потолок попыток outbox), A5–A7 (покрытие, снимки,
   дайджест).
