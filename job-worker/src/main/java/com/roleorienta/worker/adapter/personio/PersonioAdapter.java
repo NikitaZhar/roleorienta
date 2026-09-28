@@ -123,7 +123,7 @@ public class PersonioAdapter implements SourceAdapter {
                 }
             }
         }
-        if (id == null || id.isEmpty()) {
+        if (id == null || id.isEmpty() || title == null || title.isEmpty()) {
             return null;
         }
         return new FetchedPosting(id, title, base + "/job/" + id, office,
