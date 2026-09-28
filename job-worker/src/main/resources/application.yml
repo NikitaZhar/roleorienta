@@ -50,6 +50,12 @@ app:
     max-redirects: 5
     max-body-bytes: 5242880  # потолок тела ответа — 5 МБ
     allow-private-addresses: false  # true только для локальных заглушек; в эксплуатации — false
+  collect:
+    read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
+    read-enabled: true         # false — постановка чтений выключена (тесты)
+  adapter:
+    greenhouse:
+      base-url: https://boards-api.greenhouse.io
 
 server:
   port: ${SERVER_PORT:8081}
