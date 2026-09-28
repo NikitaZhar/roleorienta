@@ -58,6 +58,8 @@ app:
   adapter:
     greenhouse:
       base-url: https://boards-api.greenhouse.io
+    personio:
+      base-url-template: https://{board}.jobs.personio.de  # {board} — поддомен компании
 
 server:
   port: ${SERVER_PORT:8081}
