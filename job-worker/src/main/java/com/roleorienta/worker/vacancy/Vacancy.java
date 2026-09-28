@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Вакансия — одна запись над одной или несколькими публикациями (бизнес-описание §4.3).
@@ -32,6 +33,8 @@ public class Vacancy {
 
     private Instant lastConfirmedAt;
 
+    private Instant closedAt;
+
     /**
      * Для JPA.
      */
@@ -54,17 +57,38 @@ public class Vacancy {
     }
 
     /**
-     * Источник подтвердил вакансию: сведения обновлены, состояние — актуальна.
+     * Источник подтвердил вакансию: сведения и дата подтверждения обновлены. Состояние задаёт
+     * {@link #refreshState}.
      *
      * @param newTitle      позиция
      * @param newPrimaryUrl ссылка на первичную публикацию
      * @param confirmedAt   момент подтверждения
      */
     public void confirm(String newTitle, String newPrimaryUrl, Instant confirmedAt) {
-        this.state = VacancyState.ACTIVE;
         this.title = newTitle;
         this.primaryUrl = newPrimaryUrl;
         this.lastConfirmedAt = confirmedAt;
+    }
+
+    /**
+     * Состояние по всем публикациям вакансии (бизнес-описание §4.3): все закрыты — закрыта; хотя бы
+     * одна подтверждена последним чтением своего источника — актуальна; иначе — нуждается в
+     * повторной проверке. Закрытие не удаляет вакансию и её историю.
+     *
+     * @param postings все публикации вакансии; не пустой список
+     * @param now      момент пересчёта — дата закрытия, если вакансия закрывается сейчас
+     */
+    public void refreshState(List<JobPosting> postings, Instant now) {
+        if (postings.stream().allMatch(JobPosting::isClosed)) {
+            if (state != VacancyState.CLOSED) {
+                this.closedAt = now;
+            }
+            this.state = VacancyState.CLOSED;
+            return;
+        }
+        this.closedAt = null;
+        this.state = postings.stream().anyMatch(posting -> posting.isConfirmed() && !posting.isClosed())
+                ? VacancyState.ACTIVE : VacancyState.NEEDS_RECHECK;
     }
 
     public Long getId() {

@@ -23,8 +23,9 @@ import org.springframework.stereotype.Component;
  * публикации. Параметры задания: {@code {"sourceId": N}}.
  *
  * <p>Отказ источника переводится в результат задания: временный — повтор позже (с учётом
- * {@code Retry-After}), постоянный — неудача. Сохранённые сведения при отказе не меняются
- * (бизнес-описание §4.6).</p>
+ * {@code Retry-After}), постоянный — неудача. При отказе сохранённые сведения не меняются,
+ * вакансии источника переходят в «нуждается в повторной проверке» и не закрываются
+ * (бизнес-описание §4.3, §4.6).</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -79,10 +80,13 @@ public class ReadSourceHandler implements TaskHandler {
         }
         return switch (adapter.read(source.getBoard())) {
             case SourceReadResult.Read read -> {
-                recorder.record(source, read.postings());
+                recorder.record(source, read.postings(), read.complete());
                 yield new TaskOutcome.Done();
             }
-            case SourceReadResult.Unavailable unavailable -> toOutcome(unavailable.failure());
+            case SourceReadResult.Unavailable unavailable -> {
+                recorder.recordUnavailable(source);
+                yield toOutcome(unavailable.failure());
+            }
         };
     }
 

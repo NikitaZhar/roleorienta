@@ -53,6 +53,8 @@ app:
   collect:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)
+  vacancy:
+    close-after-missing-reads: 3  # полных чтений подряд без публикации до её закрытия
   adapter:
     greenhouse:
       base-url: https://boards-api.greenhouse.io

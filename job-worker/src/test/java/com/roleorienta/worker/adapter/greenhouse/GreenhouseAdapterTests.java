@@ -53,7 +53,7 @@ class GreenhouseAdapterTests {
         assertThat(result).isEqualTo(new SourceReadResult.Read(List.of(
                 new FetchedPosting("101", "Java Developer", "https://example.com/101", "Bratislava",
                         "&lt;p&gt;Java&lt;/p&gt;"),
-                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null))));
+                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null)), true));
     }
 
     /**

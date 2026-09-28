@@ -132,6 +132,64 @@ class ReadSourceFlowTests {
                 .isEqualTo("Java Developer");
     }
 
+    /**
+     * Публикации нет в полном чтении — повторная проверка; нет в трёх полных чтениях подряд —
+     * вакансия закрыта.
+     */
+    @Test
+    void missingPostingClosesAfterThreeCompleteReads() {
+        STUB.respondWithJobs("101", "Java Developer", "102", "QA Engineer");
+        readOnce("r1");
+        STUB.respondWithJobs("102", "QA Engineer");
+
+        readOnce("r2");
+        assertThat(vacancyState("Java Developer")).isEqualTo("NEEDS_RECHECK");
+
+        readOnce("r3");
+        readOnce("r4");
+        assertThat(vacancyState("Java Developer")).isEqualTo("CLOSED");
+        assertThat(vacancyState("QA Engineer")).isEqualTo("ACTIVE");
+    }
+
+    /**
+     * Закрытая публикация появилась снова — та же вакансия снова актуальна.
+     */
+    @Test
+    void reappearedPostingReopensSameVacancy() {
+        STUB.respondWithJobs("101", "Java Developer");
+        readOnce("r1");
+        STUB.respondWithJobs();
+        readOnce("r2");
+        readOnce("r3");
+        readOnce("r4");
+        STUB.respondWithJobs("101", "Java Developer");
+
+        readOnce("r5");
+
+        assertThat(count("vacancy")).isEqualTo(1);
+        assertThat(vacancyState("Java Developer")).isEqualTo("ACTIVE");
+    }
+
+    /**
+     * Отказ источника: вакансия нуждается в повторной проверке и не закрывается.
+     */
+    @Test
+    void unavailableSourceNeedsRecheck() {
+        STUB.respondWithJobs("101", "Java Developer");
+        readOnce("r1");
+        STUB.respond(503, "");
+
+        readOnce("r2");
+        readOnce("r3");
+        readOnce("r4");
+
+        assertThat(vacancyState("Java Developer")).isEqualTo("NEEDS_RECHECK");
+    }
+
+    private String vacancyState(String title) {
+        return jdbcTemplate.queryForObject("SELECT state FROM vacancy WHERE title = ?", String.class, title);
+    }
+
     private void readOnce(String taskKey) {
         taskService.enqueue(ReadSourceHandler.TYPE, taskKey, ReadSourceHandler.payload(source.getId()));
         executor.execute(jdbcTemplate.queryForObject(

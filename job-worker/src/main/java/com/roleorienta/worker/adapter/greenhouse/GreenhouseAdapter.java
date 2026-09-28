@@ -56,7 +56,7 @@ public class GreenhouseAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         try {
-            return new SourceReadResult.Read(parse(success.body()));
+            return new SourceReadResult.Read(parse(success.body()), true);
         } catch (JsonProcessingException exception) {
             return new SourceReadResult.Unavailable(
                     new HttpResult.TemporaryFailure("Malformed Greenhouse response: " + exception.getOriginalMessage(),

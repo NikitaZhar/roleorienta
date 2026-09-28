@@ -13,8 +13,9 @@ public sealed interface SourceReadResult {
      * Список публикаций прочитан.
      *
      * @param postings публикации доски
+     * @param complete список прочитан полностью; только полное чтение может закрыть вакансию
      */
-    record Read(List<FetchedPosting> postings) implements SourceReadResult {
+    record Read(List<FetchedPosting> postings, boolean complete) implements SourceReadResult {
     }
 
     /**

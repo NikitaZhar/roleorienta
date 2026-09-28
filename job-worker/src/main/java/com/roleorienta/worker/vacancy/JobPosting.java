@@ -48,6 +48,12 @@ public class JobPosting {
 
     private Instant lastConfirmedAt;
 
+    private boolean confirmed;
+
+    private int missingCompleteReads;
+
+    private Instant closedAt;
+
     /**
      * Для JPA.
      */
@@ -71,7 +77,8 @@ public class JobPosting {
     }
 
     /**
-     * Источник снова показал публикацию: сведения обновлены, наличие подтверждено.
+     * Источник показал публикацию: сведения обновлены, наличие подтверждено, счётчик отсутствия
+     * сброшен; закрытая ранее публикация снова открыта (та же вакансия).
      *
      * @param fetched     данные публикации из источника
      * @param confirmedAt момент подтверждения
@@ -82,6 +89,43 @@ public class JobPosting {
         this.location = fetched.location();
         this.content = fetched.content();
         this.lastConfirmedAt = confirmedAt;
+        this.confirmed = true;
+        this.missingCompleteReads = 0;
+        this.closedAt = null;
+    }
+
+    /**
+     * Полное чтение источника публикацию не показало: подтверждения нет; после
+     * {@code closeAfter} таких чтений подряд публикация закрыта.
+     *
+     * @param closeAfter число полных чтений без публикации до закрытия
+     * @param now        момент чтения
+     */
+    public void markMissing(int closeAfter, Instant now) {
+        this.confirmed = false;
+        this.missingCompleteReads++;
+        if (missingCompleteReads >= closeAfter && closedAt == null) {
+            this.closedAt = now;
+        }
+    }
+
+    /**
+     * Источник не прочитан (отказ): подтверждения нет, счётчик отсутствия не меняется.
+     */
+    public void markUnconfirmed() {
+        this.confirmed = false;
+    }
+
+    public boolean isConfirmed() {
+        return confirmed;
+    }
+
+    public boolean isClosed() {
+        return closedAt != null;
+    }
+
+    public String getExternalId() {
+        return externalId;
     }
 
     public Vacancy getVacancy() {
