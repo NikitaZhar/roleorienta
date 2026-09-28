@@ -280,10 +280,14 @@ WAITING → перепостановка по сроку; последняя п�
   отказ — `null`.
 - `ReadSourceHandler` — запрашивает текст только у публикаций без сохранённого текста и не больше
   `app.collect.max-content-requests-per-read` (200) за чтение; остальное — следующими чтениями.
-  Задание остаётся ограниченным.
+  Задание остаётся ограниченным: Workday отдаёт текст за ~0,5 с (замер: 50 за 26 с), 200 запросов —
+  около 2 минут, далеко от аренды задания (10 минут).
 - `JobPosting.update` не стирает сохранённый текст, если чтение текста не принесло.
 - `JobPostingRepository.findExternalIdsWithContent` — JPQL в `@Query`.
 - Уборка: удалены неиспользуемые методы `JobPosting`/`Vacancy` и дублирующий `VacancyStateTests`.
+
+- Журнал: итог чтения (`Source N read: X postings, complete=…`), итог запроса текстов
+  (`requested/received`); неудачный запрос текста Workday — WARN с причиной.
 
 **Тесты.** `WorkdayAdapterTests.readsContent`; `ReadSourceHandlerTests` (Mockito) — текст
 запрошен только у публикации без сохранённого текста и в пределах потолка.

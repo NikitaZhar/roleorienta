@@ -121,13 +121,18 @@ public class WorkdayAdapter implements SourceAdapter {
             return null;
         }
         if (!(result instanceof HttpResult.Success success)) {
-            LOG.debug("Workday posting {} on {} not read: {}", externalId, board, result);
+            LOG.warn("Workday posting {} on {} not read: {}", externalId, board, result);
             return null;
         }
         try {
             JsonNode description = JSON.readTree(success.body()).path("jobPostingInfo").path("jobDescription");
-            return description.isTextual() ? description.asText() : null;
+            if (!description.isTextual()) {
+                LOG.warn("Workday posting {} on {} has no jobDescription", externalId, board);
+                return null;
+            }
+            return description.asText();
         } catch (JsonProcessingException exception) {
+            LOG.warn("Workday posting {} on {} is not JSON: {}", externalId, board, exception.getOriginalMessage());
             return null;
         }
     }
