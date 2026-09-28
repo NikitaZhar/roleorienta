@@ -240,14 +240,13 @@ WAITING → перепостановка по сроку; последняя п�
   (`newDefaultFactory`), DTD и внешние сущности выключены, потолок вложенности 32. Размер
   ограничен потолком тела ответа HTTP-клиента.
   https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing
-- `PersonioAdapter` — лента `https://<компания>.jobs.personio.de/xml`, весь список одним ответом
-  (`complete = true`); поля `id`, `name`, `office`, тексты `jobDescription/value`; ссылка —
+- `PersonioAdapter` — лента `https://<доска>/xml`, весь список одним ответом (`complete = true`).
+  Доска — хост витрины `<компания>.jobs.personio.de` или `.jobs.personio.com`; другой хост не
+  читается (отказ `BLOCKED`); поля `id`, `name`, `office`, тексты `jobDescription/value`; ссылка —
   `/job/<id>`. Корень не `workzag-jobs` или испорченный XML — временный отказ.
-- `app.adapter.personio.base-url-template` — адрес витрины, `{board}` — поддомен.
+- `app.adapter.personio.base-url-template` — адрес витрины, `{board}` — хост витрины.
 
 **Тесты.** `SafeXmlTests` — XXE и глубокая вложенность отвергаются. `PersonioAdapterTests` —
-разбор ленты, HTML вместо ленты, 503.
+разбор ленты, витрина `.com`, чужой хост, HTML вместо ленты, 503.
 
 **README** — не менялся.
-
-**Не вошло.** Витрины на `.jobs.personio.com` — отдельный шаблон, при первой такой компании.

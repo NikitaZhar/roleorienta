@@ -20,11 +20,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Адаптер Personio на заглушке ленты {@code /<board>/xml}: разбор, не-XML ответ, отказ.
+ * Адаптер Personio на заглушке ленты {@code /<доска>/xml}: разбор, витрина {@code .com}, чужой
+ * хост, не-XML ответ, отказ.
  */
 class PersonioAdapterTests {
 
-    private static final String BOARD = "acme";
+    private static final String BOARD = "acme.jobs.personio.de";
     private static final int MAX_BODY_BYTES = 1_000_000;
 
     private final ExternalHttpClient httpClient = new ExternalHttpClient(new ExternalHttpProperties(
@@ -43,7 +44,7 @@ class PersonioAdapterTests {
     @BeforeEach
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext("/" + BOARD + "/xml", exchange -> {
+        server.createContext("/", exchange -> {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
@@ -51,7 +52,7 @@ class PersonioAdapterTests {
             }
         });
         server.start();
-        adapter = new PersonioAdapter(httpClient, new PersonioProperties(baseUrl().replace(BOARD, "{board}")));
+        adapter = new PersonioAdapter(httpClient, new PersonioProperties(stubUrl() + "/{board}"));
     }
 
     /**
@@ -116,7 +117,33 @@ class PersonioAdapterTests {
                 new HttpResult.TemporaryFailure("HTTP 503", Duration.ZERO)));
     }
 
+    /**
+     * Витрина на {@code .jobs.personio.com} читается так же.
+     */
+    @Test
+    void readsComBoard() {
+        status = 200;
+        body = "<workzag-jobs><position><id>101</id><name>Java Developer</name></position></workzag-jobs>";
+
+        assertThat(adapter.read("acme.jobs.personio.com")).isEqualTo(new SourceReadResult.Read(List.of(
+                new FetchedPosting("101", "Java Developer", stubUrl() + "/acme.jobs.personio.com/job/101",
+                        null, null)), true));
+    }
+
+    /**
+     * Хост не Personio — запрос не выполняется.
+     */
+    @Test
+    void rejectsForeignHost() {
+        assertThat(adapter.read("example.com")).isEqualTo(new SourceReadResult.Unavailable(
+                new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not a Personio board host: example.com")));
+    }
+
+    private String stubUrl() {
+        return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
     private String baseUrl() {
-        return "http://127.0.0.1:" + server.getAddress().getPort() + "/" + BOARD;
+        return stubUrl() + "/" + BOARD;
     }
 }

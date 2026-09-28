@@ -7,20 +7,20 @@ import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.xml.SafeXml;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import org.springframework.stereotype.Component;
 
 /**
- * Адаптер Personio: публичная XML-лента витрины {@code https://<компания>.jobs.personio.de/xml},
- * весь список одним ответом. Корень {@code workzag-jobs}; у {@code position} — {@code id},
+ * Адаптер Personio: публичная XML-лента витрины {@code https://<доска>/xml}, весь список одним
+ * ответом. Доска — хост витрины: {@code <компания>.jobs.personio.de} или
+ * {@code <компания>.jobs.personio.com}; другой хост не читается (отказ {@code BLOCKED}). Корень {@code workzag-jobs}; у {@code position} — {@code id},
  * {@code name}, {@code office}, тексты {@code jobDescriptions/jobDescription/value}. Ссылка на
  * публикацию — {@code /job/<id>}. https://developer.personio.de/docs/retrieving-open-job-positions
  */
@@ -31,6 +31,8 @@ public class PersonioAdapter implements SourceAdapter {
     public static final String PROVIDER = "personio";
 
     private static final String ROOT = "workzag-jobs";
+
+    private static final Pattern BOARD_HOST = Pattern.compile("[a-z0-9-]+\\.jobs\\.personio\\.(de|com)");
 
     private final ExternalHttpClient httpClient;
     private final PersonioProperties properties;
@@ -51,8 +53,11 @@ public class PersonioAdapter implements SourceAdapter {
 
     @Override
     public SourceReadResult read(String board) {
-        String base = properties.baseUrlTemplate()
-                .replace("{board}", URLEncoder.encode(board, StandardCharsets.UTF_8));
+        if (!BOARD_HOST.matcher(board).matches()) {
+            return new SourceReadResult.Unavailable(new HttpResult.PermanentFailure(
+                    HttpResult.Kind.BLOCKED, "Not a Personio board host: " + board));
+        }
+        String base = properties.baseUrlTemplate().replace("{board}", board);
         HttpResult result = httpClient.get(URI.create(base + "/xml"));
         if (!(result instanceof HttpResult.Success success)) {
             return new SourceReadResult.Unavailable(result);
