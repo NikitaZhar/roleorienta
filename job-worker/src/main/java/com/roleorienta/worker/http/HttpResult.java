@@ -49,6 +49,8 @@ public sealed interface HttpResult {
         /** Тело ответа больше потолка. */
         TOO_LARGE,
         /** Прочие ошибки запроса: иные 4xx, лишние или циклические редиректы. */
-        CLIENT_ERROR
+        CLIENT_ERROR,
+        /** Путь запрещён robots.txt; запрос не отправлялся. */
+        USE_FORBIDDEN
     }
 }

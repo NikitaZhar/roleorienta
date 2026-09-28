@@ -36,6 +36,7 @@ class ExternalHttpClientTests {
     private static final int STATUS_OK = 200;
     private static final int STATUS_FOUND = 302;
     private static final int STATUS_TOO_MANY_REQUESTS = 429;
+    private static final int STATUS_SERVICE_UNAVAILABLE = 503;
     private static final String USER_AGENT = "RoleorientaTest/1.0 (+https://example.com)";
     private static final HostBudget NO_WAIT = host -> Optional.of(Duration.ZERO);
 
@@ -254,6 +255,40 @@ class ExternalHttpClientTests {
             budgeted.get(uri("/busy"));
         }
         assertThat(backOffs).containsEntry("127.0.0.1", Duration.ofSeconds(120));
+    }
+
+    /**
+     * Путь запрещён robots.txt — постоянный отказ без запроса; robots.txt читается один раз.
+     */
+    @Test
+    void robotsDisallowForbidsRequest() {
+        AtomicInteger robotsReads = new AtomicInteger();
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/robots.txt", exchange -> {
+            robotsReads.incrementAndGet();
+            send(exchange, STATUS_OK, "User-agent: *\nDisallow: /private\n".getBytes(StandardCharsets.UTF_8));
+        });
+        server.createContext("/private", exchange -> {
+            requests.incrementAndGet();
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+        respond("/public", STATUS_OK, "text/plain", "ok");
+
+        assertThat(kind(client.get(uri("/private/1")))).isEqualTo(HttpResult.Kind.USE_FORBIDDEN);
+        assertThat(client.get(uri("/public"))).isEqualTo(new HttpResult.Success(STATUS_OK, "ok"));
+        assertThat(requests.get()).isZero();
+        assertThat(robotsReads.get()).isEqualTo(1);
+    }
+
+    /**
+     * robots.txt временно недоступен (5xx) — запрос откладывается, а не выполняется.
+     */
+    @Test
+    void unavailableRobotsDefersRequest() {
+        respond("/robots.txt", STATUS_SERVICE_UNAVAILABLE, "text/plain", "");
+        respond("/ok", STATUS_OK, "text/plain", "ok");
+
+        assertThat(client.get(uri("/ok"))).isInstanceOf(HttpResult.TemporaryFailure.class);
     }
 
     private static ExternalHttpClient client(ExternalHttpProperties properties, HostBudget budget) {
