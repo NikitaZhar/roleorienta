@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: job-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/roleorienta}
+    username: ${DB_USERNAME:roleorienta}
+    password: ${DB_PASSWORD:roleorienta}
+  jpa:
+    hibernate:
+      ddl-auto: validate   # схему создаёт только Flyway; Hibernate лишь сверяет сущности с ней
+    open-in-view: false    # соединение с БД не держится на всё время HTTP-запроса
+  flyway:
+    enabled: true          # job-api — единственный владелец схемы (технический документ §16.1)
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true        # ошибки в формате application/problem+json (RFC 9457, §8)
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true      # /actuator/health/liveness и /readiness для Docker и Kubernetes

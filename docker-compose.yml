@@ -1,0 +1,61 @@
+# Инфраструктура для локальной разработки (профиль local, технический документ §12):
+# PostgreSQL, RabbitMQ и S3-совместимое хранилище снимков (MinIO).
+# Приложения job-api и job-worker пока запускаются из Maven (см. README).
+# Значения ниже — локальные значения по умолчанию, не секреты; переопределяются файлом .env.
+
+name: roleorienta
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-roleorienta}
+      POSTGRES_USER: ${DB_USERNAME:-roleorienta}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-roleorienta}
+    ports:
+      - "5433:5432"   # на хосте 5433, чтобы не конфликтовать с локальной PostgreSQL
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-roleorienta} -d ${DB_NAME:-roleorienta}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-roleorienta}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-roleorienta}
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # веб-консоль http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-roleorienta}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-roleorienta-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"   # веб-консоль http://localhost:9001
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:
