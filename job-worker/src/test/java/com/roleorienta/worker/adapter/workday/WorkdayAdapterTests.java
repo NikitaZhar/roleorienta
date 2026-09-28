@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
-import com.roleorienta.worker.http.ExternalHttpProperties;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.http.TestHttpClients;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -33,11 +33,9 @@ class WorkdayAdapterTests {
     private static final String BOARD = HOST + "/External";
     private static final String JOBS_PATH = "/" + HOST + "/wday/cxs/acme/External/jobs";
     private static final int PAGE_SIZE = 2;
-    private static final int MAX_BODY_BYTES = 1_000_000;
     private static final Pattern OFFSET = Pattern.compile("\"offset\":(\\d+)");
 
-    private final ExternalHttpClient httpClient = new ExternalHttpClient(new ExternalHttpProperties(
-            Duration.ofSeconds(2), Duration.ofSeconds(2), 3, MAX_BODY_BYTES, true));
+    private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
 
     /** Ответ по смещению: код и тело. */
     private final Map<Integer, String> pages = new HashMap<>();

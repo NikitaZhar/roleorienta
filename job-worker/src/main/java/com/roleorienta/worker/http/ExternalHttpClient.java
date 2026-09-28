@@ -13,6 +13,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.hc.client5.http.ClientProtocolException;
 import org.apache.hc.client5.http.SystemDefaultDnsResolver;
@@ -31,7 +32,6 @@ import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.util.Timeout;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -43,6 +43,11 @@ import org.springframework.stereotype.Component;
  * {@link AddressPolicy}. Соединение идёт ровно на проверенный адрес — в том числе на каждом
  * редиректе, поэтому подмена DNS-ответа между проверкой и соединением (DNS-rebinding) не помогает.
  * https://hc.apache.org/httpcomponents-client-5.4.x/</p>
+ *
+ * <p>Перед запросом место в очереди к хосту резервирует {@link HostBudget} (общий для реплик
+ * промежуток между запросами); запрос ждёт своего места, а если очередь длиннее потолка —
+ * возвращается временный отказ без запроса. {@code Retry-After} ответа сдвигает очередь хоста.
+ * Редирект на другой хост бюджет не резервирует. User-Agent — из {@link PolitenessProperties}.</p>
  *
  * <p>Таймауты, потолок редиректов и тела ответа — из {@link ExternalHttpProperties}. Встроенные
  * повторы библиотеки выключены: она повторяла бы 429/503 и спала бы, держа поток; повторы —
@@ -62,23 +67,20 @@ public class ExternalHttpClient implements AutoCloseable {
     private static final int STATUS_SERVER_ERROR_MIN = 500;
 
     private final CloseableHttpClient httpClient;
+    private final HostBudget hostBudget;
     private final int maxBodyBytes;
     private final Clock clock;
 
     /**
-     * @param properties таймауты, потолки и политика адресов
+     * @param properties   таймауты, потолки и политика адресов
+     * @param politeness   User-Agent
+     * @param hostBudget   очередь запросов к хосту
+     * @param clock        часы для разбора {@code Retry-After} в форме даты
      */
-    @Autowired
-    public ExternalHttpClient(ExternalHttpProperties properties) {
-        this(properties, Clock.systemUTC());
-    }
-
-    /**
-     * @param properties таймауты, потолки и политика адресов
-     * @param clock      часы для разбора {@code Retry-After} в форме даты
-     */
-    ExternalHttpClient(ExternalHttpProperties properties, Clock clock) {
-        this.httpClient = buildClient(properties);
+    public ExternalHttpClient(ExternalHttpProperties properties, PolitenessProperties politeness,
+            HostBudget hostBudget, Clock clock) {
+        this.httpClient = buildClient(properties, politeness.userAgent());
+        this.hostBudget = hostBudget;
         this.maxBodyBytes = properties.maxBodyBytes();
         this.clock = clock;
     }
@@ -122,11 +124,27 @@ public class ExternalHttpClient implements AutoCloseable {
         if (!ALLOWED_SCHEMES.contains(scheme) || uri.getHost() == null) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not an http(s) URL: " + uri);
         }
-        try {
-            return httpClient.execute(request, this::toResult);
-        } catch (IOException exception) {
-            return fromException(exception);
+        String host = uri.getHost().toLowerCase(Locale.ROOT);
+        Optional<Duration> wait = hostBudget.reserve(host);
+        if (wait.isEmpty()) {
+            return new HttpResult.TemporaryFailure("Host budget exhausted: " + host, Duration.ZERO);
         }
+        try {
+            Thread.sleep(wait.get());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new HttpResult.TemporaryFailure("Interrupted while waiting for host budget", Duration.ZERO);
+        }
+        HttpResult result;
+        try {
+            result = httpClient.execute(request, this::toResult);
+        } catch (IOException exception) {
+            result = fromException(exception);
+        }
+        if (result instanceof HttpResult.TemporaryFailure temporary && temporary.retryAfter().isPositive()) {
+            hostBudget.backOff(host, temporary.retryAfter());
+        }
+        return result;
     }
 
     private HttpResult toResult(ClassicHttpResponse response) throws IOException {
@@ -198,7 +216,7 @@ public class ExternalHttpClient implements AutoCloseable {
         return new HttpResult.TemporaryFailure(exception.toString(), Duration.ZERO);
     }
 
-    private static CloseableHttpClient buildClient(ExternalHttpProperties properties) {
+    private static CloseableHttpClient buildClient(ExternalHttpProperties properties, String userAgent) {
         AddressPolicy policy = new AddressPolicy(properties.allowPrivateAddresses());
         SystemDefaultDnsResolver checkingResolver = new SystemDefaultDnsResolver() {
             @Override
@@ -225,6 +243,7 @@ public class ExternalHttpClient implements AutoCloseable {
                         .setDefaultConnectionConfig(connectionConfig)
                         .build())
                 .setDefaultRequestConfig(requestConfig)
+                .setUserAgent(userAgent)
                 .disableAutomaticRetries()
                 .build();
     }

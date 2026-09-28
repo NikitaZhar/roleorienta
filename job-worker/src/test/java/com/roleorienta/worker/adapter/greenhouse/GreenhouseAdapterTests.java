@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
-import com.roleorienta.worker.http.ExternalHttpProperties;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.http.TestHttpClients;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.io.IOException;
 import java.time.Duration;
@@ -18,11 +18,8 @@ import org.junit.jupiter.api.Test;
  */
 class GreenhouseAdapterTests {
 
-    private static final int MAX_BODY_BYTES = 1_000_000;
-
     private final GreenhouseStub stub = new GreenhouseStub();
-    private final ExternalHttpClient httpClient = new ExternalHttpClient(new ExternalHttpProperties(
-            Duration.ofSeconds(2), Duration.ofSeconds(2), 3, MAX_BODY_BYTES, true));
+    private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
     private final GreenhouseAdapter adapter =
             new GreenhouseAdapter(httpClient, new GreenhouseProperties(stub.baseUrl()));
 

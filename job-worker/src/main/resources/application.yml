@@ -50,6 +50,10 @@ app:
     max-redirects: 5
     max-body-bytes: 5242880  # потолок тела ответа — 5 МБ
     allow-private-addresses: false  # true только для локальных заглушек; в эксплуатации — false
+    politeness:
+      user-agent: Roleorienta/0.1 (+https://github.com/NikitaZhar/roleorienta)  # единый, с контактом
+      host-interval: 1s      # промежуток между запросами к одному хосту по всем репликам
+      host-max-wait: 30s     # дольше запрос не ждёт очереди к хосту — временный отказ
   collect:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)

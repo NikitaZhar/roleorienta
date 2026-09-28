@@ -11,6 +11,9 @@ spring:
         auto-startup: false  # потребитель запускается только в тестах, где нужен (TaskFlowTests)
 
 app:
+  http:
+    politeness:
+      host-interval: 0s      # заглушки на одном хосте; бюджет проверяет PostgresHostBudgetTests
   outbox:
     tick-enabled: false      # пачки публикуются из теста вручную — результат детерминирован
   task:

@@ -15,6 +15,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +35,9 @@ class ExternalHttpClientTests {
     private static final Instant NOW = Instant.parse("2026-09-28T12:00:00Z");
     private static final int STATUS_OK = 200;
     private static final int STATUS_FOUND = 302;
+    private static final int STATUS_TOO_MANY_REQUESTS = 429;
+    private static final String USER_AGENT = "RoleorientaTest/1.0 (+https://example.com)";
+    private static final HostBudget NO_WAIT = host -> Optional.of(Duration.ZERO);
 
     private HttpServer server;
     private ExternalHttpClient client;
@@ -42,7 +49,7 @@ class ExternalHttpClientTests {
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.start();
-        client = new ExternalHttpClient(properties(true), Clock.fixed(NOW, ZoneOffset.UTC));
+        client = client(properties(true), NO_WAIT);
     }
 
     /**
@@ -164,7 +171,7 @@ class ExternalHttpClientTests {
     @Test
     void blocksInternalAddressesAndForeignSchemes() throws IOException {
         respond("/ok", STATUS_OK, "text/plain", "ok");
-        try (ExternalHttpClient strict = new ExternalHttpClient(properties(false), Clock.systemUTC())) {
+        try (ExternalHttpClient strict = client(properties(false), NO_WAIT)) {
             assertThat(kind(strict.get(uri("/ok")))).isEqualTo(HttpResult.Kind.BLOCKED);
             assertThat(kind(strict.get(URI.create("http://localhost:" + port() + "/ok"))))
                     .isEqualTo(HttpResult.Kind.BLOCKED);
@@ -191,6 +198,67 @@ class ExternalHttpClientTests {
         try (OutputStream output = exchange.getResponseBody()) {
             output.write(body);
         }
+    }
+
+    /**
+     * Каждый запрос несёт единый User-Agent.
+     */
+    @Test
+    void sendsUserAgent() {
+        server.createContext("/agent", exchange -> send(exchange, STATUS_OK,
+                exchange.getRequestHeaders().getFirst("User-Agent").getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(client.get(uri("/agent"))).isEqualTo(new HttpResult.Success(STATUS_OK, USER_AGENT));
+    }
+
+    /**
+     * Очередь к хосту длиннее потолка — временный отказ, запрос не отправляется.
+     */
+    @Test
+    void exhaustedHostBudgetSkipsRequest() throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/counted", exchange -> {
+            requests.incrementAndGet();
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+
+        try (ExternalHttpClient limited = client(properties(true), host -> Optional.empty())) {
+            assertThat(limited.get(uri("/counted"))).isInstanceOf(HttpResult.TemporaryFailure.class);
+        }
+        assertThat(requests.get()).isZero();
+    }
+
+    /**
+     * {@code Retry-After} ответа сдвигает очередь хоста.
+     */
+    @Test
+    void retryAfterBacksOffHost() throws IOException {
+        server.createContext("/busy", exchange -> {
+            exchange.getResponseHeaders().set("Retry-After", "120");
+            send(exchange, STATUS_TOO_MANY_REQUESTS, new byte[0]);
+        });
+        Map<String, Duration> backOffs = new HashMap<>();
+        HostBudget recording = new HostBudget() {
+            @Override
+            public Optional<Duration> reserve(String host) {
+                return Optional.of(Duration.ZERO);
+            }
+
+            @Override
+            public void backOff(String host, Duration delay) {
+                backOffs.put(host, delay);
+            }
+        };
+
+        try (ExternalHttpClient budgeted = client(properties(true), recording)) {
+            budgeted.get(uri("/busy"));
+        }
+        assertThat(backOffs).containsEntry("127.0.0.1", Duration.ofSeconds(120));
+    }
+
+    private static ExternalHttpClient client(ExternalHttpProperties properties, HostBudget budget) {
+        return new ExternalHttpClient(properties, new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO),
+                budget, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private URI uri(String path) {
