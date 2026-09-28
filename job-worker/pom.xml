@@ -37,6 +37,13 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- HTTP-клиент для внешних запросов: позволяет подменить определение адреса хоста и тем
+             проверять фактический адрес каждого соединения (технический документ §10).
+             Версией управляет Spring Boot. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

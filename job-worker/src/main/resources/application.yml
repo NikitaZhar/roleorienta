@@ -44,6 +44,12 @@ app:
     requeue-batch-size: 100  # максимум заданий за один тик перепостановки
     requeue-interval-ms: 10000
     requeue-enabled: true    # false — перепостановка выключена (тесты)
+  http:
+    connect-timeout: 5s      # установление соединения
+    read-timeout: 20s        # ожидание ответа и данных
+    max-redirects: 5
+    max-body-bytes: 5242880  # потолок тела ответа — 5 МБ
+    allow-private-addresses: false  # true только для локальных заглушек; в эксплуатации — false
 
 server:
   port: ${SERVER_PORT:8081}

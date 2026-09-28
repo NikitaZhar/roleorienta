@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.messaging.RabbitTopology;
-import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Binding;
@@ -26,11 +25,13 @@ import org.springframework.test.context.ActiveProfiles;
 @Import(TestcontainersConfiguration.class)
 class OutboxPublisherTests {
 
-    private static final String PAYLOAD = "{\"taskId\": 1}";
     private static final long RECEIVE_TIMEOUT_MS = 5000;
 
     @Autowired
     private OutboxPublisher publisher;
+
+    @Autowired
+    private OutboxRepository outboxRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -45,28 +46,31 @@ class OutboxPublisherTests {
     private Binding workBinding;
 
     /**
-     * Чистое состояние: пустые таблица outbox и рабочая очередь.
+     * Чистое состояние: пустые таблицы outbox и заданий, пустая рабочая очередь.
      */
     @BeforeEach
     void cleanUp() {
         jdbcTemplate.update("DELETE FROM outbox_event");
+        jdbcTemplate.update("DELETE FROM task");
         rabbitAdmin.purgeQueue(RabbitTopology.WORK_QUEUE, false);
     }
 
     /**
-     * Событие попадает в рабочую очередь с id в {@code messageId} и отмечается опубликованным;
-     * повторная пачка ничего не отправляет.
+     * Событие попадает в рабочую очередь с id события в {@code messageId} и id задания в заголовке
+     * и отмечается опубликованным; повторная пачка ничего не отправляет.
      */
     @Test
     void publishesEventAndMarksItPublished() {
-        long eventId = insertEvent();
+        long taskId = insertTask();
+        long eventId = insertEvent(taskId);
 
         assertThat(publisher.publishBatch()).isEqualTo(1);
 
         Message message = rabbitTemplate.receive(RabbitTopology.WORK_QUEUE, RECEIVE_TIMEOUT_MS);
         assertThat(message).isNotNull();
         assertThat(message.getMessageProperties().getMessageId()).isEqualTo(String.valueOf(eventId));
-        assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(PAYLOAD);
+        assertThat(message.getMessageProperties().<Object>getHeader(RabbitTopology.TASK_ID_HEADER))
+                .hasToString(String.valueOf(taskId));
         assertThat(isPublished(eventId)).isTrue();
         assertThat(publisher.publishBatch()).isZero();
     }
@@ -77,7 +81,7 @@ class OutboxPublisherTests {
      */
     @Test
     void leavesUnroutableEventUnpublished() {
-        long eventId = insertEvent();
+        long eventId = insertEvent(insertTask());
         rabbitAdmin.removeBinding(workBinding);
         try {
             assertThat(publisher.publishBatch()).isEqualTo(1);
@@ -91,10 +95,18 @@ class OutboxPublisherTests {
         assertThat(isPublished(eventId)).isTrue();
     }
 
-    private long insertEvent() {
+    private long insertTask() {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO task (type, task_key, payload, state)
+                VALUES ('TEST', gen_random_uuid()::text, '{}', 'QUEUED')
+                RETURNING id
+                """, Long.class);
+    }
+
+    private long insertEvent(long taskId) {
+        outboxRepository.insertTaskEvent(taskId);
         return jdbcTemplate.queryForObject(
-                "INSERT INTO outbox_event (event_type, payload) VALUES ('TEST', ?::jsonb) RETURNING id",
-                Long.class, PAYLOAD);
+                "SELECT id FROM outbox_event WHERE task_id = ?", Long.class, taskId);
     }
 
     private boolean isPublished(long eventId) {

@@ -12,9 +12,6 @@ spring:
   flyway:
     enabled: true          # job-api — единственный владелец схемы (технический документ §16.1)
     locations: classpath:db/migration
-  mvc:
-    problemdetails:
-      enabled: true        # ошибки в формате application/problem+json (RFC 9457, §8)
 
 server:
   port: ${SERVER_PORT:8080}

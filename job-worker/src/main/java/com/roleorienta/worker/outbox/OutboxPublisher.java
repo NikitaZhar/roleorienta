@@ -1,7 +1,6 @@
 package com.roleorienta.worker.outbox;
 
 import com.roleorienta.worker.messaging.RabbitTopology;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,8 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Публикатор transactional outbox: отправляет неопубликованные события в RabbitMQ и отмечает их
- * опубликованными (технический документ §6, §9).
+ * Публикатор transactional outbox: отправляет неопубликованные события (задание поставлено в
+ * очередь) в RabbitMQ и отмечает их опубликованными (технический документ §6, §9).
  *
  * <p>Одна пачка — одна транзакция БД: захват событий ({@code FOR UPDATE SKIP LOCKED}) →
  * отправка каждого с {@code mandatory} → ожидание подтверждений брокера → отметка
@@ -36,8 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class OutboxPublisher {
 
     private static final Logger LOG = LoggerFactory.getLogger(OutboxPublisher.class);
-
-    private static final String EVENT_TYPE_HEADER = "eventType";
 
     private final OutboxRepository repository;
     private final RabbitTemplate rabbitTemplate;
@@ -100,9 +97,9 @@ public class OutboxPublisher {
     }
 
     /**
-     * Собирает сообщение: тело — JSON события, {@code messageId} — id события, заголовок
-     * {@link RabbitTopology#TASK_ID_HEADER} — id задания (если событие о задании), доставка persistent
-     * (сообщение сохраняется брокером на диск).
+     * Собирает сообщение без тела: {@code messageId} — id события, заголовок
+     * {@link RabbitTopology#TASK_ID_HEADER} — id задания, доставка persistent (сообщение
+     * сохраняется брокером на диск).
      *
      * @param event событие outbox
      * @return сообщение для отправки
@@ -110,14 +107,8 @@ public class OutboxPublisher {
     private Message toMessage(OutboxEvent event) {
         MessageProperties messageProperties = new MessageProperties();
         messageProperties.setMessageId(String.valueOf(event.id()));
-        messageProperties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
         messageProperties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-        messageProperties.setHeader(EVENT_TYPE_HEADER, event.eventType());
-        if (event.taskId() != null) {
-            messageProperties.setHeader(RabbitTopology.TASK_ID_HEADER, event.taskId());
-        }
-        return MessageBuilder.withBody(event.payload().getBytes(StandardCharsets.UTF_8))
-                .andProperties(messageProperties)
-                .build();
+        messageProperties.setHeader(RabbitTopology.TASK_ID_HEADER, event.taskId());
+        return MessageBuilder.withBody(new byte[0]).andProperties(messageProperties).build();
     }
 }
