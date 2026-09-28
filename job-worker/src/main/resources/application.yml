@@ -60,6 +60,10 @@ app:
       base-url: https://boards-api.greenhouse.io
     personio:
       base-url-template: https://{board}  # {board} — хост витрины: <компания>.jobs.personio.de | .com
+    workday:
+      base-url-template: https://{host}  # {host} — <тенант>.<dc>.myworkdayjobs.com
+      page-size: 20        # Workday отдаёт не больше 20 на страницу
+      max-pages: 100       # потолок страниц за чтение; упор — неполное чтение
 
 server:
   port: ${SERVER_PORT:8081}
