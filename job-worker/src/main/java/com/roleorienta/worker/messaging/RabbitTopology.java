@@ -38,6 +38,9 @@ public class RabbitTopology {
     /** Очередь «мёртвых писем» для разбора и контролируемого повтора. */
     public static final String DEAD_LETTER_QUEUE = "roleorienta.jobs.dlq";
 
+    /** Заголовок сообщения с идентификатором задания. */
+    public static final String TASK_ID_HEADER = "taskId";
+
     /**
      * Обменник фоновых заданий.
      *

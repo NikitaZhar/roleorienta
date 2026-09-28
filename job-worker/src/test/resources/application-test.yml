@@ -5,7 +5,13 @@ spring:
     # Путь от каталога модуля job-worker, из которого Maven запускает тесты.
     enabled: true
     locations: filesystem:../job-api/src/main/resources/db/migration
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false  # потребитель запускается только в тестах, где нужен (TaskFlowTests)
 
 app:
   outbox:
     tick-enabled: false      # пачки публикуются из теста вручную — результат детерминирован
+  task:
+    requeue-enabled: false   # перепостановка вызывается из теста вручную

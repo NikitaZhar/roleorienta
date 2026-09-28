@@ -10,6 +10,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class OutboxRepository {
 
+    /** Тип события «задание поставлено в очередь». */
+    public static final String TASK_EVENT_TYPE = "TASK";
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -32,16 +35,29 @@ public class OutboxRepository {
      */
     public List<OutboxEvent> claimUnpublished(int limit) {
         return jdbcTemplate.query("""
-                SELECT id, event_type, payload::text AS payload
+                SELECT id, event_type, payload::text AS payload, task_id
                 FROM outbox_event
                 WHERE published_at IS NULL
                 ORDER BY id
                 LIMIT ?
                 FOR UPDATE SKIP LOCKED
                 """,
-                (row, rowNum) -> new OutboxEvent(
-                        row.getLong("id"), row.getString("event_type"), row.getString("payload")),
+                (row, rowNum) -> new OutboxEvent(row.getLong("id"), row.getString("event_type"),
+                        row.getString("payload"), row.getObject("task_id", Long.class)),
                 limit);
+    }
+
+    /**
+     * Добавляет событие, ставящее задание в очередь. Вызывается в транзакции, изменившей
+     * задание, — событие и изменение фиксируются вместе.
+     *
+     * @param taskId идентификатор задания
+     */
+    public void insertTaskEvent(long taskId) {
+        jdbcTemplate.update("""
+                INSERT INTO outbox_event (event_type, payload, task_id)
+                VALUES (?, jsonb_build_object('taskId', ?::bigint), ?)
+                """, TASK_EVENT_TYPE, taskId, taskId);
     }
 
     /**

@@ -28,7 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Если подтверждений нет в срок или брокер ответил отказом, {@code waitForConfirmsOrDie}
  * бросает исключение, транзакция откатывается и ни одно событие пачки не отмечается — повтор на
  * следующем тике. Повторная отправка уже доставленного сообщения возможна; потребитель
- * идемпотентен по {@code messageId}. Транзакция держится на время ожидания подтверждений, поэтому
+ * идемпотентен: задание выполняется, только если его удалось захватить из состояния QUEUED.
+ * Транзакция держится на время ожидания подтверждений, поэтому
  * размер пачки и тайм-аут ограничены настройками.</p>
  */
 @Service
@@ -99,7 +100,8 @@ public class OutboxPublisher {
     }
 
     /**
-     * Собирает сообщение: тело — JSON события, {@code messageId} — id события, доставка persistent
+     * Собирает сообщение: тело — JSON события, {@code messageId} — id события, заголовок
+     * {@link RabbitTopology#TASK_ID_HEADER} — id задания (если событие о задании), доставка persistent
      * (сообщение сохраняется брокером на диск).
      *
      * @param event событие outbox
@@ -111,6 +113,9 @@ public class OutboxPublisher {
         messageProperties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
         messageProperties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
         messageProperties.setHeader(EVENT_TYPE_HEADER, event.eventType());
+        if (event.taskId() != null) {
+            messageProperties.setHeader(RabbitTopology.TASK_ID_HEADER, event.taskId());
+        }
         return MessageBuilder.withBody(event.payload().getBytes(StandardCharsets.UTF_8))
                 .andProperties(messageProperties)
                 .build();

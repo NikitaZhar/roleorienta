@@ -22,6 +22,11 @@ spring:
     publisher-returns: true
     template:
       mandatory: true
+    listener:
+      simple:
+        # Исключение потребителя — сообщение отклоняется без возврата в очередь и уходит в DLQ.
+        # Временные отказы повторяет таблица заданий (app.task), а не брокер.
+        default-requeue-rejected: false
 
 app:
   outbox:
@@ -29,6 +34,16 @@ app:
     confirm-timeout: 5s      # ожидание подтверждений брокера для пачки
     poll-interval-ms: 1000   # пауза между пачками
     tick-enabled: true       # false — периодическая публикация выключена (тесты)
+  task:
+    max-attempts: 8          # неудачных попыток до окончательной неудачи (FAILED)
+    backoff:
+      initial: 5m            # интервал после первой неудачи; далее ×2
+      max: 6h                # потолок интервала
+      jitter-ratio: 0.1      # случайная надбавка до +10%
+    lease: 10m               # незавершённое за этот срок задание снова ставится в очередь
+    requeue-batch-size: 100  # максимум заданий за один тик перепостановки
+    requeue-interval-ms: 10000
+    requeue-enabled: true    # false — перепостановка выключена (тесты)
 
 server:
   port: ${SERVER_PORT:8081}
