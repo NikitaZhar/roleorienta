@@ -10,9 +10,13 @@ import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
+import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,6 +30,11 @@ import org.springframework.stereotype.Component;
  * {@code Retry-After}), постоянный — неудача. При отказе сохранённые сведения не меняются,
  * вакансии источника переходят в «нуждается в повторной проверке» и не закрываются
  * (бизнес-описание §4.3, §4.6).</p>
+ *
+ * <p>Если список не содержит текста публикации, текст запрашивается у адаптера отдельно — только
+ * для публикаций без сохранённого текста и не больше
+ * {@link CollectProperties#maxContentRequestsPerRead()} за чтение, чтобы задание оставалось
+ * ограниченным. Не полученный текст запрашивается при следующем чтении.</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -38,18 +47,21 @@ public class ReadSourceHandler implements TaskHandler {
     private final SourceRepository sources;
     private final Map<String, SourceAdapter> adaptersByProvider;
     private final PostingRecorder recorder;
+    private final CollectProperties properties;
 
     /**
      * @param sources  доступ к источникам
      * @param adapters все адаптеры провайдеров
-     * @param recorder запись публикаций
+     * @param recorder   запись публикаций
+     * @param properties настройки сбора
      */
     public ReadSourceHandler(SourceRepository sources, ObjectProvider<SourceAdapter> adapters,
-            PostingRecorder recorder) {
+            PostingRecorder recorder, CollectProperties properties) {
         this.sources = sources;
         this.adaptersByProvider = adapters.orderedStream()
                 .collect(Collectors.toMap(SourceAdapter::provider, Function.identity()));
         this.recorder = recorder;
+        this.properties = properties;
     }
 
     /**
@@ -80,7 +92,7 @@ public class ReadSourceHandler implements TaskHandler {
         }
         return switch (adapter.read(source.getBoard())) {
             case SourceReadResult.Read read -> {
-                recorder.record(source, read.postings(), read.complete());
+                recorder.record(source, withContent(adapter, source, read.postings()), read.complete());
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
@@ -88,6 +100,22 @@ public class ReadSourceHandler implements TaskHandler {
                 yield toOutcome(unavailable.failure());
             }
         };
+    }
+
+    private List<FetchedPosting> withContent(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
+        Set<String> haveContent = recorder.externalIdsWithContent(source);
+        int budget = properties.maxContentRequestsPerRead();
+        List<FetchedPosting> result = new ArrayList<>(fetched.size());
+        for (FetchedPosting posting : fetched) {
+            if (posting.content() != null || budget == 0 || haveContent.contains(posting.externalId())) {
+                result.add(posting);
+                continue;
+            }
+            budget--;
+            result.add(new FetchedPosting(posting.externalId(), posting.title(), posting.url(),
+                    posting.location(), adapter.content(source.getBoard(), posting.externalId())));
+        }
+        return result;
     }
 
     private static TaskOutcome toOutcome(HttpResult failure) {

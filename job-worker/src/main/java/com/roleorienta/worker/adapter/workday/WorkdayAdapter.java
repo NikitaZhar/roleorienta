@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
  * Адаптер Workday: список вакансий витрины
  * {@code POST https://<тенант>.<dc>.myworkdayjobs.com/wday/cxs/<тенант>/<сайт>/jobs} страницами
  * {@code offset/limit}. Поля публикации — {@code title}, {@code externalPath} (внешний id и ссылка),
- * {@code locationsText}; {@code total} приходит только на первой странице.
+ * {@code locationsText}; {@code total} приходит только на первой странице. Текста в списке нет —
+ * он читается отдельно ({@link #content}).
  *
  * <p>Доска — {@code <тенант>.<dc>.myworkdayjobs.com/<сайт>}; другой хост не читается (отказ
  * {@code BLOCKED}). Отказ на первой странице — источник недоступен; на следующих, пустая страница
@@ -68,7 +69,7 @@ public class WorkdayAdapter implements SourceAdapter {
         }
         String base = properties.baseUrlTemplate().replace("{host}", matcher.group(1));
         String site = matcher.group(3);
-        URI uri = URI.create(base + "/wday/cxs/" + matcher.group(2) + "/" + site + "/jobs");
+        URI uri = URI.create(apiBase(matcher) + "/jobs");
         List<FetchedPosting> postings = new ArrayList<>();
         int total = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
@@ -102,6 +103,38 @@ public class WorkdayAdapter implements SourceAdapter {
         }
         LOG.warn("Workday board {} exceeds {} pages, read partially", board, properties.maxPages());
         return new SourceReadResult.Read(postings, false);
+    }
+
+    /**
+     * Текст публикации: {@code GET <api>/<externalPath>}, поле {@code jobPostingInfo.jobDescription}.
+     */
+    @Override
+    public String content(String board, String externalId) {
+        Matcher matcher = BOARD.matcher(board);
+        if (!matcher.matches() || !externalId.startsWith("/job/")) {
+            return null;
+        }
+        HttpResult result;
+        try {
+            result = httpClient.get(URI.create(apiBase(matcher) + externalId));
+        } catch (IllegalArgumentException malformedPath) {
+            return null;
+        }
+        if (!(result instanceof HttpResult.Success success)) {
+            LOG.debug("Workday posting {} on {} not read: {}", externalId, board, result);
+            return null;
+        }
+        try {
+            JsonNode description = JSON.readTree(success.body()).path("jobPostingInfo").path("jobDescription");
+            return description.isTextual() ? description.asText() : null;
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
+    }
+
+    private String apiBase(Matcher board) {
+        return properties.baseUrlTemplate().replace("{host}", board.group(1))
+                + "/wday/cxs/" + board.group(2) + "/" + board.group(3);
     }
 
     private String requestBody(int offset) {

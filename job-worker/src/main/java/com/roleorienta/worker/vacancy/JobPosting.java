@@ -77,7 +77,7 @@ public class JobPosting {
     }
 
     /**
-     * Источник показал публикацию: сведения обновлены, наличие подтверждено, счётчик отсутствия
+     * Источник показал публикацию: сведения обновлены (текст — если получен), наличие подтверждено, счётчик отсутствия
      * сброшен; закрытая ранее публикация снова открыта (та же вакансия).
      *
      * @param fetched     данные публикации из источника
@@ -87,7 +87,9 @@ public class JobPosting {
         this.title = fetched.title();
         this.url = fetched.url();
         this.location = fetched.location();
-        this.content = fetched.content();
+        if (fetched.content() != null) {
+            this.content = fetched.content();
+        }
         this.lastConfirmedAt = confirmedAt;
         this.confirmed = true;
         this.missingCompleteReads = 0;
@@ -130,13 +132,5 @@ public class JobPosting {
 
     public Vacancy getVacancy() {
         return vacancy;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getUrl() {
-        return url;
     }
 }

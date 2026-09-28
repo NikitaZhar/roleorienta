@@ -82,6 +82,15 @@ public class PostingRecorder {
     }
 
     /**
+     * @param source источник
+     * @return внешние id публикаций источника, текст которых уже получен
+     */
+    @Transactional(readOnly = true)
+    public Set<String> externalIdsWithContent(Source source) {
+        return new HashSet<>(postings.findExternalIdsWithContent(source.getId()));
+    }
+
+    /**
      * Источник не прочитан: публикации источника теряют подтверждение, счётчики и сведения не
      * меняются.
      *

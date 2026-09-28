@@ -18,4 +18,15 @@ public interface SourceAdapter {
      * @return публикации или отказ источника; исключений не бросает
      */
     SourceReadResult read(String board);
+
+    /**
+     * Текст публикации отдельным запросом — для провайдеров, у которых список его не содержит.
+     *
+     * @param board      идентификатор доски у провайдера
+     * @param externalId id публикации у провайдера
+     * @return текст; {@code null} — провайдер отдаёт текст в списке или запрос не удался
+     */
+    default String content(String board, String externalId) {
+        return null;
+    }
 }

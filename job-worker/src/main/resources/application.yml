@@ -53,6 +53,7 @@ app:
   collect:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)
+    max-content-requests-per-read: 200  # потолок запросов текста публикаций за одно чтение
   vacancy:
     close-after-missing-reads: 3  # полных чтений подряд без публикации до её закрытия
   adapter:

@@ -24,7 +24,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Адаптер Workday на заглушке списка: страницы, неполное чтение, отказ, чужой хост.
+ * Адаптер Workday на заглушке: страницы списка, неполное чтение, отказ, чужой хост, текст
+ * публикации.
  */
 class WorkdayAdapterTests {
 
@@ -59,6 +60,14 @@ class WorkdayAdapterTests {
             int key = offset.find() ? Integer.parseInt(offset.group(1)) : -1;
             byte[] bytes = pages.getOrDefault(key, "").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statuses.getOrDefault(key, 200), bytes.length == 0 ? -1 : bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.createContext("/" + HOST + "/wday/cxs/acme/External/job/", exchange -> {
+            byte[] bytes = "{\"jobPostingInfo\":{\"jobDescription\":\"<p>Java</p>\"}}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
             }
@@ -122,6 +131,14 @@ class WorkdayAdapterTests {
 
         assertThat(adapter.read(BOARD)).isEqualTo(new SourceReadResult.Unavailable(
                 new HttpResult.TemporaryFailure("HTTP 503", Duration.ZERO)));
+    }
+
+    /**
+     * Текст публикации — из {@code jobPostingInfo.jobDescription} по {@code externalPath}.
+     */
+    @Test
+    void readsContent() {
+        assertThat(adapter.content(BOARD, "/job/Bratislava/Java-Developer")).isEqualTo("<p>Java</p>");
     }
 
     /**

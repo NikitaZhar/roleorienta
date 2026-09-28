@@ -94,24 +94,4 @@ public class Vacancy {
     public Long getId() {
         return id;
     }
-
-    public VacancyState getState() {
-        return state;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getPrimaryUrl() {
-        return primaryUrl;
-    }
-
-    public Instant getFirstSeenAt() {
-        return firstSeenAt;
-    }
-
-    public Instant getLastConfirmedAt() {
-        return lastConfirmedAt;
-    }
 }
