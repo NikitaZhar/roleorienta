@@ -23,6 +23,13 @@ spring:
     template:
       mandatory: true
 
+app:
+  outbox:
+    batch-size: 100          # максимум событий в одной пачке публикации
+    confirm-timeout: 5s      # ожидание подтверждений брокера для пачки
+    poll-interval-ms: 1000   # пауза между пачками
+    tick-enabled: true       # false — периодическая публикация выключена (тесты)
+
 server:
   port: ${SERVER_PORT:8081}
 

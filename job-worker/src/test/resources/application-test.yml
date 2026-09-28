@@ -1,0 +1,11 @@
+# Профиль интеграционных тестов job-worker.
+spring:
+  flyway:
+    # Схему в тестах создают те же миграции, что применяет job-api (единственный источник схемы).
+    # Путь от каталога модуля job-worker, из которого Maven запускает тесты.
+    enabled: true
+    locations: filesystem:../job-api/src/main/resources/db/migration
+
+app:
+  outbox:
+    tick-enabled: false      # пачки публикуются из теста вручную — результат детерминирован

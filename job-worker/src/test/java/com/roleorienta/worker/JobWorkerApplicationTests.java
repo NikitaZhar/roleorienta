@@ -3,11 +3,13 @@ package com.roleorienta.worker;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Контекст job-worker поднимается на реальных PostgreSQL и RabbitMQ.
  */
 @SpringBootTest
+@ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class JobWorkerApplicationTests {
 

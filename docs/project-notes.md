@@ -1,8 +1,9 @@
 ---
 Документ: Стенограмма проекта roleorienta
 Дата: 2026-09-28
-Статус: каркас нового репозитория — два приложения Spring Boot, инфраструктура в Compose, Checkstyle, CI (§1).
-Срезов с последнего аудита: 1
+Статус: outbox → RabbitMQ с подтверждением и проверкой маршрутизации, топология с DLQ (§2).
+Прежний статус: каркас нового репозитория (§1).
+Срезов с последнего аудита: 2
 ---
 
 # Стенограмма проекта
@@ -52,3 +53,37 @@
 
 **Не вошло.** Outbox, leader-lock, задания с повторами, HTTP-клиент, ArchUnit, приёмочные тесты —
 следующие срезы подэтапа 1.1.
+
+## §2 — Outbox и публикация в RabbitMQ (подэтап 1.1)
+
+**Зачем.** Магистраль доставки заданий (технический документ §6, §9, §16.2): событие пишется в
+БД в одной транзакции с изменением данных и гарантированно доходит до RabbitMQ.
+
+**Что сделано.**
+- `V1__outbox.sql` (job-api) — таблица `outbox_event`; частичный индекс по неопубликованным.
+- `RabbitTopology` — обменник `roleorienta.jobs`, рабочая очередь, dead-letter обменник и DLQ,
+  всё durable. Бины `DirectExchange`/`Queue`/`Binding` Spring AMQP сам объявляет в брокере.
+  https://docs.spring.io/spring-amqp/reference/amqp/broker-configuration.html
+- `OutboxRepository` — SQL к outbox. `FOR UPDATE SKIP LOCKED` блокирует выбранные строки до конца
+  транзакции и пропускает занятые другой репликой — каждое событие отправляет один публикатор.
+- `OutboxPublisher` — пачка в одной транзакции: захват → отправка с `mandatory` → ожидание
+  подтверждений (`waitForConfirmsOrDie`) → отметка `published_at`. Вернувшиеся как
+  немаршрутизируемые (`basic.return`, собираются `ReturnsCallback`) не отмечаются, счётчик попыток
+  +1. Нет подтверждений — откат, повтор на следующем тике; возможный повторный приход сообщения
+  гасит идемпотентный потребитель по `messageId`.
+  https://docs.spring.io/spring-amqp/reference/amqp/template.html#template-confirms
+- `OutboxPublisherTick` — `@Scheduled` тик (пауза `app.outbox.poll-interval-ms`), выключается
+  `app.outbox.tick-enabled=false`; `@ConditionalOnProperty` не создаёт бин при выключении.
+- `OutboxProperties` — запись настроек `app.outbox.*` (`@ConfigurationProperties`,
+  `@DefaultValue`); регистрируется `@ConfigurationPropertiesScan` в `JobWorkerApplication`;
+  там же `@EnableScheduling` — включает `@Scheduled`.
+- Тесты worker создают схему теми же миграциями job-api: Flyway подключён к worker только в
+  тестах, `spring.flyway.locations=filesystem:../job-api/...` в профиле `test`.
+
+**Тесты.** `OutboxPublisherTests`: событие доставлено в очередь с id в `messageId` и отмечено;
+без привязки очереди событие не отмечено, попытка засчитана, после восстановления привязки
+доставлено.
+
+**README** — строка статуса.
+
+**Не вошло.** Потребитель заданий, таблица заданий с повторами, leader-lock — следующий срез.
