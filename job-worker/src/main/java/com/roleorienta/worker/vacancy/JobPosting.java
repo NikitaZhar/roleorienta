@@ -92,7 +92,8 @@ public class JobPosting {
 
     /**
      * Полный обход показал публикацию: изменения позиции и места и повторное появление закрытой
-     * публикации записываются в историю, затем сведения обновляются (см. {@link #apply}).
+     * публикации записываются в историю, затем сведения обновляются (см. {@link #apply}); изменились
+     * название или текст — соответствие вакансии позициям пересчитывается.
      *
      * @param fetched     данные публикации из источника
      * @param run         полный обход; уже сохранён
@@ -108,7 +109,12 @@ public class JobPosting {
         if (!Objects.equals(location, fetched.location())) {
             revisions.add(new VacancyRevision(this, run, RevisionField.LOCATION, location, fetched.location()));
         }
+        boolean textChanged = !Objects.equals(title, fetched.title())
+                || fetched.content() != null && !Objects.equals(content, fetched.content());
         apply(fetched, confirmedAt);
+        if (textChanged) {
+            vacancy.resetMatch();
+        }
     }
 
     /**

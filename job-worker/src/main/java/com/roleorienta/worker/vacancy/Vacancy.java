@@ -35,6 +35,9 @@ public class Vacancy {
 
     private Instant closedAt;
 
+    /** Версия словаря позиций, по которой вакансия сопоставлена; {@code null} — сопоставить заново. */
+    private String matchVersion;
+
     /**
      * Для JPA.
      */
@@ -89,6 +92,13 @@ public class Vacancy {
         this.closedAt = null;
         this.state = postings.stream().anyMatch(posting -> posting.isConfirmed() && !posting.isClosed())
                 ? VacancyState.ACTIVE : VacancyState.NEEDS_RECHECK;
+    }
+
+    /**
+     * Название или текст вакансии изменились — соответствие позициям пересчитывается.
+     */
+    public void resetMatch() {
+        this.matchVersion = null;
     }
 
     public Long getId() {

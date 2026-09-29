@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code TaskRequeueTick}); 1002 — постановка чтения источников ({@code ReadSourceTick}); 1003 — постановка приёма реестра
  * ({@code RegistryIntakeTick}); 1004 — постановка скана сайтов ({@code SiteScanTick}); 1005 — постановка проверки
  * сайтов на кадровые страницы ({@code CareerScanTick}); 1006 — постановка обратного пути
- * ({@code BoardDiscoveryTick}).</p>
+ * ({@code BoardDiscoveryTick}); 1007 — постановка предрасчёта соответствий ({@code MatchVacanciesTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {
