@@ -46,16 +46,19 @@ class RegistryIntakeTests {
             + "," + entity("33333333", "Mesto Trnava", "801", "Obec (obecný úrad), mesto (mestský úrad)", null)
             + "]";
 
-    /** Файл 2 — записи подряд: прекращённое неизвестное юрлицо, запись без IČO, a.s. */
-    private static final String FILE_2_JSON = entity("44444444", "Stará s.r.o.", "112",
-            "Spoločnosť s ručením obmedzeným", "2020-01-01") + "\n"
-            + "{\"id\":5,\"fullNames\":[{\"value\":\"Bez IČO\"}]}\n"
-            + entity("55555555", "Beta a.s.", "121", "Akciová spoločnosť", null);
+    /**
+     * Файл 2 — как живая выгрузка ({@code exportDate}, {@code results}): прекращённое неизвестное
+     * юрлицо, запись без IČO, a.s.
+     */
+    private static final String FILE_2_JSON = "{\"exportDate\":\"2026-01-03\",\"results\":["
+            + entity("44444444", "Stará s.r.o.", "112", "Spoločnosť s ručením obmedzeným", "2020-01-01") + ",\n"
+            + "{\"id\":5,\"fullNames\":[{\"value\":\"Bez IČO\"}]},\n"
+            + entity("55555555", "Beta a.s.", "121", "Akciová spoločnosť", null) + "]}";
 
-    /** Ежедневная выгрузка за дату полной: переименование и прекращение. */
-    private static final String DAILY_JSON = "["
+    /** Ежедневная выгрузка за дату полной (формат живой): переименование и прекращение. */
+    private static final String DAILY_JSON = "{\"exportDate\":\"2026-01-03\",\"results\":["
             + entity("11111111", "Alfa Group s.r.o.", "112", "Spoločnosť s ručením obmedzeným", null) + ","
-            + entity("55555555", "Beta a.s.", "121", "Akciová spoločnosť", "2026-01-03") + "]";
+            + entity("55555555", "Beta a.s.", "121", "Akciová spoločnosť", "2026-01-03") + "]}";
 
     @MockitoBean
     private RpoExports exports;

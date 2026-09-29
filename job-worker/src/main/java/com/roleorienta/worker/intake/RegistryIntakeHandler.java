@@ -1,7 +1,8 @@
 package com.roleorienta.worker.intake;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.roleorienta.worker.task.TaskHandler;
@@ -28,7 +29,9 @@ import software.amazon.awssdk.core.exception.SdkException;
  *
  * <ol>
  *   <li>Курсора нет — он ставится на начало последней полной выгрузки.</li>
- *   <li>Полная выгрузка читается файл за файлом, записи — потоком; порция записей
+ *   <li>Полная выгрузка читается файл за файлом. Файл — {@code {"exportDate": …, "results": [ … ]}}
+ *       (проверено на живых выгрузках, §24); парсер доходит до массива {@code results} и читает
+ *       записи по одной, не загружая файл в память; порция записей
  *       ({@link IntakeProperties#batchSize()}) пишется вместе со сдвигом курсора одной
  *       транзакцией. После остановки чтение продолжается с места курсора: обработанные записи
  *       файла пропускаются.</li>
@@ -54,7 +57,9 @@ public class RegistryIntakeHandler implements TaskHandler {
 
     private static final String REGISTRY = "RPO";
     private static final String PAYLOAD = "{}";
-    private static final ObjectReader RECORDS = new ObjectMapper().readerFor(JsonNode.class);
+    private static final String RECORDS_FIELD = "results";
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectReader RECORDS = JSON.readerFor(JsonNode.class);
     private static final Logger LOG = LoggerFactory.getLogger(RegistryIntakeHandler.class);
 
     private final RpoExports exports;
@@ -194,9 +199,10 @@ public class RegistryIntakeHandler implements TaskHandler {
         long index = 0;
         long records = 0;
         List<RegistryCompany> batch = new ArrayList<>();
-        try (InputStream input = exports.open(key); MappingIterator<JsonNode> values = RECORDS.readValues(input)) {
-            while (records < budget && values.hasNextValue()) {
-                JsonNode value = values.nextValue();
+        try (InputStream input = exports.open(key); JsonParser parser = JSON.createParser(input)) {
+            moveToRecords(parser, key);
+            while (records < budget && parser.nextToken() == JsonToken.START_OBJECT) {
+                JsonNode value = RECORDS.readValue(parser);
                 index++;
                 if (index <= cursor.recordOffset()) {
                     continue;
@@ -208,13 +214,36 @@ public class RegistryIntakeHandler implements TaskHandler {
                     batch.clear();
                 }
             }
-            boolean finished = !values.hasNextValue();
+            boolean finished = records < budget || parser.nextToken() != JsonToken.START_OBJECT;
             if (index > cursor.recordOffset()) {
                 cursor = repository.applyBatch(COUNTRY, REGISTRY, cursor, batch, index);
             }
             LOG.info("RPO {}: {} records, finished={}", key, records, finished);
             return new Progress(cursor, records, finished);
         }
+    }
+
+    /**
+     * Ставит парсер на начало массива записей: массив {@code results} корневого объекта или сам
+     * корневой массив.
+     *
+     * @throws IOException массива записей нет
+     */
+    private static void moveToRecords(JsonParser parser, String key) throws IOException {
+        JsonToken first = parser.nextToken();
+        if (first == JsonToken.START_ARRAY) {
+            return;
+        }
+        if (first == JsonToken.START_OBJECT) {
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String field = parser.currentName();
+                if (parser.nextToken() == JsonToken.START_ARRAY && RECORDS_FIELD.equals(field)) {
+                    return;
+                }
+                parser.skipChildren();
+            }
+        }
+        throw new IOException("No records array in RPO export " + key);
     }
 
     /**
