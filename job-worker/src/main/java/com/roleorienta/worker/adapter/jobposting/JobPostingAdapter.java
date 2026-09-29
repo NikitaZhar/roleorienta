@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
@@ -82,8 +83,8 @@ public class JobPostingAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         List<URI> links = sameHostLinks(success.body(), careersPage);
-        boolean complete = links.size() <= properties.maxPages();
-        if (!complete) {
+        PartialReason partialReason = links.size() > properties.maxPages() ? PartialReason.PAGE_LIMIT : null;
+        if (partialReason != null) {
             LOG.warn("Careers page {} links {} pages, over the ceiling of {}; read partially",
                     board, links.size(), properties.maxPages());
         }
@@ -97,10 +98,12 @@ public class JobPostingAdapter implements SourceAdapter {
                 }
             } else if (pageResult instanceof HttpResult.TemporaryFailure) {
                 LOG.warn("Page {} of careers page {} not read: {}", page, board, pageResult);
-                complete = false;
+                if (partialReason == null) {
+                    partialReason = PartialReason.PAGE_FAILED;
+                }
             }
         }
-        return new SourceReadResult.Read(postings, complete);
+        return new SourceReadResult.Read(postings, partialReason);
     }
 
     /**

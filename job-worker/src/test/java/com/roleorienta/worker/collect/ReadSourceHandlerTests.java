@@ -1,5 +1,7 @@
 package com.roleorienta.worker.collect;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -7,11 +9,13 @@ import static org.mockito.Mockito.when;
 
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -41,18 +45,19 @@ class ReadSourceHandlerTests {
         when(adapters.orderedStream()).thenReturn(Stream.of(adapter));
         when(adapter.provider()).thenReturn("workday");
         when(sources.findById(1L)).thenReturn(Optional.of(source));
-        when(adapter.read(BOARD)).thenReturn(new SourceReadResult.Read(
-                List.of(posting("a", null), posting("b", null), posting("c", null)), true));
+        when(adapter.read(BOARD)).thenReturn(SourceReadResult.Read.full(
+                List.of(posting("a", null), posting("b", null), posting("c", null))));
         when(recorder.externalIdsWithContent(source)).thenReturn(Set.of("a"));
         when(adapter.content(BOARD, "b")).thenReturn("text b");
-        ReadSourceHandler handler = new ReadSourceHandler(sources, adapters, recorder, new CollectProperties(1));
+        ReadSourceHandler handler = new ReadSourceHandler(sources, adapters, recorder, new CollectProperties(1),
+                Clock.systemUTC());
 
         handler.handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
 
         verify(adapter, never()).content(BOARD, "a");
         verify(adapter, never()).content(BOARD, "c");
-        verify(recorder).record(source,
-                List.of(posting("a", null), posting("b", "text b"), posting("c", null)), true);
+        verify(recorder).record(any(CrawlRun.class),
+                eq(List.of(posting("a", null), posting("b", "text b"), posting("c", null))));
     }
 
     private static FetchedPosting posting(String externalId, String content) {

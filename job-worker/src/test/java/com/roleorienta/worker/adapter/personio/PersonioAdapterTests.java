@@ -91,10 +91,10 @@ class PersonioAdapterTests {
                 </workzag-jobs>
                 """;
 
-        assertThat(adapter.read(BOARD)).isEqualTo(new SourceReadResult.Read(List.of(
+        assertThat(adapter.read(BOARD)).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", baseUrl() + "/job/101", "Bratislava",
                         "<p>Java</p>\n<p>Code</p>"),
-                new FetchedPosting("102", "QA Engineer", baseUrl() + "/job/102", null, null)), true));
+                new FetchedPosting("102", "QA Engineer", baseUrl() + "/job/102", null, null))));
     }
 
     /**
@@ -128,9 +128,9 @@ class PersonioAdapterTests {
         status = 200;
         body = "<workzag-jobs><position><id>101</id><name>Java Developer</name></position></workzag-jobs>";
 
-        assertThat(adapter.read("acme.jobs.personio.com")).isEqualTo(new SourceReadResult.Read(List.of(
+        assertThat(adapter.read("acme.jobs.personio.com")).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", stubUrl() + "/acme.jobs.personio.com/job/101",
-                        null, null)), true));
+                        null, null))));
     }
 
     /**

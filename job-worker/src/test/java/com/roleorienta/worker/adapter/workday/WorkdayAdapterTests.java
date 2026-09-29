@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.workday;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.http.TestHttpClients;
@@ -116,7 +117,7 @@ class WorkdayAdapterTests {
         SourceReadResult result = adapter.read(BOARD);
 
         assertThat(result).isInstanceOf(SourceReadResult.Read.class);
-        assertThat(((SourceReadResult.Read) result).complete()).isFalse();
+        assertThat(((SourceReadResult.Read) result).partialReason()).isEqualTo(PartialReason.PAGE_FAILED);
         assertThat(((SourceReadResult.Read) result).postings()).hasSize(2);
     }
 

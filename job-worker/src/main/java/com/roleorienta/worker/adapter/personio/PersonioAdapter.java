@@ -63,7 +63,7 @@ public class PersonioAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         try {
-            return new SourceReadResult.Read(parse(success.body(), base), true);
+            return SourceReadResult.Read.full(parse(success.body(), base));
         } catch (XMLStreamException exception) {
             return new SourceReadResult.Unavailable(new HttpResult.TemporaryFailure(
                     "Malformed Personio feed: " + exception.getMessage(), Duration.ZERO));

@@ -1,5 +1,7 @@
 package com.roleorienta.worker.vacancy;
 
+import com.roleorienta.worker.crawl.CrawlRun;
+import com.roleorienta.worker.crawl.CrawlRunRepository;
 import com.roleorienta.worker.source.Source;
 import java.time.Clock;
 import java.time.Instant;
@@ -25,39 +27,45 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Отказ источника: сведения не меняются, подтверждения нет — вакансии источника нуждаются в
  *       повторной проверке.</li>
  * </ul>
+ *
+ * <p>Обход ({@link CrawlRun}) сохраняется в той же транзакции, что и изменения публикаций.</p>
  */
 @Service
 public class PostingRecorder {
 
     private final JobPostingRepository postings;
     private final VacancyRepository vacancies;
+    private final CrawlRunRepository runs;
     private final VacancyProperties properties;
     private final Clock clock;
 
     /**
      * @param postings   доступ к публикациям
      * @param vacancies  доступ к вакансиям
+     * @param runs       доступ к обходам
      * @param properties настройки жизненного цикла
      * @param clock      часы
      */
-    public PostingRecorder(JobPostingRepository postings, VacancyRepository vacancies,
+    public PostingRecorder(JobPostingRepository postings, VacancyRepository vacancies, CrawlRunRepository runs,
             VacancyProperties properties, Clock clock) {
         this.postings = postings;
         this.vacancies = vacancies;
+        this.runs = runs;
         this.properties = properties;
         this.clock = clock;
     }
 
     /**
-     * Записывает публикации одного чтения источника в одной транзакции.
+     * Записывает публикации одного чтения источника и его обход в одной транзакции.
      *
-     * @param source   прочитанный источник
-     * @param fetched  публикации из источника
-     * @param complete список прочитан полностью
+     * @param run     обход {@code COMPLETE} или {@code PARTIAL}, ещё не сохранённый
+     * @param fetched публикации из источника
      */
     @Transactional
-    public void record(Source source, List<FetchedPosting> fetched, boolean complete) {
+    public void record(CrawlRun run, List<FetchedPosting> fetched) {
         Instant now = clock.instant();
+        Source source = run.getSource();
+        boolean complete = run.isComplete();
         Map<String, JobPosting> known = postings.findBySourceId(source.getId()).stream()
                 .collect(Collectors.toMap(JobPosting::getExternalId, Function.identity()));
         Set<Long> touched = new HashSet<>();
@@ -79,6 +87,7 @@ public class PostingRecorder {
             }
         }
         refreshStates(touched, now);
+        runs.save(run.finish(now));
     }
 
     /**
@@ -92,18 +101,20 @@ public class PostingRecorder {
 
     /**
      * Источник не прочитан: публикации источника теряют подтверждение, счётчики и сведения не
-     * меняются.
+     * меняются; обход сохраняется в той же транзакции.
      *
-     * @param source источник
+     * @param run обход {@code FAILED}, ещё не сохранённый
      */
     @Transactional
-    public void recordUnavailable(Source source) {
+    public void recordUnavailable(CrawlRun run) {
+        Instant now = clock.instant();
         Set<Long> touched = new HashSet<>();
-        for (JobPosting posting : postings.findBySourceId(source.getId())) {
+        for (JobPosting posting : postings.findBySourceId(run.getSource().getId())) {
             posting.markUnconfirmed();
             touched.add(posting.getVacancy().getId());
         }
-        refreshStates(touched, clock.instant());
+        refreshStates(touched, now);
+        runs.save(run.finish(now));
     }
 
     private void refreshStates(Set<Long> vacancyIds, Instant now) {

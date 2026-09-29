@@ -47,10 +47,10 @@ class GreenhouseAdapterTests {
 
         SourceReadResult result = adapter.read(GreenhouseStub.BOARD);
 
-        assertThat(result).isEqualTo(new SourceReadResult.Read(List.of(
+        assertThat(result).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", "https://example.com/101", "Bratislava",
                         "&lt;p&gt;Java&lt;/p&gt;"),
-                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null)), true));
+                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null))));
     }
 
     /**

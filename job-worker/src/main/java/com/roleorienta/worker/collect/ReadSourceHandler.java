@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
@@ -12,6 +13,8 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,9 @@ import org.springframework.stereotype.Component;
  * для публикаций без сохранённого текста и не больше
  * {@link CollectProperties#maxContentRequestsPerRead()} за чтение, чтобы задание оставалось
  * ограниченным. Не полученный текст запрашивается при следующем чтении.</p>
+ *
+ * <p>Каждое чтение записывается обходом ({@link CrawlRun}): от начала чтения до записи
+ * результата, включая запросы текста.</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -52,20 +58,23 @@ public class ReadSourceHandler implements TaskHandler {
     private final Map<String, SourceAdapter> adaptersByProvider;
     private final PostingRecorder recorder;
     private final CollectProperties properties;
+    private final Clock clock;
 
     /**
      * @param sources  доступ к источникам
      * @param adapters все адаптеры провайдеров
      * @param recorder   запись публикаций
      * @param properties настройки сбора
+     * @param clock      часы
      */
     public ReadSourceHandler(SourceRepository sources, ObjectProvider<SourceAdapter> adapters,
-            PostingRecorder recorder, CollectProperties properties) {
+            PostingRecorder recorder, CollectProperties properties, Clock clock) {
         this.sources = sources;
         this.adaptersByProvider = adapters.orderedStream()
                 .collect(Collectors.toMap(SourceAdapter::provider, Function.identity()));
         this.recorder = recorder;
         this.properties = properties;
+        this.clock = clock;
     }
 
     /**
@@ -94,15 +103,18 @@ public class ReadSourceHandler implements TaskHandler {
         if (adapter == null) {
             return new TaskOutcome.Failed("No adapter for provider " + source.getProvider());
         }
+        Instant startedAt = clock.instant();
         return switch (adapter.read(source.getBoard())) {
             case SourceReadResult.Read read -> {
-                LOG.info("Source {} read: {} postings, complete={}", source.getId(), read.postings().size(),
-                        read.complete());
-                recorder.record(source, withContent(adapter, source, read.postings()), read.complete());
+                LOG.info("Source {} read: {} postings, partialReason={}", source.getId(), read.postings().size(),
+                        read.partialReason());
+                List<FetchedPosting> postings = withContent(adapter, source, read.postings());
+                recorder.record(CrawlRun.read(source, task.id(), startedAt, postings.size(), read.partialReason()),
+                        postings);
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
-                recorder.recordUnavailable(source);
+                recorder.recordUnavailable(CrawlRun.failed(source, task.id(), startedAt, unavailable.failure()));
                 yield toOutcome(unavailable.failure());
             }
         };

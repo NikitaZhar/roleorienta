@@ -23,7 +23,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * Чтение источника Greenhouse целиком: постановка чтения → задание → адаптер (заглушка) →
- * публикации и вакансии в PostgreSQL.
+ * публикации, вакансии и обходы в PostgreSQL.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -73,6 +73,7 @@ class ReadSourceFlowTests {
      */
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM crawl_run");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM vacancy");
         jdbcTemplate.update("DELETE FROM outbox_event");
@@ -82,8 +83,8 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * Первое чтение создаёт по вакансии на публикацию; повторная постановка в тот же день ничего не
-     * добавляет.
+     * Первое чтение создаёт по вакансии на публикацию и полный обход; повторная постановка в тот же
+     * день ничего не добавляет.
      */
     @Test
     void firstReadCreatesVacancies() {
@@ -97,6 +98,10 @@ class ReadSourceFlowTests {
         assertThat(count("job_posting")).isEqualTo(2);
         assertThat(jdbcTemplate.queryForList("SELECT title FROM vacancy WHERE state = 'ACTIVE' ORDER BY title",
                 String.class)).containsExactly("Java Developer", "QA Engineer");
+        assertThat(jdbcTemplate.queryForMap("SELECT state, postings_count, task_id FROM crawl_run"))
+                .containsEntry("state", "COMPLETE")
+                .containsEntry("postings_count", 2)
+                .containsEntry("task_id", onlyTaskId());
     }
 
     /**
@@ -116,7 +121,8 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * Временный отказ источника: задание ждёт повтора, сохранённые сведения не меняются.
+     * Временный отказ источника: задание ждёт повтора, сохранённые сведения не меняются, обход
+     * записан как неудачный с видом отказа.
      */
     @Test
     void unavailableSourceSchedulesRetryAndKeepsData() {
@@ -130,6 +136,9 @@ class ReadSourceFlowTests {
                 .isEqualTo("WAITING");
         assertThat(jdbcTemplate.queryForObject("SELECT title FROM vacancy", String.class))
                 .isEqualTo("Java Developer");
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT state || ':' || coalesce(failure_kind, '-') FROM crawl_run ORDER BY id", String.class))
+                .containsExactly("COMPLETE:-", "FAILED:TEMPORARY");
     }
 
     /**

@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.jobposting;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.http.TestHttpClients;
@@ -110,10 +111,9 @@ class JobPostingAdapterTests {
      */
     @Test
     void readsPostingsFromLinkedPages() {
-        assertThat(adapter(MAX_PAGES).read(url("/careers"))).isEqualTo(new SourceReadResult.Read(List.of(
+        assertThat(adapter(MAX_PAGES).read(url("/careers"))).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting(url("/jobs/1"), "Java Developer", url("/jobs/1"), "Bratislava, SK", "<p>Java</p>"),
-                new FetchedPosting(url("/jobs/2"), "QA Engineer", url("/jobs/2"), "Vienna, AT; Remote, EU", null)),
-                true));
+                new FetchedPosting(url("/jobs/2"), "QA Engineer", url("/jobs/2"), "Vienna, AT; Remote, EU", null))));
     }
 
     /**
@@ -121,9 +121,9 @@ class JobPostingAdapterTests {
      */
     @Test
     void readsPartiallyOverCeiling() {
-        assertThat(adapter(1).read(url("/careers"))).isEqualTo(new SourceReadResult.Read(List.of(
+        assertThat(adapter(1).read(url("/careers"))).isEqualTo(SourceReadResult.Read.partial(List.of(
                 new FetchedPosting(url("/jobs/1"), "Java Developer", url("/jobs/1"), "Bratislava, SK", "<p>Java</p>")),
-                false));
+                PartialReason.PAGE_LIMIT));
     }
 
     /**
@@ -136,7 +136,7 @@ class JobPostingAdapterTests {
         SourceReadResult result = adapter(MAX_PAGES).read(url("/careers"));
 
         assertThat(result).isInstanceOf(SourceReadResult.Read.class);
-        assertThat(((SourceReadResult.Read) result).complete()).isFalse();
+        assertThat(((SourceReadResult.Read) result).partialReason()).isEqualTo(PartialReason.PAGE_FAILED);
         assertThat(((SourceReadResult.Read) result).postings()).hasSize(1);
     }
 

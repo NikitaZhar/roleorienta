@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
@@ -83,7 +84,7 @@ public class WorkdayAdapter implements SourceAdapter {
                     return new SourceReadResult.Unavailable(failure);
                 }
                 LOG.warn("Workday board {} read partially at offset {}: {}", board, offset, failure);
-                return new SourceReadResult.Read(postings, false);
+                return SourceReadResult.Read.partial(postings, PartialReason.PAGE_FAILED);
             }
             if (page == 0) {
                 total = json.path("total").asInt();
@@ -95,14 +96,14 @@ public class WorkdayAdapter implements SourceAdapter {
                         job.path("locationsText").isTextual() ? job.path("locationsText").asText() : null, null));
             }
             if (offset + jobs.size() >= total) {
-                return new SourceReadResult.Read(postings, true);
+                return SourceReadResult.Read.full(postings);
             }
             if (jobs.isEmpty()) {
-                return new SourceReadResult.Read(postings, false);
+                return SourceReadResult.Read.partial(postings, PartialReason.LIST_ENDED_EARLY);
             }
         }
         LOG.warn("Workday board {} exceeds {} pages, read partially", board, properties.maxPages());
-        return new SourceReadResult.Read(postings, false);
+        return SourceReadResult.Read.partial(postings, PartialReason.PAGE_LIMIT);
     }
 
     /**
