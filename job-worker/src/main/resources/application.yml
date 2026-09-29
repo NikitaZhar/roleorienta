@@ -96,6 +96,10 @@ app:
   match:                     # предрасчёт соответствия вакансий позициям (словарь positions.json)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки
+  geo:                       # справочник городов GeoNames (CC BY 4.0)
+    enabled: true              # false — загрузка не ставится (тесты)
+    interval-ms: 3600000       # тик: справочник пуст — загрузить
+    url: https://download.geonames.org/export/dump/cities15000.zip
   crawl:
     unavailable-after: 7d      # серия временных отказов источника до статуса «недоступен»
   vacancy:

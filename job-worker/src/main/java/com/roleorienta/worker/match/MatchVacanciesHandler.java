@@ -15,10 +15,11 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 /**
- * Задание {@code MATCH_VACANCIES}: предрасчёт соответствия вакансий позициям словаря (технический
- * документ §6 «Соответствие»; подэтап 1.4). Берутся незакрытые вакансии, не сопоставленные по
- * текущей версии словаря (новые, изменившиеся или сопоставленные прежней версией); соответствия
- * вакансии заменяются вместе с отметкой версии. За задание — {@value #BATCH} вакансий, дальше —
+ * Задание {@code MATCH_VACANCIES}: предрасчёт соответствия вакансий позициям словаря и сведений о
+ * стране и формате работы (технический документ §6 «Соответствие», «Нормализация»; подэтап 1.4).
+ * Версия сопоставления — версии словаря позиций и регионов и размер справочника городов: любая
+ * смена пересчитывает все вакансии. Берутся незакрытые вакансии, не сопоставленные по текущей
+ * версии; соответствия и сведения вакансии заменяются вместе с отметкой версии. За задание — {@value #BATCH} вакансий, дальше —
  * следующее задание.
  */
 @Component
@@ -32,17 +33,20 @@ public class MatchVacanciesHandler implements TaskHandler {
     private static final Logger LOG = LoggerFactory.getLogger(MatchVacanciesHandler.class);
 
     private final PositionDictionary dictionary;
+    private final RemoteRegions regions;
     private final MatchRepository repository;
     private final TaskService taskService;
 
     /**
      * @param dictionary  словарь позиций
-     * @param repository  позиции и соответствия
+     * @param regions     регионы удалённой работы
+     * @param repository  позиции, соответствия, города
      * @param taskService постановка следующего задания
      */
-    public MatchVacanciesHandler(PositionDictionary dictionary, MatchRepository repository,
+    public MatchVacanciesHandler(PositionDictionary dictionary, RemoteRegions regions, MatchRepository repository,
             TaskService taskService) {
         this.dictionary = dictionary;
+        this.regions = regions;
         this.repository = repository;
         this.taskService = taskService;
     }
@@ -70,23 +74,27 @@ public class MatchVacanciesHandler implements TaskHandler {
     @Override
     public TaskOutcome handle(TaskRecord task) {
         Map<String, Long> positionIds = repository.syncPositions(dictionary);
-        List<VacancyText> vacancies = repository.vacanciesToMatch(dictionary.version(), BATCH);
+        Map<String, String> cities = repository.cities();
+        LocationResolver resolver = new LocationResolver(cities, regions);
+        String version = dictionary.version() + "/" + regions.version() + "/g" + cities.size();
+        List<VacancyText> vacancies = repository.vacanciesToMatch(version, BATCH);
         int matched = 0;
         for (VacancyText vacancy : vacancies) {
+            String text = text(vacancy.content());
             Map<Long, String> positions = new LinkedHashMap<>();
-            PositionMatcher.match(dictionary, vacancy.title(), text(vacancy.content()))
+            PositionMatcher.match(dictionary, vacancy.title(), text)
                     .forEach(match -> positions.put(positionIds.get(match.code()), match.explanation()));
             try {
-                repository.saveMatches(vacancy, dictionary.version(), positions);
+                repository.saveMatches(vacancy, version, positions,
+                        resolver.resolve(vacancy.locations(), vacancy.title(), text));
                 matched += positions.isEmpty() ? 0 : 1;
             } catch (OptimisticLockingFailureException changed) {
                 LOG.debug("Vacancy {} changed while matching, next pass", vacancy.id());
             }
         }
-        LOG.info("Matched {} vacancies by dictionary {}: {} with a position", vacancies.size(),
-                dictionary.version(), matched);
+        LOG.info("Matched {} vacancies by {}: {} with a position", vacancies.size(), version, matched);
         if (vacancies.size() == BATCH) {
-            taskService.enqueue(TYPE, taskKey(dictionary.version() + ":" + vacancies.get(BATCH - 1).id()), PAYLOAD);
+            taskService.enqueue(TYPE, taskKey(version + ":" + vacancies.get(BATCH - 1).id()), PAYLOAD);
         }
         return new TaskOutcome.Done();
     }

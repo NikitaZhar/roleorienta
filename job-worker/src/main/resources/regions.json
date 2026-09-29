@@ -1,0 +1,19 @@
+{
+  "version": "2026-09-29.1",
+  "comment": "Регионы удалённой работы (технический документ §6): название территории → страны (ISO 3166-1 alpha-2); \"*\" — без ограничения. Регистр и диакритика не важны.",
+  "regions": {
+    "eu": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"],
+    "european union": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"],
+    "eea": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE","IS","LI","NO"],
+    "europe": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE","IS","LI","NO","CH","GB","AL","BA","ME","MK","RS","MD","UA"],
+    "emea": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE","IS","LI","NO","CH","GB","AL","BA","ME","MK","RS","MD","UA","TR","IL","AE","SA","EG","ZA","MA","NG","KE"],
+    "cee": ["BG","HR","CZ","EE","HU","LV","LT","PL","RO","SK","SI","RS","BA","ME","MK","AL","UA","MD"],
+    "central europe": ["AT","CZ","DE","HU","PL","SK","SI","CH"],
+    "dach": ["DE","AT","CH"],
+    "nordics": ["DK","FI","IS","NO","SE"],
+    "benelux": ["BE","NL","LU"],
+    "worldwide": ["*"],
+    "anywhere": ["*"],
+    "global": ["*"]
+  }
+}

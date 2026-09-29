@@ -1,0 +1,25 @@
+{
+  "comment": "Размеченный корпус отбора (бизнес-описание §4.4, §7.4-А сценарий 10; технический документ §14). Условия: страна SK, позиция search.position, формат search.format (null — не задан). expect: позиция совпала, оценка страны и формата.",
+  "cases": [
+    {"title": "Backend Engineer — Java", "location": "Bratislava, Slovakia", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Prague, Czech Republic", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MISMATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Remote - EU", "text": "", "search": {"position": "java-developer", "format": "REMOTE"}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Remote", "text": "", "search": {"position": "java-developer", "format": "OFFICE"}, "expect": {"position": true, "country": "UNCERTAIN", "format": "MISMATCH"}},
+    {"title": "Java Developer", "location": "Bratislava; Vienna, Austria", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "2 Locations", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "UNCERTAIN", "format": "MATCH"}},
+    {"title": "Java Developer (Hybrid)", "location": "Košice", "text": "", "search": {"position": "java-developer", "format": "HYBRID"}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Berlin", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MISMATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Remote, Germany", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MISMATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Remote (Worldwide)", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Bratislava", "text": "On-site role, work from home occasionally.", "search": {"position": "java-developer", "format": "OFFICE"}, "expect": {"position": true, "country": "MATCH", "format": "UNCERTAIN"}},
+    {"title": "Java Developer", "location": "Bratislava", "text": "", "search": {"position": "java-developer", "format": "REMOTE"}, "expect": {"position": true, "country": "MATCH", "format": "UNCERTAIN"}},
+    {"title": "JavaScript Developer", "location": "Bratislava", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
+    {"title": "QA Engineer (Java)", "location": "Bratislava", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Software Engineer", "location": "Bratislava", "text": "Java 21, Spring Boot, Java tooling; Java is our core.", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Senior Backend Engineer (Ruby)", "location": "Bratislava", "text": "Python, Python, Python", "search": {"position": "python-developer", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Data Platform Engineer", "location": "Bratislava", "text": "", "search": {"position": "devops-engineer", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Data Platform Engineer", "location": "Bratislava", "text": "", "search": {"position": "data-engineer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Účtovníčka", "location": "Žilina", "text": "", "search": {"position": "accountant", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Senior Manager, Product Management | Customer Support", "location": "Bratislava", "text": "", "search": {"position": "customer-support", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}}
+  ]
+}

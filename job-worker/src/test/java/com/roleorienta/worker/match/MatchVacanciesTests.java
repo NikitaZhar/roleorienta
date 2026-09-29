@@ -15,7 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Предрасчёт соответствий на PostgreSQL: позиции словаря в таблице, соответствия с версией и
- * объяснением, текст Greenhouse с закодированной разметкой, закрытая вакансия не сопоставляется,
+ * объяснением, страны и формат работы («Remote - EU» — Словакия входит, удалённо), текст Greenhouse с закодированной разметкой, закрытая вакансия не сопоставляется,
  * повторный проход ничего не меняет, изменённая вакансия сопоставляется заново.
  */
 @SpringBootTest
@@ -47,9 +47,9 @@ class MatchVacanciesTests {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("INSERT INTO source (provider, board) VALUES ('greenhouse', 'acme')");
-        vacancy("Software Engineer", "ACTIVE", "&lt;p&gt;Java, Java, Java&lt;/p&gt;");
-        vacancy("Účtovník", "NEEDS_RECHECK", null);
-        vacancy("Java Developer", "CLOSED", null);
+        vacancy("Software Engineer", "ACTIVE", "&lt;p&gt;Java, Java, Java&lt;/p&gt;", "Remote - EU");
+        vacancy("Účtovník", "NEEDS_RECHECK", null, null);
+        vacancy("Java Developer", "CLOSED", null, null);
     }
 
     /**
@@ -65,8 +65,12 @@ class MatchVacanciesTests {
                 """, String.class)).containsExactly("Software Engineer:java-developer:title: engineer; text: java x3",
                 "Účtovník:accountant:title: uctovnik");
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM vacancy WHERE match_version = ?", Integer.class, dictionary.version()))
+                "SELECT count(*) FROM vacancy WHERE match_version LIKE ?", Integer.class, dictionary.version() + "/%"))
                 .isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT 'SK' = ANY (work_countries) AND NOT country_uncertain AND work_format = 'REMOTE'
+                FROM vacancy WHERE title = 'Software Engineer'
+                """, Boolean.class)).isTrue();
 
         runMatch();
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM vacancy_position_match", Integer.class))
@@ -81,16 +85,16 @@ class MatchVacanciesTests {
                 """, String.class)).isEqualTo("title: uctovnicka");
     }
 
-    private void vacancy(String title, String state, String content) {
+    private void vacancy(String title, String state, String content, String location) {
         Long vacancyId = jdbcTemplate.queryForObject("""
                 INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
                 VALUES (?, ?, 'https://example.com', now(), now()) RETURNING id
                 """, Long.class, state, title);
         jdbcTemplate.update("""
-                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, content, first_seen_at,
-                                         last_confirmed_at)
-                SELECT id, ?, ?, ?, 'https://example.com', ?, now(), now() FROM source
-                """, vacancyId, "ext-" + vacancyId, title, content);
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, content, location,
+                                         first_seen_at, last_confirmed_at)
+                SELECT id, ?, ?, ?, 'https://example.com', ?, ?, now(), now() FROM source
+                """, vacancyId, "ext-" + vacancyId, title, content, location);
     }
 
     private void runMatch() {

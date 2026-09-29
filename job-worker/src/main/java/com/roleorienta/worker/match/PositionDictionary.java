@@ -31,6 +31,7 @@ public class PositionDictionary {
 
     private final String version;
     private final int contentHits;
+    private final List<Term> otherSpecializations;
     private final List<Position> positions;
 
     /**
@@ -46,6 +47,7 @@ public class PositionDictionary {
     PositionDictionary(JsonNode dictionary) {
         this.version = dictionary.path("version").asText();
         this.contentHits = dictionary.path("contentHits").asInt();
+        this.otherSpecializations = terms(dictionary.path("otherSpecializations"));
         List<Position> loaded = new ArrayList<>();
         for (JsonNode position : dictionary.path("positions")) {
             loaded.add(new Position(position.path("code").asText(), position.path("name").asText(),
@@ -62,6 +64,13 @@ public class PositionDictionary {
 
     public int contentHits() {
         return contentHits;
+    }
+
+    /**
+     * @return признаки специализаций вне словаря (Ruby, PHP …)
+     */
+    public List<Term> otherSpecializations() {
+        return otherSpecializations;
     }
 
     public List<Position> positions() {

@@ -109,7 +109,7 @@ public class JobPosting {
         if (!Objects.equals(location, fetched.location())) {
             revisions.add(new VacancyRevision(this, run, RevisionField.LOCATION, location, fetched.location()));
         }
-        boolean textChanged = !Objects.equals(title, fetched.title())
+        boolean textChanged = !Objects.equals(title, fetched.title()) || !Objects.equals(location, fetched.location())
                 || fetched.content() != null && !Objects.equals(content, fetched.content());
         apply(fetched, confirmedAt);
         if (textChanged) {

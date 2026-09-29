@@ -16,7 +16,8 @@ import java.util.regex.Matcher;
  *   <li>эквивалентное название в названии вакансии — подходит («Java Engineer», «Java programátor»);</li>
  *   <li>роль и признак специализации в названии — подходит («Backend Engineer — Java»);</li>
  *   <li>роль в названии и признак в тексте не меньше {@link PositionDictionary#contentHits()} раз —
- *       подходит («Software Engineer» с Java в требованиях).</li>
+ *       подходит («Software Engineer» с Java в требованиях), если в названии нет признака никакой
+ *       специализации: «Backend Engineer (Ruby)» с Python в тексте — не Python developer.</li>
  * </ol>
  *
  * <p>Общее сходство без признака специализации не даёт соответствия: вакансия другой специализации
@@ -36,12 +37,16 @@ final class PositionMatcher {
     static List<Match> match(PositionDictionary dictionary, String title, String text) {
         String normalizedTitle = PositionDictionary.normalize(title);
         String normalizedText = PositionDictionary.normalize(text);
+        boolean titleSpecialized = first(dictionary.otherSpecializations(), normalizedTitle).isPresent()
+                || dictionary.positions().stream()
+                        .anyMatch(position -> first(position.specialization().keywords(), normalizedTitle).isPresent());
+        int contentHits = titleSpecialized ? Integer.MAX_VALUE : dictionary.contentHits();
         List<Match> matches = new ArrayList<>();
         for (Position position : dictionary.positions()) {
             if (first(position.exclude(), normalizedTitle).isPresent()) {
                 continue;
             }
-            explain(position, normalizedTitle, normalizedText, dictionary.contentHits())
+            explain(position, normalizedTitle, normalizedText, contentHits)
                     .ifPresent(explanation -> matches.add(new Match(position.code(), explanation)));
         }
         return matches;
