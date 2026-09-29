@@ -39,6 +39,7 @@ import org.springframework.test.context.DynamicPropertySource;
  *       поддерживаемые форматы не дают; уход из накопленного списка — с выдачей (1.5).</li>
  *   <li>7 — временный отказ и неполное чтение не закрывают вакансии, переводят их в «нуждается в
  *       повторной проверке»; после восстановления — без потерь и повторов.</li>
+ *   <li>9 (сбор) — остановка приложения во время чтения не теряет задание и не даёт повторов.</li>
  * </ul>
  */
 @SpringBootTest
@@ -198,6 +199,33 @@ class SourceToVacancyAcceptanceTests {
                 "Senior Java Developer:ACTIVE");
     }
 
+    /**
+     * Сценарий 9, сбор. Приложение остановилось во время чтения (задание захвачено, аренда истекла),
+     * затем — после записи результата, но до отметки задания выполненным: оба раза задание
+     * возвращается в очередь по аренде и выполняется снова; вакансии записаны по одной, повторов нет.
+     */
+    @Test
+    void scenario9RestartDuringReadLosesNothingAndDuplicatesNothing() {
+        publish("1", "Java Developer");
+        taskService.enqueue(ReadSourceHandler.TYPE, "r1", ReadSourceHandler.payload(source.getId()));
+        long taskId = jdbcTemplate.queryForObject("SELECT id FROM task WHERE task_key = 'r1'", Long.class);
+        expireLease(taskId);
+
+        assertThat(taskService.requeueDue()).isEqualTo(1);
+        executor.execute(taskId);
+        assertThat(taskState(taskId)).isEqualTo("DONE");
+        assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(1);
+
+        expireLease(taskId);
+        taskService.requeueDue();
+        executor.execute(taskId);
+
+        assertThat(taskState(taskId)).isEqualTo("DONE");
+        assertThat(jdbcTemplate.queryForList("SELECT title || ':' || state FROM vacancy", String.class))
+                .containsExactly("Java Developer:ACTIVE");
+        assertThat(count("SELECT count(*) FROM job_posting")).isEqualTo(1);
+    }
+
     private static HttpServer startSite() {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -242,6 +270,18 @@ class SourceToVacancyAcceptanceTests {
 
     private String vacancyState(String title) {
         return jdbcTemplate.queryForObject("SELECT state FROM vacancy WHERE title = ?", String.class, title);
+    }
+
+    /**
+     * Как после остановки приложения: задание «выполняется», аренда истекла.
+     */
+    private void expireLease(long taskId) {
+        jdbcTemplate.update("UPDATE task SET state = 'RUNNING', lease_until = now() - interval '1 second' WHERE id = ?",
+                taskId);
+    }
+
+    private String taskState(long taskId) {
+        return jdbcTemplate.queryForObject("SELECT state FROM task WHERE id = ?", String.class, taskId);
     }
 
     private String availability() {
