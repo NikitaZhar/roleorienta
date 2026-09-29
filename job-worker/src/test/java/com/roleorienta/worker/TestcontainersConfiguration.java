@@ -4,9 +4,10 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
-import org.testcontainers.containers.MinIOContainer;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
@@ -19,6 +20,11 @@ import org.testcontainers.utility.DockerImageName;
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
+
+    private static final String MINIO_IMAGE = "bitnamilegacy/minio:2025.2.28-debian-12-r1";
+    private static final String MINIO_USER = "roleorienta";
+    private static final String MINIO_PASSWORD = "roleorienta-secret";
+    private static final int MINIO_PORT = 9000;
 
     /**
      * Контейнер PostgreSQL для интеграционных тестов.
@@ -43,13 +49,19 @@ public class TestcontainersConfiguration {
     }
 
     /**
-     * Контейнер MinIO — хранилище снимков для интеграционных тестов.
+     * Контейнер MinIO — хранилище снимков для интеграционных тестов. Образ тот же, что в
+     * docker-compose (архивный Bitnami: образы MinIO убраны из реестров; замена — в
+     * {@code docs/next-step.md}, «Долг»). Готовность — по health-адресу MinIO.
      *
      * @return контейнер
      */
     @Bean
-    public MinIOContainer minioContainer() {
-        return new MinIOContainer(DockerImageName.parse("minio/minio:latest"));
+    public GenericContainer<?> minioContainer() {
+        return new GenericContainer<>(DockerImageName.parse(MINIO_IMAGE))
+                .withEnv("MINIO_ROOT_USER", MINIO_USER)
+                .withEnv("MINIO_ROOT_PASSWORD", MINIO_PASSWORD)
+                .withExposedPorts(MINIO_PORT)
+                .waitingFor(Wait.forHttp("/minio/health/live").forPort(MINIO_PORT));
     }
 
     /**
@@ -59,11 +71,12 @@ public class TestcontainersConfiguration {
      * @return регистратор свойств тестового контекста
      */
     @Bean
-    public DynamicPropertyRegistrar snapshotProperties(MinIOContainer minio) {
+    public DynamicPropertyRegistrar snapshotProperties(GenericContainer<?> minio) {
         return registry -> {
-            registry.add("app.snapshot.endpoint", minio::getS3URL);
-            registry.add("app.snapshot.access-key", minio::getUserName);
-            registry.add("app.snapshot.secret-key", minio::getPassword);
+            registry.add("app.snapshot.endpoint",
+                    () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(MINIO_PORT));
+            registry.add("app.snapshot.access-key", () -> MINIO_USER);
+            registry.add("app.snapshot.secret-key", () -> MINIO_PASSWORD);
         };
     }
 }
