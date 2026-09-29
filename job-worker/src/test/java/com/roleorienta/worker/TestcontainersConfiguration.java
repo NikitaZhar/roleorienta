@@ -1,5 +1,6 @@
 package com.roleorienta.worker;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
@@ -65,13 +66,14 @@ public class TestcontainersConfiguration {
     }
 
     /**
-     * Адрес и доступ MinIO в настройках {@code app.snapshot.*}.
+     * Адрес и доступ MinIO в настройках {@code app.snapshot.*}. {@link Qualifier} выбирает бин
+     * MinIO по имени: контейнеры PostgreSQL и RabbitMQ — тоже {@code GenericContainer}.
      *
      * @param minio контейнер MinIO
      * @return регистратор свойств тестового контекста
      */
     @Bean
-    public DynamicPropertyRegistrar snapshotProperties(GenericContainer<?> minio) {
+    public DynamicPropertyRegistrar snapshotProperties(@Qualifier("minioContainer") GenericContainer<?> minio) {
         return registry -> {
             registry.add("app.snapshot.endpoint",
                     () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(MINIO_PORT));

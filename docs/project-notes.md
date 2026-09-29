@@ -556,6 +556,8 @@ sequenceDiagram
   Testcontainers: образ, переменные, порт, ожидание готовности по HTTP). Специализированный
   `MinIOContainer` запускает команду официального образа и с образом Bitnami не работает, поэтому
   тестовая зависимость `org.testcontainers:minio` убрана.
+  Свойства `app.snapshot.*` берут адрес контейнера через `@Qualifier("minioContainer")`:
+  контейнеры PostgreSQL и RabbitMQ — тоже `GenericContainer`, без имени Spring не выберет бин.
   https://java.testcontainers.org/features/creating_container/
 
 **Долг.** Архивный образ обновлений не получает и может исчезнуть. Замена на поддерживаемое
