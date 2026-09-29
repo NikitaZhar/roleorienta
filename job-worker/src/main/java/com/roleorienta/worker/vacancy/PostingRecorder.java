@@ -58,6 +58,17 @@ public class PostingRecorder {
     }
 
     /**
+     * Начинает обход: время начала — до первого запроса к источнику.
+     *
+     * @param source источник
+     * @param taskId задание чтения
+     * @return обход без итога; в БД ещё не записан
+     */
+    public CrawlRun startRun(Source source, long taskId) {
+        return CrawlRun.start(source, taskId, clock.instant());
+    }
+
+    /**
      * Записывает публикации одного чтения источника и его обход в одной транзакции.
      *
      * @param run     обход {@code COMPLETE} или {@code PARTIAL}, ещё не сохранённый

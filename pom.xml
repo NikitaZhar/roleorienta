@@ -25,6 +25,8 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <!-- Jsoup (разбор HTML) Spring Boot не управляет — версия фиксируется здесь. -->
         <jsoup.version>1.23.2</jsoup.version>
+        <!-- AWS SDK v2 (клиент S3 для снимков) Spring Boot не управляет — версии задаёт его BOM. -->
+        <awssdk.version>2.54.13</awssdk.version>
     </properties>
 
     <dependencyManagement>
@@ -33,6 +35,13 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -10,7 +10,8 @@
 
 > **Статус:** подэтап 1.2 — чтение досок Greenhouse, Personio, Workday и разметки schema.org `JobPosting` на
 > сайтах компаний в публикации и вакансии;
-> состояния и закрытие вакансий. Источники заводятся вручную в БД.
+> состояния и закрытие вакансий; обходы, история вакансий, снимки ответов в MinIO. Источники
+> заводятся вручную в БД.
 > План — технический документ §15.
 
 ## Архитектура
@@ -39,5 +40,6 @@ mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/heal
 ```
 
 Настройки подключения — переменные окружения (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-`RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `SERVER_PORT`); значения по умолчанию
+`RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `SERVER_PORT`; снимки в MinIO — `S3_ENDPOINT`,
+`S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); значения по умолчанию
 совпадают с `docker-compose.yml`.

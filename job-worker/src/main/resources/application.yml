@@ -58,6 +58,12 @@ app:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)
     max-content-requests-per-read: 200  # потолок запросов текста за чтение; Workday ~0,5 с на запрос
+  snapshot:                  # снимки ответов источников (S3; локально MinIO из docker-compose)
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:us-east-1}
+    bucket: ${S3_BUCKET:snapshots}
+    access-key: ${S3_ACCESS_KEY:roleorienta}
+    secret-key: ${S3_SECRET_KEY:roleorienta-secret}
   vacancy:
     close-after-missing-reads: 3  # полных чтений подряд без публикации до её закрытия
   adapter:

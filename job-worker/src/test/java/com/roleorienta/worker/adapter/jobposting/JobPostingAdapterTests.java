@@ -24,7 +24,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Адаптер {@code JobPosting} на заглушке сайта: ссылки кадровой страницы, разбор JSON-LD,
- * страницы без разметки, потолок страниц, отказы страниц и кадровой страницы, не-адрес доски.
+ * страницы без разметки, потолок страниц, отказы страниц и кадровой страницы, не-адрес доски;
+ * тела прочитанных страниц отдаются для снимков.
  */
 class JobPostingAdapterTests {
 
@@ -62,6 +63,8 @@ class JobPostingAdapterTests {
             </script></head><body>Job</body></html>
             """;
 
+    private static final String ABOUT = "<html><body>About us</body></html>";
+
     private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
 
     /** Ответ по пути: код и тело; неизвестный путь (и robots.txt) — 404. */
@@ -91,7 +94,7 @@ class JobPostingAdapterTests {
         pages.put("/careers", CAREERS);
         pages.put("/jobs/1", JOB_1);
         pages.put("/jobs/2", JOB_2);
-        pages.put("/about", "<html><body>About us</body></html>");
+        pages.put("/about", ABOUT);
     }
 
     /**
@@ -113,7 +116,8 @@ class JobPostingAdapterTests {
     void readsPostingsFromLinkedPages() {
         assertThat(adapter(MAX_PAGES).read(url("/careers"))).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting(url("/jobs/1"), "Java Developer", url("/jobs/1"), "Bratislava, SK", "<p>Java</p>"),
-                new FetchedPosting(url("/jobs/2"), "QA Engineer", url("/jobs/2"), "Vienna, AT; Remote, EU", null))));
+                new FetchedPosting(url("/jobs/2"), "QA Engineer", url("/jobs/2"), "Vienna, AT; Remote, EU", null)),
+                List.of(CAREERS, JOB_1, JOB_2, ABOUT)));
     }
 
     /**
@@ -123,7 +127,7 @@ class JobPostingAdapterTests {
     void readsPartiallyOverCeiling() {
         assertThat(adapter(1).read(url("/careers"))).isEqualTo(SourceReadResult.Read.partial(List.of(
                 new FetchedPosting(url("/jobs/1"), "Java Developer", url("/jobs/1"), "Bratislava, SK", "<p>Java</p>")),
-                PartialReason.PAGE_LIMIT));
+                PartialReason.PAGE_LIMIT, List.of(CAREERS, JOB_1)));
     }
 
     /**

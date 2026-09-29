@@ -72,6 +72,7 @@ public class WorkdayAdapter implements SourceAdapter {
         String site = matcher.group(3);
         URI uri = URI.create(apiBase(matcher) + "/jobs");
         List<FetchedPosting> postings = new ArrayList<>();
+        List<String> responses = new ArrayList<>();
         int total = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
             int offset = page * properties.pageSize();
@@ -84,8 +85,9 @@ public class WorkdayAdapter implements SourceAdapter {
                     return new SourceReadResult.Unavailable(failure);
                 }
                 LOG.warn("Workday board {} read partially at offset {}: {}", board, offset, failure);
-                return SourceReadResult.Read.partial(postings, PartialReason.PAGE_FAILED);
+                return SourceReadResult.Read.partial(postings, PartialReason.PAGE_FAILED, responses);
             }
+            responses.add(((HttpResult.Success) result).body());
             if (page == 0) {
                 total = json.path("total").asInt();
             }
@@ -96,14 +98,14 @@ public class WorkdayAdapter implements SourceAdapter {
                         job.path("locationsText").isTextual() ? job.path("locationsText").asText() : null, null));
             }
             if (offset + jobs.size() >= total) {
-                return SourceReadResult.Read.full(postings);
+                return SourceReadResult.Read.full(postings, responses);
             }
             if (jobs.isEmpty()) {
-                return SourceReadResult.Read.partial(postings, PartialReason.LIST_ENDED_EARLY);
+                return SourceReadResult.Read.partial(postings, PartialReason.LIST_ENDED_EARLY, responses);
             }
         }
         LOG.warn("Workday board {} exceeds {} pages, read partially", board, properties.maxPages());
-        return SourceReadResult.Read.partial(postings, PartialReason.PAGE_LIMIT);
+        return SourceReadResult.Read.partial(postings, PartialReason.PAGE_LIMIT, responses);
     }
 
     /**

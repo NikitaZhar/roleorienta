@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseAdapter;
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseStub;
+import com.roleorienta.worker.snapshot.SnapshotProperties;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskExecutor;
@@ -20,10 +21,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * Чтение источника Greenhouse целиком: постановка чтения → задание → адаптер (заглушка) →
- * публикации, вакансии, обходы и история вакансий в PostgreSQL.
+ * публикации, вакансии, обходы и история вакансий в PostgreSQL, снимки ответов в MinIO.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -46,6 +48,12 @@ class ReadSourceFlowTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private S3Client s3;
+
+    @Autowired
+    private SnapshotProperties snapshotProperties;
 
     private Source source;
 
@@ -73,6 +81,7 @@ class ReadSourceFlowTests {
      */
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM source_snapshot");
         jdbcTemplate.update("DELETE FROM vacancy_revision");
         jdbcTemplate.update("DELETE FROM crawl_run");
         jdbcTemplate.update("DELETE FROM job_posting");
@@ -84,8 +93,8 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * Первое чтение создаёт по вакансии на публикацию и полный обход; повторная постановка в тот же
-     * день ничего не добавляет.
+     * Первое чтение создаёт по вакансии на публикацию, полный обход и снимок ответа (объект в
+     * MinIO, ссылка с хешем в БД); повторная постановка в тот же день ничего не добавляет.
      */
     @Test
     void firstReadCreatesVacancies() {
@@ -103,6 +112,10 @@ class ReadSourceFlowTests {
                 .containsEntry("state", "COMPLETE")
                 .containsEntry("postings_count", 2)
                 .containsEntry("task_id", onlyTaskId());
+        String key = jdbcTemplate.queryForObject("SELECT object_key FROM source_snapshot", String.class);
+        assertThat(key).matches(source.getId() + "/[0-9a-f]{64}");
+        assertThat(s3.getObjectAsBytes(request -> request.bucket(snapshotProperties.bucket()).key(key))
+                .asUtf8String()).contains("Java Developer");
     }
 
     /**

@@ -6,6 +6,7 @@ import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.snapshot.SnapshotStore;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskHandler;
@@ -13,8 +14,6 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +41,8 @@ import org.springframework.stereotype.Component;
  * ограниченным. Не полученный текст запрашивается при следующем чтении.</p>
  *
  * <p>Каждое чтение записывается обходом ({@link CrawlRun}): от начала чтения до записи
- * результата, включая запросы текста.</p>
+ * результата, включая запросы текста. Тела ответов списка сохраняются снимками в хранилище до
+ * записи в БД; обход ссылается на них.</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -58,23 +58,23 @@ public class ReadSourceHandler implements TaskHandler {
     private final Map<String, SourceAdapter> adaptersByProvider;
     private final PostingRecorder recorder;
     private final CollectProperties properties;
-    private final Clock clock;
+    private final SnapshotStore snapshots;
 
     /**
      * @param sources  доступ к источникам
      * @param adapters все адаптеры провайдеров
      * @param recorder   запись публикаций
      * @param properties настройки сбора
-     * @param clock      часы
+     * @param snapshots  хранилище снимков ответов
      */
     public ReadSourceHandler(SourceRepository sources, ObjectProvider<SourceAdapter> adapters,
-            PostingRecorder recorder, CollectProperties properties, Clock clock) {
+            PostingRecorder recorder, CollectProperties properties, SnapshotStore snapshots) {
         this.sources = sources;
         this.adaptersByProvider = adapters.orderedStream()
                 .collect(Collectors.toMap(SourceAdapter::provider, Function.identity()));
         this.recorder = recorder;
         this.properties = properties;
-        this.clock = clock;
+        this.snapshots = snapshots;
     }
 
     /**
@@ -103,18 +103,23 @@ public class ReadSourceHandler implements TaskHandler {
         if (adapter == null) {
             return new TaskOutcome.Failed("No adapter for provider " + source.getProvider());
         }
-        Instant startedAt = clock.instant();
+        CrawlRun run = recorder.startRun(source, task.id());
         return switch (adapter.read(source.getBoard())) {
             case SourceReadResult.Read read -> {
                 LOG.info("Source {} read: {} postings, partialReason={}", source.getId(), read.postings().size(),
                         read.partialReason());
+                for (String response : read.responses()) {
+                    snapshots.put(source.getId(), response)
+                            .ifPresent(stored -> run.addSnapshot(stored.objectKey(), stored.sha256()));
+                }
                 List<FetchedPosting> postings = withContent(adapter, source, read.postings());
-                recorder.record(CrawlRun.read(source, task.id(), startedAt, postings.size(), read.partialReason()),
-                        postings);
+                run.read(postings.size(), read.partialReason());
+                recorder.record(run, postings);
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
-                recorder.recordUnavailable(CrawlRun.failed(source, task.id(), startedAt, unavailable.failure()));
+                run.fail(unavailable.failure());
+                recorder.recordUnavailable(run);
                 yield toOutcome(unavailable.failure());
             }
         };

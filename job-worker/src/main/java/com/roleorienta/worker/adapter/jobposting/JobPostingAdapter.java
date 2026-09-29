@@ -89,9 +89,11 @@ public class JobPostingAdapter implements SourceAdapter {
                     board, links.size(), properties.maxPages());
         }
         List<FetchedPosting> postings = new ArrayList<>();
+        List<String> responses = new ArrayList<>(List.of(success.body()));
         for (URI page : links.subList(0, Math.min(links.size(), properties.maxPages()))) {
             HttpResult pageResult = httpClient.get(page);
             if (pageResult instanceof HttpResult.Success pageSuccess) {
+                responses.add(pageSuccess.body());
                 FetchedPosting posting = posting(pageSuccess.body(), page.toString());
                 if (posting != null) {
                     postings.add(posting);
@@ -103,7 +105,7 @@ public class JobPostingAdapter implements SourceAdapter {
                 }
             }
         }
-        return new SourceReadResult.Read(postings, partialReason);
+        return new SourceReadResult.Read(postings, partialReason, responses);
     }
 
     /**

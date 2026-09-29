@@ -10,12 +10,13 @@ import static org.mockito.Mockito.when;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.CrawlRun;
+import com.roleorienta.worker.snapshot.SnapshotStore;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
-import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -46,11 +47,12 @@ class ReadSourceHandlerTests {
         when(adapter.provider()).thenReturn("workday");
         when(sources.findById(1L)).thenReturn(Optional.of(source));
         when(adapter.read(BOARD)).thenReturn(SourceReadResult.Read.full(
-                List.of(posting("a", null), posting("b", null), posting("c", null))));
+                List.of(posting("a", null), posting("b", null), posting("c", null)), List.of()));
+        when(recorder.startRun(source, 1)).thenReturn(CrawlRun.start(source, 1, Instant.EPOCH));
         when(recorder.externalIdsWithContent(source)).thenReturn(Set.of("a"));
         when(adapter.content(BOARD, "b")).thenReturn("text b");
         ReadSourceHandler handler = new ReadSourceHandler(sources, adapters, recorder, new CollectProperties(1),
-                Clock.systemUTC());
+                mock(SnapshotStore.class));
 
         handler.handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
 

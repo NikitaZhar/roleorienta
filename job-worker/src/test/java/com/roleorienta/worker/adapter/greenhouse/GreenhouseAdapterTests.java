@@ -33,24 +33,27 @@ class GreenhouseAdapterTests {
     }
 
     /**
-     * Все поля публикации берутся из ответа; отсутствующее место работы — {@code null}.
+     * Все поля публикации берутся из ответа; отсутствующее место работы — {@code null}; тело
+     * ответа отдаётся для снимка.
      */
     @Test
     void parsesJobs() {
-        stub.respond(200, """
+        String body = """
                 {"jobs":[
                   {"id":101,"title":"Java Developer","absolute_url":"https://example.com/101",
                    "location":{"name":"Bratislava"},"content":"&lt;p&gt;Java&lt;/p&gt;"},
                   {"id":102,"title":"QA Engineer","absolute_url":"https://example.com/102"}
                 ],"meta":{"total":2}}
-                """);
+                """;
+        stub.respond(200, body);
 
         SourceReadResult result = adapter.read(GreenhouseStub.BOARD);
 
         assertThat(result).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", "https://example.com/101", "Bratislava",
                         "&lt;p&gt;Java&lt;/p&gt;"),
-                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null))));
+                new FetchedPosting("102", "QA Engineer", "https://example.com/102", null, null)),
+                List.of(body)));
     }
 
     /**

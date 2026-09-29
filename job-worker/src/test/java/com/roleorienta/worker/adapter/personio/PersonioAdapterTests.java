@@ -94,7 +94,7 @@ class PersonioAdapterTests {
         assertThat(adapter.read(BOARD)).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", baseUrl() + "/job/101", "Bratislava",
                         "<p>Java</p>\n<p>Code</p>"),
-                new FetchedPosting("102", "QA Engineer", baseUrl() + "/job/102", null, null))));
+                new FetchedPosting("102", "QA Engineer", baseUrl() + "/job/102", null, null)), List.of(body)));
     }
 
     /**
@@ -130,7 +130,7 @@ class PersonioAdapterTests {
 
         assertThat(adapter.read("acme.jobs.personio.com")).isEqualTo(SourceReadResult.Read.full(List.of(
                 new FetchedPosting("101", "Java Developer", stubUrl() + "/acme.jobs.personio.com/job/101",
-                        null, null))));
+                        null, null)), List.of(body)));
     }
 
     /**
