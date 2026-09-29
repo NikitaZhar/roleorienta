@@ -22,8 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Полное чтение: новая публикация — новая вакансия; известная — обновление сведений и
  *       подтверждение; отсутствующая — счётчик отсутствия, закрытие после
  *       {@link VacancyProperties#closeAfterMissingReads()} полных чтений подряд.</li>
- *   <li>Неполное чтение: добавляются только новые публикации; сохранённые не меняются и не
- *       закрываются.</li>
+ *   <li>Неполное чтение: добавляются только новые публикации (они подтверждены); сохранённые не
+ *       меняются и не закрываются, но теряют подтверждение — их вакансии нуждаются в повторной
+ *       проверке (технический документ §4).</li>
  *   <li>Отказ источника: сведения не меняются, подтверждения нет — вакансии источника нуждаются в
  *       повторной проверке.</li>
  * </ul>
@@ -94,17 +95,18 @@ public class PostingRecorder {
                 existing.update(posting, run, now);
                 existing.getVacancy().confirm(posting.title(), posting.url(), now);
                 touched.add(existing.getVacancy().getId());
+            } else {
+                existing.markUnconfirmed();
+                touched.add(existing.getVacancy().getId());
             }
         }
-        if (complete) {
-            for (JobPosting missing : known.values()) {
-                if (unverified.contains(missing.getExternalId())) {
-                    missing.markUnconfirmed();
-                } else {
-                    missing.markMissing(properties.closeAfterMissingReads(), now);
-                }
-                touched.add(missing.getVacancy().getId());
+        for (JobPosting missing : known.values()) {
+            if (complete && !unverified.contains(missing.getExternalId())) {
+                missing.markMissing(properties.closeAfterMissingReads(), now);
+            } else {
+                missing.markUnconfirmed();
             }
+            touched.add(missing.getVacancy().getId());
         }
         refreshStates(touched, now);
     }
