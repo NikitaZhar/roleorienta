@@ -45,6 +45,8 @@ public class CrawlRun {
 
     private Long taskId;
 
+    private String country;
+
     private Instant startedAt;
 
     private Instant finishedAt;
@@ -71,7 +73,7 @@ public class CrawlRun {
     }
 
     /**
-     * Начало обхода — до первого запроса к источнику.
+     * Начало обхода — до первого запроса к источнику. Область (страна источника) фиксируется здесь.
      *
      * @param source    источник
      * @param taskId    задание чтения
@@ -82,6 +84,7 @@ public class CrawlRun {
         CrawlRun run = new CrawlRun();
         run.source = source;
         run.taskId = taskId;
+        run.country = source.getCountry();
         run.startedAt = startedAt;
         return run;
     }

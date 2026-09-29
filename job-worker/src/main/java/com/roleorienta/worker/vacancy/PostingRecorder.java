@@ -71,11 +71,13 @@ public class PostingRecorder {
     /**
      * Записывает публикации одного чтения источника и его обход в одной транзакции.
      *
-     * @param run     обход {@code COMPLETE} или {@code PARTIAL}, ещё не сохранённый
-     * @param fetched публикации из источника
+     * @param run        обход {@code COMPLETE} или {@code PARTIAL}, ещё не сохранённый
+     * @param fetched    публикации из источника
+     * @param unverified внешние id пропавших публикаций, отсутствие которых проверить не удалось:
+     *                   теряют подтверждение, но отсутствие не засчитывается
      */
     @Transactional
-    public void record(CrawlRun run, List<FetchedPosting> fetched) {
+    public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified) {
         Instant now = clock.instant();
         runs.save(run.finish(now));
         Source source = run.getSource();
@@ -96,7 +98,11 @@ public class PostingRecorder {
         }
         if (complete) {
             for (JobPosting missing : known.values()) {
-                missing.markMissing(properties.closeAfterMissingReads(), now);
+                if (unverified.contains(missing.getExternalId())) {
+                    missing.markUnconfirmed();
+                } else {
+                    missing.markMissing(properties.closeAfterMissingReads(), now);
+                }
                 touched.add(missing.getVacancy().getId());
             }
         }
@@ -110,6 +116,15 @@ public class PostingRecorder {
     @Transactional(readOnly = true)
     public Set<String> externalIdsWithContent(Source source) {
         return new HashSet<>(postings.findExternalIdsWithContent(source.getId()));
+    }
+
+    /**
+     * @param source источник
+     * @return внешние id незакрытых публикаций источника
+     */
+    @Transactional(readOnly = true)
+    public List<String> openExternalIds(Source source) {
+        return postings.findOpenExternalIds(source.getId());
     }
 
     /**

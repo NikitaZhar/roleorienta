@@ -2,6 +2,7 @@ package com.roleorienta.worker.adapter.workday;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
@@ -26,7 +27,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Адаптер Workday на заглушке: страницы списка, неполное чтение, отказ, чужой хост, текст
- * публикации.
+ * публикации, фильтр по стране через фасеты, проверка публикации деталью.
  */
 class WorkdayAdapterTests {
 
@@ -35,11 +36,17 @@ class WorkdayAdapterTests {
     private static final String JOBS_PATH = "/" + HOST + "/wday/cxs/acme/External/jobs";
     private static final int PAGE_SIZE = 2;
     private static final Pattern OFFSET = Pattern.compile("\"offset\":(\\d+)");
+    private static final String SK_FACET = "{\"locationCountry\":[\"sk-id\"]}";
+    private static final String FACETS = ",\"facets\":[{\"facetParameter\":\"locationMainGroup\",\"values\":["
+            + "{\"facetParameter\":\"locationCountry\",\"values\":["
+            + "{\"descriptor\":\"Austria\",\"id\":\"at-id\",\"count\":5},"
+            + "{\"descriptor\":\"Slovakia\",\"id\":\"sk-id\",\"count\":1}]}]}]";
 
     private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
 
-    /** Ответ по смещению: код и тело. */
+    /** Ответ по смещению: код и тело; {@code filteredPages} — на запросы с фильтром Словакии. */
     private final Map<Integer, String> pages = new HashMap<>();
+    private final Map<Integer, String> filteredPages = new HashMap<>();
     private final Map<Integer, Integer> statuses = new HashMap<>();
 
     private HttpServer server;
@@ -54,18 +61,24 @@ class WorkdayAdapterTests {
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext(JOBS_PATH, exchange -> {
-            Matcher offset = OFFSET.matcher(new String(exchange.getRequestBody().readAllBytes(),
-                    StandardCharsets.UTF_8));
+            String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Matcher offset = OFFSET.matcher(request);
             int key = offset.find() ? Integer.parseInt(offset.group(1)) : -1;
-            byte[] bytes = pages.getOrDefault(key, "").getBytes(StandardCharsets.UTF_8);
+            Map<Integer, String> responses = request.contains(SK_FACET) ? filteredPages : pages;
+            byte[] bytes = responses.getOrDefault(key, "").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statuses.getOrDefault(key, 200), bytes.length == 0 ? -1 : bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
             }
         });
         server.createContext("/" + HOST + "/wday/cxs/acme/External/job/", exchange -> {
-            byte[] bytes = "{\"jobPostingInfo\":{\"jobDescription\":\"<p>Java</p>\"}}"
-                    .getBytes(StandardCharsets.UTF_8);
+            if (exchange.getRequestURI().getPath().contains("/Gone")) {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+            byte[] bytes = ("{\"jobPostingInfo\":{\"title\":\"Java Developer\",\"location\":\"Vienna\","
+                    + "\"jobDescription\":\"<p>Java</p>\"}}").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
@@ -141,6 +154,46 @@ class WorkdayAdapterTests {
     }
 
     /**
+     * Страна: первый ответ без фильтра даёт фасет (вложенный в группу), дальше список читается с
+     * {@code appliedFacets} Словакии.
+     */
+    @Test
+    void readsCountryFilteredList() {
+        pages.put(0, withFacets(page(6, "Java Developer", "QA Engineer")));
+        filteredPages.put(0, page(1, "Java Developer"));
+
+        SourceReadResult result = adapter.read(BOARD, "SK");
+
+        assertThat(((SourceReadResult.Read) result).complete()).isTrue();
+        assertThat(((SourceReadResult.Read) result).postings()).extracting(FetchedPosting::title)
+                .containsExactly("Java Developer");
+    }
+
+    /**
+     * Страны нет среди значений фасета — у доски нет её публикаций: пустой полный список.
+     */
+    @Test
+    void readsEmptyListWhenCountryHasNoPostings() {
+        pages.put(0, withFacets(page(6, "Java Developer", "QA Engineer")));
+
+        SourceReadResult result = adapter.read(BOARD, "DE");
+
+        assertThat(((SourceReadResult.Read) result).complete()).isTrue();
+        assertThat(((SourceReadResult.Read) result).postings()).isEmpty();
+    }
+
+    /**
+     * Деталь есть — публикация на месте с новыми сведениями; 404 — её нет.
+     */
+    @Test
+    void checksPostingByDetail() {
+        assertThat(adapter.check(BOARD, "/job/Vienna/Java-Developer")).isEqualTo(new PostingCheck.Present(
+                new FetchedPosting("/job/Vienna/Java-Developer", "Java Developer",
+                        stubUrl() + "/" + BOARD + "/job/Vienna/Java-Developer", "Vienna", "<p>Java</p>")));
+        assertThat(adapter.check(BOARD, "/job/Gone")).isEqualTo(new PostingCheck.Absent());
+    }
+
+    /**
      * Хост не Workday — запрос не выполняется.
      */
     @Test
@@ -160,6 +213,10 @@ class WorkdayAdapterTests {
                     .append("\",\"locationsText\":\"Bratislava\"}");
         }
         return json.append("]}").toString();
+    }
+
+    private static String withFacets(String page) {
+        return page.substring(0, page.length() - 1) + FACETS + "}";
     }
 
     private String stubUrl() {

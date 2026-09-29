@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.workday;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
@@ -13,6 +14,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -30,6 +32,14 @@ import org.springframework.stereotype.Component;
  * {@code BLOCKED}). Отказ на первой странице — источник недоступен; на следующих, пустая страница
  * раньше {@code total} или упор в потолок страниц — неполное чтение (вакансии не закрываются).
  * Endpoint не документирован как публичный контракт (технический документ §5).</p>
+ *
+ * <p>Фильтр по стране (технический документ §5): первый ответ без фильтра содержит фасеты —
+ * группы значений для отбора ({@code facets}: {@code facetParameter}, {@code values} с
+ * {@code descriptor} и {@code id}; значение может нести вложенный фасет). Имя параметра страны у
+ * тенантов разное, поэтому берётся фасет, в имени которого есть {@code country}, и значение с
+ * английским названием страны; дальше список читается с {@code appliedFacets}. Фасета страны
+ * нет — список читается без фильтра; страны нет среди значений — у доски нет её публикаций.
+ * Пропажа из отфильтрованного списка проверяется деталью публикации ({@link #check}).</p>
  */
 @Component
 public class WorkdayAdapter implements SourceAdapter {
@@ -41,6 +51,9 @@ public class WorkdayAdapter implements SourceAdapter {
             "(([a-z0-9-]+)\\.wd\\d+\\.myworkdayjobs\\.com)/([A-Za-z0-9_-]+)");
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** {@code appliedFacets} без фильтра. */
+    private static final String NO_FACETS = "{}";
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkdayAdapter.class);
 
@@ -63,20 +76,57 @@ public class WorkdayAdapter implements SourceAdapter {
 
     @Override
     public SourceReadResult read(String board) {
+        return read(board, null);
+    }
+
+    @Override
+    public SourceReadResult read(String board, String country) {
         Matcher matcher = BOARD.matcher(board);
         if (!matcher.matches()) {
             return new SourceReadResult.Unavailable(new HttpResult.PermanentFailure(
                     HttpResult.Kind.BLOCKED, "Not a Workday board: " + board));
         }
-        String base = properties.baseUrlTemplate().replace("{host}", matcher.group(1));
-        String site = matcher.group(3);
+        if (country == null) {
+            return readPages(matcher, NO_FACETS);
+        }
+        HttpResult result = httpClient.postJson(URI.create(apiBase(matcher) + "/jobs"), requestBody(NO_FACETS, 0));
+        JsonNode json = result instanceof HttpResult.Success success ? readJson(success.body()) : null;
+        if (json == null) {
+            return new SourceReadResult.Unavailable(result instanceof HttpResult.Success
+                    ? new HttpResult.TemporaryFailure("Malformed Workday response", Duration.ZERO) : result);
+        }
+        String countryName = Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
+        List<JsonNode> countryFacets = new ArrayList<>();
+        collectCountryFacets(json.path("facets"), countryFacets);
+        if (countryFacets.isEmpty()) {
+            LOG.warn("Workday board {} has no country facet, read without filter", board);
+            return readPages(matcher, NO_FACETS);
+        }
+        for (JsonNode facet : countryFacets) {
+            for (JsonNode value : facet.path("values")) {
+                if (countryName.equalsIgnoreCase(value.path("descriptor").asText())) {
+                    return readPages(matcher, "{" + JSON.getNodeFactory().textNode(
+                            facet.path("facetParameter").asText()) + ":[" + JSON.getNodeFactory().textNode(
+                            value.path("id").asText()) + "]}");
+                }
+            }
+        }
+        LOG.info("Workday board {} has no postings in {}", board, countryName);
+        return SourceReadResult.Read.full(List.of(), List.of(((HttpResult.Success) result).body()));
+    }
+
+    /**
+     * Список страницами с заданными {@code appliedFacets}.
+     */
+    private SourceReadResult readPages(Matcher matcher, String appliedFacets) {
+        String board = matcher.group(0);
         URI uri = URI.create(apiBase(matcher) + "/jobs");
         List<FetchedPosting> postings = new ArrayList<>();
         List<String> responses = new ArrayList<>();
         int total = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
             int offset = page * properties.pageSize();
-            HttpResult result = httpClient.postJson(uri, requestBody(offset));
+            HttpResult result = httpClient.postJson(uri, requestBody(appliedFacets, offset));
             JsonNode json = result instanceof HttpResult.Success success ? readJson(success.body()) : null;
             if (json == null) {
                 HttpResult failure = result instanceof HttpResult.Success
@@ -94,8 +144,8 @@ public class WorkdayAdapter implements SourceAdapter {
             JsonNode jobs = json.path("jobPostings");
             for (JsonNode job : jobs) {
                 String path = job.path("externalPath").asText();
-                postings.add(new FetchedPosting(path, job.path("title").asText(), base + "/" + site + path,
-                        job.path("locationsText").isTextual() ? job.path("locationsText").asText() : null, null));
+                postings.add(new FetchedPosting(path, job.path("title").asText(), postingUrl(matcher, path),
+                        textOrNull(job.path("locationsText")), null));
             }
             if (offset + jobs.size() >= total) {
                 return SourceReadResult.Read.full(postings, responses);
@@ -109,35 +159,86 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
+     * Собирает фасеты страны: имя параметра содержит {@code country}; обходит и вложенные фасеты
+     * значений.
+     */
+    private static void collectCountryFacets(JsonNode facets, List<JsonNode> found) {
+        for (JsonNode facet : facets) {
+            if (facet.path("facetParameter").asText().toLowerCase(Locale.ROOT).contains("country")) {
+                found.add(facet);
+            }
+            collectCountryFacets(facet.path("values"), found);
+        }
+    }
+
+    /**
      * Текст публикации: {@code GET <api>/<externalPath>}, поле {@code jobPostingInfo.jobDescription}.
      */
     @Override
     public String content(String board, String externalId) {
+        JsonNode info = postingInfo(board, externalId);
+        if (info == null || !info.path("jobDescription").isTextual()) {
+            LOG.warn("Workday posting {} on {}: no jobDescription", externalId, board);
+            return null;
+        }
+        return info.path("jobDescription").asText();
+    }
+
+    /**
+     * Деталь публикации: {@code jobPostingInfo} есть — публикация на месте (сведения обновятся);
+     * 404/410 — её нет; прочее — проверить не удалось.
+     */
+    @Override
+    public PostingCheck check(String board, String externalId) {
         Matcher matcher = BOARD.matcher(board);
+        HttpResult result = detail(matcher, externalId);
+        if (result instanceof HttpResult.PermanentFailure failure && failure.kind() == HttpResult.Kind.NOT_FOUND) {
+            return new PostingCheck.Absent();
+        }
+        JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
+        if (info == null || !info.path("title").isTextual()) {
+            return new PostingCheck.Unknown("Workday posting " + externalId + " not checked: " + result);
+        }
+        return new PostingCheck.Present(new FetchedPosting(externalId, info.path("title").asText(),
+                postingUrl(matcher, externalId), textOrNull(info.path("location")),
+                textOrNull(info.path("jobDescription"))));
+    }
+
+    private JsonNode postingInfo(String board, String externalId) {
+        HttpResult result = detail(BOARD.matcher(board), externalId);
+        return result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
+    }
+
+    /**
+     * {@code GET <api>/<externalPath>}; чужая доска или путь не {@code /job/…} — запрос не выполняется.
+     */
+    private HttpResult detail(Matcher matcher, String externalId) {
         if (!matcher.matches() || !externalId.startsWith("/job/")) {
-            return null;
+            return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not a Workday posting: " + externalId);
         }
-        HttpResult result;
         try {
-            result = httpClient.get(URI.create(apiBase(matcher) + externalId));
+            return httpClient.get(URI.create(apiBase(matcher) + externalId));
         } catch (IllegalArgumentException malformedPath) {
-            return null;
+            return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Malformed path: " + externalId);
         }
-        if (!(result instanceof HttpResult.Success success)) {
-            LOG.warn("Workday posting {} on {} not read: {}", externalId, board, result);
-            return null;
-        }
+    }
+
+    private static JsonNode jobPostingInfo(String body) {
         try {
-            JsonNode description = JSON.readTree(success.body()).path("jobPostingInfo").path("jobDescription");
-            if (!description.isTextual()) {
-                LOG.warn("Workday posting {} on {} has no jobDescription", externalId, board);
-                return null;
-            }
-            return description.asText();
+            JsonNode info = JSON.readTree(body).path("jobPostingInfo");
+            return info.isObject() ? info : null;
         } catch (JsonProcessingException exception) {
-            LOG.warn("Workday posting {} on {} is not JSON: {}", externalId, board, exception.getOriginalMessage());
             return null;
         }
+    }
+
+    private String postingUrl(Matcher matcher, String externalPath) {
+        return properties.baseUrlTemplate().replace("{host}", matcher.group(1)) + "/" + matcher.group(3)
+                + externalPath;
+    }
+
+    private static String textOrNull(JsonNode node) {
+        return node.isTextual() ? node.asText() : null;
     }
 
     private String apiBase(Matcher board) {
@@ -145,9 +246,9 @@ public class WorkdayAdapter implements SourceAdapter {
                 + "/wday/cxs/" + board.group(2) + "/" + board.group(3);
     }
 
-    private String requestBody(int offset) {
-        return "{\"appliedFacets\":{},\"limit\":" + properties.pageSize() + ",\"offset\":" + offset
-                + ",\"searchText\":\"\"}";
+    private String requestBody(String appliedFacets, int offset) {
+        return "{\"appliedFacets\":" + appliedFacets + ",\"limit\":" + properties.pageSize() + ",\"offset\":"
+                + offset + ",\"searchText\":\"\"}";
     }
 
     private static JsonNode readJson(String body) {

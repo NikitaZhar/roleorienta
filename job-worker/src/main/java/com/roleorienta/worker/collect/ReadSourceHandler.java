@@ -2,6 +2,7 @@ package com.roleorienta.worker.collect;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.CrawlRun;
@@ -15,6 +16,7 @@ import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +45,11 @@ import org.springframework.stereotype.Component;
  * <p>Каждое чтение записывается обходом ({@link CrawlRun}): от начала чтения до записи
  * результата, включая запросы текста. Тела ответов списка сохраняются снимками в хранилище до
  * записи в БД; обход ссылается на них.</p>
+ *
+ * <p>Источник со страной читается с фильтром по стране. Пропавшая из такого списка известная
+ * публикация проверяется отдельно ({@link SourceAdapter#check}, не больше
+ * {@link CollectProperties#maxChecksPerRead()} за чтение): есть — сведения обновляются, нет —
+ * отсутствие засчитывается, не проверена — не засчитывается (бизнес-описание §4.3).</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -104,7 +111,7 @@ public class ReadSourceHandler implements TaskHandler {
             return new TaskOutcome.Failed("No adapter for provider " + source.getProvider());
         }
         CrawlRun run = recorder.startRun(source, task.id());
-        return switch (adapter.read(source.getBoard())) {
+        return switch (adapter.read(source.getBoard(), source.getCountry())) {
             case SourceReadResult.Read read -> {
                 LOG.info("Source {} read: {} postings, partialReason={}", source.getId(), read.postings().size(),
                         read.partialReason());
@@ -112,9 +119,14 @@ public class ReadSourceHandler implements TaskHandler {
                     snapshots.put(source.getId(), response)
                             .ifPresent(stored -> run.addSnapshot(stored.objectKey(), stored.sha256()));
                 }
-                List<FetchedPosting> postings = withContent(adapter, source, read.postings());
+                List<FetchedPosting> postings = new ArrayList<>(read.postings());
+                Set<String> unverified = new HashSet<>();
+                if (read.complete() && source.getCountry() != null) {
+                    checkMissing(adapter, source, postings, unverified);
+                }
+                postings = withContent(adapter, source, postings);
                 run.read(postings.size(), read.partialReason());
-                recorder.record(run, postings);
+                recorder.record(run, postings, unverified);
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
@@ -123,6 +135,32 @@ public class ReadSourceHandler implements TaskHandler {
                 yield toOutcome(unavailable.failure());
             }
         };
+    }
+
+    /**
+     * Проверяет известные незакрытые публикации, которых нет в отфильтрованном списке: найденные
+     * добавляются в {@code postings}, непроверенные — в {@code unverified}.
+     */
+    private void checkMissing(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
+            Set<String> unverified) {
+        Set<String> listed = new HashSet<>();
+        postings.forEach(posting -> listed.add(posting.externalId()));
+        int budget = properties.maxChecksPerRead();
+        for (String externalId : recorder.openExternalIds(source)) {
+            if (listed.contains(externalId)) {
+                continue;
+            }
+            PostingCheck check = budget-- > 0 ? adapter.check(source.getBoard(), externalId)
+                    : new PostingCheck.Unknown("Check limit reached");
+            switch (check) {
+                case PostingCheck.Present present -> postings.add(present.posting());
+                case PostingCheck.Absent absent -> LOG.info("Source {} posting {} absent", source.getId(), externalId);
+                case PostingCheck.Unknown unknown -> {
+                    LOG.warn("Source {} posting {} unverified: {}", source.getId(), externalId, unknown.reason());
+                    unverified.add(externalId);
+                }
+            }
+        }
     }
 
     private List<FetchedPosting> withContent(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {

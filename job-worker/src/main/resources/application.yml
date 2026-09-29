@@ -58,6 +58,7 @@ app:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)
     max-content-requests-per-read: 200  # потолок запросов текста за чтение; Workday ~0,5 с на запрос
+    max-checks-per-read: 200   # потолок проверок пропавших из списка с фильтром по стране за чтение
   snapshot:                  # снимки ответов источников (S3; локально MinIO из docker-compose)
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     region: ${S3_REGION:us-east-1}

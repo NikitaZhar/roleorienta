@@ -29,4 +29,11 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
      */
     @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.content is not null")
     List<String> findExternalIdsWithContent(Long sourceId);
+
+    /**
+     * @param sourceId источник
+     * @return внешние id незакрытых публикаций источника
+     */
+    @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.closedAt is null")
+    List<String> findOpenExternalIds(Long sourceId);
 }

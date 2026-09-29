@@ -7,7 +7,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * Источник вакансий — подключённая кадровая страница: провайдер (формат) и доска у провайдера.
+ * Источник вакансий — подключённая кадровая страница: провайдер (формат), доска у провайдера и
+ * страна области чтения (ISO 3166-1 alpha-2; {@code null} — без фильтра).
  *
  * <p>JPA-сущность: {@link Entity} связывает класс с таблицей {@code source};
  * {@link GeneratedValue} с {@code IDENTITY} — id выдаёт PostgreSQL ({@code BIGSERIAL}).
@@ -24,6 +25,8 @@ public class Source {
     private String provider;
 
     private String board;
+
+    private String country;
 
     /**
      * Для JPA.
@@ -50,5 +53,9 @@ public class Source {
 
     public String getBoard() {
         return board;
+    }
+
+    public String getCountry() {
+        return country;
     }
 }
