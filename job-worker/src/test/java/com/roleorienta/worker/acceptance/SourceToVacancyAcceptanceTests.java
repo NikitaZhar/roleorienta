@@ -133,8 +133,9 @@ class SourceToVacancyAcceptanceTests {
 
     /**
      * Сценарий 7, временный отказ. Три отказа кадровой страницы подряд: вакансия не закрыта, нуждается
-     * в повторной проверке, сведения и дата подтверждения прежние, отсутствие не засчитано; после
-     * восстановления — та же вакансия актуальна, повторов нет.
+     * в повторной проверке, сведения и дата подтверждения прежние, отсутствие не засчитано, источник —
+     * «временные отказы»; после восстановления — та же вакансия актуальна, повторов нет, источник
+     * доступен.
      */
     @Test
     void scenario7TemporaryFailureNeedsRecheckAndRecovers() {
@@ -151,12 +152,14 @@ class SourceToVacancyAcceptanceTests {
         assertThat(lastConfirmedAt()).isEqualTo(confirmedAt);
         assertThat(count("SELECT max(missing_complete_reads) FROM job_posting")).isZero();
         assertThat(count("SELECT count(*) FROM crawl_run WHERE state = 'FAILED'")).isEqualTo(3);
+        assertThat(availability()).isEqualTo("TEMP_FAILING");
 
         STATUSES.clear();
         readOnce("r5");
 
         assertThat(vacancyState("Java Developer")).isEqualTo("ACTIVE");
         assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(1);
+        assertThat(availability()).isEqualTo("OK");
     }
 
     /**
@@ -239,6 +242,10 @@ class SourceToVacancyAcceptanceTests {
 
     private String vacancyState(String title) {
         return jdbcTemplate.queryForObject("SELECT state FROM vacancy WHERE title = ?", String.class, title);
+    }
+
+    private String availability() {
+        return jdbcTemplate.queryForObject("SELECT availability FROM source", String.class);
     }
 
     private Object lastConfirmedAt() {

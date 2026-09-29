@@ -1,7 +1,7 @@
 package com.roleorienta.worker.vacancy;
 
 import com.roleorienta.worker.crawl.CrawlRun;
-import com.roleorienta.worker.crawl.CrawlRunRepository;
+import com.roleorienta.worker.crawl.CrawlLog;
 import com.roleorienta.worker.source.Source;
 import java.time.Clock;
 import java.time.Instant;
@@ -29,7 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       повторной проверке.</li>
  * </ul>
  *
- * <p>Обход ({@link CrawlRun}) сохраняется в той же транзакции, что и изменения публикаций, —
+ * <p>Обход ({@link CrawlRun}) и доступность источника ({@link CrawlLog}) сохраняются в той же
+ * транзакции, что и изменения публикаций, — обход
  * первым: на него ссылается история вакансий ({@link VacancyRevision}), которую пишет только
  * полное чтение.</p>
  */
@@ -38,22 +39,22 @@ public class PostingRecorder {
 
     private final JobPostingRepository postings;
     private final VacancyRepository vacancies;
-    private final CrawlRunRepository runs;
+    private final CrawlLog crawlLog;
     private final VacancyProperties properties;
     private final Clock clock;
 
     /**
      * @param postings   доступ к публикациям
      * @param vacancies  доступ к вакансиям
-     * @param runs       доступ к обходам
+     * @param crawlLog   итог обхода и доступность источника
      * @param properties настройки жизненного цикла
      * @param clock      часы
      */
-    public PostingRecorder(JobPostingRepository postings, VacancyRepository vacancies, CrawlRunRepository runs,
+    public PostingRecorder(JobPostingRepository postings, VacancyRepository vacancies, CrawlLog crawlLog,
             VacancyProperties properties, Clock clock) {
         this.postings = postings;
         this.vacancies = vacancies;
-        this.runs = runs;
+        this.crawlLog = crawlLog;
         this.properties = properties;
         this.clock = clock;
     }
@@ -80,7 +81,7 @@ public class PostingRecorder {
     @Transactional
     public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified) {
         Instant now = clock.instant();
-        runs.save(run.finish(now));
+        crawlLog.finish(run, now);
         Source source = run.getSource();
         boolean complete = run.isComplete();
         Map<String, JobPosting> known = postings.findBySourceId(source.getId()).stream()
@@ -144,7 +145,7 @@ public class PostingRecorder {
             touched.add(posting.getVacancy().getId());
         }
         refreshStates(touched, now);
-        runs.save(run.finish(now));
+        crawlLog.finish(run, now);
     }
 
     private void refreshStates(Set<Long> vacancyIds, Instant now) {

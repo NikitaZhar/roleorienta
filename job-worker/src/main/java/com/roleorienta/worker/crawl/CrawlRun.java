@@ -147,6 +147,20 @@ public class CrawlRun {
     }
 
     /**
+     * @return {@code true} — источник не отдал список
+     */
+    public boolean isFailed() {
+        return state == CrawlRunState.FAILED;
+    }
+
+    /**
+     * @return {@code true} — отказ временный (повтор может помочь)
+     */
+    public boolean isTemporaryFailure() {
+        return TEMPORARY.equals(failureKind);
+    }
+
+    /**
      * @return {@code true} — список прочитан полностью
      */
     public boolean isComplete() {
