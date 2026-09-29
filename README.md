@@ -8,7 +8,8 @@
 [технический документ](docs/technical-design.md), [рабочий контракт](docs/working-contract.md),
 [стенограмма проекта](docs/project-notes.md).
 
-> **Статус:** подэтап 1.2 — чтение досок Greenhouse, Personio, Workday в публикации и вакансии;
+> **Статус:** подэтап 1.2 — чтение досок Greenhouse, Personio, Workday и разметки schema.org `JobPosting` на
+> сайтах компаний в публикации и вакансии;
 > состояния и закрытие вакансий. Источники заводятся вручную в БД.
 > План — технический документ §15.
 
@@ -23,7 +24,7 @@
 
 ## Стек
 
-Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, MinIO (S3), Apache HttpClient 5, Maven,
+Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, MinIO (S3), Apache HttpClient 5, Jsoup, Maven,
 JUnit 5 + Testcontainers, Checkstyle, GitHub Actions.
 
 ## Запуск локально

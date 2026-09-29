@@ -23,6 +23,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Версиями Testcontainers Spring Boot 4.x не управляет — фиксируем BOM явно. -->
         <testcontainers.version>1.21.4</testcontainers.version>
+        <!-- Jsoup (разбор HTML) Spring Boot не управляет — версия фиксируется здесь. -->
+        <jsoup.version>1.23.2</jsoup.version>
     </properties>
 
     <dependencyManagement>
@@ -33,6 +35,11 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${jsoup.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
