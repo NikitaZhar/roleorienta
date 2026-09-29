@@ -72,6 +72,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Архитектурные правила обычными тестами JUnit (ядро ArchUnit, без его движка JUnit). -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Только в тестах: схему создают миграции job-api (profile test, spring.flyway.locations). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

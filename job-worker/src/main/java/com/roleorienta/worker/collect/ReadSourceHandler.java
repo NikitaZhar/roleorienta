@@ -115,10 +115,7 @@ public class ReadSourceHandler implements TaskHandler {
             case SourceReadResult.Read read -> {
                 LOG.info("Source {} read: {} postings, partialReason={}", source.getId(), read.postings().size(),
                         read.partialReason());
-                for (String response : read.responses()) {
-                    snapshots.put(source.getId(), response)
-                            .ifPresent(stored -> run.addSnapshot(stored.objectKey(), stored.sha256()));
-                }
+                storeSnapshots(source, run, read.responses());
                 List<FetchedPosting> postings = new ArrayList<>(read.postings());
                 Set<String> unverified = new HashSet<>();
                 if (read.complete() && source.getCountry() != null) {
@@ -135,6 +132,16 @@ public class ReadSourceHandler implements TaskHandler {
                 yield toOutcome(unavailable.failure());
             }
         };
+    }
+
+    /**
+     * Тела ответов — в хранилище снимков, ссылки на них — в обход (порядок «объект, затем ссылка»).
+     */
+    private void storeSnapshots(Source source, CrawlRun run, List<String> responses) {
+        for (String response : responses) {
+            snapshots.put(source.getId(), response)
+                    .ifPresent(stored -> run.addSnapshot(stored.objectKey(), stored.sha256()));
+        }
     }
 
     /**

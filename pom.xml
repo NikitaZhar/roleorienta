@@ -27,6 +27,8 @@
         <jsoup.version>1.23.2</jsoup.version>
         <!-- AWS SDK v2 (клиент S3 для снимков) Spring Boot не управляет — версии задаёт его BOM. -->
         <awssdk.version>2.54.13</awssdk.version>
+        <!-- ArchUnit (архитектурные правила в тестах) Spring Boot не управляет. -->
+        <archunit.version>1.4.2</archunit.version>
     </properties>
 
     <dependencyManagement>
@@ -44,6 +46,11 @@
                 <version>${awssdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit</artifactId>
+                <version>${archunit.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jsoup</groupId>
