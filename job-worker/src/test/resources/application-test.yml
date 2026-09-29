@@ -20,3 +20,5 @@ app:
     requeue-enabled: false   # перепостановка вызывается из теста вручную
   collect:
     read-enabled: false      # чтение источников ставится из теста вручную
+  intake:
+    enabled: false           # приём реестра ставится из теста вручную

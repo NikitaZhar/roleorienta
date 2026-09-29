@@ -17,7 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
  * защита от дублей — идемпотентность и уникальные ключи.</p>
  *
  * <p><b>Реестр ключей</b> (новый ключ — следующий номер, сюда же): 1001 — перепостановка заданий
- * ({@code TaskRequeueTick}); 1002 — постановка чтения источников ({@code ReadSourceTick}).</p>
+ * ({@code TaskRequeueTick}); 1002 — постановка чтения источников ({@code ReadSourceTick}); 1003 — постановка приёма реестра
+ * ({@code RegistryIntakeTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {
