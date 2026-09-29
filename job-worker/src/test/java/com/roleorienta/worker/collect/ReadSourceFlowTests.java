@@ -23,7 +23,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * Чтение источника Greenhouse целиком: постановка чтения → задание → адаптер (заглушка) →
- * публикации, вакансии и обходы в PostgreSQL.
+ * публикации, вакансии, обходы и история вакансий в PostgreSQL.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -73,6 +73,7 @@ class ReadSourceFlowTests {
      */
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM vacancy_revision");
         jdbcTemplate.update("DELETE FROM crawl_run");
         jdbcTemplate.update("DELETE FROM job_posting");
         jdbcTemplate.update("DELETE FROM vacancy");
@@ -105,7 +106,8 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * Повторное чтение обновляет сведения той же вакансии, не создавая новую.
+     * Повторное чтение обновляет сведения той же вакансии, не создавая новую; смена позиции
+     * записана в историю.
      */
     @Test
     void secondReadUpdatesExistingVacancy() {
@@ -118,6 +120,7 @@ class ReadSourceFlowTests {
         assertThat(count("vacancy")).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT title FROM vacancy", String.class))
                 .isEqualTo("Senior Java Developer");
+        assertThat(revisions()).containsExactly("TITLE:Java Developer->Senior Java Developer");
     }
 
     /**
@@ -161,7 +164,8 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * Закрытая публикация появилась снова — та же вакансия снова актуальна.
+     * Закрытая публикация появилась снова — та же вакансия снова актуальна, в истории «опубликована
+     * снова»; неизменные сведения ревизий не дают.
      */
     @Test
     void reappearedPostingReopensSameVacancy() {
@@ -177,6 +181,7 @@ class ReadSourceFlowTests {
 
         assertThat(count("vacancy")).isEqualTo(1);
         assertThat(vacancyState("Java Developer")).isEqualTo("ACTIVE");
+        assertThat(revisions()).containsExactly("REOPENED:null->null");
     }
 
     /**
@@ -193,6 +198,11 @@ class ReadSourceFlowTests {
         readOnce("r4");
 
         assertThat(vacancyState("Java Developer")).isEqualTo("NEEDS_RECHECK");
+    }
+
+    private List<String> revisions() {
+        return jdbcTemplate.queryForList("SELECT field || ':' || coalesce(old_value, 'null') || '->' "
+                + "|| coalesce(new_value, 'null') FROM vacancy_revision ORDER BY id", String.class);
     }
 
     private String vacancyState(String title) {

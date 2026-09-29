@@ -1,6 +1,8 @@
 package com.roleorienta.worker.vacancy;
 
+import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.source.Source;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -8,8 +10,12 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Публикация — запись вакансии в одном источнике; уникальна в паре «источник + внешний id».
@@ -17,6 +23,11 @@ import java.time.Instant;
  * <p>{@link ManyToOne} с {@code LAZY} — связанная строка загружается только при обращении.
  * Полный текст ({@code content}) хранится для отбора по содержанию и не показывается
  * пользователю (бизнес-описание §10).</p>
+ *
+ * <p>{@link OneToMany} с {@code mappedBy} — история публикации ({@link VacancyRevision}) хранится в
+ * её таблице со ссылкой на публикацию; {@code cascade = PERSIST} сохраняет новые записи вместе с
+ * публикацией. Добавление записи не загружает уже сохранённую историю.
+ * https://docs.jboss.org/hibernate/orm/7.0/userguide/html_single/Hibernate_User_Guide.html#associations-one-to-many</p>
  */
 @Entity
 @Table(name = "job_posting")
@@ -54,6 +65,9 @@ public class JobPosting {
 
     private Instant closedAt;
 
+    @OneToMany(mappedBy = "jobPosting", cascade = CascadeType.PERSIST)
+    private List<VacancyRevision> revisions = new ArrayList<>();
+
     /**
      * Для JPA.
      */
@@ -73,17 +87,35 @@ public class JobPosting {
         this.vacancy = vacancy;
         this.externalId = fetched.externalId();
         this.firstSeenAt = seenAt;
-        update(fetched, seenAt);
+        apply(fetched, seenAt);
     }
 
     /**
-     * Источник показал публикацию: сведения обновлены (текст — если получен), наличие подтверждено, счётчик отсутствия
-     * сброшен; закрытая ранее публикация снова открыта (та же вакансия).
+     * Полный обход показал публикацию: изменения позиции и места и повторное появление закрытой
+     * публикации записываются в историю, затем сведения обновляются (см. {@link #apply}).
      *
      * @param fetched     данные публикации из источника
+     * @param run         полный обход; уже сохранён
      * @param confirmedAt момент подтверждения
      */
-    public void update(FetchedPosting fetched, Instant confirmedAt) {
+    public void update(FetchedPosting fetched, CrawlRun run, Instant confirmedAt) {
+        if (closedAt != null) {
+            revisions.add(new VacancyRevision(this, run, RevisionField.REOPENED, null, null));
+        }
+        if (!Objects.equals(title, fetched.title())) {
+            revisions.add(new VacancyRevision(this, run, RevisionField.TITLE, title, fetched.title()));
+        }
+        if (!Objects.equals(location, fetched.location())) {
+            revisions.add(new VacancyRevision(this, run, RevisionField.LOCATION, location, fetched.location()));
+        }
+        apply(fetched, confirmedAt);
+    }
+
+    /**
+     * Сведения обновлены (текст — если получен), наличие подтверждено, счётчик отсутствия сброшен;
+     * закрытая ранее публикация снова открыта (та же вакансия).
+     */
+    private void apply(FetchedPosting fetched, Instant confirmedAt) {
         this.title = fetched.title();
         this.url = fetched.url();
         this.location = fetched.location();

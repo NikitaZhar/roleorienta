@@ -28,7 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       повторной проверке.</li>
  * </ul>
  *
- * <p>Обход ({@link CrawlRun}) сохраняется в той же транзакции, что и изменения публикаций.</p>
+ * <p>Обход ({@link CrawlRun}) сохраняется в той же транзакции, что и изменения публикаций, —
+ * первым: на него ссылается история вакансий ({@link VacancyRevision}), которую пишет только
+ * полное чтение.</p>
  */
 @Service
 public class PostingRecorder {
@@ -64,6 +66,7 @@ public class PostingRecorder {
     @Transactional
     public void record(CrawlRun run, List<FetchedPosting> fetched) {
         Instant now = clock.instant();
+        runs.save(run.finish(now));
         Source source = run.getSource();
         boolean complete = run.isComplete();
         Map<String, JobPosting> known = postings.findBySourceId(source.getId()).stream()
@@ -75,7 +78,7 @@ public class PostingRecorder {
                 Vacancy vacancy = vacancies.save(new Vacancy(posting.title(), posting.url(), now));
                 postings.save(new JobPosting(source, vacancy, posting, now));
             } else if (complete) {
-                existing.update(posting, now);
+                existing.update(posting, run, now);
                 existing.getVacancy().confirm(posting.title(), posting.url(), now);
                 touched.add(existing.getVacancy().getId());
             }
@@ -87,7 +90,6 @@ public class PostingRecorder {
             }
         }
         refreshStates(touched, now);
-        runs.save(run.finish(now));
     }
 
     /**
