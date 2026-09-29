@@ -37,7 +37,7 @@ final class CareerLinks {
     private static final Pattern GREENHOUSE = Pattern.compile(
             "(?:job-)?boards\\.greenhouse\\.io/(?:embed/job_board(?:/js)?\\?for=)?([A-Za-z0-9_-]+)");
     private static final Pattern PERSONIO = Pattern.compile("([a-z0-9-]+\\.jobs\\.personio\\.(?:de|com))");
-    private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed");
+    private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
     private static final List<String> CAREER_WORDS = List.of("kariera", "kariéra", "career", "jobs", "job-",
             "praca", "práca", "pracovne-ponuky", "pracovné ponuky", "volne-pozicie", "voľné pozície",
             "volne-miesta", "voľné miesta", "pridaj-sa", "pridajte sa", "join-us", "hiring");
@@ -51,24 +51,27 @@ final class CareerLinks {
      */
     static Set<Board> boards(Document page) {
         Set<Board> boards = new LinkedHashSet<>();
-        for (String href : hrefs(page)) {
-            String link = href.replaceFirst("^[a-z]+://", "");
-            Matcher workday = WORKDAY.matcher(link);
-            if (workday.lookingAt()) {
-                boards.add(new Board(WorkdayAdapter.PROVIDER, workday.group(1) + "/" + workday.group(2)));
-                continue;
-            }
-            Matcher greenhouse = GREENHOUSE.matcher(link);
-            if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(greenhouse.group(1))) {
-                boards.add(new Board(GreenhouseAdapter.PROVIDER, greenhouse.group(1)));
-                continue;
-            }
-            Matcher personio = PERSONIO.matcher(link);
-            if (personio.lookingAt()) {
-                boards.add(new Board(PersonioAdapter.PROVIDER, personio.group(1)));
-            }
-        }
+        hrefs(page).forEach(href -> board(href).ifPresent(boards::add));
         return boards;
+    }
+
+    /**
+     * @param url адрес
+     * @return доска системы найма, на которую указывает адрес; пусто — не доска
+     */
+    static Optional<Board> board(String url) {
+        String link = url.replaceFirst("^[a-z]+://", "");
+        Matcher workday = WORKDAY.matcher(link);
+        if (workday.lookingAt()) {
+            return Optional.of(new Board(WorkdayAdapter.PROVIDER, workday.group(1) + "/" + workday.group(2)));
+        }
+        Matcher greenhouse = GREENHOUSE.matcher(link);
+        if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(greenhouse.group(1))) {
+            return Optional.of(new Board(GreenhouseAdapter.PROVIDER, greenhouse.group(1)));
+        }
+        Matcher personio = PERSONIO.matcher(link);
+        return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, personio.group(1)))
+                : Optional.empty();
     }
 
     /**

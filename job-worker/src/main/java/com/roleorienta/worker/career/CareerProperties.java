@@ -9,11 +9,13 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param scheme       схема адреса сайта ({@code https}; в тестах — {@code http} заглушки)
  * @param sitesPerTask сайтов за одно задание
- * @param recheckAfter срок до перепроверки сайта (технический документ §17)
+ * @param recheckAfter срок до перепроверки сайта и доски (технический документ §17)
+ * @param boardsPerTask блоков индекса или досок за одно задание обратного пути
  */
 @ConfigurationProperties("app.career")
 public record CareerProperties(
         @DefaultValue("https") String scheme,
         @DefaultValue("50") int sitesPerTask,
-        @DefaultValue("30d") Duration recheckAfter) {
+        @DefaultValue("30d") Duration recheckAfter,
+        @DefaultValue("20") int boardsPerTask) {
 }

@@ -104,7 +104,7 @@ public class CareerScanHandler implements TaskHandler {
         URI home = URI.create(properties.scheme() + "://" + site.host() + "/");
         Optional<Document> homePage = page(home);
         if (homePage.isEmpty()) {
-            repository.record(site, Set.of(), CheckResult.UNREACHABLE);
+            repository.record(site, Set.of(), CheckResult.UNREACHABLE, null);
             return;
         }
         Set<Board> boards = CareerLinks.boards(homePage.get());
@@ -114,7 +114,7 @@ public class CareerScanHandler implements TaskHandler {
         }
         CheckResult result = !boards.isEmpty() ? CheckResult.SOURCE_FOUND
                 : careerUrl.isPresent() ? CheckResult.FORMAT_UNSUPPORTED : CheckResult.NO_CAREER_PAGE;
-        repository.record(site, boards, result);
+        repository.record(site, boards, result, careerUrl.orElse(null));
         LOG.info("Site {} of company {}: {} {}", site.host(), site.companyId(), result, boards);
     }
 

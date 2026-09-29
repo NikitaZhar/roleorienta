@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
@@ -66,14 +67,49 @@ public class CommonCrawlClient {
     }
 
     /**
-     * Строки оглавления индекса обхода, пока {@code keepReading} их принимает (оглавление
-     * отсортировано — чтение обрывается, как только нужный диапазон пройден).
+     * Блоки индекса, где могут быть адреса с данными префиксами SURT (хост задом наперёд:
+     * {@code sk,firma)/kontakt}): каждый блок, начинающийся с префикса, и блок перед первым таким
+     * (он может заканчиваться адресами префикса). Оглавление читается один раз и обрывается за
+     * последним префиксом. Строка оглавления:
+     * {@code <ключ> <время>\t<файл>\t<смещение>\t<длина>\t<№>}.
      *
-     * @param crawl       обход
-     * @param keepReading получает строку; {@code false} — дальше не читать
+     * @param crawl    обход
+     * @param prefixes префиксы SURT, по возрастанию
+     * @return блоки по порядку, номера с 0
      * @throws IOException оглавление не получено
      */
-    public void clusterIndex(String crawl, Predicate<String> keepReading) throws IOException {
+    public List<IndexBlock> blocks(String crawl, List<String> prefixes) throws IOException {
+        List<IndexBlock> blocks = new ArrayList<>();
+        String last = prefixes.get(prefixes.size() - 1);
+        String[][] previous = new String[1][];
+        clusterIndex(crawl, line -> {
+            String[] parts = line.split("\t");
+            String key = parts[0];
+            for (String prefix : prefixes) {
+                boolean entered = previous[0] != null && previous[0][0].compareTo(prefix) < 0
+                        && key.compareTo(prefix) >= 0;
+                if (entered && !previous[0][0].startsWith(prefix)) {
+                    add(blocks, previous[0]);
+                }
+                if (key.startsWith(prefix)) {
+                    add(blocks, parts);
+                }
+            }
+            previous[0] = parts;
+            return key.compareTo(last) <= 0 || key.startsWith(last);
+        });
+        return blocks;
+    }
+
+    private static void add(List<IndexBlock> blocks, String[] parts) {
+        long offset = Long.parseLong(parts[2]);
+        boolean known = blocks.stream().anyMatch(block -> block.file().equals(parts[1]) && block.offset() == offset);
+        if (!known) {
+            blocks.add(new IndexBlock(blocks.size(), parts[1], offset, Integer.parseInt(parts[3])));
+        }
+    }
+
+    private void clusterIndex(String crawl, Predicate<String> keepReading) throws IOException {
         try (BufferedReader lines = new BufferedReader(new InputStreamReader(
                 get(URI.create(indexDir(crawl) + "cluster.idx"), null), StandardCharsets.UTF_8))) {
             String line = lines.readLine();

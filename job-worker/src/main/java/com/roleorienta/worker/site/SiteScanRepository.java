@@ -17,6 +17,8 @@ public class SiteScanRepository {
 
     private static final String COUNTRY = "SK";
     private static final String SOURCE = "COMMON_CRAWL";
+    /** Назначение блоков скана сайтов (блоки обратного пути — {@code BOARD}). */
+    private static final String PURPOSE = "SITE";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -33,7 +35,8 @@ public class SiteScanRepository {
      */
     public boolean hasBlocks(String crawl) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM cc_index_block WHERE crawl = ?)", Boolean.class, crawl));
+                "SELECT EXISTS (SELECT 1 FROM cc_index_block WHERE crawl = ? AND purpose = ?)", Boolean.class, crawl,
+                PURPOSE));
     }
 
     /**
@@ -45,14 +48,15 @@ public class SiteScanRepository {
     @Transactional
     public void insertBlocks(String crawl, List<IndexBlock> blocks) {
         jdbcTemplate.batchUpdate("""
-                INSERT INTO cc_index_block (crawl, seq, file, block_offset, block_length)
-                VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+                INSERT INTO cc_index_block (crawl, purpose, seq, file, block_offset, block_length)
+                VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
                 """, blocks, blocks.size(), (statement, block) -> {
                 statement.setString(1, crawl);
-                statement.setInt(2, block.seq());
-                statement.setString(3, block.file());
-                statement.setLong(4, block.offset());
-                statement.setInt(5, block.length());
+                statement.setString(2, PURPOSE);
+                statement.setInt(3, block.seq());
+                statement.setString(4, block.file());
+                statement.setLong(5, block.offset());
+                statement.setInt(6, block.length());
             });
     }
 
@@ -64,9 +68,9 @@ public class SiteScanRepository {
     public List<IndexBlock> nextBlocks(String crawl, int limit) {
         return jdbcTemplate.query("""
                 SELECT seq, file, block_offset, block_length FROM cc_index_block
-                WHERE crawl = ? AND NOT done ORDER BY seq LIMIT ?
+                WHERE crawl = ? AND purpose = ? AND NOT done ORDER BY seq LIMIT ?
                 """, (row, number) -> new IndexBlock(row.getInt("seq"), row.getString("file"),
-                row.getLong("block_offset"), row.getInt("block_length")), crawl, limit);
+                row.getLong("block_offset"), row.getInt("block_length")), crawl, PURPOSE, limit);
     }
 
     /**
@@ -106,7 +110,8 @@ public class SiteScanRepository {
                 statement.setString(4, SOURCE);
                 statement.setString(5, crawl);
             });
-        jdbcTemplate.update("UPDATE cc_index_block SET done = TRUE WHERE crawl = ? AND seq = ?", crawl, seq);
+        jdbcTemplate.update("UPDATE cc_index_block SET done = TRUE WHERE crawl = ? AND purpose = ? AND seq = ?", crawl,
+                PURPOSE, seq);
     }
 
     private static Object[] concat(String first, Set<String> rest) {

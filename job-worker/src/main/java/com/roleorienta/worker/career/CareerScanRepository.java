@@ -43,12 +43,13 @@ public class CareerScanRepository {
      * Итог проверки сайта одной транзакцией: найденные источники подключаются (уже подключённый —
      * не дублируется) и связываются с компанией, сайт отмечается проверенным.
      *
-     * @param site   сайт
-     * @param boards найденные источники
-     * @param result итог проверки
+     * @param site      сайт
+     * @param boards    найденные источники
+     * @param result    итог проверки
+     * @param careerUrl адрес кадровой страницы; {@code null} — не найдена
      */
     @Transactional
-    public void record(Site site, Set<Board> boards, CheckResult result) {
+    public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl) {
         for (Board board : boards) {
             jdbcTemplate.update("""
                     INSERT INTO source (provider, board, country) VALUES (?, ?, ?)
@@ -60,8 +61,8 @@ public class CareerScanRepository {
                     ON CONFLICT DO NOTHING
                     """, site.companyId(), board.provider(), board.board());
         }
-        jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ? WHERE id = ?",
-                result.name(), site.id());
+        jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ?, career_url = ? WHERE id = ?",
+                result.name(), careerUrl, site.id());
     }
 
     /**

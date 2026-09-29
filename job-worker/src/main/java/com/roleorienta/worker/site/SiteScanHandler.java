@@ -106,7 +106,7 @@ public class SiteScanHandler implements TaskHandler {
         try {
             String crawl = client.latestCrawl();
             if (!repository.hasBlocks(crawl)) {
-                List<IndexBlock> blocks = zoneBlocks(crawl);
+                List<IndexBlock> blocks = client.blocks(crawl, List.of(ZONE));
                 repository.insertBlocks(crawl, blocks);
                 LOG.info("Common Crawl {}: {} index blocks of zone {}", crawl, blocks.size(), ZONE);
             }
@@ -121,35 +121,6 @@ public class SiteScanHandler implements TaskHandler {
         } catch (IOException exception) {
             return new TaskOutcome.Retry("Common Crawl not read: " + exception.getMessage(), Duration.ZERO);
         }
-    }
-
-    /**
-     * Блоки, где могут быть адреса зоны: все, что начинаются в зоне, и предыдущий (он может
-     * заканчиваться адресами зоны). Строка оглавления: {@code <ключ> <время>\t<файл>\t<смещение>\t<длина>\t<№>}.
-     */
-    private List<IndexBlock> zoneBlocks(String crawl) throws IOException {
-        List<IndexBlock> blocks = new ArrayList<>();
-        String[][] previous = new String[1][];
-        client.clusterIndex(crawl, line -> {
-            String[] parts = line.split("\t");
-            boolean inZone = parts[0].startsWith(ZONE);
-            if (!inZone && parts[0].compareTo(ZONE) > 0) {
-                return false;
-            }
-            if (inZone && blocks.isEmpty() && previous[0] != null) {
-                blocks.add(block(0, previous[0]));
-            }
-            if (inZone) {
-                blocks.add(block(blocks.size(), parts));
-            }
-            previous[0] = parts;
-            return true;
-        });
-        return blocks;
-    }
-
-    private static IndexBlock block(int seq, String[] parts) {
-        return new IndexBlock(seq, parts[1], Long.parseLong(parts[2]), Integer.parseInt(parts[3]));
     }
 
     private void scan(String crawl, IndexBlock block) throws IOException {

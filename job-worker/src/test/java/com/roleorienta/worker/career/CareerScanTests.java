@@ -103,7 +103,7 @@ class CareerScanTests {
 
     /**
      * Кадровой страницы нет — источника нет, причина сохранена; кадровая страница без
-     * поддерживаемого формата — другая причина.
+     * поддерживаемого формата — другая причина и её адрес (замер систем найма).
      */
     @Test
     void recordsReasonWhenNothingFound() {
@@ -117,6 +117,8 @@ class CareerScanTests {
         PAGES.put("/kariera", "<p>Pošlite životopis na hr@alfa.sk</p>");
         runScan();
         assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
+                .isEqualTo("http://" + HOST + "/kariera");
     }
 
     private void runScan() {
