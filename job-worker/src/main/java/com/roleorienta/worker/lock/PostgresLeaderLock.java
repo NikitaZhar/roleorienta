@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>Реестр ключей</b> (новый ключ — следующий номер, сюда же): 1001 — перепостановка заданий
  * ({@code TaskRequeueTick}); 1002 — постановка чтения источников ({@code ReadSourceTick}); 1003 — постановка приёма реестра
- * ({@code RegistryIntakeTick}); 1004 — постановка скана сайтов ({@code SiteScanTick}).</p>
+ * ({@code RegistryIntakeTick}); 1004 — постановка скана сайтов ({@code SiteScanTick}); 1005 — постановка проверки
+ * сайтов на кадровые страницы ({@code CareerScanTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

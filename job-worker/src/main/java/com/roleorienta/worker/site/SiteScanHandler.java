@@ -36,7 +36,8 @@ import org.springframework.stereotype.Component;
  *   <li>Из блока берётся по одной странице на хост: страница контактов или реквизитов
  *       ({@code kontakt}, {@code o-nas}, {@code impressum} …), а если её нет — главная.</li>
  *   <li>Страница читается из архива, в тексте ищутся IČO ({@link IcoExtractor}); IČO действующей
- *       компании из реестра — подтверждённый сайт этой компании.</li>
+ *       компании из реестра — подтверждённый сайт этой компании. Больше трёх разных IČO на
+ *       странице — каталог чужих организаций, страница ничего не подтверждает.</li>
  *   <li>Находки блока и отметка «просмотрен» — одна транзакция; за задание не больше
  *       {@link CommonCrawlProperties#blocksPerTask()} блоков, дальше — следующее задание.</li>
  * </ol>
@@ -55,6 +56,8 @@ public class SiteScanHandler implements TaskHandler {
     private static final List<String> CONTACT_PAGES = List.of(
             "kontakt", "contact", "o-nas", "onas", "o_nas", "about", "impressum", "podmienky", "firma");
     private static final int MAX_URL = 2000;
+    /** Больше IČO на странице — каталог чужих организаций (портал, реестр НКО), не сайт компании. */
+    private static final int MAX_NUMBERS_PER_PAGE = 3;
     private static final byte[] HEADERS_END = "\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(SiteScanHandler.class);
@@ -159,6 +162,9 @@ public class SiteScanHandler implements TaskHandler {
                 throw unavailable;
             } catch (IOException unreadable) {
                 LOG.debug("Page {} skipped: {}", page.url(), unreadable.getMessage());
+                continue;
+            }
+            if (numbers.size() > MAX_NUMBERS_PER_PAGE) {
                 continue;
             }
             repository.activeCompanies(numbers).values().forEach(companyId -> matches.add(
