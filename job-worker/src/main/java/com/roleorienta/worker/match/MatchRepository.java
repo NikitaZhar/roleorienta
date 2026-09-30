@@ -113,7 +113,8 @@ public class MatchRepository {
      * @param id           вакансия
      * @param title        название
      * @param content      тексты публикаций (HTML)
-     * @param matchVersion версия, по которой сопоставлена; {@code null} — не сопоставлялась
+     * @param matchVersion версия, по которой сопоставлена; {@code null} или {@code reset:…} — не
+     *                     сопоставлялась или изменилась
      * @param locations    места публикаций ({@code null} — не указано)
      */
     public record VacancyText(long id, String title, String content, String matchVersion, List<String> locations) {

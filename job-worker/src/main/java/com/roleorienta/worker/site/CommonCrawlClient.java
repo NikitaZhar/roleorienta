@@ -14,6 +14,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
 import org.springframework.stereotype.Component;
@@ -27,7 +31,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Это официальный набор открытых данных, а не сайт, поэтому свой клиент (JDK
  * {@link HttpClient}), а не {@code ExternalHttpClient}: адреса фиксированы настройками, оглавление
- * индекса — сотни мегабайт. Нагрузка ограничена паузой перед каждым запросом. 429 и 5xx
+ * индекса — сотни мегабайт. Нагрузка ограничена паузой перед каждым запросом. Список обходов, блок
+ * индекса и страница читаются целиком с общим сроком на запрос и тело ({@code timeout}): таймаут
+ * запроса JDK покрывает только ожидание заголовков, зависшее тело держало бы обработчик заданий
+ * бесконечно. Оглавление (раз в месяц, сотни мегабайт) читается потоком. 429 и 5xx
  * («замедлитесь», сбой) — {@link UnavailableException}: задание повторится позже; прочие ответы
  * не 2xx — {@link IOException}.</p>
  */
@@ -57,13 +64,11 @@ public class CommonCrawlClient {
      * @throws IOException список обходов не получен
      */
     public String latestCrawl() throws IOException {
-        try (InputStream body = get(URI.create(properties.indexUrl() + "/collinfo.json"), null)) {
-            JsonNode crawls = JSON.readTree(body);
-            if (!crawls.isArray() || crawls.isEmpty()) {
-                throw new IOException("Empty Common Crawl collinfo.json");
-            }
-            return crawls.get(0).path("id").asText();
+        JsonNode crawls = JSON.readTree(bytes(URI.create(properties.indexUrl() + "/collinfo.json"), null));
+        if (!crawls.isArray() || crawls.isEmpty()) {
+            throw new IOException("Empty Common Crawl collinfo.json");
         }
+        return crawls.get(0).path("id").asText();
     }
 
     /**
@@ -150,30 +155,77 @@ public class CommonCrawlClient {
     }
 
     private byte[] range(URI uri, long offset, int length) throws IOException {
-        try (InputStream body = get(uri, "bytes=" + offset + "-" + (offset + length - 1))) {
-            return body.readAllBytes();
+        return bytes(uri, "bytes=" + offset + "-" + (offset + length - 1));
+    }
+
+    /**
+     * Ответ целиком; запрос и тело — не дольше {@code timeout}, иначе запрос отменяется и
+     * {@link UnavailableException}.
+     */
+    private byte[] bytes(URI uri, String range) throws IOException {
+        pause(uri);
+        CompletableFuture<HttpResponse<byte[]>> pending = http.sendAsync(request(uri, range),
+                HttpResponse.BodyHandlers.ofByteArray());
+        try {
+            HttpResponse<byte[]> response = pending.get(properties.timeout().toMillis(), TimeUnit.MILLISECONDS);
+            check(uri, response.statusCode());
+            return response.body();
+        } catch (TimeoutException timeout) {
+            pending.cancel(true);
+            throw new UnavailableException("Timeout: " + uri);
+        } catch (ExecutionException failed) {
+            throw failed.getCause() instanceof IOException cause ? cause : new IOException(failed.getCause());
+        } catch (InterruptedException interrupted) {
+            pending.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new UnavailableException("Interrupted: " + uri);
         }
     }
 
+    /**
+     * Ответ потоком (оглавление индекса): таймаут — до заголовков ответа.
+     */
     private InputStream get(URI uri, String range) throws IOException {
-        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(properties.timeout()).GET();
-        if (range != null) {
-            request.header("Range", range);
-        }
+        pause(uri);
         try {
-            Thread.sleep(properties.requestInterval());
-            HttpResponse<InputStream> response = http.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
-            int status = response.statusCode();
-            if (status < STATUS_OK_MIN || status > STATUS_OK_MAX) {
+            HttpResponse<InputStream> response = http.send(request(uri, range),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() < STATUS_OK_MIN || response.statusCode() > STATUS_OK_MAX) {
                 response.body().close();
-                String message = "Common Crawl " + uri + ": HTTP " + status;
-                throw status == STATUS_TOO_MANY_REQUESTS || status >= STATUS_SERVER_ERROR_MIN
-                        ? new UnavailableException(message) : new IOException(message);
             }
+            check(uri, response.statusCode());
             return response.body();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new UnavailableException("Interrupted: " + uri);
+        }
+    }
+
+    private HttpRequest request(URI uri, String range) {
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(properties.timeout()).GET();
+        if (range != null) {
+            request.header("Range", range);
+        }
+        return request.build();
+    }
+
+    private void pause(URI uri) throws UnavailableException {
+        try {
+            Thread.sleep(properties.requestInterval());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new UnavailableException("Interrupted: " + uri);
+        }
+    }
+
+    /**
+     * Не 2xx: 429 и 5xx — {@link UnavailableException}, прочее — {@link IOException}.
+     */
+    private static void check(URI uri, int status) throws IOException {
+        if (status < STATUS_OK_MIN || status > STATUS_OK_MAX) {
+            String message = "Common Crawl " + uri + ": HTTP " + status;
+            throw status == STATUS_TOO_MANY_REQUESTS || status >= STATUS_SERVER_ERROR_MIN
+                    ? new UnavailableException(message) : new IOException(message);
         }
     }
 

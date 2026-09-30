@@ -1,15 +1,19 @@
 package com.roleorienta.worker.match;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -34,6 +38,9 @@ class MatchVacanciesTests {
 
     @Autowired
     private PositionDictionary dictionary;
+
+    @Autowired
+    private MatchRepository repository;
 
     private int run;
 
@@ -83,6 +90,20 @@ class MatchVacanciesTests {
                 SELECT m.explanation FROM vacancy_position_match m JOIN vacancy v ON v.id = m.vacancy_id
                 WHERE v.title = 'Hlavná účtovníčka'
                 """, String.class)).isEqualTo("title: uctovnicka");
+    }
+
+    /**
+     * Вакансия изменилась, пока сопоставление её читало (у неё новая отметка «сопоставить заново»),
+     * — результат по старому тексту не записывается.
+     */
+    @Test
+    void matchOfChangedVacancyIsNotSaved() {
+        MatchRepository.VacancyText read = repository.vacanciesToMatch("any", 1).get(0);
+        jdbcTemplate.update("UPDATE vacancy SET match_version = 'reset:changed' WHERE id = ?", read.id());
+
+        assertThatThrownBy(() -> repository.saveMatches(read, "any", Map.of(),
+                new LocationResolver.LocationFacts(Set.of(), true, null)))
+                .isInstanceOf(OptimisticLockingFailureException.class);
     }
 
     private void vacancy(String title, String state, String content, String location) {

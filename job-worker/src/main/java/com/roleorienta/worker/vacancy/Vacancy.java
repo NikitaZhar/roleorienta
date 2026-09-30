@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Вакансия — одна запись над одной или несколькими публикациями (бизнес-описание §4.3).
@@ -17,6 +18,9 @@ import java.util.List;
 @Entity
 @Table(name = "vacancy")
 public class Vacancy {
+
+    /** Отметка «сопоставить заново» (32 hex после префикса — в пределах {@code VARCHAR(40)}). */
+    private static final String RESET_PREFIX = "reset:";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -95,10 +99,14 @@ public class Vacancy {
     }
 
     /**
-     * Название или текст вакансии изменились — соответствие позициям пересчитывается.
+     * Название, место или текст вакансии изменились — соответствие пересчитывается. Вместо версии
+     * сопоставления пишется новая случайная отметка, а не {@code NULL}: сопоставление записывает
+     * результат, только если отметка не изменилась с его чтения ({@code MatchRepository.saveMatches}),
+     * а два изменения подряд с {@code NULL} выглядели бы как одно — результат по старому тексту
+     * записался бы и не пересчитывался.
      */
     public void resetMatch() {
-        this.matchVersion = null;
+        this.matchVersion = RESET_PREFIX + UUID.randomUUID().toString().replace("-", "");
     }
 
     public Long getId() {

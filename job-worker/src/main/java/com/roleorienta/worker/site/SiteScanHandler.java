@@ -15,10 +15,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import org.jsoup.Jsoup;
@@ -124,7 +126,7 @@ public class SiteScanHandler implements TaskHandler {
     }
 
     private void scan(String crawl, IndexBlock block) throws IOException {
-        List<SiteScanRepository.SiteMatch> matches = new ArrayList<>();
+        Map<PageRef, Set<String>> numbersByPage = new LinkedHashMap<>();
         for (PageRef page : candidates(client.block(crawl, block))) {
             Set<String> numbers;
             try {
@@ -135,12 +137,17 @@ public class SiteScanHandler implements TaskHandler {
                 LOG.debug("Page {} skipped: {}", page.url(), unreadable.getMessage());
                 continue;
             }
-            if (numbers.size() > MAX_NUMBERS_PER_PAGE) {
-                continue;
+            if (!numbers.isEmpty() && numbers.size() <= MAX_NUMBERS_PER_PAGE) {
+                numbersByPage.put(page, numbers);
             }
-            repository.activeCompanies(numbers).values().forEach(companyId -> matches.add(
-                    new SiteScanRepository.SiteMatch(companyId, page.host(), limit(page.url()))));
         }
+        Set<String> allNumbers = new HashSet<>();
+        numbersByPage.values().forEach(allNumbers::addAll);
+        Map<String, Long> companies = repository.activeCompanies(allNumbers);
+        List<SiteScanRepository.SiteMatch> matches = new ArrayList<>();
+        numbersByPage.forEach((page, numbers) -> numbers.stream().map(companies::get).filter(Objects::nonNull)
+                .distinct().forEach(companyId -> matches.add(
+                        new SiteScanRepository.SiteMatch(companyId, page.host(), limit(page.url())))));
         repository.completeBlock(crawl, block.seq(), matches);
         LOG.info("Common Crawl {} block {}: {} sites", crawl, block.seq(), matches.size());
     }

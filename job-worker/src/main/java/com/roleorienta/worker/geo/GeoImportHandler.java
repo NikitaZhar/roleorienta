@@ -4,8 +4,8 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,6 +17,10 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -32,7 +36,8 @@ import org.springframework.stereotype.Component;
  * страна, …, население). Берутся название и латинское название; для Словакии — и другие названия
  * (Pozsony, Kaschau …). Название нормализуется так же, как текст вакансий (регистр, диакритика).
  * Справочник заменяется целиком. Официальный набор открытых данных — свой клиент (JDK
- * {@link HttpClient}) с таймаутом; сбой — повтор задания.
+ * {@link HttpClient}); файл (~3 МБ) читается целиком с общим сроком на запрос и тело — таймаут
+ * запроса JDK покрывает только ожидание заголовков. Сбой — повтор задания.
  */
 @Component
 public class GeoImportHandler implements TaskHandler {
@@ -87,18 +92,25 @@ public class GeoImportHandler implements TaskHandler {
         HttpClient http = HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
         HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(TIMEOUT).GET().build();
-        HttpResponse<InputStream> response;
+        CompletableFuture<HttpResponse<byte[]>> pending = http.sendAsync(request,
+                HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            response = pending.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException timeout) {
+            pending.cancel(true);
+            throw new IOException("Timeout: " + url, timeout);
+        } catch (ExecutionException failed) {
+            throw new IOException(failed.getCause());
         } catch (InterruptedException interrupted) {
+            pending.cancel(true);
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted", interrupted);
         }
         if (response.statusCode() != 200) {
-            response.body().close();
             throw new IOException("HTTP " + response.statusCode());
         }
-        try (ZipInputStream zip = new ZipInputStream(response.body())) {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(response.body()))) {
             for (ZipEntry entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
                 if (ENTRY.equals(entry.getName())) {
                     return parse(new BufferedReader(new InputStreamReader(zip, StandardCharsets.UTF_8)));
