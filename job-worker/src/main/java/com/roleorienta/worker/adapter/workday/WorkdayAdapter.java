@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.workday;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.CountryNames;
 import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
@@ -15,7 +16,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,9 +59,6 @@ public class WorkdayAdapter implements SourceAdapter {
 
     /** Сводка списка вместо мест: «2 Locations». */
     private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+ Locations");
-
-    /** Название страны в фасете, если тенант пишет не краткое английское: «Slovak Republic». */
-    private static final Map<String, String> OFFICIAL_NAMES = Map.of("SK", "Slovak Republic", "CZ", "Czech Republic");
 
     /** {@code appliedFacets} без фильтра. */
     private static final String NO_FACETS = "{}";
@@ -141,8 +138,6 @@ public class WorkdayAdapter implements SourceAdapter {
      * Фильтр по стране из фасетов первого ответа.
      */
     private static CountryFilter countryFilter(JsonNode firstPage, String country) {
-        String countryName = Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
-        String officialName = OFFICIAL_NAMES.get(country);
         List<JsonNode> countryFacets = new ArrayList<>();
         collectCountryFacets(firstPage.path("facets"), countryFacets);
         if (countryFacets.isEmpty()) {
@@ -150,8 +145,7 @@ public class WorkdayAdapter implements SourceAdapter {
         }
         for (JsonNode facet : countryFacets) {
             for (JsonNode value : facet.path("values")) {
-                String descriptor = value.path("descriptor").asText();
-                if (countryName.equalsIgnoreCase(descriptor) || descriptor.equalsIgnoreCase(officialName)) {
+                if (CountryNames.isName(value.path("descriptor").asText(), country)) {
                     return new CountryFilter(true, "{" + JSON.getNodeFactory().textNode(
                             facet.path("facetParameter").asText()) + ":[" + JSON.getNodeFactory().textNode(
                             value.path("id").asText()) + "]}");

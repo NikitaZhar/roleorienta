@@ -2,6 +2,7 @@ package com.roleorienta.worker.career;
 
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseAdapter;
 import com.roleorienta.worker.adapter.personio.PersonioAdapter;
+import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -28,6 +29,8 @@ import org.jsoup.nodes.Element;
  *   <li>Greenhouse — {@code boards.greenhouse.io/<доска>}, {@code job-boards.greenhouse.io/<доска>},
  *       встраивание {@code …/embed/job_board?for=<доска>} → доска.</li>
  *   <li>Personio — {@code <компания>.jobs.personio.de|com} → хост витрины.</li>
+ *   <li>SmartRecruiters — {@code careers.smartrecruiters.com/<компания>},
+ *       {@code jobs.smartrecruiters.com/<компания>/…} → компания в нижнем регистре.</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}), в адресе или тексте которой «kariéra», «práca»,
  *       «jobs», «career», «voľné pozície» и т. п.</li>
  * </ul>
@@ -40,6 +43,9 @@ final class CareerLinks {
     private static final Pattern GREENHOUSE = Pattern.compile(
             "(?:job-)?boards\\.greenhouse\\.io/(?:embed/job_board(?:/js)?\\?for=)?([A-Za-z0-9_-]+)");
     private static final Pattern PERSONIO = Pattern.compile("([a-z0-9-]+\\.jobs\\.personio\\.(?:de|com))");
+    private static final Pattern SMARTRECRUITERS = Pattern.compile(
+            "(?:careers|jobs)\\.smartrecruiters\\.com/([A-Za-z0-9_-]+)(?=$|[/?#])");
+    private static final Set<String> SMARTRECRUITERS_NOT_BOARDS = Set.of("robots", "sitemap", "api", "static", "oneclick-ui");
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
     private static final List<String> CAREER_WORDS = List.of("kariera", "kariéra", "career", "jobs", "job-",
             "praca", "práca", "pracovne-ponuky", "pracovné ponuky", "volne-pozicie", "voľné pozície",
@@ -72,6 +78,12 @@ final class CareerLinks {
         Matcher greenhouse = GREENHOUSE.matcher(link);
         if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(greenhouse.group(1))) {
             return Optional.of(new Board(GreenhouseAdapter.PROVIDER, greenhouse.group(1)));
+        }
+        Matcher smartRecruiters = SMARTRECRUITERS.matcher(link);
+        if (smartRecruiters.lookingAt()) {
+            String company = smartRecruiters.group(1).toLowerCase(Locale.ROOT);
+            return SMARTRECRUITERS_NOT_BOARDS.contains(company) ? Optional.empty()
+                    : Optional.of(new Board(SmartRecruitersAdapter.PROVIDER, company));
         }
         Matcher personio = PERSONIO.matcher(link);
         return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, personio.group(1)))

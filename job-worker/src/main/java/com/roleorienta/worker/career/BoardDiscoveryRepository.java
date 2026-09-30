@@ -16,7 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class BoardDiscoveryRepository {
 
-    private static final String PURPOSE = "BOARD";
+    /** Назначение блоков первого прохода; по его обходу — последний известный обход. */
+    static final String PURPOSE = "BOARD";
     private static final String COUNTRY = "SK";
 
     private final JdbcTemplate jdbcTemplate;
@@ -30,12 +31,13 @@ public class BoardDiscoveryRepository {
 
     /**
      * @param crawl обход
+     * @param purpose назначение блоков: проход индекса
      * @return {@code true} — блоки обхода уже записаны
      */
-    public boolean hasBlocks(String crawl) {
+    public boolean hasBlocks(String crawl, String purpose) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM cc_index_block WHERE crawl = ? AND purpose = ?)", Boolean.class,
-                crawl, PURPOSE));
+                crawl, purpose));
     }
 
     /**
@@ -48,16 +50,17 @@ public class BoardDiscoveryRepository {
 
     /**
      * @param crawl  обход
+     * @param purpose назначение блоков: проход индекса
      * @param blocks блоки с адресами досок; уже записанные не меняются
      */
     @Transactional
-    public void insertBlocks(String crawl, List<IndexBlock> blocks) {
+    public void insertBlocks(String crawl, String purpose, List<IndexBlock> blocks) {
         jdbcTemplate.batchUpdate("""
                 INSERT INTO cc_index_block (crawl, purpose, seq, file, block_offset, block_length)
                 VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
                 """, blocks, blocks.size(), (statement, block) -> {
                 statement.setString(1, crawl);
-                statement.setString(2, PURPOSE);
+                statement.setString(2, purpose);
                 statement.setInt(3, block.seq());
                 statement.setString(4, block.file());
                 statement.setLong(5, block.offset());
@@ -67,26 +70,28 @@ public class BoardDiscoveryRepository {
 
     /**
      * @param crawl обход
+     * @param purpose назначение блоков: проход индекса
      * @param limit сколько блоков
      * @return непросмотренные блоки по порядку
      */
-    public List<IndexBlock> nextBlocks(String crawl, int limit) {
+    public List<IndexBlock> nextBlocks(String crawl, String purpose, int limit) {
         return jdbcTemplate.query("""
                 SELECT seq, file, block_offset, block_length FROM cc_index_block
                 WHERE crawl = ? AND purpose = ? AND NOT done ORDER BY seq LIMIT ?
                 """, (row, number) -> new IndexBlock(row.getInt("seq"), row.getString("file"),
-                row.getLong("block_offset"), row.getInt("block_length")), crawl, PURPOSE, limit);
+                row.getLong("block_offset"), row.getInt("block_length")), crawl, purpose, limit);
     }
 
     /**
      * Доски блока и отметка «просмотрен» — одной транзакцией; уже известная доска не дублируется.
      *
      * @param crawl  обход
+     * @param purpose назначение блоков: проход индекса
      * @param seq    блок
      * @param boards доски из адресов блока
      */
     @Transactional
-    public void completeBlock(String crawl, int seq, Set<Board> boards) {
+    public void completeBlock(String crawl, String purpose, int seq, Set<Board> boards) {
         jdbcTemplate.batchUpdate("""
                 INSERT INTO discovered_board (provider, board, crawl) VALUES (?, ?, ?) ON CONFLICT DO NOTHING
                 """, boards, boards.size(), (statement, board) -> {
@@ -95,7 +100,7 @@ public class BoardDiscoveryRepository {
                 statement.setString(3, crawl);
             });
         jdbcTemplate.update("UPDATE cc_index_block SET done = TRUE WHERE crawl = ? AND purpose = ? AND seq = ?",
-                crawl, PURPOSE, seq);
+                crawl, purpose, seq);
     }
 
     /**

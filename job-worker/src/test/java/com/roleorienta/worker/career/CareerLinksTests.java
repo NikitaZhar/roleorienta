@@ -82,4 +82,18 @@ class CareerLinksTests {
         assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/External"))).isTrue();
         assertThat(CareerLinks.isBoard(new Board("greenhouse", "beta"))).isTrue();
     }
+
+    /**
+     * SmartRecruiters: кадровая страница компании и вакансия — доска компании в нижнем регистре;
+     * служебные пути — не доски.
+     */
+    @Test
+    void findsSmartRecruitersBoards() {
+        assertThat(CareerLinks.board("https://careers.smartrecruiters.com/DeutscheTelekomITSolutionsSlovakia"))
+                .contains(new Board("smartrecruiters", "deutschetelekomitsolutionsslovakia"));
+        assertThat(CareerLinks.board("https://jobs.smartrecruiters.com/Devoteam/744000096966508-architect"))
+                .contains(new Board("smartrecruiters", "devoteam"));
+        assertThat(CareerLinks.board("https://jobs.smartrecruiters.com/robots.txt")).isEmpty();
+        assertThat(CareerLinks.board("https://jobs.smartrecruiters.com/oneclick-ui/company/1")).isEmpty();
+    }
 }

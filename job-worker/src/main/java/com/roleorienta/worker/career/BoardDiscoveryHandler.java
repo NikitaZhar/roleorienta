@@ -31,9 +31,10 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>Из индекса последнего обхода Common Crawl берутся адреса досок Workday
  *       ({@code *.myworkdayjobs.com}), Greenhouse ({@code boards.greenhouse.io},
- *       {@code job-boards.greenhouse.io}) и Personio ({@code *.jobs.personio.de|com}) — по префиксам
- *       SURT; доски из адресов ({@link CareerLinks#board}) записываются. Блок индекса и его доски —
- *       одна транзакция.</li>
+ *       {@code job-boards.greenhouse.io}), Personio ({@code *.jobs.personio.de|com}) и SmartRecruiters
+ *       ({@code careers|jobs.smartrecruiters.com}) — по префиксам SURT, проходами (у каждого прохода
+ *       свои блоки); доски из адресов ({@link CareerLinks#board}) записываются. Блок индекса и его
+ *       доски — одна транзакция.</li>
  *   <li>Каждая новая доска проверяется на публикации в Словакии: провайдер отвечает одним запросом,
  *       если умеет ({@link SourceAdapter#hasPostingsIn}: Workday — фасет страны); иначе доска
  *       читается и нужна публикация с местом в Словакии ({@link SlovakLocations}). Есть — доска
@@ -55,8 +56,15 @@ public class BoardDiscoveryHandler implements TaskHandler {
     public static final String TYPE = "BOARD_DISCOVERY";
 
     /** Префиксы SURT хостов досок, по возрастанию. */
-    private static final List<String> PREFIXES = List.of("com,myworkdayjobs,", "com,personio,jobs,",
-            "de,personio,jobs,", "io,greenhouse,boards)", "io,greenhouse,job-boards)");
+    /**
+     * Проходы индекса: префиксы SURT по возрастанию и назначение их блоков. Новый провайдер — новый
+     * проход: уже пройденный обход индекса по новым префиксам просматривается отдельно, без
+     * ожидания следующего обхода Common Crawl.
+     */
+    private static final List<IndexPass> PASSES = List.of(
+            new IndexPass(BoardDiscoveryRepository.PURPOSE, List.of("com,myworkdayjobs,", "com,personio,jobs,",
+                    "de,personio,jobs,", "io,greenhouse,boards)", "io,greenhouse,job-boards)")),
+            new IndexPass("BOARD_SR", List.of("com,smartrecruiters,careers)", "com,smartrecruiters,jobs)")));
     private static final String COUNTRY = "SK";
     private static final String PAYLOAD = "{}";
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -113,19 +121,21 @@ public class BoardDiscoveryHandler implements TaskHandler {
                 return new TaskOutcome.Retry("Common Crawl index is not available", Duration.ZERO);
             }
             String crawl = latest.get();
-            if (!repository.hasBlocks(crawl)) {
-                List<IndexBlock> blocks = client.blocks(crawl, PREFIXES);
-                repository.insertBlocks(crawl, blocks);
-                LOG.info("Common Crawl {}: {} index blocks of job boards", crawl, blocks.size());
-            }
             int budget = properties.boardsPerTask();
-            List<IndexBlock> blocks = repository.nextBlocks(crawl, budget);
-            for (IndexBlock block : blocks) {
-                repository.completeBlock(crawl, block.seq(), boards(client.block(crawl, block)));
-            }
-            if (!blocks.isEmpty()) {
-                enqueue(crawl + ":block:" + blocks.get(blocks.size() - 1).seq());
-                return new TaskOutcome.Done();
+            for (IndexPass pass : PASSES) {
+                if (!repository.hasBlocks(crawl, pass.purpose())) {
+                    List<IndexBlock> blocks = client.blocks(crawl, pass.prefixes());
+                    repository.insertBlocks(crawl, pass.purpose(), blocks);
+                    LOG.info("Common Crawl {}: {} index blocks of {}", crawl, blocks.size(), pass.purpose());
+                }
+                List<IndexBlock> blocks = repository.nextBlocks(crawl, pass.purpose(), budget);
+                for (IndexBlock block : blocks) {
+                    repository.completeBlock(crawl, pass.purpose(), block.seq(), boards(client.block(crawl, block)));
+                }
+                if (!blocks.isEmpty()) {
+                    enqueue(crawl + ":" + pass.purpose() + ":" + blocks.get(blocks.size() - 1).seq());
+                    return new TaskOutcome.Done();
+                }
             }
             List<Board> toCheck = repository.boardsToCheck(budget, properties.recheckAfter());
             for (Board board : toCheck) {
@@ -187,5 +197,12 @@ public class BoardDiscoveryHandler implements TaskHandler {
         return adapter.hasPostingsIn(board.board(), COUNTRY).orElseGet(() ->
                 adapter.read(board.board(), COUNTRY) instanceof SourceReadResult.Read read
                         && read.postings().stream().anyMatch(posting -> SlovakLocations.matches(posting.location())));
+    }
+
+    /**
+     * @param purpose  назначение блоков
+     * @param prefixes префиксы SURT по возрастанию
+     */
+    private record IndexPass(String purpose, List<String> prefixes) {
     }
 }

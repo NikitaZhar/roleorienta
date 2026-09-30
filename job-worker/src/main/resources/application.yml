@@ -117,6 +117,10 @@ app:
       base-url-template: https://{host}  # {host} — <тенант>.<dc>.myworkdayjobs.com
       page-size: 20        # Workday отдаёт не больше 20 на страницу
       max-pages: 100       # потолок страниц за чтение; упор — неполное чтение
+    smartrecruiters:        # кадровые страницы и страницы вакансий (API запрещён robots.txt)
+      careers-url: https://careers.smartrecruiters.com
+      jobs-url: https://jobs.smartrecruiters.com
+      max-pages: 50        # потолок страниц списка (по ~20 вакансий) за чтение; упор — неполное чтение
     jobposting:
       max-pages: 200       # потолок страниц вакансий сайта за чтение; упор — неполное чтение
 
