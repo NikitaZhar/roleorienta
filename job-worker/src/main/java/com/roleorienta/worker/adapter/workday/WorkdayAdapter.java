@@ -26,7 +26,8 @@ import org.springframework.stereotype.Component;
  * {@code POST https://<тенант>.<dc>.myworkdayjobs.com/wday/cxs/<тенант>/<сайт>/jobs} страницами
  * {@code offset/limit}. Поля публикации — {@code title}, {@code externalPath} (внешний id и ссылка),
  * {@code locationsText}; {@code total} приходит только на первой странице. Текста в списке нет —
- * он читается отдельно ({@link #content}).
+ * он читается деталью ({@link #detail}). У публикации в нескольких местах {@code locationsText} —
+ * сводка «2 Locations»: место в списке считается не полученным, места берутся из детали.
  *
  * <p>Доска — {@code <тенант>.<dc>.myworkdayjobs.com/<сайт>}; другой хост не читается (отказ
  * {@code BLOCKED}). Отказ на первой странице — источник недоступен; на следующих, пустая страница
@@ -51,6 +52,9 @@ public class WorkdayAdapter implements SourceAdapter {
             "(([a-z0-9-]+)\\.wd\\d+\\.myworkdayjobs\\.com)/([A-Za-z0-9_-]+)");
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** Сводка списка вместо мест: «2 Locations». */
+    private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+ Locations");
 
     /** {@code appliedFacets} без фильтра. */
     private static final String NO_FACETS = "{}";
@@ -144,8 +148,12 @@ public class WorkdayAdapter implements SourceAdapter {
             JsonNode jobs = json.path("jobPostings");
             for (JsonNode job : jobs) {
                 String path = job.path("externalPath").asText();
+                String location = textOrNull(job.path("locationsText"));
+                if (location != null && LOCATIONS_SUMMARY.matcher(location).matches()) {
+                    location = null;
+                }
                 postings.add(new FetchedPosting(path, job.path("title").asText(), postingUrl(matcher, path),
-                        textOrNull(job.path("locationsText")), null));
+                        location, null));
             }
             if (offset + jobs.size() >= total) {
                 return SourceReadResult.Read.full(postings, responses);
@@ -172,16 +180,18 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
-     * Текст публикации: {@code GET <api>/<externalPath>}, поле {@code jobPostingInfo.jobDescription}.
+     * Деталь публикации: {@code GET <api>/<externalPath>}; места — {@code jobPostingInfo.location} и
+     * {@code additionalLocations}, текст — {@code jobDescription}.
      */
     @Override
-    public String content(String board, String externalId) {
-        JsonNode info = postingInfo(board, externalId);
+    public FetchedPosting detail(String board, String externalId) {
+        Matcher matcher = BOARD.matcher(board);
+        HttpResult result = requestDetail(matcher, externalId);
+        JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
         if (info == null || !info.path("jobDescription").isTextual()) {
             LOG.warn("Workday posting {} on {}: no jobDescription", externalId, board);
-            return null;
         }
-        return info.path("jobDescription").asText();
+        return info == null ? null : posting(matcher, externalId, info);
     }
 
     /**
@@ -191,7 +201,7 @@ public class WorkdayAdapter implements SourceAdapter {
     @Override
     public PostingCheck check(String board, String externalId) {
         Matcher matcher = BOARD.matcher(board);
-        HttpResult result = detail(matcher, externalId);
+        HttpResult result = requestDetail(matcher, externalId);
         if (result instanceof HttpResult.PermanentFailure failure && failure.kind() == HttpResult.Kind.NOT_FOUND) {
             return new PostingCheck.Absent();
         }
@@ -199,20 +209,34 @@ public class WorkdayAdapter implements SourceAdapter {
         if (info == null || !info.path("title").isTextual()) {
             return new PostingCheck.Unknown("Workday posting " + externalId + " not checked: " + result);
         }
-        return new PostingCheck.Present(new FetchedPosting(externalId, info.path("title").asText(),
-                postingUrl(matcher, externalId), textOrNull(info.path("location")),
-                textOrNull(info.path("jobDescription"))));
+        return new PostingCheck.Present(posting(matcher, externalId, info));
     }
 
-    private JsonNode postingInfo(String board, String externalId) {
-        HttpResult result = detail(BOARD.matcher(board), externalId);
-        return result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
+    private FetchedPosting posting(Matcher matcher, String externalId, JsonNode info) {
+        return new FetchedPosting(externalId, info.path("title").asText(), postingUrl(matcher, externalId),
+                locations(info), textOrNull(info.path("jobDescription")));
+    }
+
+    /**
+     * Основное и дополнительные места детали через «; »; ни одного — {@code null}.
+     */
+    private static String locations(JsonNode info) {
+        List<String> places = new ArrayList<>();
+        if (info.path("location").isTextual()) {
+            places.add(info.path("location").asText());
+        }
+        for (JsonNode place : info.path("additionalLocations")) {
+            if (place.isTextual()) {
+                places.add(place.asText());
+            }
+        }
+        return places.isEmpty() ? null : String.join("; ", places);
     }
 
     /**
      * {@code GET <api>/<externalPath>}; чужая доска или путь не {@code /job/…} — запрос не выполняется.
      */
-    private HttpResult detail(Matcher matcher, String externalId) {
+    private HttpResult requestDetail(Matcher matcher, String externalId) {
         if (!matcher.matches() || !externalId.startsWith("/job/")) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not a Workday posting: " + externalId);
         }

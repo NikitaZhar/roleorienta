@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * Запрос текста публикаций при чтении: только без сохранённого текста и в пределах потолка;
+ * Запрос детали публикаций (текст и места) при чтении: только без сохранённого текста и в пределах потолка;
  * проверка публикаций, пропавших из списка с фильтром по стране.
  */
 class ReadSourceHandlerTests {
@@ -38,22 +38,25 @@ class ReadSourceHandlerTests {
     private final SourceAdapter adapter = mock(SourceAdapter.class);
 
     /**
-     * {@code a} — текст уже сохранён, {@code b} — запрошен, {@code c} — за потолком (1 запрос).
+     * {@code a} — текст уже сохранён, {@code b} — деталь запрошена (её место заменяет место списка),
+     * {@code c} — за потолком (1 запрос).
      */
     @Test
-    void requestsContentOnlyForPostingsWithoutStoredTextWithinLimit() {
+    void requestsDetailOnlyForPostingsWithoutStoredTextWithinLimit() {
         Source source = new Source("workday", BOARD);
         when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(
                 List.of(posting("a", null), posting("b", null), posting("c", null)), List.of()));
         when(recorder.externalIdsWithContent(source)).thenReturn(Set.of("a"));
-        when(adapter.content(BOARD, "b")).thenReturn("text b");
+        when(adapter.detail(BOARD, "b")).thenReturn(new FetchedPosting("b", "Title", "https://example.com/b",
+                "IND.Pune", "text b"));
 
         handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
 
-        verify(adapter, never()).content(BOARD, "a");
-        verify(adapter, never()).content(BOARD, "c");
-        verify(recorder).record(any(CrawlRun.class),
-                eq(List.of(posting("a", null), posting("b", "text b"), posting("c", null))), eq(Set.of()));
+        verify(adapter, never()).detail(BOARD, "a");
+        verify(adapter, never()).detail(BOARD, "c");
+        verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", null),
+                new FetchedPosting("b", "Title", "https://example.com/b", "IND.Pune", "text b"),
+                posting("c", null))), eq(Set.of()));
     }
 
     /**

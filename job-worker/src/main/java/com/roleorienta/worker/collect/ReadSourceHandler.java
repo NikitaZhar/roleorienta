@@ -37,8 +37,9 @@ import org.springframework.stereotype.Component;
  * вакансии источника переходят в «нуждается в повторной проверке» и не закрываются
  * (бизнес-описание §4.3, §4.6).</p>
  *
- * <p>Если список не содержит текста публикации, текст запрашивается у адаптера отдельно — только
- * для публикаций без сохранённого текста и не больше
+ * <p>Если список не содержит текста публикации, у адаптера отдельно запрашивается деталь — текст и
+ * места (место детали заменяет место списка) — только для публикаций без сохранённого текста и не
+ * больше
  * {@link CollectProperties#maxContentRequestsPerRead()} за чтение, чтобы задание оставалось
  * ограниченным. Не полученный текст запрашивается при следующем чтении.</p>
  *
@@ -121,7 +122,7 @@ public class ReadSourceHandler implements TaskHandler {
                 if (read.complete() && source.getCountry() != null) {
                     checkMissing(adapter, source, postings, unverified);
                 }
-                postings = withContent(adapter, source, postings);
+                postings = withDetail(adapter, source, postings);
                 run.read(postings.size(), read.partialReason());
                 recorder.record(run, postings, unverified);
                 yield new TaskOutcome.Done();
@@ -170,7 +171,7 @@ public class ReadSourceHandler implements TaskHandler {
         }
     }
 
-    private List<FetchedPosting> withContent(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
+    private List<FetchedPosting> withDetail(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
         Set<String> haveContent = recorder.externalIdsWithContent(source);
         int budget = properties.maxContentRequestsPerRead();
         int received = 0;
@@ -181,12 +182,13 @@ public class ReadSourceHandler implements TaskHandler {
                 continue;
             }
             budget--;
-            String content = adapter.content(source.getBoard(), posting.externalId());
+            FetchedPosting detail = adapter.detail(source.getBoard(), posting.externalId());
+            String content = detail == null ? null : detail.content();
             if (content != null) {
                 received++;
             }
-            result.add(new FetchedPosting(posting.externalId(), posting.title(), posting.url(),
-                    posting.location(), content));
+            String location = detail != null && detail.location() != null ? detail.location() : posting.location();
+            result.add(new FetchedPosting(posting.externalId(), posting.title(), posting.url(), location, content));
         }
         int requested = properties.maxContentRequestsPerRead() - budget;
         if (requested > 0) {

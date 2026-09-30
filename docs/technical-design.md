@@ -288,7 +288,7 @@ erDiagram
 
 | Провайдер | Формат | Как читается |
 |---|---|---|
-| Workday | JSON | `https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (POST, `offset/limit`, фасеты стран); деталь — по `externalPath` |
+| Workday | JSON | `https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (POST, `offset/limit`, фасеты стран); деталь — по `externalPath`: текст и места (`location`, `additionalLocations`; в списке вместо них бывает сводка «2 Locations») |
 | Personio | XML | `https://<компания>.jobs.personio.de/xml` (или `.com`) |
 | Greenhouse | JSON | `https://boards-api.greenhouse.io/v1/boards/<доска>/jobs?content=true`; деталь с `pay_transparency` — не нужна на первом этапе |
 | schema.org `JobPosting` | JSON-LD на страницах сайта | Страницы вакансий на домене сайта, найденные по ссылкам с кадровой страницы; с самой кадровой страницы берутся только ссылки; потолок числа страниц — настройка |

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -16,15 +17,20 @@ import java.util.regex.Pattern;
  *   <li>Место делится на части по «;», «|», «/», « or »; часть — на сегменты по запятой. Сегмент —
  *       страна (название по-английски, по-словацки, по-немецки или известное сокращение), регион
  *       удалённой работы ({@link RemoteRegions}) или город (GeoNames: самый населённый с таким
- *       названием).</li>
+ *       названием). Место Workday вида {@code IND.Pune}, {@code USA.VA.Reston} — страна по коду
+ *       ISO 3166-1 alpha-3 до первой точки.</li>
  *   <li>Часть без распознанной страны («удалённо» без территории, «2 Locations», неизвестный город)
  *       — страна неясна.</li>
- *   <li>Формат — по названию, местам и тексту: гибрид важнее прочего («hybrid, 2 days remote»);
- *       удалённо и офис вместе — противоречие; ничего — не указан.</li>
+ *   <li>Формат: гибрид и удалённо — по названию, местам и тексту; офис — только по названию и местам
+ *       (в тексте шаблонные фразы вроде «in the office or in the field» офиса не означают), но офис в
+ *       тексте рядом с удалённой работой даёт противоречие («on-site role, work from home
+ *       occasionally»). Гибрид важнее прочего («hybrid, 2 days remote»); ничего — не указан.</li>
  * </ul>
  */
 final class LocationResolver {
 
+    /** Код страны ISO 3166-1 alpha-3 в начале места Workday: {@code IND.Pune}. */
+    private static final Pattern ISO3_PREFIX = Pattern.compile("^([A-Z]{3})\\.");
     private static final Pattern PLACES = Pattern.compile("[;|/]| or ");
     private static final Pattern REMOTE_WORDS = Pattern.compile(
             "\\b(fully remote|remote first|remote|work from home|home office|praca z domu|na dialku)\\b");
@@ -38,6 +44,7 @@ final class LocationResolver {
             "south korea", "KR", "uae", "AE");
 
     private final Map<String, String> countriesByName;
+    private final Map<String, String> countriesByIso3;
     private final Map<String, String> citiesByName;
     private final RemoteRegions regions;
 
@@ -49,13 +56,16 @@ final class LocationResolver {
         this.citiesByName = citiesByName;
         this.regions = regions;
         Map<String, String> names = new HashMap<>(ALIASES);
+        Map<String, String> iso3 = new HashMap<>();
         for (String code : Locale.getISOCountries()) {
             Locale country = Locale.of("", code);
+            iso3.put(country.getISO3Country(), code);
             for (Locale language : List.of(Locale.ENGLISH, Locale.GERMAN, Locale.of("sk"))) {
                 names.putIfAbsent(PositionDictionary.normalize(country.getDisplayCountry(language)).strip(), code);
             }
         }
         this.countriesByName = Map.copyOf(names);
+        this.countriesByIso3 = Map.copyOf(iso3);
     }
 
     /**
@@ -86,6 +96,11 @@ final class LocationResolver {
     private Set<String> place(String place) {
         Set<String> countries = new HashSet<>();
         for (String segment : place.split(",")) {
+            Matcher iso3 = ISO3_PREFIX.matcher(segment.strip());
+            if (iso3.find() && countriesByIso3.containsKey(iso3.group(1))) {
+                countries.add(countriesByIso3.get(iso3.group(1)));
+                continue;
+            }
             String name = REMOTE_WORDS.matcher(PositionDictionary.normalize(segment)).replaceAll(" ")
                     .replaceAll("\\s+", " ").strip();
             if (name.isEmpty()) {
@@ -109,8 +124,8 @@ final class LocationResolver {
             return WorkFormat.HYBRID;
         }
         boolean remote = REMOTE_WORDS.matcher(titleAndLocations).find() || REMOTE_TEXT.matcher(text).find();
-        boolean office = OFFICE.matcher(titleAndLocations).find() || OFFICE.matcher(text).find();
-        if (remote && office) {
+        boolean office = OFFICE.matcher(titleAndLocations).find();
+        if (remote && (office || OFFICE.matcher(text).find())) {
             return WorkFormat.CONFLICT;
         }
         return remote ? WorkFormat.REMOTE : office ? WorkFormat.OFFICE : null;

@@ -77,8 +77,10 @@ class WorkdayAdapterTests {
                 exchange.close();
                 return;
             }
+            String additional = exchange.getRequestURI().getPath().contains("/Multi")
+                    ? "\"additionalLocations\":[\"IND.Pune\",\"USA.VA.Reston\"]," : "";
             byte[] bytes = ("{\"jobPostingInfo\":{\"title\":\"Java Developer\",\"location\":\"Vienna\","
-                    + "\"jobDescription\":\"<p>Java</p>\"}}").getBytes(StandardCharsets.UTF_8);
+                    + additional + "\"jobDescription\":\"<p>Java</p>\"}}").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
@@ -146,11 +148,28 @@ class WorkdayAdapterTests {
     }
 
     /**
-     * Текст публикации — из {@code jobPostingInfo.jobDescription} по {@code externalPath}.
+     * Деталь по {@code externalPath}: текст — {@code jobDescription}, места — {@code location} и
+     * {@code additionalLocations} через «; ».
      */
     @Test
-    void readsContent() {
-        assertThat(adapter.content(BOARD, "/job/Bratislava/Java-Developer")).isEqualTo("<p>Java</p>");
+    void readsDetailWithAdditionalLocations() {
+        FetchedPosting detail = adapter.detail(BOARD, "/job/Multi/Java-Developer");
+
+        assertThat(detail.content()).isEqualTo("<p>Java</p>");
+        assertThat(detail.location()).isEqualTo("Vienna; IND.Pune; USA.VA.Reston");
+    }
+
+    /**
+     * Сводка «2 Locations» в списке — место не получено ({@code null}), места даст деталь.
+     */
+    @Test
+    void locationsSummaryInListIsNotALocation() {
+        pages.put(0, page(1, "Java Developer").replace("\"locationsText\":\"Bratislava\"",
+                "\"locationsText\":\"2 Locations\""));
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(BOARD);
+
+        assertThat(read.postings().get(0).location()).isNull();
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.roleorienta.worker.adapter;
 
+import com.roleorienta.worker.vacancy.FetchedPosting;
+
 /**
  * Адаптер формата кадровой страницы (технический документ §5, §16.6): один на провайдера,
  * обслуживает все доски этого провайдера. Реализации — бины Spring.
@@ -44,13 +46,15 @@ public interface SourceAdapter {
     }
 
     /**
-     * Текст публикации отдельным запросом — для провайдеров, у которых список его не содержит.
+     * Деталь публикации отдельным запросом — для провайдеров, у которых список не содержит текста
+     * (и может не содержать мест: Workday отдаёт в списке сводку «2 Locations»).
      *
      * @param board      идентификатор доски у провайдера
      * @param externalId id публикации у провайдера
-     * @return текст; {@code null} — провайдер отдаёт текст в списке или запрос не удался
+     * @return публикация из детали: место ({@code null} — не указано) и текст ({@code null} — не
+     *         получен); {@code null} — провайдер отдаёт всё в списке или запрос не удался
      */
-    default String content(String board, String externalId) {
+    default FetchedPosting detail(String board, String externalId) {
         return null;
     }
 }

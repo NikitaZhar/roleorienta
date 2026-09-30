@@ -93,7 +93,8 @@ public class JobPosting {
     /**
      * Полный обход показал публикацию: изменения позиции и места и повторное появление закрытой
      * публикации записываются в историю, затем сведения обновляются (см. {@link #apply}); изменились
-     * название или текст — соответствие вакансии позициям пересчитывается.
+     * название, место или текст — соответствие вакансии пересчитывается. Не полученные место и текст
+     * ({@code null}) изменением не считаются.
      *
      * @param fetched     данные публикации из источника
      * @param run         полный обход; уже сохранён
@@ -106,10 +107,11 @@ public class JobPosting {
         if (!Objects.equals(title, fetched.title())) {
             revisions.add(new VacancyRevision(this, run, RevisionField.TITLE, title, fetched.title()));
         }
-        if (!Objects.equals(location, fetched.location())) {
+        boolean locationChanged = fetched.location() != null && !Objects.equals(location, fetched.location());
+        if (locationChanged) {
             revisions.add(new VacancyRevision(this, run, RevisionField.LOCATION, location, fetched.location()));
         }
-        boolean textChanged = !Objects.equals(title, fetched.title()) || !Objects.equals(location, fetched.location())
+        boolean textChanged = !Objects.equals(title, fetched.title()) || locationChanged
                 || fetched.content() != null && !Objects.equals(content, fetched.content());
         apply(fetched, confirmedAt);
         if (textChanged) {
@@ -118,13 +120,15 @@ public class JobPosting {
     }
 
     /**
-     * Сведения обновлены (текст — если получен), наличие подтверждено, счётчик отсутствия сброшен;
-     * закрытая ранее публикация снова открыта (та же вакансия).
+     * Сведения обновлены (место и текст — если получены), наличие подтверждено, счётчик отсутствия
+     * сброшен; закрытая ранее публикация снова открыта (та же вакансия).
      */
     private void apply(FetchedPosting fetched, Instant confirmedAt) {
         this.title = fetched.title();
         this.url = fetched.url();
-        this.location = fetched.location();
+        if (fetched.location() != null) {
+            this.location = fetched.location();
+        }
         if (fetched.content() != null) {
             this.content = fetched.content();
         }

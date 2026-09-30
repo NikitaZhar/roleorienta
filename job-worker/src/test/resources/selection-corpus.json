@@ -20,6 +20,11 @@
     {"title": "Data Platform Engineer", "location": "Bratislava", "text": "", "search": {"position": "devops-engineer", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
     {"title": "Data Platform Engineer", "location": "Bratislava", "text": "", "search": {"position": "data-engineer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
     {"title": "Účtovníčka", "location": "Žilina", "text": "", "search": {"position": "accountant", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
-    {"title": "Senior Manager, Product Management | Customer Support", "location": "Bratislava", "text": "", "search": {"position": "customer-support", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}}
+    {"title": "Senior Manager, Product Management | Customer Support", "location": "Bratislava", "text": "", "search": {"position": "customer-support", "format": null}, "expect": {"position": false, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "SVK.Bratislava", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "IND.Pune", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MISMATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "USA.VA.Reston", "text": "", "search": {"position": "java-developer", "format": null}, "expect": {"position": true, "country": "MISMATCH", "format": "MATCH"}},
+    {"title": "Java Developer", "location": "Bratislava", "text": "Our people work in the office or in the field.", "search": {"position": "java-developer", "format": "REMOTE"}, "expect": {"position": true, "country": "MATCH", "format": "UNCERTAIN"}},
+    {"title": "Java Developer (On-site)", "location": "Bratislava", "text": "", "search": {"position": "java-developer", "format": "REMOTE"}, "expect": {"position": true, "country": "MATCH", "format": "MISMATCH"}}
   ]
 }
