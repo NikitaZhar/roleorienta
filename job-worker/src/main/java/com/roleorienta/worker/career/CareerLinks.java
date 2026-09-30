@@ -22,7 +22,9 @@ import org.jsoup.nodes.Element;
  *
  * <ul>
  *   <li>Workday — {@code <тенант>.wd<N>.myworkdayjobs.com/[<язык>/]<сайт>} → доска
- *       {@code <тенант>.wd<N>.myworkdayjobs.com/<сайт>}.</li>
+ *       {@code <тенант>.wd<N>.myworkdayjobs.com/<сайт>}. Язык — {@code es} или {@code en-US}; сайт —
+ *       целый сегмент пути, не файл ({@code robots.txt}), не код языка и не служебный путь
+ *       ({@code wday}).</li>
  *   <li>Greenhouse — {@code boards.greenhouse.io/<доска>}, {@code job-boards.greenhouse.io/<доска>},
  *       встраивание {@code …/embed/job_board?for=<доска>} → доска.</li>
  *   <li>Personio — {@code <компания>.jobs.personio.de|com} → хост витрины.</li>
@@ -33,7 +35,8 @@ import org.jsoup.nodes.Element;
 final class CareerLinks {
 
     private static final Pattern WORKDAY = Pattern.compile(
-            "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([A-Za-z0-9_-]+)");
+            "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([A-Za-z0-9_-]+)(?=$|[/?#])");
+    private static final Pattern NOT_WORKDAY_SITE = Pattern.compile("robots|wday|[a-z]{2}(?:-[A-Z]{2})?");
     private static final Pattern GREENHOUSE = Pattern.compile(
             "(?:job-)?boards\\.greenhouse\\.io/(?:embed/job_board(?:/js)?\\?for=)?([A-Za-z0-9_-]+)");
     private static final Pattern PERSONIO = Pattern.compile("([a-z0-9-]+\\.jobs\\.personio\\.(?:de|com))");
@@ -63,7 +66,8 @@ final class CareerLinks {
         String link = url.replaceFirst("^[a-z]+://", "");
         Matcher workday = WORKDAY.matcher(link);
         if (workday.lookingAt()) {
-            return Optional.of(new Board(WorkdayAdapter.PROVIDER, workday.group(1) + "/" + workday.group(2)));
+            return NOT_WORKDAY_SITE.matcher(workday.group(2)).matches() ? Optional.empty()
+                    : Optional.of(new Board(WorkdayAdapter.PROVIDER, workday.group(1) + "/" + workday.group(2)));
         }
         Matcher greenhouse = GREENHOUSE.matcher(link);
         if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(greenhouse.group(1))) {
@@ -72,6 +76,16 @@ final class CareerLinks {
         Matcher personio = PERSONIO.matcher(link);
         return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, personio.group(1)))
                 : Optional.empty();
+    }
+
+    /**
+     * @param board доска, записанная раньше
+     * @return доска по правилам {@link #board}; {@code false} — мусор прежних правил
+     *         ({@code …/robots}, {@code …/es}), проверять нечего
+     */
+    static boolean isBoard(Board board) {
+        return !WorkdayAdapter.PROVIDER.equals(board.provider())
+                || board("https://" + board.board()).filter(board::equals).isPresent();
     }
 
     /**

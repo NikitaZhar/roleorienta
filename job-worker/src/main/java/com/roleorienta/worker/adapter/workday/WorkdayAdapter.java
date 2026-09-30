@@ -15,6 +15,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -38,7 +40,9 @@ import org.springframework.stereotype.Component;
  * группы значений для отбора ({@code facets}: {@code facetParameter}, {@code values} с
  * {@code descriptor} и {@code id}; значение может нести вложенный фасет). Имя параметра страны у
  * тенантов разное, поэтому берётся фасет, в имени которого есть {@code country}, и значение с
- * английским названием страны; дальше список читается с {@code appliedFacets}. Фасета страны
+ * английским названием страны (или официальным: «Slovak Republic»); дальше список читается с
+ * {@code appliedFacets}. Тот же фасет отвечает, есть ли у доски публикации в стране
+ * ({@link #hasPostingsIn}) — одним запросом. Фасета страны
  * нет — список читается без фильтра; страны нет среди значений — у доски нет её публикаций.
  * Пропажа из отфильтрованного списка проверяется деталью публикации ({@link #check}).</p>
  */
@@ -55,6 +59,9 @@ public class WorkdayAdapter implements SourceAdapter {
 
     /** Сводка списка вместо мест: «2 Locations». */
     private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+ Locations");
+
+    /** Название страны в фасете, если тенант пишет не краткое английское: «Slovak Republic». */
+    private static final Map<String, String> OFFICIAL_NAMES = Map.of("SK", "Slovak Republic", "CZ", "Czech Republic");
 
     /** {@code appliedFacets} без фильтра. */
     private static final String NO_FACETS = "{}";
@@ -99,24 +106,67 @@ public class WorkdayAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result instanceof HttpResult.Success
                     ? new HttpResult.TemporaryFailure("Malformed Workday response", Duration.ZERO) : result);
         }
-        String countryName = Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
-        List<JsonNode> countryFacets = new ArrayList<>();
-        collectCountryFacets(json.path("facets"), countryFacets);
-        if (countryFacets.isEmpty()) {
+        CountryFilter filter = countryFilter(json, country);
+        if (!filter.facetFound()) {
             LOG.warn("Workday board {} has no country facet, read without filter", board);
             return readPages(matcher, NO_FACETS);
         }
+        if (filter.appliedFacets() != null) {
+            return readPages(matcher, filter.appliedFacets());
+        }
+        LOG.info("Workday board {} has no postings in {}", board, country);
+        return SourceReadResult.Read.full(List.of(), List.of(((HttpResult.Success) result).body()));
+    }
+
+    /**
+     * Первый ответ без фильтра: есть фасет страны — ответ по его значениям; нет фасета или ответа —
+     * пусто.
+     */
+    @Override
+    public Optional<Boolean> hasPostingsIn(String board, String country) {
+        Matcher matcher = BOARD.matcher(board);
+        if (!matcher.matches()) {
+            return Optional.of(false);
+        }
+        HttpResult result = httpClient.postJson(URI.create(apiBase(matcher) + "/jobs"), requestBody(NO_FACETS, 0));
+        JsonNode json = result instanceof HttpResult.Success success ? readJson(success.body()) : null;
+        if (json == null) {
+            return Optional.empty();
+        }
+        CountryFilter filter = countryFilter(json, country);
+        return filter.facetFound() ? Optional.of(filter.appliedFacets() != null) : Optional.empty();
+    }
+
+    /**
+     * Фильтр по стране из фасетов первого ответа.
+     */
+    private static CountryFilter countryFilter(JsonNode firstPage, String country) {
+        String countryName = Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
+        String officialName = OFFICIAL_NAMES.get(country);
+        List<JsonNode> countryFacets = new ArrayList<>();
+        collectCountryFacets(firstPage.path("facets"), countryFacets);
+        if (countryFacets.isEmpty()) {
+            return new CountryFilter(false, null);
+        }
         for (JsonNode facet : countryFacets) {
             for (JsonNode value : facet.path("values")) {
-                if (countryName.equalsIgnoreCase(value.path("descriptor").asText())) {
-                    return readPages(matcher, "{" + JSON.getNodeFactory().textNode(
+                String descriptor = value.path("descriptor").asText();
+                if (countryName.equalsIgnoreCase(descriptor) || descriptor.equalsIgnoreCase(officialName)) {
+                    return new CountryFilter(true, "{" + JSON.getNodeFactory().textNode(
                             facet.path("facetParameter").asText()) + ":[" + JSON.getNodeFactory().textNode(
                             value.path("id").asText()) + "]}");
                 }
             }
         }
-        LOG.info("Workday board {} has no postings in {}", board, countryName);
-        return SourceReadResult.Read.full(List.of(), List.of(((HttpResult.Success) result).body()));
+        return new CountryFilter(true, null);
+    }
+
+    /**
+     * @param facetFound    у доски есть фасет страны
+     * @param appliedFacets {@code appliedFacets} со значением страны; {@code null} — публикаций в
+     *                      стране нет (или нет фасета)
+     */
+    private record CountryFilter(boolean facetFound, String appliedFacets) {
     }
 
     /**

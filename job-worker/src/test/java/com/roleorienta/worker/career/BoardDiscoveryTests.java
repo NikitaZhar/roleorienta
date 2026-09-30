@@ -13,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,9 @@ class BoardDiscoveryTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private BoardDiscoveryRepository repository;
 
     /**
      * Common Crawl и Greenhouse — заглушка.
@@ -100,6 +104,22 @@ class BoardDiscoveryTests {
         FILES.put("/collinfo.json", ("[{\"id\":\"" + CRAWL + "\"}]").getBytes(StandardCharsets.UTF_8));
         FILES.put("/v1/boards/acme/jobs", jobs("Bratislava, Slovakia"));
         FILES.put("/v1/boards/beta/jobs", jobs("Berlin, Germany"));
+    }
+
+    /**
+     * Проверка очередью: провайдеры чередуются — Workday не ждёт, пока проверятся все доски
+     * Greenhouse.
+     */
+    @Test
+    void checksProvidersInTurn() {
+        jdbcTemplate.update("""
+                INSERT INTO discovered_board (provider, board, crawl) VALUES
+                ('greenhouse', 'a', 'c'), ('greenhouse', 'b', 'c'), ('greenhouse', 'c', 'c'),
+                ('workday', 'x.wd1.myworkdayjobs.com/External', 'c')
+                """);
+
+        assertThat(repository.boardsToCheck(2, Duration.ofDays(30))).containsExactly(
+                new Board("greenhouse", "a"), new Board("workday", "x.wd1.myworkdayjobs.com/External"));
     }
 
     /**

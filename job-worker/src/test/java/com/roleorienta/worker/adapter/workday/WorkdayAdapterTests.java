@@ -213,6 +213,23 @@ class WorkdayAdapterTests {
     }
 
     /**
+     * Публикации в стране — одним запросом по фасету страны: Словакия есть — да, Германии нет —
+     * нет; официальное название («Slovak Republic») — да; фасета страны нет — ответа нет.
+     */
+    @Test
+    void answersWhetherBoardHasPostingsInCountryByFacet() {
+        pages.put(0, withFacets(page(6, "Java Developer", "QA Engineer")));
+        assertThat(adapter.hasPostingsIn(BOARD, "SK")).contains(true);
+        assertThat(adapter.hasPostingsIn(BOARD, "DE")).contains(false);
+
+        pages.put(0, withFacets(page(6, "Java Developer")).replace("\"Slovakia\"", "\"Slovak Republic\""));
+        assertThat(adapter.hasPostingsIn(BOARD, "SK")).contains(true);
+
+        pages.put(0, page(6, "Java Developer"));
+        assertThat(adapter.hasPostingsIn(BOARD, "SK")).isEmpty();
+    }
+
+    /**
      * Хост не Workday — запрос не выполняется.
      */
     @Test

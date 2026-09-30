@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -33,14 +34,19 @@ import org.springframework.stereotype.Component;
  *       {@code job-boards.greenhouse.io}) и Personio ({@code *.jobs.personio.de|com}) — по префиксам
  *       SURT; доски из адресов ({@link CareerLinks#board}) записываются. Блок индекса и его доски —
  *       одна транзакция.</li>
- *   <li>Каждая новая доска читается адаптером провайдера (Workday — с фильтром Словакии); есть
- *       публикация с местом в Словакии ({@link SlovakLocations}) — доска подключается как источник.
+ *   <li>Каждая новая доска проверяется на публикации в Словакии: провайдер отвечает одним запросом,
+ *       если умеет ({@link SourceAdapter#hasPostingsIn}: Workday — фасет страны); иначе доска
+ *       читается и нужна публикация с местом в Словакии ({@link SlovakLocations}). Есть — доска
+ *       подключается как источник. Мусор прежних правил разбора адресов ({@code …/robots},
+ *       {@code …/es}) отмечается проверенным без запроса. Доски проверяются по очереди провайдеров —
+ *       медленная проверка одного не задерживает другие.
  *       Связи с компанией нет: принадлежность юрлицу не подтверждена, вакансии нужнее (решение
  *       владельца). Перепроверка — через {@link CareerProperties#recheckAfter()}.</li>
  * </ol>
  *
  * <p>За задание — {@link CareerProperties#boardsPerTask()} блоков или досок, дальше — следующее
- * задание. Common Crawl временно не отвечает — повтор.</p>
+ * задание. Common Crawl временно не отвечает — проверка найденных досок продолжается по последнему
+ * записанному обходу; чтение блоков индекса — повтор задания.</p>
  */
 @Component
 public class BoardDiscoveryHandler implements TaskHandler {
@@ -102,7 +108,11 @@ public class BoardDiscoveryHandler implements TaskHandler {
     @Override
     public TaskOutcome handle(TaskRecord task) {
         try {
-            String crawl = client.latestCrawl();
+            Optional<String> latest = latestCrawl();
+            if (latest.isEmpty()) {
+                return new TaskOutcome.Retry("Common Crawl index is not available", Duration.ZERO);
+            }
+            String crawl = latest.get();
             if (!repository.hasBlocks(crawl)) {
                 List<IndexBlock> blocks = client.blocks(crawl, PREFIXES);
                 repository.insertBlocks(crawl, blocks);
@@ -133,6 +143,19 @@ public class BoardDiscoveryHandler implements TaskHandler {
         }
     }
 
+    /**
+     * Последний обход Common Crawl; индекс не отвечает — последний обход, чьи блоки уже записаны:
+     * проверка найденных досок от Common Crawl не зависит и не должна вставать вместе с ним.
+     */
+    private Optional<String> latestCrawl() {
+        try {
+            return Optional.of(client.latestCrawl());
+        } catch (IOException unavailable) {
+            LOG.warn("Common Crawl index not read, continue with the known crawl: {}", unavailable.getMessage());
+            return repository.lastCrawl();
+        }
+    }
+
     private void enqueue(String suffix) {
         taskService.enqueue(TYPE, taskKey(suffix), PAYLOAD);
     }
@@ -158,10 +181,11 @@ public class BoardDiscoveryHandler implements TaskHandler {
 
     private boolean hasSlovakPostings(Board board) {
         SourceAdapter adapter = adaptersByProvider.get(board.provider());
-        if (adapter == null) {
+        if (adapter == null || !CareerLinks.isBoard(board)) {
             return false;
         }
-        return adapter.read(board.board(), COUNTRY) instanceof SourceReadResult.Read read
-                && read.postings().stream().anyMatch(posting -> SlovakLocations.matches(posting.location()));
+        return adapter.hasPostingsIn(board.board(), COUNTRY).orElseGet(() ->
+                adapter.read(board.board(), COUNTRY) instanceof SourceReadResult.Read read
+                        && read.postings().stream().anyMatch(posting -> SlovakLocations.matches(posting.location())));
     }
 }

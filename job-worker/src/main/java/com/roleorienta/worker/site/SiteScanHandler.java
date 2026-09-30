@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import org.jsoup.Jsoup;
@@ -44,7 +45,8 @@ import org.springframework.stereotype.Component;
  *       {@link CommonCrawlProperties#blocksPerTask()} блоков, дальше — следующее задание.</li>
  * </ol>
  *
- * <p>Common Crawl временно не отвечает — повтор задания с того же блока. Одна страница не читается
+ * <p>Список обходов не получен — скан продолжается по последнему записанному обходу. Common Crawl
+ * временно не отвечает на чтение блока или страницы — повтор задания с того же блока. Одна страница не читается
  * (нет в архиве, испорчена) — пропускается.</p>
  */
 @Component
@@ -106,7 +108,11 @@ public class SiteScanHandler implements TaskHandler {
     @Override
     public TaskOutcome handle(TaskRecord task) {
         try {
-            String crawl = client.latestCrawl();
+            Optional<String> latest = latestCrawl();
+            if (latest.isEmpty()) {
+                return new TaskOutcome.Retry("Common Crawl index is not available", Duration.ZERO);
+            }
+            String crawl = latest.get();
             if (!repository.hasBlocks(crawl)) {
                 List<IndexBlock> blocks = client.blocks(crawl, List.of(ZONE));
                 repository.insertBlocks(crawl, blocks);
@@ -122,6 +128,19 @@ public class SiteScanHandler implements TaskHandler {
             return new TaskOutcome.Done();
         } catch (IOException exception) {
             return new TaskOutcome.Retry("Common Crawl not read: " + exception.getMessage(), Duration.ZERO);
+        }
+    }
+
+    /**
+     * Последний обход Common Crawl; список обходов не получен ({@code index.commoncrawl.org}) —
+     * последний обход, чьи блоки уже записаны: блоки и страницы читаются с {@code data.commoncrawl.org}.
+     */
+    private Optional<String> latestCrawl() {
+        try {
+            return Optional.of(client.latestCrawl());
+        } catch (IOException unavailable) {
+            LOG.warn("Common Crawl index not read, continue with the known crawl: {}", unavailable.getMessage());
+            return repository.lastCrawl();
         }
     }
 

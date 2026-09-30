@@ -64,4 +64,22 @@ class CareerLinksTests {
                 "<script type=\"application/ld+json\">{\"@type\": \"JobPosting\"}</script>"))).isTrue();
         assertThat(CareerLinks.hasJobPosting(career)).isFalse();
     }
+
+    /**
+     * Адреса Workday, которые не доски: {@code robots.txt}, код языка без сайта, служебный путь;
+     * язык перед сайтом пропускается. Записанный раньше мусор распознаётся.
+     */
+    @Test
+    void skipsWorkdayAddressesThatAreNotBoards() {
+        assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/robots.txt")).isEmpty();
+        assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/es")).isEmpty();
+        assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/wday/cxs/acme/External/jobs")).isEmpty();
+        assertThat(CareerLinks.board("https://acme.wd103.myworkdayjobs.com/es/AccentureCareers/job/1"))
+                .contains(new Board("workday", "acme.wd103.myworkdayjobs.com/AccentureCareers"));
+
+        assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/robots"))).isFalse();
+        assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/es"))).isFalse();
+        assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/External"))).isTrue();
+        assertThat(CareerLinks.isBoard(new Board("greenhouse", "beta"))).isTrue();
+    }
 }

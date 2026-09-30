@@ -1,6 +1,7 @@
 package com.roleorienta.worker.adapter;
 
 import com.roleorienta.worker.vacancy.FetchedPosting;
+import java.util.Optional;
 
 /**
  * Адаптер формата кадровой страницы (технический документ §5, §16.6): один на провайдера,
@@ -31,6 +32,18 @@ public interface SourceAdapter {
      */
     default SourceReadResult read(String board, String country) {
         return read(board);
+    }
+
+    /**
+     * Есть ли у доски публикации в стране — одним дешёвым запросом, если провайдер это умеет
+     * (Workday — фасет страны). По умолчанию провайдер не умеет: доску читают и смотрят места.
+     *
+     * @param board   идентификатор доски у провайдера
+     * @param country страна (ISO 3166-1 alpha-2)
+     * @return есть или нет; пусто — ответить так нельзя (нет фасета страны, запрос не удался)
+     */
+    default Optional<Boolean> hasPostingsIn(String board, String country) {
+        return Optional.empty();
     }
 
     /**

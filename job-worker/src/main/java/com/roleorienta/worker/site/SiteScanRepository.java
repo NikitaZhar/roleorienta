@@ -4,6 +4,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -27,6 +29,14 @@ public class SiteScanRepository {
      */
     public SiteScanRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * @return последний обход, чьи блоки индекса записаны; пусто — ни одного
+     */
+    public Optional<String> lastCrawl() {
+        return jdbcTemplate.queryForList("SELECT max(crawl) FROM cc_index_block WHERE purpose = ?", String.class,
+                PURPOSE).stream().filter(Objects::nonNull).findFirst();
     }
 
     /**

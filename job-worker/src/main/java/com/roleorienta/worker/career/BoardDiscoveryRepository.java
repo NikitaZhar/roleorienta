@@ -3,6 +3,8 @@ package com.roleorienta.worker.career;
 import com.roleorienta.worker.site.IndexBlock;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -34,6 +36,14 @@ public class BoardDiscoveryRepository {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM cc_index_block WHERE crawl = ? AND purpose = ?)", Boolean.class,
                 crawl, PURPOSE));
+    }
+
+    /**
+     * @return последний обход, чьи блоки индекса записаны; пусто — ни одного
+     */
+    public Optional<String> lastCrawl() {
+        return jdbcTemplate.queryForList("SELECT max(crawl) FROM cc_index_block WHERE purpose = ?", String.class,
+                PURPOSE).stream().filter(Objects::nonNull).findFirst();
     }
 
     /**
@@ -91,14 +101,18 @@ public class BoardDiscoveryRepository {
     /**
      * @param limit        сколько досок
      * @param recheckAfter срок до перепроверки
-     * @return доски, ещё не подключённые как источник, не проверенные или проверенные давнее срока
+     * @return доски, ещё не подключённые как источник, не проверенные или проверенные давнее срока;
+     *         провайдеры чередуются (первая доска каждого, вторая каждого…) — проверка одного
+     *         провайдера не задерживает другие
      */
     public List<Board> boardsToCheck(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT d.provider, d.board FROM discovered_board d
                 WHERE (d.checked_at IS NULL OR d.checked_at < now() - make_interval(secs => ?))
                   AND NOT EXISTS (SELECT 1 FROM source s WHERE s.provider = d.provider AND s.board = d.board)
-                ORDER BY d.checked_at NULLS FIRST, d.provider, d.board LIMIT ?
+                ORDER BY d.checked_at NULLS FIRST,
+                         row_number() OVER (PARTITION BY d.provider ORDER BY d.checked_at NULLS FIRST, d.board),
+                         d.provider LIMIT ?
                 """, (row, number) -> new Board(row.getString("provider"), row.getString("board")),
                 (double) recheckAfter.toSeconds(), limit);
     }
