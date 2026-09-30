@@ -21,7 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code RegistryIntakeTick}); 1004 — постановка скана сайтов ({@code SiteScanTick}); 1005 — постановка проверки
  * сайтов на кадровые страницы ({@code CareerScanTick}); 1006 — постановка обратного пути
  * ({@code BoardDiscoveryTick}); 1007 — постановка предрасчёта соответствий ({@code MatchVacanciesTick});
- * 1008 — постановка загрузки справочника GeoNames ({@code GeoImportTick}).</p>
+ * 1008 — постановка загрузки справочника GeoNames ({@code GeoImportTick}); 1009 — планирование
+ * прохода выдачи ({@code PassTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {
