@@ -18,7 +18,8 @@
 > Подэтап 1.4 (отбор): соответствие позициям по словарю, страна работы (GeoNames, территории
 > удалённой работы) и формат — предрасчитаны; приёмочный сценарий 10 на размеченном корпусе.
 > Подэтап 1.5 начат: проходы раз в час выдают порции подходящих вакансий в накопленный список
-> (сценарии 1, 2, 8); вход, API и SPA — следующие срезы. План — технический документ §15.
+> (сценарии 1, 2, 8); API: регистрация и вход (сессии в PostgreSQL, CSRF), условия поиска с
+> версиями (сценарий 3); список, отметки и SPA — следующие срезы. План — технический документ §15.
 
 ## Архитектура
 
@@ -46,6 +47,7 @@ mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/heal
 ```
 
 Настройки подключения — переменные окружения (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-`RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `SERVER_PORT`; снимки в MinIO — `S3_ENDPOINT`,
+`RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `SERVER_PORT`; cookie сессии только по HTTPS —
+`SESSION_COOKIE_SECURE=true` (при развёртывании); снимки в MinIO — `S3_ENDPOINT`,
 `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); значения по умолчанию
 совпадают с `docker-compose.yml`.

@@ -1,9 +1,9 @@
 ---
 Документ: Стенограмма проекта roleorienta
 Дата: 2026-09-30
-Статус: выдача — проходы раз в час, порции в накопленный список, сценарии 1, 2, 8 (§31).
-Прежний статус: места Workday — коды стран alpha-3, места из детали, офис не по тексту (§30); отбор — страна и формат работы, GeoNames, сценарий 10 (§29); отбор по позиции — словарь и предрасчитанное соответствие (§28); обратный путь — доски систем найма из индекса Common Crawl (§27); от сайта компании к источнику вакансий (§26); сайты компаний по IČO из Common Crawl (§25); приём юрлиц Словакии из выгрузок RPO (§24); подэтап 1.3 закрыт — сценарий 9 (сбор); порядок: 1.6 → 1.7 → 1.4 → 1.5 (§23); аудит §12–§21: N+1 в записи чтения, ArchUnit (§22); доступность источника — «временные отказы» и «недоступен» (§21); приёмочные сценарии 6 и 7; неполное чтение снимает подтверждение (§20); Workday — фильтр по стране и проверка пропажи (§19); образ MinIO — архивный Bitnami, замена в долге (§18); снимки ответов SourceSnapshot в MinIO (§17); история вакансий VacancyRevision (§16); обходы CrawlRun (§15); адаптер schema.org JobPosting (§14); robots.txt (§13); бюджет на хост (§12); аудит (§11); текст вакансий Workday (§10); Workday, список страницами (§9); Personio и безопасный XML (§8); закрытие вакансий (§7); чтение Greenhouse (§6); HTTP-клиент (§5); outbox только для заданий (§4); задания с повтором (§3); outbox → RabbitMQ (§2); каркас (§1).
-Срезов с последнего аудита: 9
+Статус: учётные записи, вход, условия поиска с версиями — API, сценарии 3 и 14 (§32).
+Прежний статус: выдача — проходы раз в час, порции в накопленный список, сценарии 1, 2, 8 (§31); места Workday — коды стран alpha-3, места из детали, офис не по тексту (§30); отбор — страна и формат работы, GeoNames, сценарий 10 (§29); отбор по позиции — словарь и предрасчитанное соответствие (§28); обратный путь — доски систем найма из индекса Common Crawl (§27); от сайта компании к источнику вакансий (§26); сайты компаний по IČO из Common Crawl (§25); приём юрлиц Словакии из выгрузок RPO (§24); подэтап 1.3 закрыт — сценарий 9 (сбор); порядок: 1.6 → 1.7 → 1.4 → 1.5 (§23); аудит §12–§21: N+1 в записи чтения, ArchUnit (§22); доступность источника — «временные отказы» и «недоступен» (§21); приёмочные сценарии 6 и 7; неполное чтение снимает подтверждение (§20); Workday — фильтр по стране и проверка пропажи (§19); образ MinIO — архивный Bitnami, замена в долге (§18); снимки ответов SourceSnapshot в MinIO (§17); история вакансий VacancyRevision (§16); обходы CrawlRun (§15); адаптер schema.org JobPosting (§14); robots.txt (§13); бюджет на хост (§12); аудит (§11); текст вакансий Workday (§10); Workday, список страницами (§9); Personio и безопасный XML (§8); закрытие вакансий (§7); чтение Greenhouse (§6); HTTP-клиент (§5); outbox только для заданий (§4); задания с повтором (§3); outbox → RabbitMQ (§2); каркас (§1).
+Срезов с последнего аудита: 10
 Следующий шаг: docs/next-step.md
 ---
 
@@ -1087,3 +1087,79 @@ sequenceDiagram
 (1.10), ручное добавление (1.9), причина пустоты «обработано X из Y» (1.6), `ETag`/`If-None-Match`
 и OpenAPI. Срок без подтверждения понадобится и job-api для видимости списка (§34) — та же
 настройка в обоих приложениях.
+
+## §32 — Учётные записи, вход и условия поиска (подэтап 1.5, срез 2 из 4)
+
+**Зачем.** Бизнес-описание §3, §6, §7.2; технический документ §8, §10, §16.17: пользователь
+работает под своей учётной записью и задаёт условия поиска; выдача §31 идёт по активной версии
+условий.
+
+**Что сделано (job-api).**
+- Зависимости: `spring-boot-starter-security` (цепочка фильтров, пароли, CSRF),
+  `spring-boot-starter-session-jdbc` (HTTP-сессии в PostgreSQL), `spring-boot-starter-validation`
+  (проверка полей аннотациями Jakarta Validation).
+- `V19__spring_session.sql` — таблицы `spring_session`, `spring_session_attributes`: официальная
+  схема Spring Session для PostgreSQL; `spring.session.jdbc.initialize-schema: never` — схему
+  создаёт Flyway. Сессия — 30 минут без запросов. https://docs.spring.io/spring-boot/reference/web/spring-session.html
+- `SecurityConfig` — один бин `SecurityFilterChain` (правила для каждого запроса,
+  https://docs.spring.io/spring-security/reference/servlet/architecture.html):
+  - без входа — регистрация, вход, страны, позиции, health; остальное — `401` problem+json;
+  - `csrf.spa()` — токен в cookie `XSRF-TOKEN`, SPA возвращает его заголовком `X-XSRF-TOKEN` в
+    изменяющих запросах, иначе `403`. Spring Security создаёт токен лениво, поэтому
+    `CsrfCookieFilter` запрашивает его на каждом запросе — cookie есть у SPA до первого `POST`
+    (https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html);
+  - пароли — `DelegatingPasswordEncoder`, BCrypt с префиксом `{bcrypt}`
+    (https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html);
+  - вход проверяет `AuthenticationManager` (`DaoAuthenticationProvider` + пользователь по email);
+    выход — `POST /api/v1/auth/logout`, `204`.
+- Cookie сессии (`server.servlet.session.cookie.*`): `HttpOnly`, `SameSite=Lax`, `Secure` —
+  `SESSION_COOKIE_SECURE` (при развёртывании за HTTPS — `true`).
+- `account`: `UserAccount` (JPA; email в нижнем регистре), `AccountService` (регистрация, `409` при
+  занятом email, в том числе при одновременной), `AccountController`:
+  `POST /api/v1/auth/register` (`201`), `POST /api/v1/auth/login` (вход в HTTP-сессию, id сессии
+  меняется — защита от подмены сессии), `GET /api/v1/me`.
+- `condition`: `SearchCondition` (JPA; `countries TEXT[]` ↔ `List<String>` через
+  `@JdbcTypeCode(SqlTypes.ARRAY)`,
+  https://docs.jboss.org/hibernate/orm/7.0/userguide/html_single/Hibernate_User_Guide.html#basic-mapping-array),
+  `ConditionService`, `ConditionController`: `GET/PUT /api/v1/me/search-condition`,
+  `GET /api/v1/countries` (`app.countries`: SK), `GET /api/v1/positions?query=`.
+  - `PUT` — одной транзакцией под блокировкой активной версии (`@Lock(PESSIMISTIC_WRITE)` — на
+    PostgreSQL `FOR NO KEY UPDATE`, несовместима с `FOR UPDATE` прохода §31): условий нет — первая
+    версия без `If-Match`; есть — `If-Match` обязателен (`428` без него, `412` — версия не та);
+    страны, позиция или формат изменились — прежняя версия гасится (сброс в БД до вставки: частичный
+    уникальный индекс «одна активная»), новая — с пустым списком; только лимит — та же версия.
+  - `ETag` версии — `"id.лимит"`: меняется при любом изменении условий.
+  - Проверка: страны — из поддерживаемых, позиция — из словаря, формат `OFFICE`/`HYBRID`/`REMOTE`
+    или пусто, лимит 1–100 (по умолчанию 20, `app.default-portion-limit`); email и пароль от 8
+    символов (значения предложены ассистентом, владелец согласился).
+- `web.ApiExceptionHandler` — ошибки problem+json (RFC 9457); ошибки полей — расширение `errors`:
+  `{"pointer": "/поле", "detail": …}` (JSON Pointer).
+- Технический документ §8: `If-Match` не указан → `428`.
+
+```mermaid
+sequenceDiagram
+    participant SPA
+    participant API as job-api
+    participant DB as PostgreSQL
+    SPA->>API: GET /api/v1/countries
+    API-->>SPA: Set-Cookie XSRF-TOKEN
+    SPA->>API: POST /auth/login + X-XSRF-TOKEN
+    API->>DB: сессия (spring_session)
+    API-->>SPA: Set-Cookie SESSION (HttpOnly)
+    SPA->>API: PUT /me/search-condition + If-Match
+    API->>DB: FOR NO KEY UPDATE активной версии; новая версия или лимит
+    API-->>SPA: ETag новой версии
+```
+
+**Тесты.** `AccountConditionAcceptanceTests` — настоящий HTTP на случайном порту, cookie и CSRF как
+у SPA: регистрация, повтор email `409`, неверный пароль `401`, вход, `me`, сессия в
+`spring_session`, выход; без CSRF-токена `403`; ошибки полей с указателями; сценарий 3 (смена
+позиции — новая версия с пустым списком, отметка сохранена; только лимит — та же версия и список;
+`428`, `412`; неподдерживаемая страна и неизвестная позиция — `400`); сценарий 14 для условий (без
+входа `401`, условия другого пользователя не видны и не меняются).
+
+**README** — статус; переменная `SESSION_COOKIE_SECURE`.
+
+**Не вошло.** Список, сведения, отметки (§34); SPA (§35); роль `ADMIN` — с административными
+экранами; страны сбора из условий пользователей (`CollectionCountry`, 1.6); долг §31 п. 3.
+Счётчик срезов — 10: следующий срез — аудит (§33).
