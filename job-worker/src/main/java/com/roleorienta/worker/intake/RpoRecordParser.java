@@ -11,7 +11,9 @@ import java.util.Set;
 /**
  * Запись выгрузки RPO → юрлицо. Структура записи — как ответ {@code /entity/{id}} API RPO: списки
  * значений с периодами действия ({@code identifiers}, {@code fullNames}, {@code legalForms},
- * {@code addresses}: {@code value}, {@code validFrom}, {@code validTo}), {@code termination}.
+ * {@code addresses}: {@code value}, {@code validFrom}, {@code validTo}), {@code termination};
+ * основной вид деятельности — {@code statisticalCodes.mainActivity.code} (SK NACE, 4 цифры): код 78xx —
+ * кадровое агентство (образец — {@code docs/samples/rpo-daily.json}).
  * Текущее значение — без {@code validTo}; если такого нет — последнее. https://rpo.minv.sk/rpo-api-doc.html
  *
  * <p>Не берутся: запись без IČO или названия; предприниматель-физлицо (правовая форма 101–110
@@ -23,6 +25,8 @@ final class RpoRecordParser {
     private static final Set<String> NATURAL_PERSON_FORM_CODES = Set.of(
             "101", "102", "103", "104", "105", "106", "107", "108", "109", "110");
     private static final List<String> NATURAL_PERSON_FORM_MARKERS = List.of("fyzická osoba", "roľník");
+    /** SK NACE 78 — агентства занятости: подбор, временное трудоустройство, передача персонала. */
+    private static final String AGENCY_ACTIVITY = "78";
     private static final int MAX_NAME = 500;
     private static final int MAX_SHORT_TEXT = 200;
 
@@ -44,9 +48,12 @@ final class RpoRecordParser {
         if (NATURAL_PERSON_FORM_CODES.contains(text(form.path("code"))) || isNaturalPersonForm(formName)) {
             return Optional.empty();
         }
-        return Optional.of(new RegistryCompany(number, limit(name, MAX_NAME), limit(formName, MAX_SHORT_TEXT),
+        boolean agency = record.path("statisticalCodes").path("mainActivity").path("code").asText()
+                .startsWith(AGENCY_ACTIVITY);
+        return Optional.of(new RegistryCompany(number, limit(name, MAX_NAME), new RegistryCompany.Details(
+                limit(formName, MAX_SHORT_TEXT),
                 limit(text(current(record.path("addresses")).path("municipality").path("value")), MAX_SHORT_TEXT),
-                date(record.path("termination"))));
+                agency), date(record.path("termination"))));
     }
 
     private static boolean isNaturalPersonForm(String formName) {

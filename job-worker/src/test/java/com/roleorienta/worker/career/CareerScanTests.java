@@ -61,6 +61,7 @@ class CareerScanTests {
      */
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM source_permission WHERE scope = 'AGENCY'");
         for (String table : new String[] {"company_check", "company_source", "company_site", "source", "company", "outbox_event",
                 "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
@@ -123,6 +124,35 @@ class CareerScanTests {
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check", Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
                 .isEqualTo("http://" + HOST + "/kariera");
+    }
+
+    /**
+     * Сценарий 11 (бизнес-описание §7.4): доска кадрового агентства без разрешения на использование
+     * не подключается — итог «использование запрещено»; с разрешением на это агентство подключается с
+     * ролью «размещающее агентство». (Сайт без IČO не подтверждается — {@code SiteScanTests}; страница,
+     * на которую ссылается подтверждённый сайт, подключается — {@link #connectsWorkdayBoardLinkedFromHomePage}.)
+     */
+    @Test
+    void agencyBoardIsConnectedOnlyWithPermission() {
+        jdbcTemplate.update("UPDATE company SET agency = TRUE");
+        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/Careers\">Kariéra</a>");
+
+        runScan();
+
+        assertThat(connectedSources()).isEmpty();
+        assertThat(checkResult()).isEqualTo("USE_FORBIDDEN");
+        assertThat(companyResult()).isEqualTo("USE_FORBIDDEN");
+
+        jdbcTemplate.update("""
+                INSERT INTO source_permission (scope, company_id, decision, basis, checked_on)
+                SELECT 'AGENCY', id, 'ALLOW', 'test', current_date FROM company
+                """);
+        jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
+        runScan();
+
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+        assertThat(jdbcTemplate.queryForObject("SELECT role FROM company_source", String.class)).isEqualTo("AGENCY");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
     }
 
     private void runScan() {

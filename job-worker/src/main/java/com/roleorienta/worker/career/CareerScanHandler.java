@@ -2,6 +2,7 @@ package com.roleorienta.worker.career;
 
 import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.career.CareerScanRepository.CheckResult;
+import com.roleorienta.worker.career.CareerScanRepository.Role;
 import com.roleorienta.worker.career.CareerScanRepository.Site;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
@@ -13,6 +14,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
@@ -32,6 +34,10 @@ import org.springframework.stereotype.Component;
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>
+ *   <li>Основание использования (бизнес-описание §10, {@code source_permission}): подключается только
+ *       источник провайдера с разрешением; у кадрового агентства — ещё и с разрешением на это агентство,
+ *       связь — с ролью «размещающее агентство». Нет разрешения или главная запрещена robots.txt —
+ *       итог «использование запрещено».</li>
  * </ol>
  *
  * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, дальше — следующее задание.
@@ -102,19 +108,33 @@ public class CareerScanHandler implements TaskHandler {
 
     private void check(Site site) {
         URI home = URI.create(properties.scheme() + "://" + site.host() + "/");
-        Optional<Document> homePage = page(home);
-        if (homePage.isEmpty()) {
-            repository.record(site, Set.of(), CheckResult.UNREACHABLE, null);
+        HttpResult homeResult = http.get(home);
+        if (!(homeResult instanceof HttpResult.Success success)) {
+            boolean forbidden = homeResult instanceof HttpResult.PermanentFailure failure
+                    && failure.kind() == HttpResult.Kind.USE_FORBIDDEN;
+            repository.record(site, Set.of(), forbidden ? CheckResult.USE_FORBIDDEN : CheckResult.UNREACHABLE,
+                    null, Role.EMPLOYER);
             return;
         }
-        Set<Board> boards = CareerLinks.boards(homePage.get());
-        Optional<String> careerUrl = CareerLinks.careerPage(homePage.get(), site.host());
+        Document homePage = Jsoup.parse(success.body(), home.toString());
+        Set<Board> boards = CareerLinks.boards(homePage);
+        Optional<String> careerUrl = CareerLinks.careerPage(homePage, site.host());
         if (boards.isEmpty() && careerUrl.isPresent()) {
             boards = careerBoards(URI.create(careerUrl.get()));
         }
-        CheckResult result = !boards.isEmpty() ? CheckResult.SOURCE_FOUND
-                : careerUrl.isPresent() ? CheckResult.FORMAT_UNSUPPORTED : CheckResult.NO_CAREER_PAGE;
-        repository.record(site, boards, result, careerUrl.orElse(null));
+        Set<String> providers = repository.permittedProviders();
+        Set<Board> permitted = boards.stream().filter(board -> providers.contains(board.provider()))
+                .collect(Collectors.toSet());
+        Optional<Role> role = repository.permittedRole(site.companyId());
+        CheckResult result;
+        if (!boards.isEmpty() && (permitted.isEmpty() || role.isEmpty())) {
+            result = CheckResult.USE_FORBIDDEN;
+            permitted = Set.of();
+        } else {
+            result = !boards.isEmpty() ? CheckResult.SOURCE_FOUND
+                    : careerUrl.isPresent() ? CheckResult.FORMAT_UNSUPPORTED : CheckResult.NO_CAREER_PAGE;
+        }
+        repository.record(site, permitted, result, careerUrl.orElse(null), role.orElse(Role.EMPLOYER));
         LOG.info("Site {} of company {}: {} {}", site.host(), site.companyId(), result, boards);
     }
 

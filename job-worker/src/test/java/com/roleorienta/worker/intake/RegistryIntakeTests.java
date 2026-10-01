@@ -57,7 +57,8 @@ class RegistryIntakeTests {
 
     /** Ежедневная выгрузка за дату полной (формат живой): переименование и прекращение. */
     private static final String DAILY_JSON = "{\"exportDate\":\"2026-01-03\",\"results\":["
-            + entity("11111111", "Alfa Group s.r.o.", "112", "Spoločnosť s ručením obmedzeným", null) + ","
+            + entity("11111111", "Alfa Group s.r.o.", "112", "Spoločnosť s ručením obmedzeným", null)
+                    .replaceFirst("}$", ",\"statisticalCodes\":{\"mainActivity\":{\"code\":\"7820\"}}}") + ","
             + entity("55555555", "Beta a.s.", "121", "Akciová spoločnosť", "2026-01-03") + "]}";
 
     @MockitoBean
@@ -92,7 +93,8 @@ class RegistryIntakeTests {
 
     /**
      * Полная выгрузка: берутся действующие юрлица, включая город; физлицо, запись без IČO и
-     * неизвестное прекращённое — нет. Затем ежедневная: переименование и прекращение. Следующей
+     * неизвестное прекращённое — нет. Затем ежедневная: переименование, основной вид деятельности
+     * SK NACE 78 (кадровое агентство) и прекращение. Следующей
      * ежедневной нет, она вне срока хранения, а новее полной выгрузки нет — приём ждёт.
      */
     @Test
@@ -104,6 +106,8 @@ class RegistryIntakeTests {
                 FROM company ORDER BY registration_number
                 """, String.class)).containsExactly("11111111:Alfa Group s.r.o.:-", "33333333:Mesto Trnava:-",
                 "55555555:Beta a.s.:2026-01-03");
+        assertThat(jdbcTemplate.queryForList("SELECT registration_number FROM company WHERE agency ORDER BY 1",
+                String.class)).as("SK NACE 78xx — staffing agency").containsExactly("11111111");
         assertThat(jdbcTemplate.queryForObject("SELECT daily_date FROM intake_cursor", LocalDate.class))
                 .isEqualTo(EXPORT);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE state = 'DONE'", Integer.class))

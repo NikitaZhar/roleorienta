@@ -101,18 +101,19 @@ public class IntakeRepository {
         List<RegistryCompany> terminated = companies.stream().filter(company -> company.terminatedOn() != null)
                 .toList();
         jdbcTemplate.batchUpdate("""
-                INSERT INTO company (country, registration_number, name, legal_form, municipality, registry)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO company (country, registration_number, name, legal_form, municipality, registry, agency)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (country, registration_number) DO UPDATE
                 SET name = EXCLUDED.name, legal_form = EXCLUDED.legal_form, municipality = EXCLUDED.municipality,
-                    terminated_on = NULL, updated_at = now()
+                    agency = EXCLUDED.agency, terminated_on = NULL, updated_at = now()
                 """, active, active.size(), (statement, company) -> {
                 statement.setString(1, country);
                 statement.setString(2, company.registrationNumber());
                 statement.setString(3, company.name());
-                statement.setString(4, company.legalForm());
-                statement.setString(5, company.municipality());
+                statement.setString(4, company.details().legalForm());
+                statement.setString(5, company.details().municipality());
                 statement.setString(6, registry);
+                statement.setBoolean(7, company.details().agency());
             });
         jdbcTemplate.batchUpdate("""
                 UPDATE company SET terminated_on = ?, updated_at = now()

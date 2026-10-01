@@ -123,7 +123,8 @@ public class BoardDiscoveryRepository {
     }
 
     /**
-     * Итог проверки доски; доска с вакансиями в Словакии подключается как источник (страна SK).
+     * Итог проверки доски; доска с вакансиями в Словакии подключается как источник (страна SK), если
+     * использование провайдера разрешено ({@code source_permission}, бизнес-описание §10).
      * Связи с компанией нет: принадлежность доски юрлицу не подтверждена (решение владельца, §27).
      *
      * @param board  доска
@@ -135,9 +136,11 @@ public class BoardDiscoveryRepository {
                 slovak, board.provider(), board.board());
         if (slovak) {
             jdbcTemplate.update("""
-                    INSERT INTO source (provider, board, country) VALUES (?, ?, ?)
+                    INSERT INTO source (provider, board, country)
+                    SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM source_permission
+                                                 WHERE scope = 'PROVIDER' AND provider = ? AND decision = 'ALLOW')
                     ON CONFLICT (provider, board) DO NOTHING
-                    """, board.provider(), board.board(), COUNTRY);
+                    """, board.provider(), board.board(), COUNTRY, board.provider());
         }
     }
 }

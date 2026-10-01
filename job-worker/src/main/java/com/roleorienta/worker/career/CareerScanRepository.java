@@ -2,6 +2,7 @@ package com.roleorienta.worker.career;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -22,10 +23,10 @@ public class CareerScanRepository {
     private static final String COMPANY_RESULT = """
             INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
             SELECT company_id,
-                   CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 4 WHEN 'FORMAT_UNSUPPORTED' THEN 3
-                                              WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
-                       WHEN 4 THEN 'CONNECTED' WHEN 3 THEN 'FORMAT_UNSUPPORTED' WHEN 2 THEN 'PAGE_NOT_FOUND'
-                       ELSE 'SOURCE_UNAVAILABLE' END,
+                   CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
+                                              WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
+                       WHEN 5 THEN 'CONNECTED' WHEN 4 THEN 'USE_FORBIDDEN' WHEN 3 THEN 'FORMAT_UNSUPPORTED'
+                       WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END,
                    now(), now()
             FROM company_site WHERE company_id = ? AND check_result IS NOT NULL GROUP BY company_id
             ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at
@@ -64,23 +65,48 @@ public class CareerScanRepository {
      * @param boards    найденные источники
      * @param result    итог проверки
      * @param careerUrl адрес кадровой страницы; {@code null} — не найдена
+     * @param role      роль компании у подключаемых источников
      */
     @Transactional
-    public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl) {
+    public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl, Role role) {
         for (Board board : boards) {
             jdbcTemplate.update("""
                     INSERT INTO source (provider, board, country) VALUES (?, ?, ?)
                     ON CONFLICT (provider, board) DO NOTHING
                     """, board.provider(), board.board(), COUNTRY);
             jdbcTemplate.update("""
-                    INSERT INTO company_source (company_id, source_id)
-                    SELECT ?, id FROM source WHERE provider = ? AND board = ?
+                    INSERT INTO company_source (company_id, source_id, role)
+                    SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?
                     ON CONFLICT DO NOTHING
-                    """, site.companyId(), board.provider(), board.board());
+                    """, site.companyId(), role.name(), board.provider(), board.board());
         }
         jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ?, career_url = ? WHERE id = ?",
                 result.name(), careerUrl, site.id());
         jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+    }
+
+    /**
+     * @return провайдеры, использование которых разрешено ({@code source_permission}, бизнес-описание §10)
+     */
+    public Set<String> permittedProviders() {
+        return Set.copyOf(jdbcTemplate.queryForList("""
+                SELECT provider FROM source_permission WHERE scope = 'PROVIDER' AND decision = 'ALLOW'
+                """, String.class));
+    }
+
+    /**
+     * @param companyId компания
+     * @return роль компании у её источников: работодатель; кадровое агентство — только с разрешением на
+     *         него; пусто — агентство без разрешения, подключать нельзя
+     */
+    public Optional<Role> permittedRole(long companyId) {
+        return jdbcTemplate.query("""
+                SELECT c.agency, EXISTS (SELECT 1 FROM source_permission p WHERE p.scope = 'AGENCY'
+                                         AND p.company_id = c.id AND p.decision = 'ALLOW') AS allowed
+                FROM company c WHERE c.id = ?
+                """, (row, number) -> !row.getBoolean("agency") ? Optional.of(Role.EMPLOYER)
+                : row.getBoolean("allowed") ? Optional.of(Role.AGENCY) : Optional.<Role>empty(), companyId)
+                .stream().findFirst().orElse(Optional.empty());
     }
 
     /**
@@ -104,6 +130,18 @@ public class CareerScanRepository {
         /** Кадровая страница есть, формат не поддерживается. */
         FORMAT_UNSUPPORTED,
         /** Сайт не ответил. */
-        UNREACHABLE
+        UNREACHABLE,
+        /** Использование не разрешено: нет основания для провайдера или агентства, запрет robots.txt. */
+        USE_FORBIDDEN
+    }
+
+    /**
+     * Роль компании у источника (технический документ §4, {@code CompanyCareerPage}).
+     */
+    public enum Role {
+        /** Работодатель. */
+        EMPLOYER,
+        /** Кадровое агентство — размещающая сторона. */
+        AGENCY
     }
 }
