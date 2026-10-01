@@ -1,9 +1,6 @@
 package com.roleorienta.worker.intake;
 
 import com.roleorienta.worker.lock.PostgresLeaderLock;
-import com.roleorienta.worker.task.TaskService;
-import java.time.Clock;
-import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,8 +9,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Раз в сутки ставит задание приёма реестра (ключ по дате — повторная постановка в тот же день ничего
- * не добавляет) под leader-lock. Выключается свойством {@code app.intake.enabled=false}.
+ * Тик общего сбора под leader-lock: страны сбора обновляются по условиям пользователей, ставится
+ * партия первой в очереди страны ({@link CollectionPlanner}); дальше партии идут цепочкой. Выключается
+ * свойством {@code app.intake.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.intake.enabled", havingValue = "true", matchIfMissing = true)
@@ -25,18 +23,15 @@ public class RegistryIntakeTick {
     private static final Logger LOG = LoggerFactory.getLogger(RegistryIntakeTick.class);
 
     private final PostgresLeaderLock leaderLock;
-    private final TaskService taskService;
-    private final Clock clock;
+    private final CollectionPlanner planner;
 
     /**
-     * @param leaderLock  leader-lock
-     * @param taskService постановка заданий
-     * @param clock       часы
+     * @param leaderLock leader-lock
+     * @param planner    очередь стран сбора
      */
-    public RegistryIntakeTick(PostgresLeaderLock leaderLock, TaskService taskService, Clock clock) {
+    public RegistryIntakeTick(PostgresLeaderLock leaderLock, CollectionPlanner planner) {
         this.leaderLock = leaderLock;
-        this.taskService = taskService;
-        this.clock = clock;
+        this.planner = planner;
     }
 
     /**
@@ -45,8 +40,7 @@ public class RegistryIntakeTick {
     @Scheduled(fixedDelayString = "${app.intake.interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(RegistryIntakeHandler.TYPE,
-                    RegistryIntakeHandler.taskKey(LocalDate.now(clock).toString()), RegistryIntakeHandler.payload()));
+            leaderLock.runIfLeader(LOCK_KEY, planner::refreshAndEnqueue);
         } catch (DataAccessException exception) {
             LOG.warn("Registry intake tick failed, will retry on next tick", exception);
         }

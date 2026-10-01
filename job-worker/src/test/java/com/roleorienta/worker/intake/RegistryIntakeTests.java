@@ -80,9 +80,11 @@ class RegistryIntakeTests {
      */
     @BeforeEach
     void setUp() throws IOException {
-        for (String table : new String[] {"company_check", "company", "intake_cursor", "outbox_event", "task"}) {
+        for (String table : new String[] {"company_check", "company", "intake_cursor", "collection_country", "outbox_event",
+                "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE)");
         when(exports.latestInit()).thenReturn(Optional.of(EXPORT));
         when(exports.initFiles(EXPORT)).thenReturn(List.of(FILE_1, FILE_2));
         when(exports.exists(RpoExports.dailyKey(EXPORT))).thenReturn(true);
@@ -135,8 +137,8 @@ class RegistryIntakeTests {
     }
 
     private void runIntake() {
-        taskService.enqueue(RegistryIntakeHandler.TYPE, RegistryIntakeHandler.taskKey("test"),
-                RegistryIntakeHandler.payload());
+        taskService.enqueue(RegistryIntakeHandler.TYPE, RegistryIntakeHandler.taskKey("SK", 0),
+                RegistryIntakeHandler.payload("SK"));
         for (int round = 0; round < MAX_TASK_ROUNDS; round++) {
             List<Long> queued = jdbcTemplate.queryForList("SELECT id FROM task WHERE state = 'QUEUED' ORDER BY id",
                     Long.class);
