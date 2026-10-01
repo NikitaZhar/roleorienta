@@ -41,10 +41,12 @@ public class CollectionPlanner {
     }
 
     /**
-     * Обновляет страны сбора по условиям пользователей и ставит партию первой в очереди страны.
+     * Обновляет страны сбора по условиям пользователей, отмечает завершённые первичные обходы и ставит
+     * партию первой в очереди страны.
      */
     public void refreshAndEnqueue() {
         repository.refreshCountries();
+        repository.markFirstPassDone();
         enqueueNext();
     }
 

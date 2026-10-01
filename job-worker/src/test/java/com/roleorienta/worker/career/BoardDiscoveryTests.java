@@ -91,6 +91,8 @@ class BoardDiscoveryTests {
                 "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         byte[] block0 = gzip(cdx("com,example)/", "https://example.com/"));
         byte[] block1 = gzip(cdx("io,greenhouse,boards)/acme/jobs/1", "https://boards.greenhouse.io/acme/jobs/1")
                 + cdx("io,greenhouse,boards)/beta", "https://boards.greenhouse.io/beta")
@@ -140,8 +142,8 @@ class BoardDiscoveryTests {
         }
 
         assertThat(jdbcTemplate.queryForList(
-                "SELECT board || ':' || slovak FROM discovered_board ORDER BY board", String.class))
-                .containsExactly("acme:true", "beta:false");
+                "SELECT board || ':' || coalesce(country, '-') FROM discovered_board ORDER BY board", String.class))
+                .containsExactly("acme:SK", "beta:-");
         assertThat(jdbcTemplate.queryForList("SELECT provider || ':' || board || ':' || country FROM source",
                 String.class)).containsExactly("greenhouse:acme:SK");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source", Integer.class)).isZero();

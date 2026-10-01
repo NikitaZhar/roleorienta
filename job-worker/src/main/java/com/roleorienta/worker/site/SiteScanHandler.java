@@ -110,6 +110,10 @@ public class SiteScanHandler implements TaskHandler {
 
     @Override
     public TaskOutcome handle(TaskRecord task) {
+        if (!repository.countryActive()) {
+            LOG.info("Site scan skipped: Slovakia is not a collection country");
+            return new TaskOutcome.Done();
+        }
         try {
             Optional<String> latest = latestCrawl();
             if (latest.isEmpty()) {

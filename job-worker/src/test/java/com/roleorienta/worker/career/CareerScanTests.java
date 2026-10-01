@@ -62,6 +62,8 @@ class CareerScanTests {
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("DELETE FROM source_permission WHERE scope = 'AGENCY'");
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         for (String table : new String[] {"company_check", "company_source", "company_site", "source", "company", "outbox_event",
                 "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);

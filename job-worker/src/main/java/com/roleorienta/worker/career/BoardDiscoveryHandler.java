@@ -2,6 +2,7 @@ package com.roleorienta.worker.career;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.CountryNames;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.site.CommonCrawlClient;
@@ -10,11 +11,13 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
+import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -35,10 +38,10 @@ import org.springframework.stereotype.Component;
  *       ({@code careers|jobs.smartrecruiters.com}) — по префиксам SURT, проходами (у каждого прохода
  *       свои блоки); доски из адресов ({@link CareerLinks#board}) записываются. Блок индекса и его
  *       доски — одна транзакция.</li>
- *   <li>Каждая новая доска проверяется на публикации в Словакии: провайдер отвечает одним запросом,
- *       если умеет ({@link SourceAdapter#hasPostingsIn}: Workday — фасет страны); иначе доска
- *       читается и нужна публикация с местом в Словакии ({@link SlovakLocations}). Есть — доска
- *       подключается как источник. Мусор прежних правил разбора адресов ({@code …/robots},
+ *   <li>Каждая новая доска проверяется на публикации в активных странах сбора (бизнес-описание §4.1):
+ *       провайдер отвечает одним запросом, если умеет ({@link SourceAdapter#hasPostingsIn}: Workday —
+ *       фасет страны); иначе доска читается один раз и нужна публикация с местом в стране. Первая
+ *       такая страна — доска подключается как источник этой страны. Мусор прежних правил разбора адресов ({@code …/robots},
  *       {@code …/es}) отмечается проверенным без запроса. Доски проверяются по очереди провайдеров —
  *       медленная проверка одного не задерживает другие.
  *       Связи с компанией нет: принадлежность юрлицу не подтверждена, вакансии нужнее (решение
@@ -65,7 +68,7 @@ public class BoardDiscoveryHandler implements TaskHandler {
             new IndexPass(BoardDiscoveryRepository.PURPOSE, List.of("com,myworkdayjobs,", "com,personio,jobs,",
                     "de,personio,jobs,", "io,greenhouse,boards)", "io,greenhouse,job-boards)")),
             new IndexPass("BOARD_SR", List.of("com,smartrecruiters,careers)", "com,smartrecruiters,jobs)")));
-    private static final String COUNTRY = "SK";
+    private static final String SLOVAKIA = "SK";
     private static final String PAYLOAD = "{}";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(BoardDiscoveryHandler.class);
@@ -137,11 +140,13 @@ public class BoardDiscoveryHandler implements TaskHandler {
                     return new TaskOutcome.Done();
                 }
             }
-            List<Board> toCheck = repository.boardsToCheck(budget, properties.recheckAfter());
+            List<String> countries = repository.activeCountries();
+            List<Board> toCheck = countries.isEmpty() ? List.of()
+                    : repository.boardsToCheck(budget, properties.recheckAfter());
             for (Board board : toCheck) {
-                boolean slovak = hasSlovakPostings(board);
-                repository.recordCheck(board, slovak);
-                LOG.info("Board {} {}: slovak={}", board.provider(), board.board(), slovak);
+                Optional<String> country = countryWithPostings(board, countries);
+                repository.recordCheck(board, country.orElse(null));
+                LOG.info("Board {} {}: postings in {}", board.provider(), board.board(), country.orElse("-"));
             }
             if (toCheck.size() == budget) {
                 Board last = toCheck.get(toCheck.size() - 1);
@@ -189,14 +194,42 @@ public class BoardDiscoveryHandler implements TaskHandler {
         return boards;
     }
 
-    private boolean hasSlovakPostings(Board board) {
+    /**
+     * Первая страна сбора, где у доски есть публикации: провайдер отвечает одним запросом, если умеет;
+     * иначе доска читается один раз и проверяются места публикаций.
+     */
+    private Optional<String> countryWithPostings(Board board, List<String> countries) {
         SourceAdapter adapter = adaptersByProvider.get(board.provider());
         if (adapter == null || !CareerLinks.isBoard(board)) {
-            return false;
+            return Optional.empty();
         }
-        return adapter.hasPostingsIn(board.board(), COUNTRY).orElseGet(() ->
-                adapter.read(board.board(), COUNTRY) instanceof SourceReadResult.Read read
-                        && read.postings().stream().anyMatch(posting -> SlovakLocations.matches(posting.location())));
+        List<String> locations = null;
+        for (String country : countries) {
+            Optional<Boolean> answer = adapter.hasPostingsIn(board.board(), country);
+            if (answer.isEmpty() && locations == null) {
+                locations = locations(adapter, board);
+            }
+            boolean found = answer.isPresent() ? answer.get()
+                    : locations.stream().anyMatch(location -> inCountry(location, country));
+            if (found) {
+                return Optional.of(country);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static List<String> locations(SourceAdapter adapter, Board board) {
+        return adapter.read(board.board()) instanceof SourceReadResult.Read read
+                ? read.postings().stream().map(FetchedPosting::location).filter(Objects::nonNull).toList()
+                : List.of();
+    }
+
+    /**
+     * Место публикации в стране: для Словакии — и по крупным городам ({@link SlovakLocations}), для
+     * остальных — по названию страны.
+     */
+    private static boolean inCountry(String location, String country) {
+        return SLOVAKIA.equals(country) ? SlovakLocations.matches(location) : CountryNames.mentions(location, country);
     }
 
     /**

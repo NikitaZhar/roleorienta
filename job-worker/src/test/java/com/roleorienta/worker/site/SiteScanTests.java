@@ -86,6 +86,8 @@ class SiteScanTests {
      */
     @BeforeEach
     void setUp() throws IOException {
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         for (String table : new String[] {"company_check", "company_site", "cc_index_block", "company", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }

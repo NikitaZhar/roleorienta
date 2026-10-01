@@ -18,7 +18,6 @@ public class BoardDiscoveryRepository {
 
     /** Назначение блоков первого прохода; по его обходу — последний известный обход. */
     static final String PURPOSE = "BOARD";
-    private static final String COUNTRY = "SK";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -123,24 +122,33 @@ public class BoardDiscoveryRepository {
     }
 
     /**
-     * Итог проверки доски; доска с вакансиями в Словакии подключается как источник (страна SK), если
+     * @return активные страны сбора (бизнес-описание §4.1: доски проверяются на вакансии в выбранных
+     *         пользователями странах)
+     */
+    public List<String> activeCountries() {
+        return jdbcTemplate.queryForList("SELECT country FROM collection_country WHERE active ORDER BY country",
+                String.class);
+    }
+
+    /**
+     * Итог проверки доски; доска с вакансиями в стране сбора подключается как источник этой страны, если
      * использование провайдера разрешено ({@code source_permission}, бизнес-описание §10).
      * Связи с компанией нет: принадлежность доски юрлицу не подтверждена (решение владельца, §27).
      *
      * @param board  доска
-     * @param slovak на доске есть вакансии в Словакии
+     * @param country страна сбора, где у доски есть вакансии; {@code null} — ни в одной
      */
     @Transactional
-    public void recordCheck(Board board, boolean slovak) {
-        jdbcTemplate.update("UPDATE discovered_board SET checked_at = now(), slovak = ? WHERE provider = ? AND board = ?",
-                slovak, board.provider(), board.board());
-        if (slovak) {
+    public void recordCheck(Board board, String country) {
+        jdbcTemplate.update("UPDATE discovered_board SET checked_at = now(), country = ? WHERE provider = ? AND board = ?",
+                country, board.provider(), board.board());
+        if (country != null) {
             jdbcTemplate.update("""
                     INSERT INTO source (provider, board, country)
                     SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM source_permission
                                                  WHERE scope = 'PROVIDER' AND provider = ? AND decision = 'ALLOW')
                     ON CONFLICT (provider, board) DO NOTHING
-                    """, board.provider(), board.board(), COUNTRY, board.provider());
+                    """, board.provider(), board.board(), country, board.provider());
         }
     }
 }

@@ -68,6 +68,8 @@ class CollectionAlternationTests {
                 EMAIL);
         jdbcTemplate.update("DELETE FROM user_account WHERE email = ?", EMAIL);
         jdbcTemplate.update("DELETE FROM position WHERE code = ?", POSITION);
+        jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE country IN ('AT', 'CZ'))");
+        jdbcTemplate.update("DELETE FROM company WHERE country IN ('AT', 'CZ')");
         for (String table : new String[] {"collection_country", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
@@ -109,6 +111,30 @@ class CollectionAlternationTests {
 
         assertThat(BATCHES).containsExactly("AT1", "AT2");
         assertThat(austria.place()).isEqualTo(3);
+    }
+
+    /**
+     * Первичный обход страны завершён, когда реестр прочитан до конца и у каждой действующей компании
+     * страны есть итог проверки: у Австрии итог есть у всех, у Чехии одна компания без итога.
+     */
+    @Test
+    void firstPassIsDoneWhenRegistryIsReadAndEveryCompanyHasResult() {
+        condition("{AT,CZ}");
+        planner.refreshAndEnqueue();
+        runTasks();
+        jdbcTemplate.update("""
+                INSERT INTO company (country, registration_number, name, registry) VALUES
+                ('AT', 'FN1', 'Alpen GmbH', 'TEST'), ('CZ', 'CZ1', 'Brno s.r.o.', 'TEST')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE country = 'AT'
+                """);
+
+        planner.refreshAndEnqueue();
+
+        assertThat(jdbcTemplate.queryForList("SELECT country FROM collection_country "
+                + "WHERE first_pass_done_at IS NOT NULL", String.class)).containsExactly("AT");
     }
 
     private void condition(String countries) {

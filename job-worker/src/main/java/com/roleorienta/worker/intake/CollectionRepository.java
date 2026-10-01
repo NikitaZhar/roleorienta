@@ -59,9 +59,24 @@ public class CollectionRepository {
      */
     public void recordBatch(String country, boolean hasMore) {
         jdbcTemplate.update("""
-                UPDATE collection_country SET last_batch_at = now(), batches = batches + 1, has_more = ?
+                UPDATE collection_country SET last_batch_at = now(), batches = batches + 1, has_more = ?,
+                    registry_read_at = CASE WHEN ? THEN registry_read_at ELSE coalesce(registry_read_at, now()) END
                 WHERE country = ?
-                """, hasMore, country);
+                """, hasMore, hasMore, country);
+    }
+
+    /**
+     * Первичный обход страны завершён (бизнес-описание §4.1, технический документ §5.1): реестр прочитан
+     * до конца и каждая действующая компания страны получила итог проверки ({@code company_check}).
+     * Дата завершения ставится один раз.
+     */
+    public void markFirstPassDone() {
+        jdbcTemplate.update("""
+                UPDATE collection_country cc SET first_pass_done_at = now()
+                WHERE first_pass_done_at IS NULL AND registry_read_at IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM company c WHERE c.country = cc.country AND c.terminated_on IS NULL
+                                    AND NOT EXISTS (SELECT 1 FROM company_check k WHERE k.company_id = c.id))
+                """);
     }
 
     /**

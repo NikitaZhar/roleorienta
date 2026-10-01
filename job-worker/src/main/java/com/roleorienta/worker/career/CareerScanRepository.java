@@ -14,8 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class CareerScanRepository {
 
-    private static final String COUNTRY = "SK";
-
     /**
      * Итог компании — лучший из итогов её проверенных сайтов (бизнес-описание §4.2); первая дата итога
      * сохраняется.
@@ -44,11 +42,13 @@ public class CareerScanRepository {
     /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
-     * @return сайты действующих компаний, ещё не проверенные или проверенные давнее срока
+     * @return сайты действующих компаний активных стран сбора, ещё не проверенные или проверенные давнее
+     *         срока
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT s.id, s.company_id, s.host FROM company_site s JOIN company c ON c.id = s.company_id
+                JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL
                   AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
                 ORDER BY s.checked_at NULLS FIRST, s.id LIMIT ?
@@ -71,9 +71,9 @@ public class CareerScanRepository {
     public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl, Role role) {
         for (Board board : boards) {
             jdbcTemplate.update("""
-                    INSERT INTO source (provider, board, country) VALUES (?, ?, ?)
+                    INSERT INTO source (provider, board, country) SELECT ?, ?, country FROM company WHERE id = ?
                     ON CONFLICT (provider, board) DO NOTHING
-                    """, board.provider(), board.board(), COUNTRY);
+                    """, board.provider(), board.board(), site.companyId());
             jdbcTemplate.update("""
                     INSERT INTO company_source (company_id, source_id, role)
                     SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?

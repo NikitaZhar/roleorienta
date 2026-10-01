@@ -101,6 +101,16 @@ public class SiteScanRepository {
     }
 
     /**
+     * @return Словакия — активная страна сбора: скан ищет сайты словацких юрлиц по IČO на страницах
+     *         {@code .sk}; страна, снятая всеми пользователями, не сканируется (бизнес-описание §4.1)
+     */
+    public boolean countryActive() {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM collection_country WHERE country = ? AND active)", Boolean.class,
+                COUNTRY));
+    }
+
+    /**
      * Находки блока и отметка «просмотрен» — одной транзакцией: после остановки блок
      * просматривается заново целиком, повторная находка не дублируется. У компании с найденным сайтом
      * снимается итог «сайт не найден» — новый итог даст проверка сайта.
