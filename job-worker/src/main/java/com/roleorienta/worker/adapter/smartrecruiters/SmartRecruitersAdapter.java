@@ -30,9 +30,10 @@ import org.springframework.stereotype.Component;
  *       в нижнем регистре.</li>
  *   <li>Список — {@code <careers>/<компания>?search=&page=N}, N с 0: вакансии сгруппированы по
  *       месту (заголовок группы — «Košice, Slovakia (Slovak Republic)»), ссылка на вакансию —
- *       {@code jobs.smartrecruiters.com/<компания>/<id>-<название>}. Страницы читаются, пока
- *       приносят новые вакансии; отказ на первой — источник недоступен, на следующих или упор в
- *       потолок — неполное чтение.</li>
+ *       {@code jobs.smartrecruiters.com/<компания>/<id>-<название>}. Число страниц объявлено на
+ *       первой ({@code data-groups-pages}; у JYSK — 167) — читаются все; не объявлено — пока
+ *       страницы приносят новые вакансии. Отказ на первой — источник недоступен, на следующих или
+ *       упор в потолок — неполное чтение.</li>
  *   <li>С фильтром страны в список входят только вакансии с местом в этой стране — по заголовку
  *       группы: у доски может быть весь мир, а текст нужен только вакансий страны сбора.</li>
  *   <li>Текст — страница вакансии {@code <jobs>/<компания>/<id>}, микроразметка schema.org
@@ -49,6 +50,7 @@ public class SmartRecruitersAdapter implements SourceAdapter {
     public static final String PROVIDER = "smartrecruiters";
 
     private static final Pattern BOARD = Pattern.compile("[a-z0-9_-]+");
+    private static final String PAGES_ATTRIBUTE = "data-groups-pages";
     private static final Pattern JOB_ID = Pattern.compile("/(\\d{6,})(?:-[^/?#]*)?(?:[?#].*)?$");
     private static final Logger LOG = LoggerFactory.getLogger(SmartRecruitersAdapter.class);
 
@@ -82,6 +84,7 @@ public class SmartRecruitersAdapter implements SourceAdapter {
         }
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         List<String> responses = new ArrayList<>();
+        int pageCount = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
             HttpResult result = httpClient.get(URI.create(properties.careersUrl() + "/" + board + "?search=&page=" + page));
             if (!(result instanceof HttpResult.Success success)) {
@@ -92,9 +95,14 @@ public class SmartRecruitersAdapter implements SourceAdapter {
                 return SourceReadResult.Read.partial(filter(postings, country), PartialReason.PAGE_FAILED, responses);
             }
             responses.add(success.body());
+            Document document = Jsoup.parse(success.body());
+            if (page == 0) {
+                pageCount = declaredPages(document);
+            }
             int before = postings.size();
-            page(Jsoup.parse(success.body()), board).forEach(posting -> postings.putIfAbsent(posting.externalId(), posting));
-            if (postings.size() == before) {
+            page(document, board).forEach(posting -> postings.putIfAbsent(posting.externalId(), posting));
+            boolean lastPage = pageCount > 0 ? page + 1 >= pageCount : postings.size() == before;
+            if (lastPage) {
                 return SourceReadResult.Read.full(filter(postings, country), responses);
             }
         }
@@ -143,6 +151,15 @@ public class SmartRecruitersAdapter implements SourceAdapter {
             }
         }
         return postings;
+    }
+
+    /**
+     * Число страниц списка, объявленное на первой ({@code data-groups-pages}); нет или не число — 0.
+     */
+    private static int declaredPages(Document page) {
+        Element openings = page.selectFirst("[" + PAGES_ATTRIBUTE + "]");
+        String value = openings == null ? "" : openings.attr(PAGES_ATTRIBUTE);
+        return value.matches("\\d{1,6}") ? Integer.parseInt(value) : 0;
     }
 
     private static List<FetchedPosting> filter(Map<String, FetchedPosting> postings, String country) {

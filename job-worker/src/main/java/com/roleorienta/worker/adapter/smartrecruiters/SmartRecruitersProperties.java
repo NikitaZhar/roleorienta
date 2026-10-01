@@ -14,5 +14,5 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record SmartRecruitersProperties(
         @DefaultValue("https://careers.smartrecruiters.com") String careersUrl,
         @DefaultValue("https://jobs.smartrecruiters.com") String jobsUrl,
-        @DefaultValue("50") int maxPages) {
+        @DefaultValue("500") int maxPages) {
 }

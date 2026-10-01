@@ -291,7 +291,7 @@ erDiagram
 | Workday | JSON | `https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (POST, `offset/limit`, фасет страны; нет его — фасет мест с названием страны в подписи, «Slovakia - Bratislava»); деталь — по `externalPath`: текст и места (`location`, `additionalLocations`; в списке вместо них бывает сводка «2 Locations») |
 | Personio | XML | `https://<компания>.jobs.personio.de/xml` (или `.com`) |
 | Greenhouse | JSON | `https://boards-api.greenhouse.io/v1/boards/<доска>/jobs?content=true`; деталь с `pay_transparency` — не нужна на первом этапе |
-| SmartRecruiters | HTML | Список — `https://careers.smartrecruiters.com/<компания>?search=&page=N` (группы по месту, ~20 вакансий на страницу); текст — страница вакансии `https://jobs.smartrecruiters.com/<компания>/<id>`, микроразметка schema.org `JobPosting`. `api.smartrecruiters.com` не используется (запрещён robots.txt). Решение владельца (§35) |
+| SmartRecruiters | HTML | Список — `https://careers.smartrecruiters.com/<компания>?search=&page=N` (группы по месту; число страниц объявлено на первой — `data-groups-pages`, читаются все); текст — страница вакансии `https://jobs.smartrecruiters.com/<компания>/<id>`, микроразметка schema.org `JobPosting`. `api.smartrecruiters.com` не используется (запрещён robots.txt). Решение владельца (§35) |
 | schema.org `JobPosting` | JSON-LD на страницах сайта | Страницы вакансий на домене сайта, найденные по ссылкам с кадровой страницы; с самой кадровой страницы берутся только ссылки; потолок числа страниц — настройка |
 
 Другие системы найма (Lever, Ashby, Workable, Recruitee, SAP SuccessFactors …)

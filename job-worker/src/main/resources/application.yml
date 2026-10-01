@@ -120,7 +120,7 @@ app:
     smartrecruiters:        # кадровые страницы и страницы вакансий (API запрещён robots.txt)
       careers-url: https://careers.smartrecruiters.com
       jobs-url: https://jobs.smartrecruiters.com
-      max-pages: 50        # потолок страниц списка (по ~20 вакансий) за чтение; упор — неполное чтение
+      max-pages: 500       # потолок страниц списка за чтение (у JYSK объявлено 167); упор — неполное чтение
     jobposting:
       max-pages: 200       # потолок страниц вакансий сайта за чтение; упор — неполное чтение
 

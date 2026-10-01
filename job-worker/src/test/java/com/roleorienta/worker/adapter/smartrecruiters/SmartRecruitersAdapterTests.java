@@ -20,7 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Адаптер SmartRecruiters на заглушке: список страницами до первой без новых вакансий, место — из
+ * Адаптер SmartRecruiters на заглушке: список — все объявленные страницы или до первой без новых вакансий, место — из
  * заголовка группы, фильтр страны, текст и место со страницы вакансии (микроразметка
  * {@code JobPosting}), отказ, чужая доска.
  */
@@ -135,6 +135,27 @@ class SmartRecruitersAdapterTests {
         SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(BOARD);
         assertThat(read.complete()).isFalse();
         assertThat(read.postings()).hasSize(1);
+    }
+
+    /**
+     * Первая страница объявляет число страниц ({@code data-groups-pages}) — читаются все, даже если
+     * страница в середине не принесла новых вакансий; объявлено больше потолка — неполное чтение.
+     */
+    @Test
+    void readsAllDeclaredPages() {
+        String first = list(group("Aabenraa, Denmark", job(744000000003L, "Store Manager")))
+                .replace("class=\"js-openings-load\"", "data-groups-pages=\"3\" class=\"js-openings-load\"");
+        pages.put("0", first);
+        pages.put("1", list(group("Aabenraa, Denmark", job(744000000003L, "Store Manager"))));
+        pages.put("2", list(group("Bratislava, Slovakia (Slovak Republic)", job(744000000004L, "Store Assistant"))));
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(BOARD, "SK");
+
+        assertThat(read.complete()).isTrue();
+        assertThat(read.postings()).extracting(FetchedPosting::externalId).containsExactly("744000000004");
+
+        pages.put("0", first.replace("data-groups-pages=\"3\"", "data-groups-pages=\"20\""));
+        assertThat(((SourceReadResult.Read) adapter.read(BOARD, "SK")).complete()).isFalse();
     }
 
     /**
