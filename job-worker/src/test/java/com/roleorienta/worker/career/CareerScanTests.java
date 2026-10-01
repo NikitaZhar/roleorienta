@@ -61,7 +61,7 @@ class CareerScanTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"company_source", "company_site", "source", "company", "outbox_event",
+        for (String table : new String[] {"company_check", "company_source", "company_site", "source", "company", "outbox_event",
                 "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
@@ -83,6 +83,7 @@ class CareerScanTests {
 
         assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
         assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
     }
 
     /**
@@ -111,12 +112,15 @@ class CareerScanTests {
         runScan();
         assertThat(connectedSources()).isEmpty();
         assertThat(checkResult()).isEqualTo("NO_CAREER_PAGE");
+        assertThat(companyResult()).isEqualTo("PAGE_NOT_FOUND");
 
         jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
         PAGES.put("/", "<a href=\"/kariera\">Kariéra</a>");
         PAGES.put("/kariera", "<p>Pošlite životopis na hr@alfa.sk</p>");
         runScan();
         assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(companyResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check", Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
                 .isEqualTo("http://" + HOST + "/kariera");
     }
@@ -132,6 +136,10 @@ class CareerScanTests {
                 SELECT s.provider || ':' || s.board || ':' || s.country
                 FROM company_source cs JOIN source s ON s.id = cs.source_id ORDER BY 1
                 """, String.class);
+    }
+
+    private String companyResult() {
+        return jdbcTemplate.queryForObject("SELECT result FROM company_check", String.class);
     }
 
     private String checkResult() {

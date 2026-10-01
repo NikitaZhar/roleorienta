@@ -79,7 +79,7 @@ class RegistryIntakeTests {
      */
     @BeforeEach
     void setUp() throws IOException {
-        for (String table : new String[] {"company", "intake_cursor", "outbox_event", "task"}) {
+        for (String table : new String[] {"company_check", "company", "intake_cursor", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         when(exports.latestInit()).thenReturn(Optional.of(EXPORT));

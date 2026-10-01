@@ -15,6 +15,22 @@ public class CareerScanRepository {
 
     private static final String COUNTRY = "SK";
 
+    /**
+     * Итог компании — лучший из итогов её проверенных сайтов (бизнес-описание §4.2); первая дата итога
+     * сохраняется.
+     */
+    private static final String COMPANY_RESULT = """
+            INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+            SELECT company_id,
+                   CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 4 WHEN 'FORMAT_UNSUPPORTED' THEN 3
+                                              WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
+                       WHEN 4 THEN 'CONNECTED' WHEN 3 THEN 'FORMAT_UNSUPPORTED' WHEN 2 THEN 'PAGE_NOT_FOUND'
+                       ELSE 'SOURCE_UNAVAILABLE' END,
+                   now(), now()
+            FROM company_site WHERE company_id = ? AND check_result IS NOT NULL GROUP BY company_id
+            ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -41,7 +57,8 @@ public class CareerScanRepository {
 
     /**
      * Итог проверки сайта одной транзакцией: найденные источники подключаются (уже подключённый —
-     * не дублируется) и связываются с компанией, сайт отмечается проверенным.
+     * не дублируется) и связываются с компанией, сайт отмечается проверенным, итог компании
+     * ({@code company_check}) пересчитывается.
      *
      * @param site      сайт
      * @param boards    найденные источники
@@ -63,6 +80,7 @@ public class CareerScanRepository {
         }
         jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ?, career_url = ? WHERE id = ?",
                 result.name(), careerUrl, site.id());
+        jdbcTemplate.update(COMPANY_RESULT, site.companyId());
     }
 
     /**

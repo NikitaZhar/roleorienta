@@ -86,7 +86,7 @@ class SiteScanTests {
      */
     @BeforeEach
     void setUp() throws IOException {
-        for (String table : new String[] {"company_site", "cc_index_block", "company", "outbox_event", "task"}) {
+        for (String table : new String[] {"company_check", "company_site", "cc_index_block", "company", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("""
@@ -123,10 +123,17 @@ class SiteScanTests {
     /**
      * Сайты: {@code aaa.sk} (адрес зоны в конце блока перед зоной) и {@code alfa.sk} по странице
      * контактов; {@code beta.sk} — IČO неизвестен, {@code gamma.sk} — компания прекращена, 404 и не
-     * HTML — не читаются. Блоки просмотрены, повторный скан ничего не добавляет.
+     * HTML — не читаются. Блоки просмотрены, повторный скан ничего не добавляет. Скан завершён —
+     * действующая компания без сайта получает итог «сайт не найден»; у компании, чей сайт найден,
+     * прежний итог «сайт не найден» снят.
      */
     @Test
     void findsSitesByIcoOnContactPages() {
+        jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', '55555555', 'Bez webu s.r.o.', 'RPO')");
+        jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
+                + "SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE registration_number = '11111111'");
+
         runScan("first");
 
         assertThat(jdbcTemplate.queryForList("""
@@ -136,6 +143,8 @@ class SiteScanTests {
                 "33333333:aaa.sk:http://aaa.sk/");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM cc_index_block WHERE NOT done", Integer.class))
                 .isZero();
+        assertThat(jdbcTemplate.queryForList("SELECT c.registration_number || ':' || k.result FROM company_check k "
+                + "JOIN company c ON c.id = k.company_id", String.class)).containsExactly("55555555:SITE_NOT_FOUND");
 
         runScan("second");
 

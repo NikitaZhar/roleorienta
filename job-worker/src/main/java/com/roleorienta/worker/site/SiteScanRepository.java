@@ -102,7 +102,8 @@ public class SiteScanRepository {
 
     /**
      * Находки блока и отметка «просмотрен» — одной транзакцией: после остановки блок
-     * просматривается заново целиком, повторная находка не дублируется.
+     * просматривается заново целиком, повторная находка не дублируется. У компании с найденным сайтом
+     * снимается итог «сайт не найден» — новый итог даст проверка сайта.
      *
      * @param crawl   обход
      * @param seq     блок
@@ -120,8 +121,25 @@ public class SiteScanRepository {
                 statement.setString(4, SOURCE);
                 statement.setString(5, crawl);
             });
+        jdbcTemplate.batchUpdate("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
+                matches, matches.size(), (statement, match) -> statement.setLong(1, match.companyId()));
         jdbcTemplate.update("UPDATE cc_index_block SET done = TRUE WHERE crawl = ? AND purpose = ? AND seq = ?", crawl,
                 PURPOSE, seq);
+    }
+
+    /**
+     * Скан обхода завершён: действующим компаниям без сайта и без итога — итог «сайт не найден»
+     * (бизнес-описание §4.2). Повторный вызов ничего не меняет.
+     *
+     * @return сколько компаний получили итог
+     */
+    public int recordSitesNotFound() {
+        return jdbcTemplate.update("""
+                INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                SELECT c.id, 'SITE_NOT_FOUND', now(), now() FROM company c
+                WHERE c.terminated_on IS NULL AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id)
+                ON CONFLICT (company_id) DO NOTHING
+                """);
     }
 
     private static Object[] concat(String first, Set<String> rest) {

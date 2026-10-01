@@ -48,6 +48,9 @@ import org.springframework.stereotype.Component;
  * <p>Список обходов не получен — скан продолжается по последнему записанному обходу. Common Crawl
  * временно не отвечает на чтение блока или страницы — повтор задания с того же блока. Одна страница не читается
  * (нет в архиве, испорчена) — пропускается.</p>
+ *
+ * <p>Скан обхода завершён (блоков не осталось) — действующие компании без сайта получают итог «сайт
+ * не найден» ({@code company_check}).</p>
  */
 @Component
 public class SiteScanHandler implements TaskHandler {
@@ -124,6 +127,9 @@ public class SiteScanHandler implements TaskHandler {
             }
             if (blocks.size() == properties.blocksPerTask()) {
                 taskService.enqueue(TYPE, taskKey(crawl + ":" + blocks.get(blocks.size() - 1).seq()), PAYLOAD);
+            } else {
+                LOG.info("Common Crawl {}: site scan finished, {} companies without site", crawl,
+                        repository.recordSitesNotFound());
             }
             return new TaskOutcome.Done();
         } catch (IOException exception) {
