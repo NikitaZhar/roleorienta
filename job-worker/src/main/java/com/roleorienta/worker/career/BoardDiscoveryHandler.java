@@ -48,7 +48,8 @@ import org.springframework.stereotype.Component;
  *       владельца). Перепроверка — через {@link CareerProperties#recheckAfter()}.</li>
  * </ol>
  *
- * <p>За задание — {@link CareerProperties#boardsPerTask()} блоков или досок, дальше — следующее
+ * <p>За задание — {@link CareerProperties#boardsPerTask()} блоков или досок, но проверка досок — не
+ * дольше {@link CareerProperties#checkTimeBudget()} (задание укладывается в аренду), дальше — следующее
  * задание. Common Crawl временно не отвечает — проверка найденных досок продолжается по последнему
  * записанному обходу; чтение блоков индекса — повтор задания.</p>
  */
@@ -143,14 +144,20 @@ public class BoardDiscoveryHandler implements TaskHandler {
             List<String> countries = repository.activeCountries();
             List<Board> toCheck = countries.isEmpty() ? List.of()
                     : repository.boardsToCheck(budget, properties.recheckAfter());
+            long deadline = System.nanoTime() + properties.checkTimeBudget().toNanos();
+            int checked = 0;
             for (Board board : toCheck) {
+                if (System.nanoTime() > deadline) {
+                    break;
+                }
                 Optional<String> country = countryWithPostings(board, countries);
                 repository.recordCheck(board, country.orElse(null));
+                checked++;
                 LOG.info("Board {} {}: postings in {}", board.provider(), board.board(), country.orElse("-"));
             }
-            if (toCheck.size() == budget) {
-                Board last = toCheck.get(toCheck.size() - 1);
-                enqueue(crawl + ":check:" + last.provider() + ":" + last.board());
+            if (toCheck.size() == budget || checked < toCheck.size()) {
+                Board last = toCheck.get(Math.max(checked - 1, 0));
+                enqueue(crawl + ":check:" + last.provider() + ":" + last.board() + ":" + checked);
             }
             return new TaskOutcome.Done();
         } catch (IOException exception) {

@@ -97,8 +97,9 @@ public class CareerScanHandler implements TaskHandler {
     @Override
     public TaskOutcome handle(TaskRecord task) {
         List<Site> sites = repository.nextSites(properties.sitesPerTask(), properties.recheckAfter());
+        Set<String> providers = repository.permittedProviders();
         for (Site site : sites) {
-            check(site);
+            check(site, providers);
         }
         if (sites.size() == properties.sitesPerTask()) {
             taskService.enqueue(TYPE, taskKey("site-" + sites.get(sites.size() - 1).id()), PAYLOAD);
@@ -106,7 +107,7 @@ public class CareerScanHandler implements TaskHandler {
         return new TaskOutcome.Done();
     }
 
-    private void check(Site site) {
+    private void check(Site site, Set<String> providers) {
         URI home = URI.create(properties.scheme() + "://" + site.host() + "/");
         HttpResult homeResult = http.get(home);
         if (!(homeResult instanceof HttpResult.Success success)) {
@@ -122,7 +123,6 @@ public class CareerScanHandler implements TaskHandler {
         if (boards.isEmpty() && careerUrl.isPresent()) {
             boards = careerBoards(URI.create(careerUrl.get()));
         }
-        Set<String> providers = repository.permittedProviders();
         Set<Board> permitted = boards.stream().filter(board -> providers.contains(board.provider()))
                 .collect(Collectors.toSet());
         Optional<Role> role = repository.permittedRole(site.companyId());
