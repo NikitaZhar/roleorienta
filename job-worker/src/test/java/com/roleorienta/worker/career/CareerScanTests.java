@@ -81,7 +81,7 @@ class CareerScanTests {
 
         runScan();
 
-        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/Careers:SK");
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
         assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
     }
 

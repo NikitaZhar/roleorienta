@@ -115,11 +115,11 @@ class BoardDiscoveryTests {
         jdbcTemplate.update("""
                 INSERT INTO discovered_board (provider, board, crawl) VALUES
                 ('greenhouse', 'a', 'c'), ('greenhouse', 'b', 'c'), ('greenhouse', 'c', 'c'),
-                ('workday', 'x.wd1.myworkdayjobs.com/External', 'c')
+                ('workday', 'x.wd1.myworkdayjobs.com/external', 'c')
                 """);
 
         assertThat(repository.boardsToCheck(2, Duration.ofDays(30))).containsExactly(
-                new Board("greenhouse", "a"), new Board("workday", "x.wd1.myworkdayjobs.com/External"));
+                new Board("greenhouse", "a"), new Board("workday", "x.wd1.myworkdayjobs.com/external"));
     }
 
     /**

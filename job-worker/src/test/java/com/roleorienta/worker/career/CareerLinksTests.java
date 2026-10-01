@@ -27,7 +27,7 @@ class CareerLinksTests {
                 """, "https://acme.sk/");
 
         assertThat(CareerLinks.boards(page)).containsExactly(
-                new Board("workday", "acme.wd3.myworkdayjobs.com/External"),
+                new Board("workday", "acme.wd3.myworkdayjobs.com/external"),
                 new Board("greenhouse", "beta"), new Board("greenhouse", "gamma"), new Board("greenhouse", "delta"),
                 new Board("personio", "epsilon.jobs.personio.de"));
     }
@@ -75,12 +75,28 @@ class CareerLinksTests {
         assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/es")).isEmpty();
         assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/wday/cxs/acme/External/jobs")).isEmpty();
         assertThat(CareerLinks.board("https://acme.wd103.myworkdayjobs.com/es/AccentureCareers/job/1"))
-                .contains(new Board("workday", "acme.wd103.myworkdayjobs.com/AccentureCareers"));
+                .contains(new Board("workday", "acme.wd103.myworkdayjobs.com/accenturecareers"));
 
         assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/robots"))).isFalse();
         assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/es"))).isFalse();
-        assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/External"))).isTrue();
+        assertThat(CareerLinks.isBoard(new Board("workday", "acme.wd3.myworkdayjobs.com/external"))).isTrue();
         assertThat(CareerLinks.isBoard(new Board("greenhouse", "beta"))).isTrue();
+    }
+
+    /**
+     * Регистр букв в адресе доски не создаёт второй доски: ключ — в нижнем регистре у всех провайдеров.
+     */
+    @Test
+    void boardKeyIgnoresLetterCase() {
+        assertThat(CareerLinks.board("https://ABB.wd3.myworkdayjobs.com/External_Career_Page"))
+                .isEqualTo(CareerLinks.board("https://abb.wd3.myworkdayjobs.com/external_career_page"))
+                .contains(new Board("workday", "abb.wd3.myworkdayjobs.com/external_career_page"));
+        assertThat(CareerLinks.board("https://acme.wd3.myworkdayjobs.com/de-DE/Careers"))
+                .contains(new Board("workday", "acme.wd3.myworkdayjobs.com/careers"));
+        assertThat(CareerLinks.board("https://boards.greenhouse.io/GitLab"))
+                .contains(new Board("greenhouse", "gitlab"));
+        assertThat(CareerLinks.board("https://Acme.jobs.personio.de/job/1"))
+                .contains(new Board("personio", "acme.jobs.personio.de"));
     }
 
     /**

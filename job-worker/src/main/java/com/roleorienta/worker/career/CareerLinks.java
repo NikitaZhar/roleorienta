@@ -21,6 +21,10 @@ import org.jsoup.nodes.Element;
  * Разбор страницы сайта компании: ссылки на доски поддерживаемых систем найма, ссылка на
  * кадровую страницу, разметка {@code JobPosting}.
  *
+ * <p>Ключ доски — в нижнем регистре: все четыре провайдера регистр в адресе доски не различают
+ * (Workday — сайт тенанта, Greenhouse — имя доски, Personio и SmartRecruiters — хост и имя компании),
+ * поэтому {@code …/AccentureCareers} и {@code …/accenturecareers} — одна доска, а не две.</p>
+ *
  * <ul>
  *   <li>Workday — {@code <тенант>.wd<N>.myworkdayjobs.com/[<язык>/]<сайт>} → доска
  *       {@code <тенант>.wd<N>.myworkdayjobs.com/<сайт>}. Язык — {@code es} или {@code en-US}; сайт —
@@ -30,7 +34,7 @@ import org.jsoup.nodes.Element;
  *       встраивание {@code …/embed/job_board?for=<доска>} → доска.</li>
  *   <li>Personio — {@code <компания>.jobs.personio.de|com} → хост витрины.</li>
  *   <li>SmartRecruiters — {@code careers.smartrecruiters.com/<компания>},
- *       {@code jobs.smartrecruiters.com/<компания>/…} → компания в нижнем регистре.</li>
+ *       {@code jobs.smartrecruiters.com/<компания>/…} → компания.</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}), в адресе или тексте которой «kariéra», «práca»,
  *       «jobs», «career», «voľné pozície» и т. п.</li>
  * </ul>
@@ -38,13 +42,16 @@ import org.jsoup.nodes.Element;
 final class CareerLinks {
 
     private static final Pattern WORKDAY = Pattern.compile(
-            "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([A-Za-z0-9_-]+)(?=$|[/?#])");
-    private static final Pattern NOT_WORKDAY_SITE = Pattern.compile("robots|wday|[a-z]{2}(?:-[A-Z]{2})?");
+            "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([A-Za-z0-9_-]+)(?=$|[/?#])",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_WORKDAY_SITE = Pattern.compile("robots|wday|[a-z]{2}(?:-[a-z]{2})?");
     private static final Pattern GREENHOUSE = Pattern.compile(
-            "(?:job-)?boards\\.greenhouse\\.io/(?:embed/job_board(?:/js)?\\?for=)?([A-Za-z0-9_-]+)");
-    private static final Pattern PERSONIO = Pattern.compile("([a-z0-9-]+\\.jobs\\.personio\\.(?:de|com))");
+            "(?:job-)?boards\\.greenhouse\\.io/(?:embed/job_board(?:/js)?\\?for=)?([A-Za-z0-9_-]+)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern PERSONIO = Pattern.compile("([a-z0-9-]+\\.jobs\\.personio\\.(?:de|com))",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern SMARTRECRUITERS = Pattern.compile(
-            "(?:careers|jobs)\\.smartrecruiters\\.com/([A-Za-z0-9_-]+)(?=$|[/?#])");
+            "(?:careers|jobs)\\.smartrecruiters\\.com/([A-Za-z0-9_-]+)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
     private static final Set<String> SMARTRECRUITERS_NOT_BOARDS = Set.of("robots", "sitemap", "api", "static", "oneclick-ui");
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
     private static final List<String> CAREER_WORDS = List.of("kariera", "kariéra", "career", "jobs", "job-",
@@ -69,25 +76,30 @@ final class CareerLinks {
      * @return доска системы найма, на которую указывает адрес; пусто — не доска
      */
     static Optional<Board> board(String url) {
-        String link = url.replaceFirst("^[a-z]+://", "");
+        String link = url.replaceFirst("^[A-Za-z]+://", "");
         Matcher workday = WORKDAY.matcher(link);
         if (workday.lookingAt()) {
-            return NOT_WORKDAY_SITE.matcher(workday.group(2)).matches() ? Optional.empty()
-                    : Optional.of(new Board(WorkdayAdapter.PROVIDER, workday.group(1) + "/" + workday.group(2)));
+            String site = lower(workday.group(2));
+            return NOT_WORKDAY_SITE.matcher(site).matches() ? Optional.empty()
+                    : Optional.of(new Board(WorkdayAdapter.PROVIDER, lower(workday.group(1)) + "/" + site));
         }
         Matcher greenhouse = GREENHOUSE.matcher(link);
-        if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(greenhouse.group(1))) {
-            return Optional.of(new Board(GreenhouseAdapter.PROVIDER, greenhouse.group(1)));
+        if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(lower(greenhouse.group(1)))) {
+            return Optional.of(new Board(GreenhouseAdapter.PROVIDER, lower(greenhouse.group(1))));
         }
         Matcher smartRecruiters = SMARTRECRUITERS.matcher(link);
         if (smartRecruiters.lookingAt()) {
-            String company = smartRecruiters.group(1).toLowerCase(Locale.ROOT);
+            String company = lower(smartRecruiters.group(1));
             return SMARTRECRUITERS_NOT_BOARDS.contains(company) ? Optional.empty()
                     : Optional.of(new Board(SmartRecruitersAdapter.PROVIDER, company));
         }
         Matcher personio = PERSONIO.matcher(link);
-        return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, personio.group(1)))
+        return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, lower(personio.group(1))))
                 : Optional.empty();
+    }
+
+    private static String lower(String text) {
+        return text.toLowerCase(Locale.ROOT);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.roleorienta.worker.task;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
@@ -8,7 +9,10 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 /**
  * Выполняет задание: захват (QUEUED → RUNNING) → обработчик → запись результата.
@@ -16,9 +20,11 @@ import org.springframework.stereotype.Service;
  * <p>Обработчик работает без открытой транзакции: внешние запросы не держат соединение с БД.
  * Идемпотентность: задание выполняется, только если его удалось захватить, — повторно
  * доставленное сообщение пропускается. Временный отказ даёт WAITING с интервалом по
- * {@link RetryPolicy}; исчерпание попыток или окончательная неудача — FAILED. Исключение
- * обработчика (ошибка кода) переводит задание в FAILED и пробрасывается дальше — сообщение уходит
- * в DLQ.</p>
+ * {@link RetryPolicy}; исчерпание попыток или окончательная неудача — FAILED. Временная
+ * недоступность БД во время обработки (нет соединения, транзакция не открылась, тайм-аут) —
+ * тоже временный отказ: задание повторяется, цепочка заданий не обрывается. Другое исключение
+ * обработчика (ошибка кода или данных) переводит задание в FAILED и пробрасывается дальше —
+ * сообщение уходит в DLQ.</p>
  */
 @Service
 public class TaskExecutor {
@@ -65,6 +71,10 @@ public class TaskExecutor {
         TaskOutcome outcome;
         try {
             outcome = handlerFor(task).handle(task);
+        } catch (TransientDataAccessException | DataAccessResourceFailureException
+                | CannotCreateTransactionException databaseUnavailable) {
+            LOG.warn("Task id={} hit unavailable database, will retry", task.id(), databaseUnavailable);
+            outcome = new TaskOutcome.Retry(databaseUnavailable.toString(), Duration.ZERO);
         } catch (RuntimeException exception) {
             repository.markFailed(task.id(), task.attempts() + 1, exception.toString());
             throw exception;

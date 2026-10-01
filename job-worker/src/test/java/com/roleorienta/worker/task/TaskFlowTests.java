@@ -21,8 +21,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 /**
  * Задания на реальных PostgreSQL и RabbitMQ: постановка, выполнение, идемпотентность, повтор через
@@ -185,6 +187,39 @@ class TaskFlowTests {
 
         awaitState(taskId, "FAILED");
         assertThat(rabbitTemplate.receive(RabbitTopology.DEAD_LETTER_QUEUE, RECEIVE_TIMEOUT_MS)).isNotNull();
+    }
+
+    /**
+     * БД временно недоступна во время обработки (транзакция не открылась) — временный отказ:
+     * задание ждёт повтора, а не завершается неудачей; цепочка заданий не обрывается.
+     */
+    @Test
+    void unavailableDatabaseDuringHandlingIsRetried() {
+        handler.reset(() -> {
+            throw new CannotCreateTransactionException("Could not open JPA EntityManager for transaction");
+        });
+        taskService.enqueue(TEST_TYPE, "k-db-down", PAYLOAD);
+        long taskId = taskId("k-db-down");
+
+        executor.execute(taskId);
+
+        assertThat(state(taskId)).isEqualTo("WAITING");
+        assertThat(attempts(taskId)).isEqualTo(1);
+    }
+
+    /**
+     * Ошибка данных (нарушение ограничения БД) — не временный отказ: задание FAILED.
+     */
+    @Test
+    void dataIntegrityViolationFailsTask() {
+        handler.reset(() -> {
+            throw new DataIntegrityViolationException("value too long");
+        });
+        taskService.enqueue(TEST_TYPE, "k-data", PAYLOAD);
+        long taskId = taskId("k-data");
+
+        assertThatThrownBy(() -> executor.execute(taskId)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(state(taskId)).isEqualTo("FAILED");
     }
 
     /**
