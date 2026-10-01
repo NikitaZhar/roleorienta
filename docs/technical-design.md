@@ -288,7 +288,7 @@ erDiagram
 
 | Провайдер | Формат | Как читается |
 |---|---|---|
-| Workday | JSON | `https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (POST, `offset/limit`, фасеты стран); деталь — по `externalPath`: текст и места (`location`, `additionalLocations`; в списке вместо них бывает сводка «2 Locations») |
+| Workday | JSON | `https://<tenant>.<dc>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (POST, `offset/limit`, фасет страны; нет его — фасет мест с названием страны в подписи, «Slovakia - Bratislava»); деталь — по `externalPath`: текст и места (`location`, `additionalLocations`; в списке вместо них бывает сводка «2 Locations») |
 | Personio | XML | `https://<компания>.jobs.personio.de/xml` (или `.com`) |
 | Greenhouse | JSON | `https://boards-api.greenhouse.io/v1/boards/<доска>/jobs?content=true`; деталь с `pay_transparency` — не нужна на первом этапе |
 | SmartRecruiters | HTML | Список — `https://careers.smartrecruiters.com/<компания>?search=&page=N` (группы по месту, ~20 вакансий на страницу); текст — страница вакансии `https://jobs.smartrecruiters.com/<компания>/<id>`, микроразметка schema.org `JobPosting`. `api.smartrecruiters.com` не используется (запрещён robots.txt). Решение владельца (§35) |

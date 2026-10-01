@@ -3,6 +3,8 @@ package com.roleorienta.worker.adapter.workday;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.roleorienta.worker.adapter.CountryNames;
 import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
@@ -42,8 +44,10 @@ import org.springframework.stereotype.Component;
  * тенантов разное, поэтому берётся фасет, в имени которого есть {@code country}, и значение с
  * английским названием страны (или официальным: «Slovak Republic»); дальше список читается с
  * {@code appliedFacets}. Тот же фасет отвечает, есть ли у доски публикации в стране
- * ({@link #hasPostingsIn}) — одним запросом. Фасета страны
- * нет — список читается без фильтра; страны нет среди значений — у доски нет её публикаций.
+ * ({@link #hasPostingsIn}) — одним запросом. Страны нет среди значений — у доски нет её публикаций.
+ * Фасета страны нет — берётся фасет мест (в имени параметра есть {@code location}, значения вида
+ * «Slovakia - Bratislava»): все места, в подписи которых есть название страны, — фильтр списка.
+ * Нет и таких мест (подписи без страны) — список читается без фильтра, ответа о стране нет.
  * Пропажа из отфильтрованного списка проверяется деталью публикации ({@link #check}).</p>
  */
 @Component
@@ -105,7 +109,7 @@ public class WorkdayAdapter implements SourceAdapter {
         }
         CountryFilter filter = countryFilter(json, country);
         if (!filter.facetFound()) {
-            LOG.warn("Workday board {} has no country facet, read without filter", board);
+            LOG.warn("Workday board {} has no country facet and no places in {}, read without filter", board, country);
             return readPages(matcher, NO_FACETS);
         }
         if (filter.appliedFacets() != null) {
@@ -139,16 +143,14 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     private static CountryFilter countryFilter(JsonNode firstPage, String country) {
         List<JsonNode> countryFacets = new ArrayList<>();
-        collectCountryFacets(firstPage.path("facets"), countryFacets);
+        collectFacets(firstPage.path("facets"), "country", countryFacets);
         if (countryFacets.isEmpty()) {
-            return new CountryFilter(false, null);
+            return locationFilter(firstPage, country);
         }
         for (JsonNode facet : countryFacets) {
             for (JsonNode value : facet.path("values")) {
                 if (CountryNames.isName(value.path("descriptor").asText(), country)) {
-                    return new CountryFilter(true, "{" + JSON.getNodeFactory().textNode(
-                            facet.path("facetParameter").asText()) + ":[" + JSON.getNodeFactory().textNode(
-                            value.path("id").asText()) + "]}");
+                    return new CountryFilter(true, appliedFacets(facet, List.of(value.path("id").asText())));
                 }
             }
         }
@@ -156,7 +158,38 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
-     * @param facetFound    у доски есть фасет страны
+     * Фильтр по фасету мест, когда фасета страны нет: места, в подписи которых есть название страны.
+     * Таких нет — ответа нет (подписи могут быть без страны: «Bratislava»).
+     */
+    private static CountryFilter locationFilter(JsonNode firstPage, String country) {
+        List<JsonNode> locationFacets = new ArrayList<>();
+        collectFacets(firstPage.path("facets"), "location", locationFacets);
+        for (JsonNode facet : locationFacets) {
+            List<String> ids = new ArrayList<>();
+            for (JsonNode value : facet.path("values")) {
+                if (value.hasNonNull("id") && CountryNames.mentions(value.path("descriptor").asText(), country)) {
+                    ids.add(value.path("id").asText());
+                }
+            }
+            if (!ids.isEmpty()) {
+                return new CountryFilter(true, appliedFacets(facet, ids));
+            }
+        }
+        return new CountryFilter(false, null);
+    }
+
+    /**
+     * @return {@code appliedFacets}: параметр фасета и выбранные значения (Workday объединяет их по «или»)
+     */
+    private static String appliedFacets(JsonNode facet, List<String> ids) {
+        ObjectNode applied = JSON.createObjectNode();
+        ArrayNode values = applied.putArray(facet.path("facetParameter").asText());
+        ids.forEach(values::add);
+        return applied.toString();
+    }
+
+    /**
+     * @param facetFound    у доски есть фасет страны или места с названием страны — ответ о стране есть
      * @param appliedFacets {@code appliedFacets} со значением страны; {@code null} — публикаций в
      *                      стране нет (или нет фасета)
      */
@@ -211,15 +244,15 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
-     * Собирает фасеты страны: имя параметра содержит {@code country}; обходит и вложенные фасеты
-     * значений.
+     * Собирает фасеты, в имени параметра которых есть слово ({@code country}, {@code location});
+     * обходит и вложенные фасеты значений.
      */
-    private static void collectCountryFacets(JsonNode facets, List<JsonNode> found) {
+    private static void collectFacets(JsonNode facets, String word, List<JsonNode> found) {
         for (JsonNode facet : facets) {
-            if (facet.path("facetParameter").asText().toLowerCase(Locale.ROOT).contains("country")) {
+            if (facet.path("facetParameter").asText().toLowerCase(Locale.ROOT).contains(word)) {
                 found.add(facet);
             }
-            collectCountryFacets(facet.path("values"), found);
+            collectFacets(facet.path("values"), word, found);
         }
     }
 

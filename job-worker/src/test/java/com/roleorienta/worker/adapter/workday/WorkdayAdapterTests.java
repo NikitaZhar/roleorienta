@@ -41,6 +41,13 @@ class WorkdayAdapterTests {
             + "{\"facetParameter\":\"locationCountry\",\"values\":["
             + "{\"descriptor\":\"Austria\",\"id\":\"at-id\",\"count\":5},"
             + "{\"descriptor\":\"Slovakia\",\"id\":\"sk-id\",\"count\":1}]}]}]";
+    /** Фасет мест без фасета страны (как у AstraZeneca): подписи «Страна - Город». */
+    private static final String LOCATION_FACETS = ",\"facets\":[{\"facetParameter\":\"locationMainGroup\",\"values\":["
+            + "{\"facetParameter\":\"locations\",\"values\":["
+            + "{\"descriptor\":\"Austria - Vienna\",\"id\":\"at-id\",\"count\":5},"
+            + "{\"descriptor\":\"Slovakia - Bratislava\",\"id\":\"sk-ba\",\"count\":1},"
+            + "{\"descriptor\":\"Slovakia - Kosice\",\"id\":\"sk-ke\",\"count\":2}]}]}]";
+    private static final String SK_LOCATIONS = "{\"locations\":[\"sk-ba\",\"sk-ke\"]}";
 
     private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
 
@@ -64,7 +71,8 @@ class WorkdayAdapterTests {
             String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             Matcher offset = OFFSET.matcher(request);
             int key = offset.find() ? Integer.parseInt(offset.group(1)) : -1;
-            Map<Integer, String> responses = request.contains(SK_FACET) ? filteredPages : pages;
+            Map<Integer, String> responses = request.contains(SK_FACET) || request.contains(SK_LOCATIONS)
+                    ? filteredPages : pages;
             byte[] bytes = responses.getOrDefault(key, "").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statuses.getOrDefault(key, 200), bytes.length == 0 ? -1 : bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
@@ -186,6 +194,25 @@ class WorkdayAdapterTests {
         assertThat(((SourceReadResult.Read) result).complete()).isTrue();
         assertThat(((SourceReadResult.Read) result).postings()).extracting(FetchedPosting::title)
                 .containsExactly("Java Developer");
+    }
+
+    /**
+     * Фасета страны нет, есть фасет мест — список читается с местами страны (все её города), а не
+     * вся доска; провайдер отвечает о стране одним запросом. Мест страны нет — ответа нет.
+     */
+    @Test
+    void filtersByPlacesOfCountryWhenThereIsNoCountryFacet() {
+        pages.put(0, withFacets(page(6, "Java Developer", "QA Engineer")).replace(FACETS, LOCATION_FACETS));
+        filteredPages.put(0, page(3, "Java Developer", "QA Engineer"));
+        filteredPages.put(PAGE_SIZE, page(3, "DevOps Engineer"));
+
+        SourceReadResult result = adapter.read(BOARD, "SK");
+
+        assertThat(((SourceReadResult.Read) result).complete()).isTrue();
+        assertThat(((SourceReadResult.Read) result).postings()).extracting(FetchedPosting::title)
+                .containsExactly("Java Developer", "QA Engineer", "DevOps Engineer");
+        assertThat(adapter.hasPostingsIn(BOARD, "SK")).contains(true);
+        assertThat(adapter.hasPostingsIn(BOARD, "DE")).isEmpty();
     }
 
     /**
