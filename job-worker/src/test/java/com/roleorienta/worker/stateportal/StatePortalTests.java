@@ -49,6 +49,9 @@ class StatePortalTests {
     private static final String NOT_REGISTERED = "90000005";
     private static final List<String> NUMBERS = List.of(EMPLOYER, AGENCY, OWN_PAGE, NO_OFFERS, NOT_REGISTERED);
     private static final int MAX_TASK_ROUNDS = 10;
+    /** Своя вакансия портала у {@link #EMPLOYER}; в её детали — почта на домене {@link #EMPLOYER_HOST}. */
+    private static final String OFFER_UUID = "0b8c1f2e-3a4d-4e5f-8a9b-0c1d2e3f4a5b";
+    private static final String EMPLOYER_HOST = "employer-test.sk";
     private static final Map<String, Integer> OFFERS = Map.of(EMPLOYER, 2, AGENCY, 1, OWN_PAGE, 3,
             NOT_REGISTERED, 1);
     private static final HttpServer PORTAL = startPortal();
@@ -89,13 +92,15 @@ class StatePortalTests {
      */
     @BeforeEach
     void setUp() {
-        jdbcTemplate.update("DELETE FROM task");
         jdbcTemplate.update("DELETE FROM outbox_event");
+        jdbcTemplate.update("DELETE FROM task");
         jdbcTemplate.update("DELETE FROM portal_employer");
         String numbers = "'" + String.join("','", NUMBERS) + "'";
         jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
                 + "registration_number IN (" + numbers + "))");
         jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM company_site WHERE company_id IN (SELECT id FROM company WHERE "
                 + "registration_number IN (" + numbers + "))");
         jdbcTemplate.update("DELETE FROM source WHERE provider = ? OR board = 'own-page-test'", StatePortalAdapter.PROVIDER);
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
@@ -140,6 +145,30 @@ class StatePortalTests {
                 WHERE s.provider = ?
                 """, String.class, StatePortalAdapter.PROVIDER)).containsExactly(
                 EMPLOYER + ":" + EMPLOYER + ":EMPLOYER:CONNECTED");
+    }
+
+    /**
+     * Сайт с портала: у подключённого работодателя без сайта сайт берётся из детали его вакансии (домен
+     * почты контакта) и записывается сайтом компании; работодателя с найденным сайтом второй раз не
+     * ищут.
+     */
+    @Test
+    void takesEmployerSiteFromPortalOffer() {
+        handler.enqueueList("test");
+        runQueuedTasks();
+        handler.enqueueCheck("test");
+        runQueuedTasks();
+        handler.enqueueSite("test");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT c.registration_number || ':' || s.host || ':' || s.source || ':' || s.evidence_url
+                FROM company_site s JOIN company c ON c.id = s.company_id
+                WHERE c.registration_number IN (?, ?)
+                """, String.class, EMPLOYER, OWN_PAGE)).containsExactly(EMPLOYER + ":" + EMPLOYER_HOST
+                + ":STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
+        assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
+                + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
     }
 
     /**
@@ -195,10 +224,20 @@ class StatePortalTests {
                 respond(exchange, body.append("</main></body></html>").toString());
             });
             server.createContext("/pracovne-ponuky", exchange -> {
+                if (exchange.getRequestURI().getPath().endsWith(OFFER_UUID)) {
+                    respond(exchange, "<html><body><dl><div><dt class=\"vpm-data-panel__key\">IČO</dt>"
+                            + "<dd class=\"vpm-data-panel__value\">" + EMPLOYER + "</dd></div><div><dt class=\"vpm-data-panel__key\">"
+                            + "Názov spoločnosti</dt><dd>Employer Test s. r. o.</dd></div></dl>"
+                            + "<script> { let name = \"hr\"; let host = \"" + EMPLOYER_HOST + "\"; } </script>"
+                            + "</body></html>");
+                    return;
+                }
                 String query = exchange.getRequestURI().getQuery();
                 String number = query.replaceAll(".*firma=(\\d{8}).*", "$1");
-                respond(exchange, "<html><body><main><span>"
-                        + OFFERS.getOrDefault(number, 0) + " pracovných ponúk,</span></main></body></html>");
+                String offer = EMPLOYER.equals(number) ? "<a href=\"/pracovne-ponuky/" + OFFER_UUID + "\">"
+                        + "<h3 class=\"govuk-signpost__title\">Účtovník</h3></a>" : "";
+                respond(exchange, "<html><body><main><span>" + OFFERS.getOrDefault(number, 0)
+                        + " pracovných ponúk,</span>" + offer + "</main></body></html>");
             });
             server.start();
             return server;

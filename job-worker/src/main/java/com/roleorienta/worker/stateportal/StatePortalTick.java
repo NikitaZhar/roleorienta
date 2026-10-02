@@ -51,6 +51,7 @@ public class StatePortalTick {
             leaderLock.runIfLeader(LOCK_KEY, () -> {
                 handler.enqueueList(week);
                 handler.enqueueCheck(today.toString());
+                handler.enqueueSite(today.toString());
             });
         } catch (DataAccessException exception) {
             LOG.warn("State portal tick failed, will retry on next tick", exception);

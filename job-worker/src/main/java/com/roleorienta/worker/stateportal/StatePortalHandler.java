@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
+import com.roleorienta.worker.adapter.stateportal.PortalSite;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
 import com.roleorienta.worker.stateportal.StatePortalRepository.DueEmployer;
@@ -30,6 +31,9 @@ import org.springframework.stereotype.Component;
  *       реестре, не агентства и без своего источника: есть ли у них вакансии на портале (вместе с
  *       объявлениями площадок, привязанными к IČO). Есть — подключается источник портала. Каждый день,
  *       пока есть работодатели к проверке; повтор — через {@link StatePortalProperties#recheckAfter()}.</li>
+ *   <li>{@code site} — у компаний с подключённым порталом и без сайта: сайт из детали их вакансии на
+ *       портале («Internetová adresa», иначе домен контактной почты) записывается сайтом компании; его
+ *       проверяет поиск кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
  * </ol>
  *
  * <p>Отказ страницы списка — повтор задания с того же места; отказ проверки одного работодателя — он
@@ -47,6 +51,7 @@ public class StatePortalHandler implements TaskHandler {
 
     private static final String LIST = "list";
     private static final String CHECK = "check";
+    private static final String SITE = "site";
     private static final String SLOVAKIA = "SK";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(StatePortalHandler.class);
@@ -90,6 +95,16 @@ public class StatePortalHandler implements TaskHandler {
         return taskService.enqueue(TYPE, key(CHECK, period, 1), payload(CHECK, period, 1));
     }
 
+    /**
+     * Ставит шаг «сайт».
+     *
+     * @param period часть ключа: день
+     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     */
+    public boolean enqueueSite(String period) {
+        return taskService.enqueue(TYPE, key(SITE, period, 1), payload(SITE, period, 1));
+    }
+
     @Override
     public String type() {
         return TYPE;
@@ -100,7 +115,11 @@ public class StatePortalHandler implements TaskHandler {
         JsonNode payload = parse(task.payload());
         String period = payload.path("period").asText();
         int position = payload.path("position").asInt(1);
-        return LIST.equals(payload.path("step").asText()) ? list(period, position) : check(period, position);
+        return switch (payload.path("step").asText()) {
+            case LIST -> list(period, position);
+            case SITE -> site(period, position);
+            default -> check(period, position);
+        };
     }
 
     /**
@@ -149,6 +168,33 @@ public class StatePortalHandler implements TaskHandler {
         }
         if (due.size() == properties.checksPerTask()) {
             next(CHECK, period, round + 1);
+        }
+        return new TaskOutcome.Done();
+    }
+
+    /**
+     * Поиск сайтов; взято полное число — следующее задание.
+     */
+    private TaskOutcome site(String period, int round) {
+        List<DueEmployer> due = repository.employersForSite(properties.checksPerTask(), properties.recheckAfter());
+        int read = 0;
+        int found = 0;
+        for (DueEmployer employer : due) {
+            Optional<PortalSite> site = adapter.employerSite(employer.registrationNumber());
+            if (site.isEmpty()) {
+                LOG.warn("State portal employer {}: site not read", employer.registrationNumber());
+                continue;
+            }
+            repository.recordSite(employer, site.get());
+            read++;
+            found += site.get().host() == null ? 0 : 1;
+        }
+        LOG.info("State portal sites: {} of {} employers read, {} sites found", read, due.size(), found);
+        if (read == 0 && !due.isEmpty()) {
+            return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
+        }
+        if (due.size() == properties.checksPerTask()) {
+            next(SITE, period, round + 1);
         }
         return new TaskOutcome.Done();
     }

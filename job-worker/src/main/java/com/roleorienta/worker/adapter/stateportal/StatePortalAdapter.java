@@ -7,12 +7,15 @@ import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.net.URI;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
@@ -57,6 +60,20 @@ public class StatePortalAdapter implements SourceAdapter {
     private static final Pattern PROFESIA_OFFER = Pattern.compile("profesia\\.sk/(?:.*/)?O(\\d+)");
     private static final Pattern EMPLOYER_NUMBER = Pattern.compile("IČO:\\s*(\\d{8})");
     private static final int MAX_EXTERNAL_ID = 200;
+    /** Домен почты контакта в детали вакансии: адрес собирается скриптом из имени и хоста. */
+    private static final Pattern MAIL_HOST = Pattern.compile("let\\s+host\\s*=\\s*\"([^\"]+)\"");
+    private static final Pattern HOST = Pattern.compile("[a-z0-9-]+(?:\\.[a-z0-9-]+)+");
+    /** Правовые формы в названии (после разбиения на слова). */
+    private static final Set<String> LEGAL_FORMS = Set.of("spol", "sro", "as", "ks", "vos", "se", "ltd", "gmbh",
+            "inc", "plc", "druzstvo");
+    /** Общие слова названия: их наличие в домене не говорит о компании. */
+    private static final Set<String> GENERIC_WORDS = Set.of("slovakia", "slovensko", "slovenska", "slovenskej",
+            "group", "company", "services", "service", "holding", "and", "the");
+    /** Общие почтовые сервисы: домен почты на них — не сайт работодателя. */
+    private static final Set<String> PUBLIC_MAIL = Set.of("gmail.com", "googlemail.com", "azet.sk", "centrum.sk",
+            "zoznam.sk", "post.sk", "pobox.sk", "atlas.sk", "inmail.sk", "szm.sk", "stonline.sk", "orangemail.sk",
+            "chello.sk", "upcmail.sk", "seznam.cz", "email.cz", "centrum.cz", "yahoo.com", "outlook.com",
+            "hotmail.com", "live.com", "icloud.com", "gmx.net", "gmx.de", "gmx.com", "mail.com");
     private static final Logger LOG = LoggerFactory.getLogger(StatePortalAdapter.class);
 
     private final ExternalHttpClient httpClient;
@@ -158,6 +175,102 @@ public class StatePortalAdapter implements SourceAdapter {
             }
         }
         return Optional.of(employers);
+    }
+
+    /**
+     * Сайт работодателя: первая своя вакансия портала на первой странице его списка, в её детали —
+     * «Internetová adresa», иначе домен контактной почты — не общий почтовый сервис и со словом или
+     * инициалами названия компании (почта бывает на домене бухгалтера или агентства; технический
+     * документ §5.1). IČO детали должно совпасть с {@code board}.
+     *
+     * @param board IČO работодателя
+     * @return сайт или его отсутствие; пусто — страница не получена
+     */
+    public Optional<PortalSite> employerSite(String board) {
+        PortalSite none = new PortalSite(null, null);
+        if (!REGISTRATION_NUMBER.matcher(board).matches()
+                || !(httpClient.get(offersUri(board, properties.offersPageSize(), 1))
+                        instanceof HttpResult.Success list)) {
+            return Optional.empty();
+        }
+        Matcher offer = PORTAL_OFFER.matcher(list.body());
+        if (!offer.find()) {
+            return Optional.of(none);
+        }
+        URI detailUri = URI.create(properties.baseUrl() + "/pracovne-ponuky/" + offer.group(1));
+        if (!(httpClient.get(detailUri) instanceof HttpResult.Success detail)) {
+            return Optional.empty();
+        }
+        Document document = Jsoup.parse(detail.body(), detailUri.toString());
+        Element number = value(document, "IČO");
+        if (number == null || !withoutLeadingZeros(number.text()).equals(withoutLeadingZeros(board))) {
+            return Optional.of(none);
+        }
+        Element web = value(document, "Internetová adresa");
+        String host = web == null ? null : host(web.selectFirst("a[href]") == null ? web.text()
+                : web.selectFirst("a[href]").attr("href"));
+        if (host == null) {
+            Matcher mail = MAIL_HOST.matcher(detail.body());
+            host = mail.find() ? host(mail.group(1)) : null;
+            Element name = value(document, "Názov spoločnosti");
+            host = host == null || PUBLIC_MAIL.contains(host) || name == null || !namesCompany(host, name.text())
+                    ? null : host;
+        }
+        return Optional.of(host == null ? none : new PortalSite(host, detailUri.toString()));
+    }
+
+    /**
+     * Значение поля детали вакансии: {@code dt.vpm-data-panel__key} с подписью → следующий {@code dd}.
+     */
+    private static Element value(Document document, String key) {
+        for (Element term : document.select("dt.vpm-data-panel__key")) {
+            if (key.equals(term.text().trim())) {
+                return term.nextElementSibling();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Хост из адреса или домена ({@code www.firma.sk}, {@code https://firma.sk/sk}); не похоже на хост —
+     * {@code null}.
+     */
+    private static String host(String address) {
+        String text = address == null ? "" : address.trim().toLowerCase(Locale.ROOT);
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            String hostPart = URI.create(text.contains("://") ? text : "https://" + text).getHost();
+            return hostPart != null && HOST.matcher(hostPart).matches() ? hostPart : null;
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+    }
+
+    /**
+     * В домене есть слово названия (от трёх букв, кроме общих: slovakia, group …) или инициалы его слов (от трёх)
+     * ({@code zsr.sk} — «Železnice Slovenskej republiky»); правовая форма не учитывается.
+     */
+    private static boolean namesCompany(String host, String companyName) {
+        String plain = Normalizer.normalize(companyName, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+        List<String> words = new ArrayList<>();
+        for (String word : plain.split("[^a-z0-9]+")) {
+            if (word.length() > 1 && !LEGAL_FORMS.contains(word)) {
+                words.add(word);
+            }
+        }
+        StringBuilder initials = new StringBuilder();
+        words.forEach(word -> initials.append(word.charAt(0)));
+        String domain = host.startsWith("www.") ? host.substring(4) : host;
+        return initials.length() > 2 && domain.contains(initials)
+                || words.stream().anyMatch(word -> word.length() > 2 && !GENERIC_WORDS.contains(word)
+                        && domain.contains(word));
+    }
+
+    private static String withoutLeadingZeros(String number) {
+        return number.trim().replaceFirst("^0+", "");
     }
 
     private URI offersUri(String board, int pageSize, int page) {

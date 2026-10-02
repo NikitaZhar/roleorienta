@@ -11,9 +11,11 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -28,9 +30,13 @@ import org.springframework.stereotype.Component;
  *
  * <ol>
  *   <li>Главная страница: ссылки на доски Workday, Greenhouse, Personio ({@link CareerLinks}).</li>
- *   <li>Досок нет — кадровая страница сайта («kariéra», «práca», «jobs» …): на ней те же ссылки; нет
- *       и их — страница с разметкой {@code JobPosting} (она сама или одна из первых
- *       {@value #VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}.</li>
+ *   <li>Досок нет — кадровая страница сайта («kariéra», «práca», «jobs» …; ссылка на тот же сайт или
+ *       его поддомен, а без ссылки — пробный адрес {@code /kariera}, {@code /sk/kariera}, {@code /careers},
+ *       {@code /pre-uchadzacov}, {@code kariera.|jobs.|careers.<домен>} с кадровым словом в заголовке): на
+ *       ней те же ссылки; нет и их — страница с
+ *       разметкой {@code JobPosting} (она сама или одна из первых {@value #VACANCY_CHECKS} ссылок вглубь)
+ *       подключается как источник {@code jobposting}; нет и её — один шаг вглубь по кадровой ссылке
+ *       ({@code /kariera} → {@code /kariera/volne-pozicie}).</li>
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>
@@ -38,6 +44,9 @@ import org.springframework.stereotype.Component;
  *       источник провайдера с разрешением; у кадрового агентства — ещё и с разрешением на это агентство,
  *       связь — с ролью «размещающее агентство». Нет разрешения или главная запрещена robots.txt —
  *       итог «использование запрещено».</li>
+ *   <li>Главная закрыта для программы (401/403; ограничение не обходится): кадровая страница ищется по
+ *       пробным адресам (кадровый поддомен обычно открыт); не открылось ничего — итог «сайт не ответил»
+ *       (у компании — «источник недоступен»).</li>
  * </ol>
  *
  * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, дальше — следующее задание.
@@ -53,6 +62,11 @@ public class CareerScanHandler implements TaskHandler {
     private static final int VACANCY_CHECKS = 3;
     /** Длина {@code source.board} в схеме. */
     private static final int MAX_BOARD = 200;
+    /** Пробные адреса кадровой страницы на сайте, когда на главной нет ссылки или главная закрыта. */
+    private static final List<String> CAREER_PATHS = List.of("/kariera", "/sk/kariera", "/careers", "/pre-uchadzacov");
+    /** Пробные кадровые поддомены домена сайта. */
+    private static final List<String> CAREER_SUBDOMAINS = List.of("kariera", "jobs", "careers");
+    private static final Pattern IP_ADDRESS = Pattern.compile("[0-9.]+|\\[.*]");
     private static final Logger LOG = LoggerFactory.getLogger(CareerScanHandler.class);
 
     private final ExternalHttpClient http;
@@ -110,18 +124,30 @@ public class CareerScanHandler implements TaskHandler {
     private void check(Site site, Set<String> providers) {
         URI home = URI.create(properties.scheme() + "://" + site.host() + "/");
         HttpResult homeResult = http.get(home);
-        if (!(homeResult instanceof HttpResult.Success success)) {
+        boolean closed = homeResult instanceof HttpResult.PermanentFailure failure
+                && failure.kind() == HttpResult.Kind.ACCESS_DENIED;
+        if (!(homeResult instanceof HttpResult.Success) && !closed) {
             boolean forbidden = homeResult instanceof HttpResult.PermanentFailure failure
                     && failure.kind() == HttpResult.Kind.USE_FORBIDDEN;
             repository.record(site, Set.of(), forbidden ? CheckResult.USE_FORBIDDEN : CheckResult.UNREACHABLE,
                     null, Role.EMPLOYER);
             return;
         }
-        Document homePage = Jsoup.parse(success.body(), home.toString());
-        Set<Board> boards = CareerLinks.boards(homePage);
-        Optional<String> careerUrl = CareerLinks.careerPage(homePage, site.host());
+        Optional<Document> homePage = homeResult instanceof HttpResult.Success success
+                ? Optional.of(Jsoup.parse(success.body(), home.toString())) : Optional.empty();
+        Set<Board> boards = homePage.map(CareerLinks::boards).orElse(Set.of());
+        Optional<String> careerUrl = homePage.flatMap(page -> CareerLinks.careerPage(page, site.host()));
+        if (boards.isEmpty() && careerUrl.isEmpty()) {
+            careerUrl = standardCareerPage(home);
+        }
+        if (closed && careerUrl.isEmpty()) {
+            LOG.info("Site {} of company {} is closed for the program, no career address open", site.host(),
+                    site.companyId());
+            repository.record(site, Set.of(), CheckResult.UNREACHABLE, null, Role.EMPLOYER);
+            return;
+        }
         if (boards.isEmpty() && careerUrl.isPresent()) {
-            boards = careerBoards(URI.create(careerUrl.get()));
+            boards = careerBoards(URI.create(careerUrl.get()), true);
         }
         Set<Board> permitted = boards.stream().filter(board -> providers.contains(board.provider()))
                 .collect(Collectors.toSet());
@@ -139,23 +165,47 @@ public class CareerScanHandler implements TaskHandler {
     }
 
     /**
-     * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
-     * на первых страницах вакансий есть разметка {@code JobPosting}.
+     * Первый пробный кадровый адрес (путь на сайте, затем кадровый поддомен его домена), который открылся
+     * и в заголовке которого есть кадровое слово; нет — пусто.
      */
-    private Set<Board> careerBoards(URI careerUrl) {
+    private Optional<String> standardCareerPage(URI home) {
+        List<URI> candidates = new ArrayList<>(CAREER_PATHS.stream().map(home::resolve).toList());
+        String domain = home.getHost().startsWith("www.") ? home.getHost().substring(4) : home.getHost();
+        if (!IP_ADDRESS.matcher(domain).matches()) {
+            CAREER_SUBDOMAINS.forEach(sub -> candidates.add(
+                    URI.create(home.getScheme() + "://" + sub + "." + domain + "/")));
+        }
+        for (URI candidate : candidates) {
+            Optional<Document> page = page(candidate);
+            if (page.isPresent() && CareerLinks.isCareerPage(page.get())) {
+                return Optional.of(candidate.toString());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
+     * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
+     * кадровой ссылке ({@code deeper}).
+     */
+    private Set<Board> careerBoards(URI careerUrl, boolean deeper) {
         Optional<Document> careerPage = page(careerUrl);
         if (careerPage.isEmpty()) {
             return Set.of();
         }
         Set<Board> boards = CareerLinks.boards(careerPage.get());
-        if (!boards.isEmpty() || careerUrl.toString().length() > MAX_BOARD) {
+        if (!boards.isEmpty()) {
             return boards;
         }
-        boolean marked = CareerLinks.hasJobPosting(careerPage.get()) || CareerLinks
+        if (careerUrl.toString().length() <= MAX_BOARD && (CareerLinks.hasJobPosting(careerPage.get()) || CareerLinks
                 .vacancyLinks(careerPage.get(), careerUrl, VACANCY_CHECKS).stream()
                 .map(link -> page(URI.create(link)))
-                .anyMatch(vacancy -> vacancy.isPresent() && CareerLinks.hasJobPosting(vacancy.get()));
-        return marked ? Set.of(new Board(JobPostingAdapter.PROVIDER, careerUrl.toString())) : Set.of();
+                .anyMatch(vacancy -> vacancy.isPresent() && CareerLinks.hasJobPosting(vacancy.get())))) {
+            return Set.of(new Board(JobPostingAdapter.PROVIDER, careerUrl.toString()));
+        }
+        Optional<String> next = deeper ? CareerLinks.deeperCareerPage(careerPage.get(), careerUrl) : Optional.empty();
+        return next.isPresent() ? careerBoards(URI.create(next.get()), false) : Set.of();
     }
 
     private Optional<Document> page(URI uri) {

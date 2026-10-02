@@ -1,6 +1,7 @@
 package com.roleorienta.worker.stateportal;
 
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
+import com.roleorienta.worker.adapter.stateportal.PortalSite;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import java.time.Duration;
 import java.util.List;
@@ -102,6 +103,48 @@ public class StatePortalRepository {
                     VALUES (?, 'CONNECTED', now(), now())
                     ON CONFLICT (company_id) DO UPDATE SET result = 'CONNECTED', checked_at = now()
                     """, employer.companyId());
+        }
+    }
+
+    /**
+     * Работодатели портала к поиску сайта (§47): источник портала подключён к их компании, у компании нет
+     * ни одного сайта, сайт не искали дольше {@code recheckAfter}. Сначала те, где не искали.
+     *
+     * @param limit        не больше
+     * @param recheckAfter срок до повторного поиска
+     * @return работодатели с компанией
+     */
+    public List<DueEmployer> employersForSite(int limit, Duration recheckAfter) {
+        return jdbcTemplate.query("""
+                SELECT p.registration_number, c.id FROM portal_employer p
+                JOIN source s ON s.provider = ? AND s.board = p.registration_number
+                JOIN company_source cs ON cs.source_id = s.id
+                JOIN company c ON c.id = cs.company_id
+                WHERE c.terminated_on IS NULL
+                  AND (p.site_checked_at IS NULL OR p.site_checked_at < now() - make_interval(secs => ?))
+                  AND NOT EXISTS (SELECT 1 FROM company_site site WHERE site.company_id = c.id)
+                ORDER BY p.site_checked_at NULLS FIRST, p.registration_number
+                LIMIT ?
+                """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
+                StatePortalAdapter.PROVIDER, (double) recheckAfter.toSeconds(), limit);
+    }
+
+    /**
+     * Итог поиска сайта одной транзакцией: отметка «искали»; сайт найден — он записывается сайтом компании
+     * с источником {@code STATE_PORTAL} (дальше его проверяет поиск кадровой страницы).
+     *
+     * @param employer работодатель с компанией
+     * @param site     сайт; {@code host == null} — не найден
+     */
+    @Transactional
+    public void recordSite(DueEmployer employer, PortalSite site) {
+        jdbcTemplate.update("UPDATE portal_employer SET site_checked_at = now() WHERE registration_number = ?",
+                employer.registrationNumber());
+        if (site.host() != null) {
+            jdbcTemplate.update("""
+                    INSERT INTO company_site (company_id, host, evidence_url, source) VALUES (?, ?, ?, 'STATE_PORTAL')
+                    ON CONFLICT (company_id, host) DO NOTHING
+                    """, employer.companyId(), site.host(), site.evidenceUrl());
         }
     }
 

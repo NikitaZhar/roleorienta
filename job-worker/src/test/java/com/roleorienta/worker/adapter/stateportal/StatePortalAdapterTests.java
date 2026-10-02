@@ -36,6 +36,8 @@ class StatePortalAdapterTests {
 
     /** Страницы списка вакансий: ключ — «IČO:номер страницы». */
     private final Map<String, String> offerPages = new HashMap<>();
+    /** Детали вакансий портала по uuid. */
+    private final Map<String, String> detailPages = new HashMap<>();
     /** Страницы списка работодателей по номеру. */
     private final Map<String, String> employerPages = new HashMap<>();
 
@@ -51,8 +53,12 @@ class StatePortalAdapterTests {
     @BeforeEach
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext("/pracovne-ponuky", exchange -> respond(exchange,
-                offerPages.getOrDefault(param(exchange, "firma") + ":" + param(exchange, "pageNr"), offers(0))));
+        server.createContext("/pracovne-ponuky", exchange -> {
+            String detail = exchange.getRequestURI().getPath().replaceFirst("^/pracovne-ponuky/?", "");
+            respond(exchange, detail.isEmpty()
+                    ? offerPages.getOrDefault(param(exchange, "firma") + ":" + param(exchange, "pageNr"), offers(0))
+                    : detailPages.getOrDefault(detail, "<html><body></body></html>"));
+        });
         server.createContext("/zamestnavatelia", exchange -> respond(exchange,
                 employerPages.getOrDefault(param(exchange, "pageNr"), "<html><body><main></main></body></html>")));
         server.start();
@@ -134,6 +140,55 @@ class StatePortalAdapterTests {
         assertThat(adapter.employers(1)).contains(List.of(new PortalEmployer(KIA, "Kia Slovakia s. r. o."),
                 new PortalEmployer("51752930", "AANI s.r.o.")));
         assertThat(adapter.employers(2)).isEqualTo(Optional.of(List.of()));
+    }
+
+    /**
+     * Сайт работодателя из детали первой своей вакансии портала: «Internetová adresa»; без неё — домен
+     * почты контакта со словом названия; почта на общем сервисе или на чужом домене (бухгалтер), IČO
+     * другой фирмы или только объявления площадки — сайта нет.
+     */
+    @Test
+    void findsEmployerSiteInOfferDetail() {
+        String uuid = "4f4762a0-b1ff-4955-91e1-a89792eddd81";
+        String detailUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/pracovne-ponuky/" + uuid;
+        offerPages.put(KIA + ":1", offers(2, profesiaOffer("1", "A"), portalOffer(uuid, "B")));
+
+        detailPages.put(uuid, detail(KIA, "<a href=\"https://www.kia.sk/sk\">www.kia.sk</a>", "kia.com"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("www.kia.sk", detailUrl));
+
+        detailPages.put(uuid, detail(KIA, null, "kia.sk"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("kia.sk", detailUrl));
+
+        detailPages.put(uuid, detail(KIA, null, "gmail.com"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+
+        detailPages.put(uuid, detail(KIA, null, "ucto-plus.sk"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+
+        detailPages.put(uuid, detail("12345678", null, "kia.sk"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+
+        offerPages.put(KIA + ":1", offers(1, profesiaOffer("1", "A")));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+    }
+
+    /**
+     * Деталь вакансии портала: поля работодателя ({@code dt}/{@code dd}) и почта контакта, которую
+     * собирает скрипт.
+     */
+    private static String detail(String number, String web, String mailHost) {
+        return "<html><body><main><dl class=\"vpm-data-panel\">"
+                + field("Názov spoločnosti", "Kia Slovakia s. r. o.") + field("IČO", number)
+                + (web == null ? "" : field("Internetová adresa", web))
+                + field("Kontaktná osoba", "<span>Ján Novák</span><br><span><script> { let name = \"jan.novak\";"
+                        + " let host = \"" + mailHost + "\"; if (host !== '' && name !== '') document.write(name + \"@\""
+                        + " + host); } </script></span>")
+                + "</dl></main></body></html>";
+    }
+
+    private static String field(String key, String value) {
+        return "<div class=\"vpm-data-panel__row\"><dt class=\"vpm-data-panel__key\">" + key
+                + "</dt><dd class=\"vpm-data-panel__value\">" + value + "</dd></div>";
     }
 
     private static String offers(int declared, String... cards) {

@@ -36,6 +36,8 @@ import org.springframework.test.context.ActiveProfiles;
 class CareerScanTests {
 
     private static final Map<String, String> PAGES = new ConcurrentHashMap<>();
+    /** Страница-заглушка: ответ 403. */
+    private static final String FORBIDDEN = "403";
     private static final HttpServer SITE = startSite();
     private static final String HOST = "127.0.0.1:" + SITE.getAddress().getPort();
 
@@ -157,6 +159,42 @@ class CareerScanTests {
         assertThat(companyResult()).isEqualTo("CONNECTED");
     }
 
+    /**
+     * На главной нет кадровой ссылки — стандартный адрес {@code /kariera} с кадровым словом в заголовке;
+     * на нём кадровая ссылка вглубь, а там доска Workday — подключена.
+     */
+    @Test
+    void findsStandardCareerPageAndGoesOneStepDeeper() {
+        PAGES.put("/", "<p>Vitajte</p>");
+        PAGES.put("/kariera", "<h1>Kariéra</h1><a href=\"/kariera/volne-pozicie\">Voľné pozície</a>");
+        PAGES.put("/kariera/volne-pozicie", "<a href=\"https://alfa.wd3.myworkdayjobs.com/Careers\">Pozície</a>");
+
+        runScan();
+
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
+                .isEqualTo("http://" + HOST + "/kariera");
+    }
+
+    /**
+     * Главная отвечает 403 (сайт закрыт для программы, ограничение не обходится): кадровая страница
+     * ищется по пробным адресам и подключается; закрыто всё — итог «сайт не ответил», у компании —
+     * «источник недоступен».
+     */
+    @Test
+    void closedHomePageFallsBackToCareerAddresses() {
+        PAGES.put("/", FORBIDDEN);
+        runScan();
+        assertThat(checkResult()).isEqualTo("UNREACHABLE");
+        assertThat(companyResult()).isEqualTo("SOURCE_UNAVAILABLE");
+
+        jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
+        PAGES.put("/sk/kariera", "<h1>Kariéra</h1><a href=\"https://alfa.wd3.myworkdayjobs.com/Careers\">Pozície</a>");
+        runScan();
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
     private void runScan() {
         String key = CareerScanHandler.taskKey("test-" + System.nanoTime());
         taskService.enqueue(CareerScanHandler.TYPE, key, CareerScanHandler.payload());
@@ -183,10 +221,11 @@ class CareerScanTests {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/", exchange -> {
                 String page = PAGES.get(exchange.getRequestURI().getPath());
-                byte[] bytes = page == null ? new byte[0] : ("<html><body>" + page + "</body></html>")
+                int status = page == null ? 404 : FORBIDDEN.equals(page) ? 403 : 200;
+                byte[] bytes = status != 200 ? new byte[0] : ("<html><body>" + page + "</body></html>")
                         .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-                exchange.sendResponseHeaders(page == null ? 404 : 200, bytes.length == 0 ? -1 : bytes.length);
+                exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
                 try (OutputStream output = exchange.getResponseBody()) {
                     output.write(bytes);
                 }

@@ -112,4 +112,26 @@ class CareerLinksTests {
         assertThat(CareerLinks.board("https://jobs.smartrecruiters.com/robots.txt")).isEmpty();
         assertThat(CareerLinks.board("https://jobs.smartrecruiters.com/oneclick-ui/company/1")).isEmpty();
     }
+
+    /**
+     * Кадровая страница на поддомене сайта; чужой хост с тем же окончанием — не поддомен; шаг вглубь —
+     * другая кадровая ссылка, не сама страница; стандартный адрес — кадровая страница, только если в
+     * заголовке кадровое слово.
+     */
+    @Test
+    void findsCareerSubdomainDeeperPageAndStandardPage() {
+        Document home = Jsoup.parse("""
+                <a href="https://notacme.sk/kariera">Iná</a><a href="https://kariera.acme.sk/">Kariéra</a>
+                """, "https://www.acme.sk/");
+        assertThat(CareerLinks.careerPage(home, "www.acme.sk")).contains("https://kariera.acme.sk/");
+
+        Document career = Jsoup.parse("""
+                <a href="/kariera/">Kariéra</a><a href="/kariera/volne-pozicie">Voľné pozície</a>
+                """, "https://acme.sk/kariera");
+        assertThat(CareerLinks.deeperCareerPage(career, URI.create("https://acme.sk/kariera")))
+                .contains("https://acme.sk/kariera/volne-pozicie");
+
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Kariéra | Acme</title>"))).isTrue();
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Acme</title><h1>Vitajte</h1>"))).isFalse();
+    }
 }
