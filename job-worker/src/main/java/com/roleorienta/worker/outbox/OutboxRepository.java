@@ -32,14 +32,14 @@ public class OutboxRepository {
      */
     public List<OutboxEvent> claimUnpublished(int limit) {
         return jdbcTemplate.query("""
-                SELECT id, task_id
-                FROM outbox_event
-                WHERE published_at IS NULL
-                ORDER BY id
+                SELECT e.id, e.task_id, t.type
+                FROM outbox_event e JOIN task t ON t.id = e.task_id
+                WHERE e.published_at IS NULL
+                ORDER BY e.id
                 LIMIT ?
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF e SKIP LOCKED
                 """,
-                (row, rowNum) -> new OutboxEvent(row.getLong("id"), row.getLong("task_id")),
+                (row, rowNum) -> new OutboxEvent(row.getLong("id"), row.getLong("task_id"), row.getString("type")),
                 limit);
     }
 

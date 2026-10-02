@@ -32,3 +32,5 @@ app:
     enabled: false           # проходы планируются из теста вручную
   geo:
     enabled: false           # справочник GeoNames в тестах не загружается
+  state-portal:
+    enabled: false           # работа с государственным порталом ставится из теста вручную

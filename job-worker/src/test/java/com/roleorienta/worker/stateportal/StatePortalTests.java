@@ -1,0 +1,218 @@
+package com.roleorienta.worker.stateportal;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
+import com.roleorienta.worker.source.SourceRepository;
+import com.roleorienta.worker.task.TaskExecutor;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+/**
+ * Государственный портал на заглушке и настоящей PostgreSQL (бизнес-описание §4.1): список
+ * работодателей; подключение источника портала только работодателю из реестра, не агентству и без своей
+ * кадровой страницы; у компании со своей кадровой страницей источник портала не читается.
+ */
+@SpringBootTest(properties = "app.http.allow-private-addresses=true")
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
+class StatePortalTests {
+
+    /** С вакансиями, в реестре — подключается. */
+    private static final String EMPLOYER = "90000001";
+    /** С вакансиями, кадровое агентство — не подключается. */
+    private static final String AGENCY = "90000002";
+    /** С вакансиями, есть своя кадровая страница — не проверяется. */
+    private static final String OWN_PAGE = "90000003";
+    /** Без вакансий — проверен, не подключается. */
+    private static final String NO_OFFERS = "90000004";
+    /** С вакансиями, нет в реестре — не проверяется. */
+    private static final String NOT_REGISTERED = "90000005";
+    private static final List<String> NUMBERS = List.of(EMPLOYER, AGENCY, OWN_PAGE, NO_OFFERS, NOT_REGISTERED);
+    private static final int MAX_TASK_ROUNDS = 10;
+    private static final Map<String, Integer> OFFERS = Map.of(EMPLOYER, 2, AGENCY, 1, OWN_PAGE, 3,
+            NOT_REGISTERED, 1);
+    private static final HttpServer PORTAL = startPortal();
+
+    @Autowired
+    private StatePortalHandler handler;
+
+    @Autowired
+    private TaskExecutor executor;
+
+    @Autowired
+    private SourceRepository sources;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     * Портал — заглушка.
+     *
+     * @param registry свойства тестового контекста
+     */
+    @DynamicPropertySource
+    static void portalProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.state-portal.base-url", () -> "http://127.0.0.1:" + PORTAL.getAddress().getPort());
+    }
+
+    /**
+     * Остановка заглушки.
+     */
+    @AfterAll
+    static void stopPortal() {
+        PORTAL.stop(0);
+    }
+
+    /**
+     * Чистые записи этого теста; Словакия — активная страна сбора; в реестре — работодатель, агентство,
+     * компания со своей кадровой страницей (источник Greenhouse) и компания без вакансий.
+     */
+    @BeforeEach
+    void setUp() {
+        jdbcTemplate.update("DELETE FROM task");
+        jdbcTemplate.update("DELETE FROM outbox_event");
+        jdbcTemplate.update("DELETE FROM portal_employer");
+        String numbers = "'" + String.join("','", NUMBERS) + "'";
+        jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM source WHERE provider = ? OR board = 'own-page-test'", StatePortalAdapter.PROVIDER);
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
+        for (String number : List.of(EMPLOYER, AGENCY, OWN_PAGE, NO_OFFERS)) {
+            jdbcTemplate.update("""
+                    INSERT INTO company (country, registration_number, name, registry, agency)
+                    VALUES ('SK', ?, ?, 'RPO', ?)
+                    ON CONFLICT (country, registration_number) DO UPDATE SET agency = EXCLUDED.agency,
+                                                                             terminated_on = NULL
+                    """, number, "Company " + number, AGENCY.equals(number));
+        }
+        jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES ('greenhouse', 'own-page-test', 'SK')");
+        jdbcTemplate.update("""
+                INSERT INTO company_source (company_id, source_id, role)
+                SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
+                WHERE c.registration_number = ? AND s.board = 'own-page-test'
+                """, OWN_PAGE);
+    }
+
+    /**
+     * Список работодателей записан целиком; источник портала (доска — IČO) подключён только работодателю
+     * из реестра с вакансиями, не агентству и без своей кадровой страницы; итог компании — «подключена».
+     */
+    @Test
+    void connectsRegisteredEmployersWithOffers() {
+        handler.enqueueList("test");
+        runQueuedTasks();
+        handler.enqueueCheck("test");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("SELECT registration_number FROM portal_employer ORDER BY 1", String.class))
+                .containsExactlyElementsOf(NUMBERS);
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT registration_number || ':' || has_offers FROM portal_employer
+                WHERE checked_at IS NOT NULL ORDER BY 1
+                """, String.class)).containsExactly(EMPLOYER + ":true", NO_OFFERS + ":false");
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT c.registration_number || ':' || s.board || ':' || cs.role || ':' || ch.result
+                FROM company_source cs JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id
+                JOIN company_check ch ON ch.company_id = c.id
+                WHERE s.provider = ?
+                """, String.class, StatePortalAdapter.PROVIDER)).containsExactly(
+                EMPLOYER + ":" + EMPLOYER + ":EMPLOYER:CONNECTED");
+    }
+
+    /**
+     * Один канал на компанию: источник портала компании со своей кадровой страницей к чтению не ставится,
+     * источник работодателя без своей страницы — ставится.
+     */
+    @Test
+    void portalSourceIsNotReadWhenCompanyHasOwnPage() {
+        for (String number : List.of(EMPLOYER, OWN_PAGE)) {
+            jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES (?, ?, 'SK')",
+                    StatePortalAdapter.PROVIDER, number);
+            jdbcTemplate.update("""
+                    INSERT INTO company_source (company_id, source_id, role)
+                    SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
+                    WHERE c.registration_number = ? AND s.provider = ? AND s.board = ?
+                    """, number, StatePortalAdapter.PROVIDER, number);
+        }
+
+        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER).stream()
+                .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
+
+        assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + EMPLOYER, "greenhouse:own-page-test")
+                .doesNotContain(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE);
+    }
+
+    private void runQueuedTasks() {
+        for (int round = 0; round < MAX_TASK_ROUNDS; round++) {
+            List<Long> queued = jdbcTemplate.queryForList("SELECT id FROM task WHERE state = 'QUEUED' ORDER BY id",
+                    Long.class);
+            if (queued.isEmpty()) {
+                return;
+            }
+            queued.forEach(executor::execute);
+        }
+    }
+
+    /**
+     * Заглушка портала: список работодателей — одна страница со всеми IČO; вакансии работодателя —
+     * объявленное число из {@link #OFFERS} (нет — ноль).
+     */
+    private static HttpServer startPortal() {
+        try {
+            HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+            server.createContext("/zamestnavatelia", exchange -> {
+                StringBuilder body = new StringBuilder("<html><body><main>");
+                if (exchange.getRequestURI().getQuery().contains("pageNr=1")) {
+                    for (String number : NUMBERS) {
+                        body.append("<div><h3 class=\"govuk-signpost__title\">Company ").append(number)
+                                .append("</h3><p class=\"govuk-signpost__description\">IČO: ").append(number)
+                                .append("</p></div>");
+                    }
+                }
+                respond(exchange, body.append("</main></body></html>").toString());
+            });
+            server.createContext("/pracovne-ponuky", exchange -> {
+                String query = exchange.getRequestURI().getQuery();
+                String number = query.replaceAll(".*firma=(\\d{8}).*", "$1");
+                respond(exchange, "<html><body><main><span>"
+                        + OFFERS.getOrDefault(number, 0) + " pracovných ponúk,</span></main></body></html>");
+            });
+            server.start();
+            return server;
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    private static void respond(HttpExchange exchange, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
+    }
+}

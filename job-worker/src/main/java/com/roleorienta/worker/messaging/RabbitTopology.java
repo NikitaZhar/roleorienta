@@ -1,5 +1,6 @@
 package com.roleorienta.worker.messaging;
 
+import java.util.Set;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -9,8 +10,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, рабочая очередь и
+ * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, две рабочие очереди и
  * очередь «мёртвых писем» (DLQ), все durable — переживают перезапуск брокера.
+ *
+ * <p>Две рабочие очереди (стенограмма §46): <b>сбор</b> ({@link #WORK_QUEUE}) — чтение источников и всё,
+ * что идёт к пользователю; <b>поиск</b> ({@link #DISCOVERY_QUEUE}) — реестр, сайты, кадровые страницы,
+ * обратный путь, государственный портал. У каждой свои обработчики, поэтому многочасовые цепочки
+ * поиска не задерживают чтение вакансий. Очередь выбирается по типу задания ({@link #routingKey}).</p>
  *
  * <p>Бины {@link DirectExchange}, {@link Queue} и {@link Binding} Spring AMQP при старте
  * объявляет в брокере, если их там нет.
@@ -29,8 +35,23 @@ public class RabbitTopology {
     /** Рабочая очередь заданий. */
     public static final String WORK_QUEUE = "roleorienta.jobs.work";
 
-    /** Ключ маршрутизации заданий в рабочую очередь. */
+    /** Ключ маршрутизации заданий в рабочую очередь (сбор); он же — ключ очереди «мёртвых писем». */
     public static final String ROUTING_KEY = "job";
+
+    /** Очередь заданий поиска компаний, сайтов и кадровых страниц. */
+    public static final String DISCOVERY_QUEUE = "roleorienta.jobs.discovery";
+
+    /** Ключ маршрутизации заданий поиска. */
+    public static final String DISCOVERY_ROUTING_KEY = "discovery";
+
+    /**
+     * Типы заданий поиска (константы {@code TYPE} обработчиков: приём реестра, скан сайтов, проверка
+     * кадровых страниц, обратный путь, государственный портал, загрузка справочника GeoNames). Строками,
+     * а не ссылками на обработчики: пакет обмена сообщениями не зависит от пакетов обработчиков (иначе
+     * цикл пакетов); соответствие проверяет тест. Прочие типы — сбор.
+     */
+    static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "CAREER_SCAN",
+            "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT");
 
     /** Обменник «мёртвых писем». */
     public static final String DEAD_LETTER_EXCHANGE = "roleorienta.jobs.dlx";
@@ -40,6 +61,16 @@ public class RabbitTopology {
 
     /** Заголовок сообщения с идентификатором задания. */
     public static final String TASK_ID_HEADER = "taskId";
+
+    /**
+     * Ключ маршрутизации задания: поиск — в очередь поиска, остальное — в рабочую очередь сбора.
+     *
+     * @param taskType тип задания
+     * @return {@link #DISCOVERY_ROUTING_KEY} или {@link #ROUTING_KEY}
+     */
+    public static String routingKey(String taskType) {
+        return DISCOVERY_TYPES.contains(taskType) ? DISCOVERY_ROUTING_KEY : ROUTING_KEY;
+    }
 
     /**
      * Обменник фоновых заданий.
@@ -74,6 +105,31 @@ public class RabbitTopology {
     @Bean
     public Binding workBinding(DirectExchange jobExchange, Queue workQueue) {
         return BindingBuilder.bind(workQueue).to(jobExchange).with(ROUTING_KEY);
+    }
+
+    /**
+     * Очередь заданий поиска; отклонённые сообщения — в тот же dead-letter обменник и ту же DLQ.
+     *
+     * @return durable очередь с привязкой к dead-letter обменнику
+     */
+    @Bean
+    public Queue discoveryQueue() {
+        return QueueBuilder.durable(DISCOVERY_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(ROUTING_KEY)
+                .build();
+    }
+
+    /**
+     * Привязка очереди поиска к обменнику заданий.
+     *
+     * @param jobExchange    обменник заданий
+     * @param discoveryQueue очередь поиска
+     * @return привязка по ключу {@link #DISCOVERY_ROUTING_KEY}
+     */
+    @Bean
+    public Binding discoveryBinding(DirectExchange jobExchange, Queue discoveryQueue) {
+        return BindingBuilder.bind(discoveryQueue).to(jobExchange).with(DISCOVERY_ROUTING_KEY);
     }
 
     /**

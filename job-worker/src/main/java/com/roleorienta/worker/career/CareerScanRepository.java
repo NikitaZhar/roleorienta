@@ -15,16 +15,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class CareerScanRepository {
 
     /**
-     * Итог компании — лучший из итогов её проверенных сайтов (бизнес-описание §4.2); первая дата итога
+     * Итог компании — лучший из итогов её проверенных сайтов (бизнес-описание §4.2); компания с любым
+     * подключённым источником (в том числе государственного портала, §45) — «подключена». Первая дата итога
      * сохраняется.
      */
     private static final String COMPANY_RESULT = """
             INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
             SELECT company_id,
-                   CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
+                   CASE WHEN EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = company_site.company_id)
+                            THEN 'CONNECTED'
+                       ELSE CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
                                               WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
                        WHEN 5 THEN 'CONNECTED' WHEN 4 THEN 'USE_FORBIDDEN' WHEN 3 THEN 'FORMAT_UNSUPPORTED'
-                       WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END,
+                       WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END END,
                    now(), now()
             FROM company_site WHERE company_id = ? AND check_result IS NOT NULL GROUP BY company_id
             ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at

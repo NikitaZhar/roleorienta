@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  * сайтов на кадровые страницы ({@code CareerScanTick}); 1006 — постановка обратного пути
  * ({@code BoardDiscoveryTick}); 1007 — постановка предрасчёта соответствий ({@code MatchVacanciesTick});
  * 1008 — постановка загрузки справочника GeoNames ({@code GeoImportTick}); 1009 — планирование
- * прохода выдачи ({@code PassTick}).</p>
+ * прохода выдачи ({@code PassTick}); 1010 — постановка работы с государственным порталом ({@code StatePortalTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

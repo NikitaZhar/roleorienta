@@ -1,5 +1,6 @@
 package com.roleorienta.worker.collect;
 
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskService;
@@ -8,7 +9,9 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 
 /**
- * Ставит чтение каждого источника раз в сутки (технический документ §17). Ключ задания
+ * Ставит чтение каждого источника раз в сутки (технический документ §17); источник государственного
+ * портала не ставится, если у компании есть своя кадровая страница (один канал на компанию,
+ * бизнес-описание §4.1). Ключ задания
  * {@code read:<источник>:<дата>} — повторная постановка в тот же день ничего не добавляет.
  */
 @Service
@@ -34,7 +37,7 @@ public class ReadSourcePlanner {
      */
     public void enqueueToday() {
         LocalDate today = LocalDate.now(clock);
-        for (Source source : sources.findAll()) {
+        for (Source source : sources.findToRead(StatePortalAdapter.PROVIDER)) {
             taskService.enqueue(ReadSourceHandler.TYPE, "read:" + source.getId() + ":" + today,
                     ReadSourceHandler.payload(source.getId()));
         }

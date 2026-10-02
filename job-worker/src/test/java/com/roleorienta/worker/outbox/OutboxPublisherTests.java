@@ -18,7 +18,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Публикатор outbox на реальных PostgreSQL и RabbitMQ: доставленное событие отмечается
- * опубликованным, немаршрутизируемое остаётся неопубликованным со счётчиком попыток.
+ * опубликованным, немаршрутизируемое остаётся неопубликованным со счётчиком попыток; задание поиска
+ * уходит в очередь поиска, прочие — в очередь сбора.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -53,6 +54,7 @@ class OutboxPublisherTests {
         jdbcTemplate.update("DELETE FROM outbox_event");
         jdbcTemplate.update("DELETE FROM task");
         rabbitAdmin.purgeQueue(RabbitTopology.WORK_QUEUE, false);
+        rabbitAdmin.purgeQueue(RabbitTopology.DISCOVERY_QUEUE, false);
     }
 
     /**
@@ -95,12 +97,33 @@ class OutboxPublisherTests {
         assertThat(isPublished(eventId)).isTrue();
     }
 
+    /**
+     * Задание поиска (государственный портал) — в очередь поиска, не в очередь сбора.
+     */
+    @Test
+    void routesDiscoveryTaskToDiscoveryQueue() {
+        long taskId = insertTask("STATE_PORTAL");
+        insertEvent(taskId);
+
+        assertThat(publisher.publishBatch()).isEqualTo(1);
+
+        Message message = rabbitTemplate.receive(RabbitTopology.DISCOVERY_QUEUE, RECEIVE_TIMEOUT_MS);
+        assertThat(message).isNotNull();
+        assertThat(message.getMessageProperties().<Object>getHeader(RabbitTopology.TASK_ID_HEADER))
+                .hasToString(String.valueOf(taskId));
+        assertThat(rabbitTemplate.receive(RabbitTopology.WORK_QUEUE)).isNull();
+    }
+
     private long insertTask() {
+        return insertTask("TEST");
+    }
+
+    private long insertTask(String type) {
         return jdbcTemplate.queryForObject("""
                 INSERT INTO task (type, task_key, payload, state)
-                VALUES ('TEST', gen_random_uuid()::text, '{}', 'QUEUED')
+                VALUES (?, gen_random_uuid()::text, '{}', 'QUEUED')
                 RETURNING id
-                """, Long.class);
+                """, Long.class, type);
     }
 
     private long insertEvent(long taskId) {

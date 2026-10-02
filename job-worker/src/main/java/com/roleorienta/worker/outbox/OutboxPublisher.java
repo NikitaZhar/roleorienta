@@ -80,7 +80,7 @@ public class OutboxPublisher {
         returnedMessageIds.clear();
         rabbitTemplate.invoke(operations -> {
             for (OutboxEvent event : batch) {
-                operations.send(RabbitTopology.EXCHANGE, RabbitTopology.ROUTING_KEY, toMessage(event));
+                operations.send(RabbitTopology.EXCHANGE, RabbitTopology.routingKey(event.taskType()), toMessage(event));
             }
             operations.waitForConfirmsOrDie(properties.confirmTimeout().toMillis());
             return null;
