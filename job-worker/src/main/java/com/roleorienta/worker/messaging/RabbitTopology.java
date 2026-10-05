@@ -45,13 +45,13 @@ public class RabbitTopology {
     public static final String DISCOVERY_ROUTING_KEY = "discovery";
 
     /**
-     * Типы заданий поиска (константы {@code TYPE} обработчиков: приём реестра, скан сайтов, проверка
-     * кадровых страниц, обратный путь, государственный портал, загрузка справочника GeoNames). Строками,
+     * Типы заданий поиска (константы {@code TYPE} обработчиков: приём реестра, скан сайтов, сайты из Wikidata,
+     * проверка кадровых страниц, обратный путь, государственный портал, загрузка справочника GeoNames). Строками,
      * а не ссылками на обработчики: пакет обмена сообщениями не зависит от пакетов обработчиков (иначе
      * цикл пакетов); соответствие проверяет тест. Прочие типы — сбор.
      */
-    static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "CAREER_SCAN",
-            "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT");
+    static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "SITE_WIKIDATA",
+            "CAREER_SCAN", "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT");
 
     /** Обменник «мёртвых писем». */
     public static final String DEAD_LETTER_EXCHANGE = "roleorienta.jobs.dlx";

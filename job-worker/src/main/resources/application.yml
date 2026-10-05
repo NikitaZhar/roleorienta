@@ -63,6 +63,8 @@ app:
       user-agent: Roleorienta/0.1 (+https://github.com/NikitaZhar/roleorienta)  # единый, с контактом
       host-interval: 1s      # промежуток между запросами к одному хосту по всем репликам
       host-max-wait: 30s     # дольше запрос не ждёт очереди к хосту — временный отказ
+      robots-exempt-hosts:   # API, к которым robots.txt не применяется — только решением владельца (§10)
+        - query.wikidata.org # SPARQL Wikidata: программный доступ по правилам Wikidata (Data access), §49
   collect:
     read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
     read-enabled: true         # false — постановка чтений выключена (тесты)
@@ -90,6 +92,13 @@ app:
     request-interval: 200ms    # пауза перед каждым запросом к Common Crawl
     blocks-per-task: 20        # блоков индекса (~3000 адресов) за задание
     timeout: 60s
+  wikidata:                  # шаг 1 поиска сайта: официальные сайты по IČO (P8174 → P856; технический документ §5.1)
+    enabled: true              # false — постановка выключена (тесты)
+    interval-ms: 3600000       # тик постановки; шаг — раз в сутки
+    endpoint: https://query.wikidata.org/sparql
+    page-size: 5000            # строк ответа на запрос
+    max-pages: 20              # потолок страниц за задание
+    sites-per-task: 100        # компаний, чей сайт проверяется одним заданием (≈ 1 с на запрос — в аренде)
   career:                    # сайты компаний → кадровые страницы → источники
     enabled: true              # false — постановка проверки выключена (тесты)
     interval-ms: 3600000       # тик постановки; проверка — раз в сутки цепочкой заданий

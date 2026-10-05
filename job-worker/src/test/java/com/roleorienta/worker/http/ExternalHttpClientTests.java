@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -281,6 +282,25 @@ class ExternalHttpClientTests {
     }
 
     /**
+     * Хост из списка исключений (решение владельца) — robots.txt не читается, запрос выполняется.
+     */
+    @Test
+    void robotsExemptHostIgnoresRobots() throws IOException {
+        AtomicInteger robotsReads = new AtomicInteger();
+        server.createContext("/robots.txt", exchange -> {
+            robotsReads.incrementAndGet();
+            send(exchange, STATUS_OK, "User-agent: *\nDisallow: /\n".getBytes(StandardCharsets.UTF_8));
+        });
+        respond("/sparql", STATUS_OK, "text/plain", "ok");
+        try (ExternalHttpClient exempt = new ExternalHttpClient(properties(true),
+                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of("127.0.0.1")), NO_WAIT,
+                Clock.fixed(NOW, ZoneOffset.UTC))) {
+            assertThat(exempt.get(uri("/sparql"))).isEqualTo(new HttpResult.Success(STATUS_OK, "ok"));
+        }
+        assertThat(robotsReads.get()).isZero();
+    }
+
+    /**
      * robots.txt временно недоступен (5xx) — запрос откладывается, а не выполняется.
      */
     @Test
@@ -292,8 +312,9 @@ class ExternalHttpClientTests {
     }
 
     private static ExternalHttpClient client(ExternalHttpProperties properties, HostBudget budget) {
-        return new ExternalHttpClient(properties, new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO),
-                budget, Clock.fixed(NOW, ZoneOffset.UTC));
+        return new ExternalHttpClient(properties,
+                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of()), budget,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private URI uri(String path) {

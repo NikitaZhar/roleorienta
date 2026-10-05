@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.apache.hc.client5.http.ClientProtocolException;
 import org.apache.hc.client5.http.SystemDefaultDnsResolver;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -82,6 +83,7 @@ public class ExternalHttpClient implements AutoCloseable {
     private final Clock clock;
     private final String robotsToken;
     private final Map<String, CachedRobots> robotsByOrigin = new ConcurrentHashMap<>();
+    private final Set<String> robotsExemptHosts;
 
     /**
      * @param properties   таймауты, потолки и политика адресов
@@ -96,6 +98,8 @@ public class ExternalHttpClient implements AutoCloseable {
         this.maxBodyBytes = properties.maxBodyBytes();
         this.clock = clock;
         this.robotsToken = politeness.userAgent().split("/", 2)[0].strip();
+        this.robotsExemptHosts = politeness.robotsExemptHosts().stream()
+                .map(host -> host.toLowerCase(Locale.ROOT)).collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -137,7 +141,8 @@ public class ExternalHttpClient implements AutoCloseable {
         if (!ALLOWED_SCHEMES.contains(scheme) || uri.getHost() == null) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not an http(s) URL: " + uri);
         }
-        Optional<HttpResult> robotsRefusal = robotsRefusal(uri);
+        Optional<HttpResult> robotsRefusal = robotsExemptHosts.contains(uri.getHost().toLowerCase(Locale.ROOT))
+                ? Optional.empty() : robotsRefusal(uri);
         if (robotsRefusal.isPresent()) {
             return robotsRefusal.get();
         }

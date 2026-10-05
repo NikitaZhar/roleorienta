@@ -34,3 +34,5 @@ app:
     enabled: false           # справочник GeoNames в тестах не загружается
   state-portal:
     enabled: false           # работа с государственным порталом ставится из теста вручную
+  wikidata:
+    enabled: false           # шаг «Wikidata» ставится из теста вручную
