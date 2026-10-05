@@ -19,6 +19,8 @@ public class SiteScanRepository {
 
     private static final String COUNTRY = "SK";
     private static final String SOURCE = "COMMON_CRAWL";
+    /** Способ подтверждения: IČO компании на странице сайта. */
+    private static final String PROOF = "REGISTRATION_NUMBER";
     /** Назначение блоков скана сайтов (блоки обратного пути — {@code BOARD}). */
     private static final String PURPOSE = "SITE";
 
@@ -122,14 +124,15 @@ public class SiteScanRepository {
     @Transactional
     public void completeBlock(String crawl, int seq, List<SiteMatch> matches) {
         jdbcTemplate.batchUpdate("""
-                INSERT INTO company_site (company_id, host, evidence_url, source, crawl)
-                VALUES (?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
+                INSERT INTO company_site (company_id, host, evidence_url, source, crawl, proof)
+                VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
                 """, matches, matches.size(), (statement, match) -> {
                 statement.setLong(1, match.companyId());
                 statement.setString(2, match.host());
                 statement.setString(3, match.evidenceUrl());
                 statement.setString(4, SOURCE);
                 statement.setString(5, crawl);
+                statement.setString(6, PROOF);
             });
         jdbcTemplate.batchUpdate("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
                 matches, matches.size(), (statement, match) -> statement.setLong(1, match.companyId()));
@@ -138,8 +141,8 @@ public class SiteScanRepository {
     }
 
     /**
-     * Скан обхода завершён: действующим компаниям без сайта и без итога — итог «сайт не найден»
-     * (бизнес-описание §4.2). Повторный вызов ничего не меняет.
+     * Скан обхода завершён: действующим компаниям без найденного сайта (кандидаты не считаются) и без итога —
+     * итог «сайт не найден» (бизнес-описание §4.2). Повторный вызов ничего не меняет.
      *
      * @return сколько компаний получили итог
      */
@@ -147,7 +150,8 @@ public class SiteScanRepository {
         return jdbcTemplate.update("""
                 INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
                 SELECT c.id, 'SITE_NOT_FOUND', now(), now() FROM company c
-                WHERE c.terminated_on IS NULL AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id)
+                WHERE c.terminated_on IS NULL AND NOT EXISTS (SELECT 1 FROM company_site s
+                                                                WHERE s.company_id = c.id AND s.status = 'FOUND')
                 ON CONFLICT (company_id) DO NOTHING
                 """);
     }

@@ -162,11 +162,11 @@ class StatePortalTests {
         runQueuedTasks();
 
         assertThat(jdbcTemplate.queryForList("""
-                SELECT c.registration_number || ':' || s.host || ':' || s.source || ':' || s.evidence_url
+                SELECT c.registration_number || ':' || s.host || ':' || s.source || ':' || s.proof || ':' || s.evidence_url
                 FROM company_site s JOIN company c ON c.id = s.company_id
                 WHERE c.registration_number IN (?, ?)
                 """, String.class, EMPLOYER, OWN_PAGE)).containsExactly(EMPLOYER + ":" + EMPLOYER_HOST
-                + ":STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
+                + ":STATE_PORTAL:STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
         assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
                 + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
     }

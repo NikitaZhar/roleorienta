@@ -126,31 +126,36 @@ class SiteScanTests {
      * Сайты: {@code aaa.sk} (адрес зоны в конце блока перед зоной) и {@code alfa.sk} по странице
      * контактов; {@code beta.sk} — IČO неизвестен, {@code gamma.sk} — компания прекращена, 404 и не
      * HTML — не читаются. Блоки просмотрены, повторный скан ничего не добавляет. Скан завершён —
-     * действующая компания без сайта получает итог «сайт не найден»; у компании, чей сайт найден,
-     * прежний итог «сайт не найден» снят.
+     * действующая компания без сайта и компания только с кандидатом получают итог «сайт не найден»; у
+     * компании, чей сайт найден, прежний итог «сайт не найден» снят. Найденный сайт подтверждён IČO.
      */
     @Test
     void findsSitesByIcoOnContactPages() {
         jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
-                + "VALUES ('SK', '55555555', 'Bez webu s.r.o.', 'RPO')");
+                + "VALUES ('SK', '55555555', 'Bez webu s.r.o.', 'RPO'), ('SK', '66666666', 'Kandidat s.r.o.', 'RPO')");
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof, status) "
+                + "SELECT id, 'kandidat.com', 'http://kandidat.com/', 'NAME', 'GROUP_SITE', 'CANDIDATE' FROM company "
+                + "WHERE registration_number = '66666666'");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE registration_number = '11111111'");
 
         runScan("first");
 
         assertThat(jdbcTemplate.queryForList("""
-                SELECT c.registration_number || ':' || s.host || ':' || s.evidence_url
-                FROM company_site s JOIN company c ON c.id = s.company_id ORDER BY 1
-                """, String.class)).containsExactly("11111111:alfa.sk:http://alfa.sk/kontakt",
-                "33333333:aaa.sk:http://aaa.sk/");
+                SELECT c.registration_number || ':' || s.host || ':' || s.proof || ':' || s.evidence_url
+                FROM company_site s JOIN company c ON c.id = s.company_id WHERE s.status = 'FOUND' ORDER BY 1
+                """, String.class)).containsExactly("11111111:alfa.sk:REGISTRATION_NUMBER:http://alfa.sk/kontakt",
+                "33333333:aaa.sk:REGISTRATION_NUMBER:http://aaa.sk/");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM cc_index_block WHERE NOT done", Integer.class))
                 .isZero();
         assertThat(jdbcTemplate.queryForList("SELECT c.registration_number || ':' || k.result FROM company_check k "
-                + "JOIN company c ON c.id = k.company_id", String.class)).containsExactly("55555555:SITE_NOT_FOUND");
+                + "JOIN company c ON c.id = k.company_id ORDER BY 1", String.class))
+                .containsExactly("55555555:SITE_NOT_FOUND", "66666666:SITE_NOT_FOUND");
 
         runScan("second");
 
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site WHERE status = 'FOUND'",
+                Integer.class)).isEqualTo(2);
     }
 
     private void runScan(String key) {

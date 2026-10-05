@@ -73,8 +73,9 @@ class CareerScanTests {
         PAGES.clear();
         jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
                 + "VALUES ('SK', '11111111', 'Alfa s.r.o.', 'RPO')");
-        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source) "
-                + "SELECT id, ?, 'http://' || ? || '/kontakt', 'COMMON_CRAWL' FROM company", HOST, HOST);
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "SELECT id, ?, 'http://' || ? || '/kontakt', 'COMMON_CRAWL', 'REGISTRATION_NUMBER' FROM company",
+                HOST, HOST);
     }
 
     /**
@@ -105,6 +106,22 @@ class CareerScanTests {
 
         assertThat(connectedSources()).containsExactly("jobposting:http://" + HOST + "/kariera:SK");
         assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
+    }
+
+    /**
+     * Кандидат (сайт без доказательства принадлежности) поиском кадровой страницы не проверяется и итог
+     * компании не меняет.
+     */
+    @Test
+    void doesNotScanCandidateSite() {
+        jdbcTemplate.update("UPDATE company_site SET status = 'CANDIDATE', proof = 'GROUP_SITE'");
+        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+
+        runScan();
+
+        assertThat(connectedSources()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site", Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check", Integer.class)).isZero();
     }
 
     /**

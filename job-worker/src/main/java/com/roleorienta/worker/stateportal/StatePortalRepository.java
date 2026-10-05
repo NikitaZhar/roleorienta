@@ -108,7 +108,8 @@ public class StatePortalRepository {
 
     /**
      * Работодатели портала к поиску сайта (§47): источник портала подключён к их компании, у компании нет
-     * ни одного сайта, сайт не искали дольше {@code recheckAfter}. Сначала те, где не искали.
+     * ни одного найденного сайта (кандидаты не считаются), сайт не искали дольше {@code recheckAfter}. Сначала
+     * те, где не искали.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторного поиска
@@ -122,7 +123,8 @@ public class StatePortalRepository {
                 JOIN company c ON c.id = cs.company_id
                 WHERE c.terminated_on IS NULL
                   AND (p.site_checked_at IS NULL OR p.site_checked_at < now() - make_interval(secs => ?))
-                  AND NOT EXISTS (SELECT 1 FROM company_site site WHERE site.company_id = c.id)
+                  AND NOT EXISTS (SELECT 1 FROM company_site site
+                                  WHERE site.company_id = c.id AND site.status = 'FOUND')
                 ORDER BY p.site_checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
                 """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
@@ -142,7 +144,8 @@ public class StatePortalRepository {
                 employer.registrationNumber());
         if (site.host() != null) {
             jdbcTemplate.update("""
-                    INSERT INTO company_site (company_id, host, evidence_url, source) VALUES (?, ?, ?, 'STATE_PORTAL')
+                    INSERT INTO company_site (company_id, host, evidence_url, source, proof)
+                    VALUES (?, ?, ?, 'STATE_PORTAL', 'STATE_PORTAL')
                     ON CONFLICT (company_id, host) DO NOTHING
                     """, employer.companyId(), site.host(), site.evidenceUrl());
         }

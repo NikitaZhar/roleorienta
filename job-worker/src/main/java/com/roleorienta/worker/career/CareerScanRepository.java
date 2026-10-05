@@ -45,14 +45,14 @@ public class CareerScanRepository {
     /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
-     * @return сайты действующих компаний активных стран сбора, ещё не проверенные или проверенные давнее
-     *         срока
+     * @return найденные сайты (кандидаты не проверяются) действующих компаний активных стран сбора, ещё не
+     *         проверенные или проверенные давнее срока
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT s.id, s.company_id, s.host FROM company_site s JOIN company c ON c.id = s.company_id
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
-                WHERE c.terminated_on IS NULL
+                WHERE c.terminated_on IS NULL AND s.status = 'FOUND'
                   AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
                 ORDER BY s.checked_at NULLS FIRST, s.id LIMIT ?
                 """, (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host")),
