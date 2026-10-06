@@ -134,4 +134,26 @@ class CareerLinksTests {
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Kariéra | Acme</title>"))).isTrue();
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Acme</title><h1>Vitajte</h1>"))).isFalse();
     }
+
+    /**
+     * Сайт SuccessFactors узнаётся по содержимому (образец {@code docs/samples/sf-zf.html}) — доска его хост; другой
+     * сайт — нет. Кадровая ссылка на кадровый хост другого домена ({@code jobs.kaufland.com} с {@code kaufland.sk})
+     * принимается, на площадку из двух частей ({@code jobs.cz}) — нет.
+     *
+     * @throws java.io.IOException образец не прочитан
+     */
+    @Test
+    void findsSuccessFactorsSiteAndCareerHostOfOtherDomain() throws java.io.IOException {
+        Document zf = Jsoup.parse(java.nio.file.Files.readString(java.nio.file.Path.of("../docs/samples/sf-zf.html")),
+                "https://jobs.zf.com/search/?q=&locationsearch=Slovakia");
+        assertThat(CareerLinks.boards(zf)).contains(new Board("successfactors", "jobs.zf.com"));
+        assertThat(CareerLinks.successFactorsSite(Jsoup.parse("<p>Acme</p>", "https://www.acme.sk/"))).isEmpty();
+
+        Document home = Jsoup.parse("""
+                <a href="https://www.jobs.cz/">Práca</a><a href="https://jobs.kaufland.com/">Ponuky</a>
+                """, "https://www.kaufland.sk/");
+        assertThat(CareerLinks.careerPage(home, "www.kaufland.sk")).contains("https://jobs.kaufland.com/");
+        Document portal = Jsoup.parse("<a href=\"https://jobs.cz/\">Jobs</a>", "https://www.acme.sk/");
+        assertThat(CareerLinks.careerPage(portal, "www.acme.sk")).isEmpty();
+    }
 }

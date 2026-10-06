@@ -158,6 +158,9 @@ app:
       careers-url: https://careers.smartrecruiters.com
       jobs-url: https://jobs.smartrecruiters.com
       max-pages: 300       # потолок страниц списка за чтение (у JYSK объявлено 167); 300 с паузой 1 с и текст 200 вакансий — в аренде 10m
+    successfactors:         # кадровые сайты работодателей на SAP SuccessFactors Career Site Builder (§57)
+      site-url: https://{host}  # {host} — доска (хост кадрового сайта)
+      max-pages: 40        # потолок страниц списка за чтение (по 20–25 вакансий страны сбора)
     jobposting:
       max-pages: 200       # потолок страниц вакансий сайта за чтение; упор — неполное чтение
 

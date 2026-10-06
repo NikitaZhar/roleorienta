@@ -3,6 +3,7 @@ package com.roleorienta.worker.career;
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseAdapter;
 import com.roleorienta.worker.adapter.personio.PersonioAdapter;
 import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
+import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -35,9 +36,12 @@ import org.jsoup.nodes.Element;
  *   <li>Personio — {@code <компания>.jobs.personio.de|com} → хост витрины.</li>
  *   <li>SmartRecruiters — {@code careers.smartrecruiters.com/<компания>},
  *       {@code jobs.smartrecruiters.com/<компания>/…} → компания.</li>
+ *   <li>SAP SuccessFactors Career Site Builder — сама страница с ресурсами {@code rmkcdn.successfactors.com} →
+ *       хост страницы (§57).</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
  *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
- *       «jobs», «career», «voľné pozície» и т. п.</li>
+ *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена
+ *       ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57).</li>
  * </ul>
  */
 final class CareerLinks {
@@ -54,6 +58,9 @@ final class CareerLinks {
     private static final Pattern SMARTRECRUITERS = Pattern.compile(
             "(?:careers|jobs)\\.smartrecruiters\\.com/([A-Za-z0-9_-]+)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
     private static final Set<String> SMARTRECRUITERS_NOT_BOARDS = Set.of("robots", "sitemap", "api", "static", "oneclick-ui");
+    private static final String SUCCESS_FACTORS_CDN = "rmkcdn.successfactors.com";
+    private static final Set<String> CAREER_HOST_WORDS = Set.of("jobs", "careers", "career", "kariera", "karriere");
+    private static final int CAREER_HOST_LABELS = 3;
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
     private static final List<String> CAREER_WORDS = List.of("kariera", "kariéra", "career", "jobs", "job-",
             "praca", "práca", "pracovne-ponuky", "pracovné ponuky", "volne-pozicie", "voľné pozície",
@@ -69,8 +76,24 @@ final class CareerLinks {
      */
     static Set<Board> boards(Document page) {
         Set<Board> boards = new LinkedHashSet<>();
+        successFactorsSite(page).ifPresent(boards::add);
         hrefs(page).forEach(href -> board(href).ifPresent(boards::add));
         return boards;
+    }
+
+    /**
+     * Страница сама — кадровый сайт SAP SuccessFactors Career Site Builder: ресурсы с {@code rmkcdn.successfactors.com}
+     * (адрес сайта свой у каждого работодателя — {@code jobs.zf.com}, — поэтому узнаётся по содержимому).
+     *
+     * @param page страница с адресом ({@code baseUri})
+     * @return доска — хост страницы; пусто — не SuccessFactors
+     */
+    static Optional<Board> successFactorsSite(Document page) {
+        URI location = uri(page.location());
+        if (location == null || location.getHost() == null || !page.outerHtml().contains(SUCCESS_FACTORS_CDN)) {
+            return Optional.empty();
+        }
+        return Optional.of(new Board(SuccessFactorsAdapter.PROVIDER, lower(location.getHost())));
     }
 
     /**
@@ -151,16 +174,29 @@ final class CareerLinks {
         List<String> links = new ArrayList<>();
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
-            if (link == null || !sameOrSubSite(host, link.getAuthority())) {
+            boolean careerHost = link != null && careerHost(link.getHost());
+            if (link == null || !careerHost && !sameOrSubSite(host, link.getAuthority())) {
                 continue;
             }
             String words = ((link.getPath() == null ? "" : link.getPath()) + " " + anchor.text())
                     .toLowerCase(Locale.ROOT);
-            if (CAREER_WORDS.stream().anyMatch(words::contains) && !links.contains(link.toString())) {
+            if ((careerHost || CAREER_WORDS.stream().anyMatch(words::contains)) && !links.contains(link.toString())) {
                 links.add(link.toString());
             }
         }
         return links;
+    }
+
+    /**
+     * Кадровый хост другого домена: первое слово — {@code jobs}, {@code careers}, {@code career}, {@code kariera},
+     * {@code karriere}, и в хосте не меньше трёх частей ({@code jobs.kaufland.com}, но не площадка {@code jobs.cz}).
+     */
+    private static boolean careerHost(String host) {
+        if (host == null) {
+            return false;
+        }
+        String[] labels = lower(host).split("\\.");
+        return labels.length >= CAREER_HOST_LABELS && CAREER_HOST_WORDS.contains(labels[0]);
     }
 
     private static String normalized(String link) {
