@@ -6,6 +6,7 @@ import com.roleorienta.worker.adapter.personio.PersonioAdapter;
 import com.roleorienta.worker.adapter.phenom.PhenomAdapter;
 import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
+import com.roleorienta.worker.adapter.taleo.TaleoAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -44,6 +45,8 @@ import org.jsoup.nodes.Element;
  *       страница со своим доменом и данными {@code ats.nalgoo.com/api} + {@code "organization"} → организация (§58).</li>
  *   <li>Phenom — сама страница с ресурсами {@code cdn.phenompeople.com} и данными сайта {@code "baseUrl"} → хост и путь
  *       языка из {@code baseUrl} ({@code careers.dhl.com/eu/sk}; §59).</li>
+ *   <li>Oracle Taleo — адрес {@code <компания>.taleo.net/careersection/<раздел>/…} в тексте страницы (бывает только в
+ *       данных скрипта, с экранированными {@code \/}) → {@code <компания>.taleo.net/<раздел>} (§60).</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
  *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
  *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена
@@ -73,6 +76,9 @@ final class CareerLinks {
             "organization\\\\?\"\\s*:\\s*\\\\?\"([a-z0-9-]+)", Pattern.CASE_INSENSITIVE);
     private static final String PHENOM_CDN = "cdn.phenompeople.com";
     private static final Pattern PHENOM_BASE_URL = Pattern.compile("\"baseUrl\"\\s*:\\s*\"https?://([^\"?#]+?)/?\"");
+    private static final Pattern TALEO = Pattern.compile(
+            "([a-z0-9-]+\\.taleo\\.net)/careersection/([a-z0-9_]+)/", Pattern.CASE_INSENSITIVE);
+    private static final Set<String> TALEO_NOT_SECTIONS = Set.of("rest", "theme");
     private static final Set<String> CAREER_HOST_WORDS = Set.of("jobs", "careers", "career", "kariera", "karriere");
     private static final int CAREER_HOST_LABELS = 3;
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
@@ -93,6 +99,7 @@ final class CareerLinks {
         successFactorsSite(page).ifPresent(boards::add);
         nalgooSite(page).ifPresent(boards::add);
         phenomSite(page).ifPresent(boards::add);
+        boards.addAll(taleoBoards(page));
         hrefs(page).forEach(href -> board(href).ifPresent(boards::add));
         return boards;
     }
@@ -112,6 +119,25 @@ final class CareerLinks {
         Matcher organization = NALGOO_ORGANIZATION.matcher(html);
         return organization.find() ? Optional.of(new Board(NalgooAdapter.PROVIDER, lower(organization.group(1))))
                 : Optional.empty();
+    }
+
+    /**
+     * Кадровые разделы Taleo, названные на странице: ссылкой или адресом в данных скрипта ({@code https:\/\/molgroup.
+     * taleo.net\/careersection\/external\/…} у Slovnaft).
+     *
+     * @param page страница
+     * @return доски {@code <компания>.taleo.net/<раздел>}
+     */
+    static Set<Board> taleoBoards(Document page) {
+        Set<Board> boards = new LinkedHashSet<>();
+        Matcher taleo = TALEO.matcher(page.outerHtml().replace("\\/", "/"));
+        while (taleo.find()) {
+            String section = lower(taleo.group(2));
+            if (!TALEO_NOT_SECTIONS.contains(section)) {
+                boards.add(new Board(TaleoAdapter.PROVIDER, lower(taleo.group(1)) + "/" + section));
+            }
+        }
+        return boards;
     }
 
     /**

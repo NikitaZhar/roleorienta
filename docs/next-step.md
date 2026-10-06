@@ -11,7 +11,7 @@
 с 9 471 найденного сайта снята отметка проверки (`FORMAT_UNSUPPORTED`, `NO_CAREER_PAGE`), чтобы перепроверить их
 правилами §57; перепроверка начнётся только с суточного тика 2026-10-07 (цепочка дня 2026-10-06 уже прошла) и
 займёт ~12–16 часов (50 сайтов за задание). Выполнить по очереди, разобрать вывод, записать итог в стенограмму
-(дополнение к §57, §58, §59) и только затем продолжать план (§60).
+(дополнение к §57–§60) и только затем продолжать план (§61).
 
 1. Перепроверка идёт и не обрывается (исправление ключа продолжения, §57):
 ```
@@ -28,7 +28,7 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT ch
 ```
 
 3. Источники SuccessFactors, Nalgoo и Phenom и их вакансии (§57, §58, §59; для Nalgoo заменить provider на 'nalgoo' — ждём
-BILLA ~133, Foxconn ~8; для Phenom — на 'phenom', ждём `careers.dhl.com/eu/sk` ~25 и Allianz, если их сайты есть у ядра; ждём ZF, Kaufland, Lidl, VÚB, Schaeffler, Gestamp, Vaillant — те, чьи
+BILLA ~133, Foxconn ~8; для Phenom — на 'phenom', ждём `careers.dhl.com/eu/sk` ~25 и Allianz, если их сайты есть у ядра; для Taleo — на 'taleo', ждём `molgroup.taleo.net/external` ~52, если сайт Slovnaft есть у ядра; ждём ZF, Kaufland, Lidl, VÚB, Schaeffler, Gestamp, Vaillant — те, чьи
 сайты есть у ядра):
 ```
 docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT s.board, count(p.id) FROM source s LEFT JOIN job_posting p ON p.source_id = s.id WHERE s.provider = 'successfactors' GROUP BY 1"
@@ -56,13 +56,13 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT so
 | §57 | Сделано: SAP SuccessFactors (Career Site Builder) | Lidl, Kaufland, VÚB, ZF (2), Schaeffler, Vaillant, Gestamp |
 | §58 | Сделано: Nalgoo | BILLA, Foxconn, SSE, Markíza |
 | §59 | Сделано: Phenom | Allianz, DHL |
-| §60 | Oracle Recruiting, topjobs.sk, Teamio | Slovnaft, Slovenská sporiteľňa, McDonald's, dm |
-| §61 | Своя страница со ссылками на вакансии | Tesco, IKEA, Porsche, Tatra banka, Stellantis, Tate & Lyle |
+| §60 | Сделано: Oracle Taleo; topjobs.sk (Alma Career) — robots.txt API запрещает, не читается | Slovnaft, Slovenská sporiteľňa, McDonald's, dm |
+| §61 | Своя страница со ссылками на вакансии | Tesco, IKEA, Porsche, Tatra banka, Stellantis, Tate & Lyle, dm (`dm-jobs.sk`, перенесён из §60) |
 | §62 | Поиск кадровой страницы в ядре | пропуски (7 из 200) и ложные `FORMAT_UNSUPPORTED` (14 из 200) |
 
 Не закрывается: своя страница без ссылок на вакансии (вакансии текстом на странице, у каждого сайта своя
 разметка) — итог `FORMAT_UNSUPPORTED`. Образцы ответов — `docs/samples/*.html` (сняты 2026-10-06). Срезов с аудита
-(§54) — 5; аудит — после 10-го среза (§64).
+(§54) — 6; аудит — после 10-го среза (§64).
 
 Затем — SPA (подэтап 1.5): вход, условия, список, сведения, отмеченные — через API §32, §56.
 

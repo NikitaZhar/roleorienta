@@ -158,6 +158,9 @@ app:
       careers-url: https://careers.smartrecruiters.com
       jobs-url: https://jobs.smartrecruiters.com
       max-pages: 300       # потолок страниц списка за чтение (у JYSK объявлено 167); 300 с паузой 1 с и текст 200 вакансий — в аренде 10m
+    taleo:                  # кадровые разделы Oracle Taleo (<компания>.taleo.net, §60)
+      site-url: https://{host}  # {host} — хост компании на taleo.net
+      max-pages: 40        # потолок страниц списка за чтение (по 25 вакансий страны сбора)
     phenom:                 # кадровые сайты работодателей на Phenom (§59)
       site-url: https://{board}  # {board} — доска (хост и путь языка сайта)
       max-pages: 40        # потолок страниц списка за чтение (по 10 вакансий страны сбора)

@@ -190,4 +190,20 @@ class CareerLinksTests {
         assertThat(CareerLinks.phenomSite(allianz)).contains(new Board("phenom", "careers.allianz.com/global/en"));
         assertThat(CareerLinks.phenomSite(Jsoup.parse("<p>\"baseUrl\":\"https://acme.sk/\"</p>"))).isEmpty();
     }
+
+    /**
+     * Taleo: адрес раздела в данных скрипта кадровой страницы Slovnaft (образец {@code docs/samples/oracle-slovnaft.html},
+     * {@code https:\/\/molgroup.taleo.net\/careersection\/external\/…}) — доска {@code molgroup.taleo.net/external};
+     * служебный путь {@code rest} — нет.
+     *
+     * @throws java.io.IOException образец не прочитан
+     */
+    @Test
+    void findsTaleoBoards() throws java.io.IOException {
+        Document slovnaft = Jsoup.parse(java.nio.file.Files.readString(
+                java.nio.file.Path.of("../docs/samples/oracle-slovnaft.html")), "https://kariera.slovnaft.sk/");
+        assertThat(CareerLinks.boards(slovnaft)).contains(new Board("taleo", "molgroup.taleo.net/external"));
+        Document rest = Jsoup.parse("<a href=\"https://acme.taleo.net/careersection/rest/jobboard/x\">x</a>");
+        assertThat(CareerLinks.taleoBoards(rest)).isEmpty();
+    }
 }

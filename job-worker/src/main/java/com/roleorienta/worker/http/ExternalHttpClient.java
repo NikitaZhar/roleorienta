@@ -125,8 +125,21 @@ public class ExternalHttpClient implements AutoCloseable {
      * @return разобранный результат; исключений не бросает
      */
     public HttpResult postJson(URI uri, String json) {
+        return postJson(uri, json, Map.of());
+    }
+
+    /**
+     * POST-запрос с JSON-телом и дополнительными заголовками (Taleo без заголовка часового пояса отвечает 500).
+     *
+     * @param uri     адрес
+     * @param json    тело запроса
+     * @param headers дополнительные заголовки
+     * @return разобранный результат; исключений не бросает
+     */
+    public HttpResult postJson(URI uri, String json, Map<String, String> headers) {
         HttpPost request = new HttpPost(uri);
         request.setHeader(HttpHeaders.ACCEPT, ContentType.APPLICATION_JSON.getMimeType());
+        headers.forEach(request::setHeader);
         request.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
         return execute(uri, request);
     }
