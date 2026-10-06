@@ -28,7 +28,7 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Шаг «число сотрудников из RÚZ» на заглушке RÚZ Open API и настоящей PostgreSQL (технический документ §5.1):
  * категория записывается нижней границей; несколько учётных единиц — берётся последняя; категория не указана и
- * компании нет в RÚZ — неизвестно; спрошенная компания второй раз в срок не спрашивается.
+ * компании нет в RÚZ или RÚZ отказал (404) — неизвестно; спрошенная компания второй раз в срок не спрашивается.
  */
 @SpringBootTest(properties = "app.http.allow-private-addresses=true")
 @ActiveProfiles("test")
@@ -41,6 +41,8 @@ class CompanySizeTests {
     private static final String UNDISCLOSED = "90300002";
     /** Нет в RÚZ — неизвестно. */
     private static final String ABSENT = "90300003";
+    /** RÚZ отвечает 404 (постоянный отказ) — неизвестно, записано: компания не застревает в начале очереди. */
+    private static final String REFUSED = "90300004";
     /** Ответ на список учётных единиц по IČO. */
     private static final Map<String, String> UNITS = Map.of(MEDIUM, "{\"id\": [11, 12]}", UNDISCLOSED,
             "{\"id\": [21]}", ABSENT, "{\"id\": []}");
@@ -88,7 +90,7 @@ class CompanySizeTests {
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
                 + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         jdbcTemplate.update("UPDATE company SET employees_checked_at = now()");
-        for (String number : UNITS.keySet()) {
+        for (String number : List.of(MEDIUM, UNDISCLOSED, ABSENT, REFUSED)) {
             jdbcTemplate.update("""
                     INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')
                     ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL, employees_min = NULL,
@@ -105,7 +107,7 @@ class CompanySizeTests {
         handler.enqueue("first");
         runQueuedTasks();
 
-        assertThat(sizes()).containsExactly(MEDIUM + ":50", UNDISCLOSED + ":null", ABSENT + ":null");
+        assertThat(sizes()).containsExactly(MEDIUM + ":50", UNDISCLOSED + ":null", ABSENT + ":null", REFUSED + ":null");
 
         jdbcTemplate.update("UPDATE company SET employees_min = 1 WHERE registration_number = ?", MEDIUM);
         handler.enqueue("second");
@@ -117,8 +119,8 @@ class CompanySizeTests {
     private List<String> sizes() {
         return jdbcTemplate.queryForList("""
                 SELECT registration_number || ':' || coalesce(employees_min::text, 'null') FROM company
-                WHERE registration_number IN (?, ?, ?) AND employees_checked_at IS NOT NULL ORDER BY 1
-                """, String.class, MEDIUM, UNDISCLOSED, ABSENT);
+                WHERE registration_number IN (?, ?, ?, ?) AND employees_checked_at IS NOT NULL ORDER BY 1
+                """, String.class, MEDIUM, UNDISCLOSED, ABSENT, REFUSED);
     }
 
     private void runQueuedTasks() {

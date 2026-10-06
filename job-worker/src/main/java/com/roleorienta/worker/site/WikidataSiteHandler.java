@@ -34,7 +34,8 @@ import org.springframework.stereotype.Component;
  *   <li>временный отказ — компания остаётся к проверке следующим заданием.</li>
  * </ul>
  *
- * <p>Взято полное число компаний — следующее задание цепочки. Нет разрешения на использование Wikidata —
+ * <p>Взято полное число компаний и хоть что-то записано — следующее задание цепочки (компании с временным
+ * отказом остаются к проверке; если весь пакет — они, цепочка ждёт следующего дня, а не крутится вхолостую). Нет разрешения на использование Wikidata —
  * задание ничего не делает. Wikidata не ответила — повтор позже.</p>
  */
 @Component
@@ -107,7 +108,7 @@ public class WikidataSiteHandler implements TaskHandler {
         }
         LOG.info("Wikidata sites: {} pairs, {} companies to check, {} recorded", byNumber.size(), due.size(),
                 recorded);
-        if (due.size() == properties.sitesPerTask()) {
+        if (due.size() == properties.sitesPerTask() && recorded > 0) {
             taskService.enqueue(TYPE, key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();

@@ -56,6 +56,10 @@ class StatePortalTests {
     private static final String MAIL_SITE = "www." + EMPLOYER_HOST;
     /** «Internetová adresa» в детали вакансии; {@code null} — поля нет (сайт берётся по почте). */
     private static volatile String website;
+    /** Сайт по домену почты временно не отвечает (503). */
+    private static volatile boolean mailSiteDown;
+    /** Есть в реестре и в списке портала, но портал на его список вакансий отвечает 500. */
+    private static final String FAILING = "90000006";
     private static final Map<String, Integer> OFFERS = Map.of(EMPLOYER, 2, AGENCY, 1, OWN_PAGE, 3,
             NOT_REGISTERED, 1);
     private static final HttpServer PORTAL = startPortal();
@@ -102,6 +106,7 @@ class StatePortalTests {
         jdbcTemplate.update("DELETE FROM task");
         jdbcTemplate.update("DELETE FROM portal_employer");
         website = null;
+        mailSiteDown = false;
         String numbers = "'" + String.join("','", NUMBERS) + "'";
         jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
                 + "registration_number IN (" + numbers + "))");
@@ -182,6 +187,46 @@ class StatePortalTests {
         assertThat(employerSites()).containsExactly(EMPLOYER + ":" + MAIL_SITE + ":https://www.employer-test.sk/sk/"
                 + ":STATE_PORTAL:STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort()
                 + "/pracovne-ponuky/" + OFFER_UUID);
+    }
+
+    /**
+     * Портал не ответил по одному работодателю, остальные проверены: он отмечается проверенным без итога и
+     * берётся снова через срок перепроверки — не застревает в начале очереди (аудит §54).
+     */
+    @Test
+    void marksEmployerCheckedWhenPortalFailsForIt() {
+        jdbcTemplate.update("""
+                INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, 'Failing', 'RPO')
+                ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL
+                """, FAILING);
+        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company "
+                + "WHERE registration_number = ?)", FAILING);
+        handler.enqueueList("test");
+        runQueuedTasks();
+        jdbcTemplate.update("INSERT INTO portal_employer (registration_number, name, listed_at) VALUES (?, 'Failing', now())",
+                FAILING);
+        handler.enqueueCheck("test");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NOT NULL AND has_offers IS NULL "
+                + "FROM portal_employer WHERE registration_number = ?", Boolean.class, FAILING)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT has_offers FROM portal_employer WHERE registration_number = ?",
+                Boolean.class, EMPLOYER)).isTrue();
+    }
+
+    /**
+     * Сайт по домену почты временно не отвечает: сайт не записан, работодатель отмечен «искали» — повтор через
+     * срок перепроверки, а не следующим заданием (аудит §54).
+     */
+    @Test
+    void marksSiteSearchedWhenMailSiteIsDown() {
+        mailSiteDown = true;
+
+        runSiteStep();
+
+        assertThat(employerSites()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
+                + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
     }
 
     private void runSiteStep() {
@@ -267,15 +312,27 @@ class StatePortalTests {
                 }
                 String query = exchange.getRequestURI().getQuery();
                 String number = query.replaceAll(".*firma=(\\d{8}).*", "$1");
+                if (FAILING.equals(number)) {
+                    exchange.sendResponseHeaders(500, -1);
+                    exchange.close();
+                    return;
+                }
                 String offer = EMPLOYER.equals(number) ? "<a href=\"/pracovne-ponuky/" + OFFER_UUID + "\">"
                         + "<h3 class=\"govuk-signpost__title\">Účtovník</h3></a>" : "";
                 respond(exchange, "<html><body><main><span>" + OFFERS.getOrDefault(number, 0)
                         + " pracovných ponúk,</span>" + offer + "</main></body></html>");
             });
-            server.createContext("/site/" + MAIL_SITE + "/", exchange -> respond(exchange,
+            server.createContext("/site/" + MAIL_SITE + "/", exchange -> {
+                if (mailSiteDown) {
+                    exchange.sendResponseHeaders(503, -1);
+                    exchange.close();
+                    return;
+                }
+                respond(exchange,
                     exchange.getRequestURI().getPath().endsWith("/kontakt")
                             ? "<html><body><p>Employer Test s. r. o., IČO: " + EMPLOYER + "</p></body></html>"
-                            : "<html><body><a href=\"kontakt\">Kontakt</a></body></html>"));
+                            : "<html><body><a href=\"kontakt\">Kontakt</a></body></html>");
+            });
             server.start();
             return server;
         } catch (IOException exception) {

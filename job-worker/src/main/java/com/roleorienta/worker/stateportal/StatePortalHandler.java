@@ -18,6 +18,7 @@ import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -43,9 +44,10 @@ import org.springframework.stereotype.Component;
  *       кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
  * </ol>
  *
- * <p>Отказ страницы списка — повтор задания с того же места; отказ проверки одного работодателя — он
- * остаётся непроверенным и берётся следующим заданием; портал не ответил ни разу за задание — повтор
- * задания позже (цепочка не продолжается вхолостую).</p>
+ * <p>Отказ страницы списка — повтор задания с того же места; отказ по одному работодателю, когда остальные
+ * прочитаны, — он отмечается проверенным и берётся снова через срок перепроверки (иначе такие работодатели
+ * копятся в начале очереди и останавливают цепочку); портал не ответил ни разу за задание — повтор задания
+ * позже (цепочка не продолжается вхолостую).</p>
  */
 @Component
 public class StatePortalHandler implements TaskHandler {
@@ -167,10 +169,12 @@ public class StatePortalHandler implements TaskHandler {
         List<DueEmployer> due = repository.employersToCheck(properties.checksPerTask(), properties.recheckAfter());
         int checked = 0;
         int connected = 0;
+        List<String> failed = new ArrayList<>();
         for (DueEmployer employer : due) {
             Optional<Boolean> hasOffers = adapter.hasPostingsIn(employer.registrationNumber(), SLOVAKIA);
             if (hasOffers.isEmpty()) {
                 LOG.warn("State portal employer {} not checked", employer.registrationNumber());
+                failed.add(employer.registrationNumber());
                 continue;
             }
             repository.recordCheck(employer, hasOffers.get());
@@ -181,6 +185,7 @@ public class StatePortalHandler implements TaskHandler {
         if (checked == 0 && !due.isEmpty()) {
             return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
         }
+        failed.forEach(repository::markChecked);
         if (due.size() == properties.checksPerTask()) {
             next(CHECK, period, round + 1);
         }
@@ -194,10 +199,12 @@ public class StatePortalHandler implements TaskHandler {
         List<SiteEmployer> due = repository.employersForSite(properties.checksPerTask(), properties.recheckAfter());
         int read = 0;
         int found = 0;
+        List<SiteEmployer> failed = new ArrayList<>();
         for (SiteEmployer employer : due) {
             Optional<PortalSite> site = adapter.employerSite(employer.registrationNumber());
             if (site.isEmpty()) {
                 LOG.warn("State portal employer {}: site not read", employer.registrationNumber());
+                failed.add(employer);
                 continue;
             }
             read++;
@@ -207,6 +214,7 @@ public class StatePortalHandler implements TaskHandler {
         if (read == 0 && !due.isEmpty()) {
             return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
         }
+        failed.forEach(employer -> repository.recordSite(employer, null));
         if (due.size() == properties.checksPerTask()) {
             next(SITE, period, round + 1);
         }
@@ -219,7 +227,7 @@ public class StatePortalHandler implements TaskHandler {
      * стартовая страница); домен почты — проверка сайта {@code www.<домен>}: IČO или бренд —
      * {@code PORTAL_MAIL}, закрыт для программы — {@code PORTAL_MAIL_403}, открылся без подтверждения —
      * {@code GROUP_SITE} (почта на домене самого работодателя), не существует — сайта нет. Временный отказ
-     * сайта — не записывается, работодатель проверяется следующим заданием.
+     * сайта — сайт не записывается, работодатель проверяется снова через срок перепроверки.
      *
      * @return записан ли найденный сайт
      */
@@ -235,8 +243,9 @@ public class StatePortalHandler implements TaskHandler {
             String host = site.mailHost().startsWith(WWW) ? site.mailHost() : WWW + site.mailHost();
             Verdict verdict = verifier.verify(host, "", employer.registrationNumber(), employer.name());
             if (verdict == Verdict.TEMPORARY) {
-                LOG.info("State portal employer {}: mail site {} not answering, checked later",
+                LOG.info("State portal employer {}: mail site {} not answering, checked after recheck period",
                         employer.registrationNumber(), host);
+                repository.recordSite(employer, null);
                 return false;
             }
             String proof = switch (verdict) {

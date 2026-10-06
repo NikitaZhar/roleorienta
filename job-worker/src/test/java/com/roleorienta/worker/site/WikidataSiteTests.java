@@ -31,7 +31,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * §5.1): постраничный ответ, IČO без ведущего нуля, открывшийся сайт — находка, ответ 403 — находка с
  * {@code WIKIDATA_403}, несуществующая страница — кандидат; компания с найденным сайтом не проверяется.
  */
-@SpringBootTest(properties = {"app.http.allow-private-addresses=true", "app.wikidata.page-size=2"})
+@SpringBootTest(properties = {"app.http.allow-private-addresses=true", "app.wikidata.page-size=2",
+    "app.wikidata.sites-per-task=2"})
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class WikidataSiteTests {
@@ -46,11 +47,14 @@ class WikidataSiteTests {
     private static final String HAS_SITE = "90100004";
     /** Нет в реестре. */
     private static final String UNKNOWN = "90100005";
+    /** Сайты временно не отвечают (503) — регистрируются только в тесте цепочки. */
+    private static final List<String> BUSY = List.of("90100006", "90100007");
     private static final List<String> REGISTERED = List.of(OPENS, CLOSED, MISSING, HAS_SITE);
     /** Строки ответа Wikidata: IČO, путь сайта на заглушке. */
     private static final List<String[]> ROWS = List.of(new String[] {"1234567", "/missing"},
             new String[] {OPENS, "/opens"}, new String[] {CLOSED, "/closed"}, new String[] {HAS_SITE, "/opens"},
-            new String[] {UNKNOWN, "/opens"});
+            new String[] {UNKNOWN, "/opens"}, new String[] {BUSY.get(0), "/busy"},
+            new String[] {BUSY.get(1), "/busy"});
     private static final Pattern OFFSET = Pattern.compile("OFFSET[+ ](\\d+)");
     private static final Pattern LIMIT = Pattern.compile("LIMIT[+ ](\\d+)");
     private static final int MAX_TASK_ROUNDS = 10;
@@ -132,6 +136,32 @@ class WikidataSiteTests {
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(4);
     }
 
+    /**
+     * Весь пакет к проверке (2 компании) — сайты с временным отказом: ничего не записано, следующее задание
+     * цепочки не ставится — цепочка ждёт следующего дня, а не крутится вхолостую (аудит §54).
+     */
+    @Test
+    void chainStopsWhenWholeBatchFailsTemporarily() {
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) SELECT id, "
+                + "'done-' || registration_number || '.sk', 'http://done.sk', 'WIKIDATA', 'WIKIDATA' FROM company "
+                + "WHERE registration_number IN (?, ?, ?)", OPENS, CLOSED, MISSING);
+        for (String number : BUSY) {
+            jdbcTemplate.update("""
+                    INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')
+                    ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL
+                    """, number, "Company " + number);
+        }
+
+        handler.enqueue("busy");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
+                WikidataSiteHandler.TYPE)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site s JOIN company c ON c.id = "
+                + "s.company_id WHERE c.registration_number IN (?, ?)", Integer.class, BUSY.get(0), BUSY.get(1)))
+                .isZero();
+    }
+
     private List<String> sites() {
         return jdbcTemplate.queryForList("""
                 SELECT c.registration_number || ':' || s.host || ':' || s.source || ':' || s.proof || ':'
@@ -177,7 +207,8 @@ class WikidataSiteTests {
             });
             server.createContext("/", exchange -> {
                 String path = exchange.getRequestURI().getPath();
-                respond(exchange, "/opens".equals(path) ? 200 : "/closed".equals(path) ? 403 : 404,
+                respond(exchange, "/opens".equals(path) ? 200 : "/closed".equals(path) ? 403
+                        : "/busy".equals(path) ? 503 : 404,
                         "<html><body>Company</body></html>");
             });
             server.start();

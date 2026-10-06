@@ -46,7 +46,8 @@ public class RuzClient {
 
     /**
      * @param registrationNumber IČO
-     * @return ответ RÚZ; пусто — RÚZ не ответил или ответ не разобран (спросить позже)
+     * @return ответ RÚZ; постоянный отказ или неразобранный ответ — {@link RuzSize#UNKNOWN} (повтор не поможет);
+     *         пусто — временный отказ (спросить позже)
      */
     public Optional<RuzSize> size(String registrationNumber) {
         Optional<JsonNode> units = get("/uctovne-jednotky?zmenene-od=2000-01-01&ico=" + registrationNumber);
@@ -61,17 +62,25 @@ public class RuzClient {
         return card.map(node -> new RuzSize(EMPLOYEES_MIN.get(node.path("velkostOrganizacie").asText())));
     }
 
+    /**
+     * @return ответ; постоянный отказ или неразобранный ответ — пустой JSON-объект (у него нет ни id, ни
+     *         категории — итог «неизвестно»); пусто — временный отказ
+     */
     private Optional<JsonNode> get(String path) {
         HttpResult result = httpClient.get(URI.create(properties.baseUrl() + path));
-        if (!(result instanceof HttpResult.Success success)) {
-            LOG.warn("RÚZ {} not read: {}", path, result);
+        if (result instanceof HttpResult.TemporaryFailure) {
+            LOG.warn("RÚZ {} not answering: {}", path, result);
             return Optional.empty();
+        }
+        if (!(result instanceof HttpResult.Success success)) {
+            LOG.warn("RÚZ {} refused: {}", path, result);
+            return Optional.of(JSON.createObjectNode());
         }
         try {
             return Optional.of(JSON.readTree(success.body()));
         } catch (JsonProcessingException exception) {
             LOG.warn("Malformed RÚZ answer for {}: {}", path, exception.getOriginalMessage());
-            return Optional.empty();
+            return Optional.of(JSON.createObjectNode());
         }
     }
 

@@ -70,6 +70,17 @@ public class StatePortalRepository {
     }
 
     /**
+     * Отметка «проверяли» без итога: работодатель, по которому портал не ответил, берётся снова через срок
+     * перепроверки.
+     *
+     * @param registrationNumber IČO, как на портале
+     */
+    public void markChecked(String registrationNumber) {
+        jdbcTemplate.update("UPDATE portal_employer SET checked_at = now() WHERE registration_number = ?",
+                registrationNumber);
+    }
+
+    /**
      * Итог проверки работодателя одной транзакцией. Вакансии есть — источник портала (доска — IČO)
      * подключается при записанном основании использования ({@code source_permission}), компания
      * связывается с ним как работодатель и получает итог «подключена» ({@code company_check}).
