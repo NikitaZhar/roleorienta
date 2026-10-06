@@ -3,32 +3,31 @@
 Перезаписывается в конце каждого среза. Раздел «Долг» переносится без изменений, пока пункт не
 закрыт срезом.
 
-**Последний срез:** §50 — шаг 2 поиска сайта: портал по версии 3 («Internetová adresa» полным адресом —
-`company_site.start_url`; домен почты с проверкой сайта общим компонентом `SiteVerifier`); `WorkdayAdapter`
-пропускает публикацию без `externalPath`.
+**Последний срез:** §51 — шаги 3–4 поиска сайта: адрес по названию (задание `SITE_NAME`, своя очередь
+`roleorienta.jobs.site-name`, компании с признаком найма); домена нет — постоянный отказ `NO_SUCH_HOST`.
 
-**Состояние на 2026-10-06:** §49 на стенде завершён — 5 заданий `SITE_WIKIDATA` `DONE`, сайтов из Wikidata 310
-(`WIKIDATA` 301, `WIKIDATA_403` 6, кандидатов 3). §50 — в рабочем дереве, ждёт сборки и коммита владельца.
+**Состояние на 2026-10-06:** §50 в `main`, CI зелёный; итог §50 на стенде — после суточного тика портала. §51 — в
+рабочем дереве, ждёт сборки и коммита владельца.
 
-**Первый шаг следующей сессии — итог §50 на стенде** (шаг `site` портала идёт раз в сутки):
-
-```
-docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT proof, status, count(*), count(start_url) FROM company_site WHERE source = 'STATE_PORTAL' AND found_at > now() - interval '1 day' GROUP BY 1, 2"
-```
+**Первый шаг следующей сессии — итог §50 и §51 на стенде:**
 
 ```
-docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT state, count(*) FROM task WHERE type = 'STATE_PORTAL' AND created_at > now() - interval '1 day' GROUP BY 1"
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT source, proof, status, count(*), count(start_url) FROM company_site WHERE found_at > now() - interval '1 day' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
 ```
 
-Ждём: новые сайты с `PORTAL_MAIL`, `PORTAL_MAIL_403`, `GROUP_SITE`, часть `STATE_PORTAL` с `start_url`; упавших
-заданий нет; чтение доски Workday PwC (источник 1217) больше не падает. Затем — **§51** (таблица ниже).
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT type, state, count(*) FROM task WHERE type IN ('STATE_PORTAL', 'SITE_NAME') AND created_at > now() - interval '1 day' GROUP BY 1, 2"
+```
+
+Ждём: у `STATE_PORTAL` — `PORTAL_MAIL`, `PORTAL_MAIL_403`, `GROUP_SITE`, часть с `start_url`; у `NAME` — находки
+`REGISTRATION_NUMBER` и `BRAND`, кандидаты `GROUP_SITE` и `HTTP_403`; упавших заданий нет. Затем — **§52**.
 
 **Порядок срезов — поиск сайта (по шагам алгоритма версии 3; технический документ §5.1):**
 
 | Срез | Шаг алгоритма | Что |
 |---|---|---|
 | §50 | 2 | Сделано: портал по версии 3, общий компонент проверки сайта `SiteVerifier` |
-| §51 | 3, 4 | Адрес по названию: адреса из названия, проверка (IČO, затем бренд), кандидаты; «домен не существует» — постоянный отказ HTTP-клиента; отдельная очередь; компании с признаком найма |
+| §51 | 3, 4 | Сделано: адрес по названию, своя очередь, `NO_SUCH_HOST` |
 | — | 5 | Common Crawl — есть в коде (§25), не меняется |
 | §52 | 1–5 | Основной сайт: при нескольких находках — из самого раннего шага; кандидат основным не становится |
 

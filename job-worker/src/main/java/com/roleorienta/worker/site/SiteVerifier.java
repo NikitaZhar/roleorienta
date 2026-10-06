@@ -44,16 +44,17 @@ public class SiteVerifier {
     }
 
     /**
-     * Проверяет сайт с его главной ({@link SiteCheckProperties#homeUrl()}).
+     * Проверяет сайт со стартовой страницы: главная ({@link SiteCheckProperties#homeUrl()}) и путь от неё.
      *
      * @param host               хост сайта; по нему же — правила бренда (домен и зона)
+     * @param path               путь стартовой страницы без ведущей косой черты ({@code sk/}); пустой — главная
      * @param registrationNumber IČO компании (ведущие нули не важны)
      * @param companyName        название компании из реестра
-     * @return итог проверки; временный отказ главной — {@link Verdict#TEMPORARY}; отказы ссылок на реквизиты итог
-     *         не меняют
+     * @return итог проверки; временный отказ стартовой страницы — {@link Verdict#TEMPORARY}; отказы ссылок на
+     *         реквизиты итог не меняют
      */
-    public Verdict verify(String host, String registrationNumber, String companyName) {
-        URI start = URI.create(properties.homeUrl().replace(HOST_PLACEHOLDER, host));
+    public Verdict verify(String host, String path, String registrationNumber, String companyName) {
+        URI start = start(host, path);
         return switch (httpClient.get(start)) {
             case HttpResult.TemporaryFailure temporary -> Verdict.TEMPORARY;
             case HttpResult.PermanentFailure failure -> switch (failure.kind()) {
@@ -66,7 +67,17 @@ public class SiteVerifier {
     }
 
     /**
-     * Итог по открывшейся главной: IČO на ней или на странице реквизитов, иначе бренд.
+     * @param host хост сайта
+     * @param path путь без ведущей косой черты; пустой — главная
+     * @return адрес стартовой страницы: главная по {@link SiteCheckProperties#homeUrl()} и путь от неё
+     */
+    public URI start(String host, String path) {
+        return URI.create(properties.homeUrl().replace(HOST_PLACEHOLDER, host)).resolve(path);
+    }
+
+    /**
+     * Итог по открывшейся стартовой странице: IČO на ней или на странице реквизитов, иначе бренд, иначе признак
+     * сайта группы.
      */
     private Verdict verdict(URI start, String host, String html, String registrationNumber, String companyName) {
         Document page = Jsoup.parse(html, start.toString());
@@ -74,7 +85,10 @@ public class SiteVerifier {
         if (hasNumber(page, number) || legalLinks(page, start).stream().anyMatch(link -> numberAt(link, number))) {
             return Verdict.REGISTRATION_NUMBER;
         }
-        return SiteBrand.confirmed(host, page, html, companyName) ? Verdict.BRAND : Verdict.OPENED;
+        if (SiteBrand.confirmed(host, page, html, companyName)) {
+            return Verdict.BRAND;
+        }
+        return SiteBrand.groupSite(host, page, html, companyName) ? Verdict.GROUP : Verdict.OPENED;
     }
 
     private boolean numberAt(URI link, String number) {
@@ -128,11 +142,13 @@ public class SiteVerifier {
         REGISTRATION_NUMBER,
         /** IČO нет, бренд названия подтверждает сайт. */
         BRAND,
+        /** Страница открылась, подтверждения нет; похожа на международный сайт группы ({@link SiteBrand#groupSite}). */
+        GROUP,
         /** Страница открылась, подтверждения нет. */
         OPENED,
         /** Сайт закрыт для программы: 401/403 или robots.txt. */
         CLOSED,
-        /** Сайт не существует, удалён или адрес недопустим. */
+        /** Сайт не существует (в том числе домена нет), удалён или адрес недопустим. */
         GONE,
         /** Временный отказ: проверить позже. */
         TEMPORARY

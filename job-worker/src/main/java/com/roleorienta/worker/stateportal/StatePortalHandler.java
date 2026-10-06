@@ -233,7 +233,7 @@ public class StatePortalHandler implements TaskHandler {
                     site.evidenceUrl(), STATE_PORTAL);
         } else if (site.mailHost() != null) {
             String host = site.mailHost().startsWith(WWW) ? site.mailHost() : WWW + site.mailHost();
-            Verdict verdict = verifier.verify(host, employer.registrationNumber(), employer.name());
+            Verdict verdict = verifier.verify(host, "", employer.registrationNumber(), employer.name());
             if (verdict == Verdict.TEMPORARY) {
                 LOG.info("State portal employer {}: mail site {} not answering, checked later",
                         employer.registrationNumber(), host);
@@ -242,7 +242,7 @@ public class StatePortalHandler implements TaskHandler {
             String proof = switch (verdict) {
                 case REGISTRATION_NUMBER, BRAND -> PORTAL_MAIL;
                 case CLOSED -> PORTAL_MAIL_403;
-                case OPENED -> GROUP_SITE;
+                case GROUP, OPENED -> GROUP_SITE;
                 case GONE, TEMPORARY -> null;
             };
             found = proof == null ? null : new FoundSite(host, null, site.evidenceUrl(), proof);

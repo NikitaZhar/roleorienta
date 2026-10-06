@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jsoup.nodes.Document;
 
@@ -22,7 +23,7 @@ import org.jsoup.nodes.Document;
  *       словом в видимом тексте; бренд до трёх букв — ещё и в заголовке {@code title}.</li>
  * </ul>
  *
- * <p>Правила перенесены из скрипта замера {@code survey/site-search.py} (стенограмма §48).</p>
+ * <p>Сайт группы ({@link #groupSite}) — кандидат, не находка. Правила перенесены из скрипта замера {@code survey/site-search.py} (стенограмма §48).</p>
  */
 final class SiteBrand {
 
@@ -30,6 +31,11 @@ final class SiteBrand {
     static final int MIN_WORDS = 30;
 
     private static final int SHORT_BRAND_MAX = 3;
+    private static final int GROUP_BRAND_MIN = 4;
+    private static final Pattern BRAND = Pattern.compile("[a-z0-9-]+");
+    private static final Pattern PAIR = Pattern.compile("\\s*([A-Za-z]+)\\s*&\\s*([A-Za-z]+)");
+    private static final int NAME_DOMAIN_MIN = 4;
+    private static final String WWW = "www.";
     private static final int RAW_SCAN_LIMIT = 300_000;
     private static final Pattern LEGAL_FORMS = Pattern.compile(
             "\\b(s\\.?\\s?r\\.?\\s?o\\.?|a\\.?\\s?s\\.?|spol\\.?\\s*s\\s*r\\.?\\s?o\\.?|v\\.?\\s?o\\.?\\s?s\\.?|"
@@ -60,8 +66,7 @@ final class SiteBrand {
      */
     static boolean confirmed(String host, Document page, String html, String companyName) {
         String text = page.text();
-        if (PARKED.matcher(html.substring(0, Math.min(html.length(), RAW_SCAN_LIMIT))).find()
-                || text.split("\\s+").length < MIN_WORDS) {
+        if (parked(html) || text.split("\\s+").length < MIN_WORDS) {
             return false;
         }
         String plainHost = host.toLowerCase(Locale.ROOT);
@@ -84,33 +89,143 @@ final class SiteBrand {
     }
 
     /**
-     * Бренды названия без дефиса: первое слово, первые два слитно; общие слова и слова короче двух букв
-     * отброшены.
+     * Международный сайт группы — кандидат (шаг 4): сайт не в {@code .sk}, бренд от {@link #GROUP_BRAND_MIN} букв —
+     * первое слово домена, не заглушка и не меньше {@link #MIN_WORDS} слов.
+     *
+     * @param host        хост сайта
+     * @param page        разобранная страница
+     * @param html        исходный текст страницы
+     * @param companyName название компании из реестра
+     * @return похож ли сайт на сайт группы компании
      */
-    static Set<String> keys(String companyName) {
-        String ascii = Normalizer.normalize(companyName, Normalizer.Form.NFKD).replaceAll("[^\\p{ASCII}]", "")
-                .toLowerCase(Locale.ROOT);
+    static boolean groupSite(String host, Document page, String html, String companyName) {
+        String plainHost = host.toLowerCase(Locale.ROOT);
+        return !plainHost.endsWith(".sk") && keys(companyName).stream()
+                .anyMatch(key -> key.length() >= GROUP_BRAND_MIN && key.equals(firstLabel(plainHost)))
+                && !parked(html) && page.text().split("\\s+").length >= MIN_WORDS;
+    }
+
+    /**
+     * Бренды названия для адресов: первое слово без правовой формы, первые два слова слитно и через дефис;
+     * только буквы, цифры и дефис, не короче двух знаков (без дефиса).
+     *
+     * @param companyName название компании
+     * @return бренды по порядку, без повторов
+     */
+    static List<String> brands(String companyName) {
         List<String> clean = new ArrayList<>();
-        for (String word : LEGAL_FORMS.matcher(ascii).replaceAll(" ").split("[^a-z0-9.]+")) {
+        for (String word : asciiWords(companyName)) {
             String stripped = word.replaceAll("^\\.+|\\.+$", "");
-            if (!stripped.isEmpty() && !SKIPPED_WORDS.contains(word) && !word.endsWith(".sk")) {
+            if (!stripped.isEmpty() && !word.endsWith(".sk")) {
                 clean.add(stripped);
             }
         }
-        Set<String> keys = new LinkedHashSet<>();
+        Set<String> brands = new LinkedHashSet<>();
         if (!clean.isEmpty()) {
-            keys.add(clean.get(0));
+            brands.add(clean.get(0));
             if (clean.size() > 1) {
-                keys.add(clean.get(0) + clean.get(1));
+                brands.add(clean.get(0) + clean.get(1));
+                brands.add(clean.get(0) + "-" + clean.get(1));
             }
         }
-        keys.removeIf(key -> key.length() < 2 || GENERIC.contains(key));
+        brands.removeIf(brand -> !BRAND.matcher(brand).matches() || brand.replace("-", "").length() < 2);
+        return new ArrayList<>(brands);
+    }
+
+    /**
+     * Бренды, которыми подтверждается сайт: {@link #brands} без общих слов (obec, group …), без дефиса.
+     *
+     * @param companyName название компании
+     * @return бренды по порядку, без повторов
+     */
+    static Set<String> keys(String companyName) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (String brand : brands(companyName)) {
+            if (!GENERIC.contains(brand)) {
+                keys.add(brand.replace("-", ""));
+            }
+        }
         return keys;
     }
 
+    /**
+     * Адреса по названию (шаги 3–4 алгоритма версии 3): домен {@code .sk} из самого названия; для каждого бренда
+     * {@code www.бренд.sk}, {@code www.бренд-slovakia.sk}, {@code www.брендslovakia.sk}, {@code www.бренд(-)slovensko.sk},
+     * {@code www.бренд(-)jobs.sk}, {@code www.бренд-kariera.sk}, {@code kariera.бренд.sk}, {@code www.бренд.com/sk/},
+     * {@code www.бренд.com/slovakia/}, {@code www.бренд.com}; «A &amp; B» — {@code www.aandb.sk}, {@code www.aandb.com}.
+     *
+     * @param companyName название компании
+     * @return адреса по порядку проверки, без повторов
+     */
+    static List<SiteAddress> addresses(String companyName) {
+        Set<SiteAddress> addresses = new LinkedHashSet<>();
+        for (String word : asciiWords(companyName)) {
+            if (word.endsWith(".sk") && word.length() > NAME_DOMAIN_MIN) {
+                addresses.add(new SiteAddress(WWW + word, ""));
+            }
+        }
+        for (String brand : brands(companyName)) {
+            for (String host : List.of(brand + ".sk", brand + "-slovakia.sk", brand + "slovakia.sk")) {
+                addresses.add(new SiteAddress(WWW + host, ""));
+            }
+            for (String path : List.of("sk/", "slovakia/", "")) {
+                addresses.add(new SiteAddress(WWW + brand + ".com", path));
+            }
+            for (String host : List.of(brand + "slovensko.sk", brand + "-slovensko.sk", brand + "-jobs.sk",
+                    brand + "jobs.sk", brand + "-kariera.sk")) {
+                addresses.add(new SiteAddress(WWW + host, ""));
+            }
+            addresses.add(new SiteAddress("kariera." + brand + ".sk", ""));
+        }
+        Matcher pair = PAIR.matcher(companyName);
+        if (pair.lookingAt()) {
+            String joined = (pair.group(1) + "and" + pair.group(2)).toLowerCase(Locale.ROOT);
+            addresses.add(new SiteAddress(WWW + joined + ".sk", ""));
+            addresses.add(new SiteAddress(WWW + joined + ".com", ""));
+        }
+        return new ArrayList<>(addresses);
+    }
+
+    /**
+     * Угаданный адрес, ответ 403 которого — кандидат {@code HTTP_403}: {@code www.бренд.sk} или
+     * {@code www.бренд.com}, бренд — не общее слово.
+     *
+     * @param host        хост
+     * @param companyName название компании
+     * @return главный адрес бренда ли это
+     */
+    static boolean brandHome(String host, String companyName) {
+        return brands(companyName).stream().filter(brand -> !GENERIC.contains(brand))
+                .anyMatch(brand -> host.equals(WWW + brand + ".sk") || host.equals(WWW + brand + ".com"));
+    }
+
+    /**
+     * Слова названия латиницей без диакритики, без правовой формы и связок (a, the, and); точки внутри слова
+     * сохраняются ({@code firma.sk}).
+     */
+    private static List<String> asciiWords(String companyName) {
+        String ascii = Normalizer.normalize(companyName, Normalizer.Form.NFKD).replaceAll("[^\\p{ASCII}]", "")
+                .toLowerCase(Locale.ROOT);
+        List<String> words = new ArrayList<>();
+        for (String word : LEGAL_FORMS.matcher(ascii).replaceAll(" ").split("[^a-z0-9.]+")) {
+            if (!word.isEmpty() && !SKIPPED_WORDS.contains(word)) {
+                words.add(word);
+            }
+        }
+        return words;
+    }
+
+    private static boolean parked(String html) {
+        return PARKED.matcher(html.substring(0, Math.min(html.length(), RAW_SCAN_LIMIT))).find();
+    }
+
+    private static String firstLabel(String host) {
+        String domain = host.startsWith(WWW) ? host.substring(WWW.length()) : host;
+        return domain.replace("-", "").split("\\.")[0];
+    }
+
     private static boolean matchesDomain(String key, String host) {
-        String domain = host.startsWith("www.") ? host.substring("www.".length()) : host;
-        String first = domain.replace("-", "").split("\\.")[0];
+        String first = firstLabel(host);
         return key.equals(first) || key.length() >= SHORT_BRAND_MAX && first.contains(key);
     }
 

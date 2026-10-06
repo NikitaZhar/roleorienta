@@ -44,6 +44,11 @@ public sealed interface HttpResult {
         ACCESS_DENIED,
         /** 404, 410 — страница удалена. */
         NOT_FOUND,
+        /**
+         * Домена нет: хост не разрешается в адрес ({@code UnknownHostException}); запрос не отправлялся. Сбой самого
+         * DNS («Temporary failure in name resolution») — временный отказ.
+         */
+        NO_SUCH_HOST,
         /** Запрещённая схема или внутренний адрес (защита от SSRF). */
         BLOCKED,
         /** Тело ответа больше потолка. */

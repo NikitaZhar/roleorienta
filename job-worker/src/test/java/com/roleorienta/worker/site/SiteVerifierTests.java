@@ -101,8 +101,8 @@ class SiteVerifierTests {
     }
 
     /**
-     * Сайт не в зоне {@code .sk} без признака Словакии брендом не подтверждается; короткая страница —
-     * заглушка, тоже нет.
+     * Короткая страница — заглушка, брендом не подтверждается; сайт не в зоне {@code .sk} без признака Словакии
+     * — тоже нет, но бренд — первое слово его домена: похож на сайт группы.
      */
     @Test
     void brandNeedsSlovakSignalAndText() {
@@ -110,7 +110,7 @@ class SiteVerifierTests {
         assertThat(verify("alfaplast.sk")).isEqualTo(Verdict.OPENED);
 
         pages.put("/", html("Alfaplast", "<p>Alfaplast. " + FILLER + "</p>"));
-        assertThat(verify("alfaplast.com")).isEqualTo(Verdict.OPENED);
+        assertThat(verify("alfaplast.com")).isEqualTo(Verdict.GROUP);
     }
 
     /**
@@ -135,8 +135,22 @@ class SiteVerifierTests {
         assertThat(SiteBrand.keys("Obec Senec")).containsExactly("obecsenec");
     }
 
+    /**
+     * Адреса по названию: домены бренда в {@code .sk}, {@code .com} с путями, кадровые домены; «A &amp; B» — слитно.
+     */
+    @Test
+    void addressesFromName() {
+        assertThat(SiteBrand.addresses(NAME)).startsWith(new SiteAddress("www.alfaplast.sk", ""),
+                new SiteAddress("www.alfaplast-slovakia.sk", ""), new SiteAddress("www.alfaplastslovakia.sk", ""),
+                new SiteAddress("www.alfaplast.com", "sk/")).contains(new SiteAddress("kariera.alfaplast.sk", ""))
+                .hasSize(12);
+        assertThat(SiteBrand.addresses("Tate & Lyle Slovakia s.r.o.")).contains(new SiteAddress("www.tateandlyle.com", ""));
+        assertThat(SiteBrand.brandHome("www.alfaplast.com", NAME)).isTrue();
+        assertThat(SiteBrand.brandHome("www.alfaplast-slovakia.sk", NAME)).isFalse();
+    }
+
     private Verdict verify(String host) {
-        return verifier.verify(host, NUMBER, NAME);
+        return verifier.verify(host, "", NUMBER, NAME);
     }
 
     private static String html(String title, String body) {

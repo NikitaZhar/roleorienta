@@ -301,6 +301,17 @@ class ExternalHttpClientTests {
     }
 
     /**
+     * Домена нет (зона {@code .invalid} не разрешается никогда, RFC 2606) — постоянный отказ {@code NO_SUCH_HOST},
+     * а не временный: повтор не поможет.
+     */
+    @Test
+    void unknownHostIsPermanentFailure() {
+        assertThat(client.get(URI.create("http://no-such-host.invalid/"))).isInstanceOfSatisfying(
+                HttpResult.PermanentFailure.class,
+                failure -> assertThat(failure.kind()).isEqualTo(HttpResult.Kind.NO_SUCH_HOST));
+    }
+
+    /**
      * robots.txt временно недоступен (5xx) — запрос откладывается, а не выполняется.
      */
     @Test

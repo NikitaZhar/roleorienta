@@ -7,7 +7,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Потребитель рабочих очередей — сбора и поиска (стенограмма §46): по заголовку
+ * Потребитель рабочих очередей — сбора, поиска (стенограмма §46) и адреса по названию (§51): по заголовку
  * {@link RabbitTopology#TASK_ID_HEADER} выполняет задание. У каждой очереди своё число обработчиков
  * (атрибут {@code concurrency} аннотации, значение из настроек {@code app.task.*-consumers}).
  *
@@ -47,6 +47,17 @@ public class TaskListener {
      */
     @RabbitListener(queues = RabbitTopology.DISCOVERY_QUEUE, concurrency = "${app.task.discovery-consumers:4}")
     public void onDiscoveryMessage(Message message) {
+        execute(message);
+    }
+
+    /**
+     * Принимает одно сообщение очереди «адрес по названию».
+     *
+     * @param message сообщение с заголовком id задания
+     * @throws AmqpRejectAndDontRequeueException если заголовка нет или он не число — сразу в DLQ
+     */
+    @RabbitListener(queues = RabbitTopology.SITE_NAME_QUEUE, concurrency = "${app.task.site-name-consumers:2}")
+    public void onSiteNameMessage(Message message) {
         execute(message);
     }
 

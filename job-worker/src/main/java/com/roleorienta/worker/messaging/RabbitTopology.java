@@ -10,13 +10,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, две рабочие очереди и
+ * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, три рабочие очереди и
  * очередь «мёртвых писем» (DLQ), все durable — переживают перезапуск брокера.
  *
  * <p>Две рабочие очереди (стенограмма §46): <b>сбор</b> ({@link #WORK_QUEUE}) — чтение источников и всё,
  * что идёт к пользователю; <b>поиск</b> ({@link #DISCOVERY_QUEUE}) — реестр, сайты, кадровые страницы,
  * обратный путь, государственный портал. У каждой свои обработчики, поэтому многочасовые цепочки
- * поиска не задерживают чтение вакансий. Очередь выбирается по типу задания ({@link #routingKey}).</p>
+ * поиска не задерживают чтение вакансий. Третья — <b>адрес по названию</b> ({@link #SITE_NAME_QUEUE},
+ * стенограмма §51): до 36 адресов на компанию, цепочка на дни — не задерживает остальной поиск. Очередь
+ * выбирается по типу задания ({@link #routingKey}).</p>
  *
  * <p>Бины {@link DirectExchange}, {@link Queue} и {@link Binding} Spring AMQP при старте
  * объявляет в брокере, если их там нет.
@@ -53,6 +55,15 @@ public class RabbitTopology {
     static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "SITE_WIKIDATA",
             "CAREER_SCAN", "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT");
 
+    /** Очередь заданий «адрес по названию» (шаги 3–4 поиска сайта). */
+    public static final String SITE_NAME_QUEUE = "roleorienta.jobs.site-name";
+
+    /** Ключ маршрутизации заданий «адрес по названию». */
+    public static final String SITE_NAME_ROUTING_KEY = "site-name";
+
+    /** Тип задания «адрес по названию» ({@code SiteNameHandler.TYPE}; строкой — см. {@link #DISCOVERY_TYPES}). */
+    static final String SITE_NAME_TYPE = "SITE_NAME";
+
     /** Обменник «мёртвых писем». */
     public static final String DEAD_LETTER_EXCHANGE = "roleorienta.jobs.dlx";
 
@@ -63,12 +74,16 @@ public class RabbitTopology {
     public static final String TASK_ID_HEADER = "taskId";
 
     /**
-     * Ключ маршрутизации задания: поиск — в очередь поиска, остальное — в рабочую очередь сбора.
+     * Ключ маршрутизации задания: адрес по названию — в свою очередь, поиск — в очередь поиска, остальное — в
+     * рабочую очередь сбора.
      *
      * @param taskType тип задания
-     * @return {@link #DISCOVERY_ROUTING_KEY} или {@link #ROUTING_KEY}
+     * @return {@link #SITE_NAME_ROUTING_KEY}, {@link #DISCOVERY_ROUTING_KEY} или {@link #ROUTING_KEY}
      */
     public static String routingKey(String taskType) {
+        if (SITE_NAME_TYPE.equals(taskType)) {
+            return SITE_NAME_ROUTING_KEY;
+        }
         return DISCOVERY_TYPES.contains(taskType) ? DISCOVERY_ROUTING_KEY : ROUTING_KEY;
     }
 
@@ -130,6 +145,31 @@ public class RabbitTopology {
     @Bean
     public Binding discoveryBinding(DirectExchange jobExchange, Queue discoveryQueue) {
         return BindingBuilder.bind(discoveryQueue).to(jobExchange).with(DISCOVERY_ROUTING_KEY);
+    }
+
+    /**
+     * Очередь «адрес по названию»; отклонённые сообщения — в тот же dead-letter обменник и ту же DLQ.
+     *
+     * @return durable очередь с привязкой к dead-letter обменнику
+     */
+    @Bean
+    public Queue siteNameQueue() {
+        return QueueBuilder.durable(SITE_NAME_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(ROUTING_KEY)
+                .build();
+    }
+
+    /**
+     * Привязка очереди «адрес по названию» к обменнику заданий.
+     *
+     * @param jobExchange   обменник заданий
+     * @param siteNameQueue очередь «адрес по названию»
+     * @return привязка по ключу {@link #SITE_NAME_ROUTING_KEY}
+     */
+    @Bean
+    public Binding siteNameBinding(DirectExchange jobExchange, Queue siteNameQueue) {
+        return BindingBuilder.bind(siteNameQueue).to(jobExchange).with(SITE_NAME_ROUTING_KEY);
     }
 
     /**

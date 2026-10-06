@@ -64,6 +64,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class ExternalHttpClient implements AutoCloseable {
 
+    /**
+     * Сообщение {@code UnknownHostException} при сбое самого DNS (EAI_AGAIN на Linux), а не при отсутствии домена:
+     * такой отказ остаётся временным.
+     */
+    private static final String TEMPORARY_RESOLUTION_FAILURE = "Temporary failure in name resolution";
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
     private static final int STATUS_OK_MIN = 200;
     private static final int STATUS_OK_MAX = 299;
@@ -161,7 +166,12 @@ public class ExternalHttpClient implements AutoCloseable {
             RobotsRules rules;
             switch (send(robotsUri, new HttpGet(robotsUri))) {
                 case HttpResult.Success success -> rules = RobotsRules.parse(success.body(), robotsToken);
-                case HttpResult.PermanentFailure notFound -> rules = RobotsRules.ALLOW_ALL;
+                case HttpResult.PermanentFailure failure -> {
+                    if (failure.kind() == HttpResult.Kind.NO_SUCH_HOST) {
+                        return Optional.of(failure);
+                    }
+                    rules = RobotsRules.ALLOW_ALL;
+                }
                 case HttpResult.TemporaryFailure temporary -> {
                     return Optional.of(new HttpResult.TemporaryFailure(
                             "robots.txt unavailable: " + temporary.reason(), temporary.retryAfter()));
@@ -268,6 +278,10 @@ public class ExternalHttpClient implements AutoCloseable {
         for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
             if (cause instanceof BlockedAddressException blocked) {
                 return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, blocked.getMessage());
+            }
+            if (cause instanceof UnknownHostException unknown && !String.valueOf(unknown.getMessage())
+                    .contains(TEMPORARY_RESOLUTION_FAILURE)) {
+                return new HttpResult.PermanentFailure(HttpResult.Kind.NO_SUCH_HOST, unknown.toString());
             }
         }
         if (exception instanceof ClientProtocolException) {
