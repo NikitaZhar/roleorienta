@@ -45,8 +45,9 @@ public class CareerScanTick {
     @Scheduled(fixedDelayString = "${app.career.interval-ms:3600000}")
     public void tick() {
         try {
+            String today = LocalDate.now(clock).toString();
             leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(CareerScanHandler.TYPE,
-                    CareerScanHandler.taskKey(LocalDate.now(clock).toString()), CareerScanHandler.payload()));
+                    CareerScanHandler.taskKey(today), CareerScanHandler.payload(today)));
         } catch (DataAccessException exception) {
             LOG.warn("Career scan tick failed, will retry on next tick", exception);
         }

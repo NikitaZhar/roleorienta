@@ -122,6 +122,16 @@ class CareerScanTests {
     }
 
     /**
+     * Ключ продолжения цепочки содержит день постановки: тот же последний сайт в другой день — другой ключ, иначе
+     * продолжение не ставилось (ключ задания уникален, задания хранятся) и цепочка дня обрывалась (§57).
+     */
+    @Test
+    void continuationKeyDependsOnDay() {
+        assertThat(CareerScanHandler.continuationKey("2026-10-06", 7))
+                .isNotEqualTo(CareerScanHandler.continuationKey("2026-10-07", 7));
+    }
+
+    /**
      * Основной сайт — найденный сайт самого раннего шага: у компании сайт из Wikidata и сайт из Common Crawl —
      * проверяется только сайт из Wikidata, итог компании — его итог.
      */
@@ -246,7 +256,7 @@ class CareerScanTests {
 
     private void runScan() {
         String key = CareerScanHandler.taskKey("test-" + System.nanoTime());
-        taskService.enqueue(CareerScanHandler.TYPE, key, CareerScanHandler.payload());
+        taskService.enqueue(CareerScanHandler.TYPE, key, CareerScanHandler.payload("test"));
         executor.execute(jdbcTemplate.queryForObject("SELECT id FROM task WHERE task_key = ?", Long.class, key));
     }
 

@@ -7,10 +7,45 @@
 
 **Состояние на 2026-10-06:** §56 в `main`, CI зелёный. §57 — в рабочем дереве, ждёт сборки и коммита владельца.
 
-**Проверка §57 на стенде** (после перепроверки кадровых страниц — срок 30 дней; новые сайты — сразу):
+**ПЕРВЫЙ ШАГ СЛЕДУЮЩЕЙ СЕССИИ — отложенные проверки на стенде (до любого нового среза).** 2026-10-06 в 14:2x
+с 9 471 найденного сайта снята отметка проверки (`FORMAT_UNSUPPORTED`, `NO_CAREER_PAGE`), чтобы перепроверить их
+правилами §57; перепроверка начнётся только с суточного тика 2026-10-07 (цепочка дня 2026-10-06 уже прошла) и
+займёт ~12–16 часов (50 сайтов за задание). Выполнить по очереди, разобрать вывод, записать итог в стенограмму
+(дополнение к §57) и только затем продолжать план (§58).
 
+1. Перепроверка идёт и не обрывается (исправление ключа продолжения, §57):
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT count(*) FILTER (WHERE checked_at IS NULL) AS waiting, count(*) FILTER (WHERE checked_at > current_date - 1) AS checked_since_yesterday FROM company_site WHERE status = 'FOUND'"
+```
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT state, count(*) FROM task WHERE type = 'CAREER_SCAN' AND created_at > current_date - 1 GROUP BY 1"
+```
+Ждём: `waiting` близко к 0, `FAILED` нет.
+
+2. Итог перепроверки по причинам (сравнить с замером §55: `NO_CAREER_PAGE` 72 %, `FORMAT_UNSUPPORTED` 20 %):
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT check_result, count(*) FROM company_site WHERE checked_at > current_date - 1 GROUP BY 1 ORDER BY 2 DESC"
+```
+
+3. Источники SuccessFactors и их вакансии (§57; ждём ZF, Kaufland, Lidl, VÚB, Schaeffler, Gestamp, Vaillant — те, чьи
+сайты есть у ядра):
 ```
 docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT s.board, count(p.id) FROM source s LEFT JOIN job_posting p ON p.source_id = s.id WHERE s.provider = 'successfactors' GROUP BY 1"
+```
+
+4. Swiss Re (проверка владельца): `swissre.com` отвечает программе 403 → пробный адрес `careers.swissre.com`
+(SuccessFactors, подпись `rmkcdn` есть). Ждём `SOURCE_FOUND` и источник `successfactors | careers.swissre.com`:
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT c.registration_number, s.check_result, s.career_url, s.checked_at FROM company c JOIN company_site s ON s.company_id = c.id WHERE c.name ILIKE '%swiss re%' ORDER BY 1"
+```
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT c.name, src.provider, src.board, count(p.id) AS postings FROM company c JOIN company_source cs ON cs.company_id = c.id JOIN source src ON src.id = cs.source_id LEFT JOIN job_posting p ON p.source_id = src.id WHERE c.name ILIKE '%swiss re%' GROUP BY 1, 2, 3"
+```
+Если `careers.swissre.com` не подключился — разобрать (заголовок страницы без кадрового слова? поиск по месту?).
+
+5. Сайты с портала по версии 3 (§50) и по названию (§51) за сутки:
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT source, proof, status, count(*), count(start_url) FROM company_site WHERE found_at > now() - interval '1 day' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
 ```
 
 **Решение владельца (2026-10-06): закрыть чтение кадровых страниц максимально до SPA.** Порядок:

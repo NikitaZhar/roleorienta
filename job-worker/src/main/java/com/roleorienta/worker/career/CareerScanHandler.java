@@ -1,5 +1,7 @@
 package com.roleorienta.worker.career;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.career.CareerScanRepository.CheckResult;
 import com.roleorienta.worker.career.CareerScanRepository.Role;
@@ -58,7 +60,7 @@ public class CareerScanHandler implements TaskHandler {
     /** Тип задания. */
     public static final String TYPE = "CAREER_SCAN";
 
-    private static final String PAYLOAD = "{}";
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final int VACANCY_CHECKS = 3;
     /** Длина {@code source.board} в схеме. */
     private static final int MAX_BOARD = 200;
@@ -97,10 +99,24 @@ public class CareerScanHandler implements TaskHandler {
     }
 
     /**
-     * @return параметры задания (не нужны)
+     * @param day день постановки цепочки — входит в ключи её продолжений
+     * @return параметры задания
      */
-    public static String payload() {
-        return PAYLOAD;
+    public static String payload(String day) {
+        return JSON.createObjectNode().put("day", day).toString();
+    }
+
+    /**
+     * Ключ продолжения цепочки: день постановки и последний проверенный сайт. Без дня ключ совпадал бы с ключом
+     * прошлых дней (сайты перепроверяются через срок, задания хранятся, ключ уникален) — продолжение не ставилось,
+     * и цепочка дня обрывалась (стенограмма §57).
+     *
+     * @param day    день постановки цепочки
+     * @param siteId последний проверенный сайт
+     * @return ключ задания
+     */
+    static String continuationKey(String day, long siteId) {
+        return taskKey(day + ":site-" + siteId);
     }
 
     @Override
@@ -110,15 +126,24 @@ public class CareerScanHandler implements TaskHandler {
 
     @Override
     public TaskOutcome handle(TaskRecord task) {
+        String day = day(task.payload());
         List<Site> sites = repository.nextSites(properties.sitesPerTask(), properties.recheckAfter());
         Set<String> providers = repository.permittedProviders();
         for (Site site : sites) {
             check(site, providers);
         }
         if (sites.size() == properties.sitesPerTask()) {
-            taskService.enqueue(TYPE, taskKey("site-" + sites.get(sites.size() - 1).id()), PAYLOAD);
+            taskService.enqueue(TYPE, continuationKey(day, sites.get(sites.size() - 1).id()), payload(day));
         }
         return new TaskOutcome.Done();
+    }
+
+    private static String day(String payload) {
+        try {
+            return JSON.readTree(payload).path("day").asText("");
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Malformed CAREER_SCAN payload: " + payload, exception);
+        }
     }
 
     private void check(Site site, Set<String> providers) {
