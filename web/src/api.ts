@@ -187,3 +187,80 @@ export function saveSearchCondition(condition: SearchConditionInput,
   etag: string | null): Promise<Versioned<SearchCondition>> {
   return exchange<SearchCondition>('PUT', '/api/v1/me/search-condition', condition, etag);
 }
+
+/** Работодатель и кадровое агентство; null — не указан. */
+export interface Parties {
+  employer: string | null;
+  agency: string | null;
+}
+
+/** Где и как выполняется работа; countries «*» — без ограничения страны. */
+export interface Work {
+  countries: string[];
+  format: WorkFormat | null;
+  remoteTerritory: string[] | null;
+  countryUncertain: boolean;
+  formatUncertain: boolean;
+}
+
+/** Вакансия в списке. */
+export interface VacancyItem {
+  id: number;
+  position: string;
+  parties: Parties;
+  work: Work;
+  listedAt: string;
+}
+
+/** Страница списка: новые сверху; nextCursor null — страниц больше нет. */
+export interface VacancyPage {
+  items: VacancyItem[];
+  nextCursor: string | null;
+}
+
+/** Публикация и её проверка. */
+export interface Publication {
+  url: string | null;
+  firstSeenAt: string;
+  lastConfirmedAt: string | null;
+  state: 'ACTIVE' | 'NEEDS_RECHECK' | 'CLOSED';
+  unsuitable: boolean;
+}
+
+/** Сведения о вакансии (бизнес-описание §6). */
+export interface VacancyDetails {
+  id: number;
+  position: string;
+  parties: Parties;
+  work: Work;
+  publication: Publication;
+}
+
+function page(path: string, cursor: string | null): Promise<VacancyPage> {
+  return request<VacancyPage>('GET', cursor === null ? path : path + '?cursor=' + encodeURIComponent(cursor));
+}
+
+/** @returns страница накопленного списка */
+export function vacancies(cursor: string | null): Promise<VacancyPage> {
+  return page('/api/v1/me/vacancies', cursor);
+}
+
+/** @returns страница отмеченных «не подходит» */
+export function unsuitableVacancies(cursor: string | null): Promise<VacancyPage> {
+  return page('/api/v1/me/unsuitable', cursor);
+}
+
+/** @returns сведения о вакансии */
+export function vacancy(id: number): Promise<VacancyDetails> {
+  return request<VacancyDetails>('GET', '/api/v1/me/vacancies/' + id);
+}
+
+/** Отметка «не подходит»: вакансия уходит из накопленного списка этого пользователя. */
+export function markUnsuitable(id: number): Promise<void> {
+  return request<void>('PUT', '/api/v1/me/vacancies/' + id + '/unsuitable');
+}
+
+/** Снятие отметки: вакансия возвращается по правилам выдачи. */
+export function unmarkUnsuitable(id: number): Promise<void> {
+  return request<void>('DELETE', '/api/v1/me/vacancies/' + id + '/unsuitable');
+}
