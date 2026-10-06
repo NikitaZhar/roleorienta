@@ -122,6 +122,25 @@ class CareerScanTests {
     }
 
     /**
+     * Основной сайт — найденный сайт самого раннего шага: у компании сайт из Wikidata и сайт из Common Crawl —
+     * проверяется только сайт из Wikidata, итог компании — его итог.
+     */
+    @Test
+    void scansOnlyMainSite() {
+        jdbcTemplate.update("UPDATE company_site SET source = 'WIKIDATA', proof = 'WIKIDATA'");
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "SELECT id, 'other-site.invalid', 'http://other-site.invalid/kontakt', 'COMMON_CRAWL', "
+                + "'REGISTRATION_NUMBER' FROM company");
+        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+
+        runScan();
+
+        assertThat(jdbcTemplate.queryForList("SELECT host || ':' || coalesce(check_result, 'null') FROM company_site "
+                + "ORDER BY id", String.class)).containsExactly(HOST + ":SOURCE_FOUND", "other-site.invalid:null");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    /**
      * Кандидат (сайт без доказательства принадлежности) поиском кадровой страницы не проверяется и итог
      * компании не меняет.
      */

@@ -101,6 +101,25 @@ class SiteVerifierTests {
     }
 
     /**
+     * Название из двух слов: сайт по первому, нарицательному слову брендом не подтверждается
+     * ({@code gelateria.sk} для «Gelateria Paris»), по двум словам — слитно в домене, подряд в тексте —
+     * подтверждается; текст сравнивается без диакритики («Móda Mora» → {@code modamora.sk}).
+     */
+    @Test
+    void multiWordNameNeedsBothWords() {
+        pages.put("/", html("Gelateria", "<p>Gelateria Paris. " + FILLER + "</p>"));
+
+        assertThat(verifier.verify("www.gelateria.sk", "", NUMBER, "Gelateria Paris, s.r.o.")).isEqualTo(Verdict.OPENED);
+        assertThat(verifier.verify("www.gelateriaparis.sk", "", NUMBER, "Gelateria Paris, s.r.o."))
+                .isEqualTo(Verdict.BRAND);
+
+        pages.put("/", html("Móda Mora", "<p>Móda Mora. " + FILLER + "</p>"));
+        assertThat(verifier.verify("www.moda.sk", "", NUMBER, "MÓDA MORA, a.s.")).isEqualTo(Verdict.OPENED);
+        assertThat(verifier.verify("www.modamora.sk", "", NUMBER, "MÓDA MORA, a.s.")).isEqualTo(Verdict.BRAND);
+        assertThat(SiteBrand.confirmingBrands(NAME)).containsExactly("alfaplast");
+    }
+
+    /**
      * Короткая страница — заглушка, брендом не подтверждается; сайт не в зоне {@code .sk} без признака Словакии
      * — тоже нет, но бренд — первое слово его домена: похож на сайт группы.
      */

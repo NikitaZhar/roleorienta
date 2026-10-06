@@ -20,7 +20,10 @@ import org.jsoup.nodes.Document;
  *   <li>сайт в зоне {@code .sk} либо есть признак Словакии (slovensk…, slovakia в тексте или сегмент пути
  *       {@code /sk/});</li>
  *   <li>бренд совпадает с первым словом домена (или, от трёх букв, содержится в нём) и есть отдельным
- *       словом в видимом тексте; бренд до трёх букв — ещё и в заголовке {@code title}.</li>
+ *       словом в видимом тексте (текст сравнивается без диакритики); бренд до трёх букв — ещё и в заголовке
+ *       {@code title}. В названии из двух слов и больше бренд — только два первых слова: слитно в домене и
+ *       подряд в тексте ({@link #confirmingBrands}); первое слово бывает нарицательным (Gelateria Paris →
+ *       {@code gelateria.sk}, MÓDA MORA → {@code moda.sk}; стенограмма §51).</li>
  * </ul>
  *
  * <p>Сайт группы ({@link #groupSite}) — кандидат, не находка. Правила перенесены из скрипта замера {@code survey/site-search.py} (стенограмма §48).</p>
@@ -65,7 +68,7 @@ final class SiteBrand {
      * @return подтверждает ли бренд сайт
      */
     static boolean confirmed(String host, Document page, String html, String companyName) {
-        String text = page.text();
+        String text = ascii(page.text());
         if (parked(html) || text.split("\\s+").length < MIN_WORDS) {
             return false;
         }
@@ -74,16 +77,16 @@ final class SiteBrand {
             return false;
         }
         List<String> inText = new ArrayList<>();
-        for (String key : keys(companyName)) {
-            if (matchesDomain(key, plainHost) && word(key).matcher(text).find()) {
-                inText.add(key);
+        for (String brand : confirmingBrands(companyName)) {
+            if (matchesDomain(brand.replace("-", ""), plainHost) && word(brand).matcher(text).find()) {
+                inText.add(brand);
             }
         }
         if (inText.isEmpty()) {
             return false;
         }
-        if (inText.stream().allMatch(key -> key.length() <= SHORT_BRAND_MAX)) {
-            return inText.stream().anyMatch(key -> word(key).matcher(page.title()).find());
+        if (inText.stream().allMatch(brand -> brand.length() <= SHORT_BRAND_MAX)) {
+            return inText.stream().anyMatch(brand -> word(brand).matcher(ascii(page.title())).find());
         }
         return true;
     }
@@ -215,6 +218,24 @@ final class SiteBrand {
         return words;
     }
 
+    /**
+     * Бренды, которыми сайт подтверждается брендом: в названии из одного слова — оно; из двух и больше — только
+     * два первых слова через дефис ({@code gelateria-paris}: в домене слитно, в тексте подряд). Общие слова
+     * брендом не считаются.
+     *
+     * @param companyName название компании
+     * @return бренды
+     */
+    static List<String> confirmingBrands(String companyName) {
+        List<String> brands = brands(companyName);
+        String brand = brands.isEmpty() ? null : brands.get(brands.size() - 1);
+        return brand == null || GENERIC.contains(brand) ? List.of() : List.of(brand);
+    }
+
+    private static String ascii(String text) {
+        return Normalizer.normalize(text, Normalizer.Form.NFKD).replaceAll("\\p{M}", "");
+    }
+
     private static boolean parked(String html) {
         return PARKED.matcher(html.substring(0, Math.min(html.length(), RAW_SCAN_LIMIT))).find();
     }
@@ -242,7 +263,11 @@ final class SiteBrand {
         return false;
     }
 
-    private static Pattern word(String key) {
-        return Pattern.compile("(?iu)(?<![\\p{L}\\p{N}])" + Pattern.quote(key) + "(?![\\p{L}\\p{N}])");
+    /**
+     * Бренд отдельным словом; бренд из двух слов ({@code a-b}) — слова подряд через пробел или дефис.
+     */
+    private static Pattern word(String brand) {
+        String phrase = Pattern.quote(brand).replace("-", "\\E[\\s-]*\\Q");
+        return Pattern.compile("(?iu)(?<![\\p{L}\\p{N}])" + phrase + "(?![\\p{L}\\p{N}])");
     }
 }

@@ -15,9 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class CareerScanRepository {
 
     /**
-     * Итог компании — лучший из итогов её проверенных сайтов (бизнес-описание §4.2); компания с любым
-     * подключённым источником (в том числе государственного портала, §45) — «подключена». Первая дата итога
-     * сохраняется.
+     * Основной сайт компании (алгоритм поиска сайта версии 3, технический документ §5.1; стенограмма §52):
+     * найденный (кандидат — нет) сайт самого раннего шага — Wikidata, портал, адрес по названию с IČO, адрес по
+     * названию с брендом или сайтом группы, Common Crawl; при равенстве — записанный раньше. Подзапрос по
+     * компании {@code s.company_id} возвращает id основного сайта.
+     */
+    private static final String MAIN_SITE = """
+            (SELECT m.id FROM company_site m WHERE m.company_id = s.company_id AND m.status = 'FOUND'
+             ORDER BY CASE WHEN m.source = 'WIKIDATA' THEN 1 WHEN m.source = 'STATE_PORTAL' THEN 2
+                           WHEN m.source = 'NAME' AND m.proof = 'REGISTRATION_NUMBER' THEN 3
+                           WHEN m.source = 'NAME' THEN 4 ELSE 5 END, m.id
+             LIMIT 1)""";
+
+    /**
+     * Итог компании — итог её основного сайта (бизнес-описание §4.2); компания с любым подключённым источником
+     * (в том числе государственного портала, §45) — «подключена». Первая дата итога сохраняется.
      */
     private static final String COMPANY_RESULT = """
             INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
@@ -29,9 +41,11 @@ public class CareerScanRepository {
                        WHEN 5 THEN 'CONNECTED' WHEN 4 THEN 'USE_FORBIDDEN' WHEN 3 THEN 'FORMAT_UNSUPPORTED'
                        WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END END,
                    now(), now()
-            FROM company_site WHERE company_id = ? AND check_result IS NOT NULL GROUP BY company_id
+            FROM company_site WHERE id = (SELECT id FROM company_site s WHERE s.company_id = ? AND s.id = %s)
+                                    AND check_result IS NOT NULL
+            GROUP BY company_id
             ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at
-            """;
+            """.formatted(MAIN_SITE);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -45,17 +59,17 @@ public class CareerScanRepository {
     /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
-     * @return найденные сайты (кандидаты не проверяются) действующих компаний активных стран сбора, ещё не
-     *         проверенные или проверенные давнее срока
+     * @return основные сайты ({@link #MAIN_SITE}; кандидаты и прочие найденные сайты не проверяются) действующих
+     *         компаний активных стран сбора, ещё не проверенные или проверенные давнее срока
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT s.id, s.company_id, s.host, s.start_url FROM company_site s JOIN company c ON c.id = s.company_id
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
-                WHERE c.terminated_on IS NULL AND s.status = 'FOUND'
+                WHERE c.terminated_on IS NULL AND s.status = 'FOUND' AND s.id = %s
                   AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
                 ORDER BY s.checked_at NULLS FIRST, s.id LIMIT ?
-                """, (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host"),
+                """.formatted(MAIN_SITE), (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host"),
                         row.getString("start_url")),
                 (double) recheckAfter.toSeconds(), limit);
     }
