@@ -3,6 +3,7 @@ package com.roleorienta.worker.career;
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseAdapter;
 import com.roleorienta.worker.adapter.nalgoo.NalgooAdapter;
 import com.roleorienta.worker.adapter.personio.PersonioAdapter;
+import com.roleorienta.worker.adapter.phenom.PhenomAdapter;
 import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
@@ -41,6 +42,8 @@ import org.jsoup.nodes.Element;
  *       хост страницы (§57).</li>
  *   <li>Nalgoo — {@code <организация>.nalgoo-jobs.com}, {@code ats.nalgoo.com/<язык>/gate/<организация>/…} или сама
  *       страница со своим доменом и данными {@code ats.nalgoo.com/api} + {@code "organization"} → организация (§58).</li>
+ *   <li>Phenom — сама страница с ресурсами {@code cdn.phenompeople.com} и данными сайта {@code "baseUrl"} → хост и путь
+ *       языка из {@code baseUrl} ({@code careers.dhl.com/eu/sk}; §59).</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
  *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
  *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена
@@ -68,6 +71,8 @@ final class CareerLinks {
     private static final String NALGOO_API = "ats.nalgoo.com/api";
     private static final Pattern NALGOO_ORGANIZATION = Pattern.compile(
             "organization\\\\?\"\\s*:\\s*\\\\?\"([a-z0-9-]+)", Pattern.CASE_INSENSITIVE);
+    private static final String PHENOM_CDN = "cdn.phenompeople.com";
+    private static final Pattern PHENOM_BASE_URL = Pattern.compile("\"baseUrl\"\\s*:\\s*\"https?://([^\"?#]+?)/?\"");
     private static final Set<String> CAREER_HOST_WORDS = Set.of("jobs", "careers", "career", "kariera", "karriere");
     private static final int CAREER_HOST_LABELS = 3;
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
@@ -87,6 +92,7 @@ final class CareerLinks {
         Set<Board> boards = new LinkedHashSet<>();
         successFactorsSite(page).ifPresent(boards::add);
         nalgooSite(page).ifPresent(boards::add);
+        phenomSite(page).ifPresent(boards::add);
         hrefs(page).forEach(href -> board(href).ifPresent(boards::add));
         return boards;
     }
@@ -106,6 +112,23 @@ final class CareerLinks {
         Matcher organization = NALGOO_ORGANIZATION.matcher(html);
         return organization.find() ? Optional.of(new Board(NalgooAdapter.PROVIDER, lower(organization.group(1))))
                 : Optional.empty();
+    }
+
+    /**
+     * Страница сама — кадровый сайт Phenom: ресурсы с {@code cdn.phenompeople.com} и в данных сайта ({@code var phApp})
+     * адрес сайта с путём языка — {@code "baseUrl":"https://careers.dhl.com/eu/sk/"}.
+     *
+     * @param page страница
+     * @return доска — хост и путь языка из {@code baseUrl}; пусто — не Phenom
+     */
+    static Optional<Board> phenomSite(Document page) {
+        String html = page.outerHtml();
+        if (!html.contains(PHENOM_CDN)) {
+            return Optional.empty();
+        }
+        Matcher base = PHENOM_BASE_URL.matcher(html);
+        return base.find() && PhenomAdapter.BOARD.matcher(lower(base.group(1))).matches()
+                ? Optional.of(new Board(PhenomAdapter.PROVIDER, lower(base.group(1)))) : Optional.empty();
     }
 
     /**

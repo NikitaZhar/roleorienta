@@ -173,4 +173,21 @@ class CareerLinksTests {
                 java.nio.file.Path.of("../docs/samples/nalgoo-foxconn.html")), "https://kariera.foxconn.sk/");
         assertThat(CareerLinks.boards(foxconn)).contains(new Board("nalgoo", "foxconn"));
     }
+
+    /**
+     * Phenom узнаётся по содержимому: ресурсы {@code cdn.phenompeople.com} и {@code baseUrl} сайта — доска хост и путь
+     * языка (образцы {@code docs/samples/phenom-dhl.html}, {@code phenom-allianz.html}); другой сайт — нет.
+     *
+     * @throws java.io.IOException образец не прочитан
+     */
+    @Test
+    void findsPhenomSite() throws java.io.IOException {
+        Document dhl = Jsoup.parse(java.nio.file.Files.readString(java.nio.file.Path.of("../docs/samples/phenom-dhl.html")),
+                "https://careers.dhl.com/eu/sk/home");
+        assertThat(CareerLinks.boards(dhl)).contains(new Board("phenom", "careers.dhl.com/eu/sk"));
+        Document allianz = Jsoup.parse(java.nio.file.Files.readString(
+                java.nio.file.Path.of("../docs/samples/phenom-allianz.html")), "https://careers.allianz.com/global/en");
+        assertThat(CareerLinks.phenomSite(allianz)).contains(new Board("phenom", "careers.allianz.com/global/en"));
+        assertThat(CareerLinks.phenomSite(Jsoup.parse("<p>\"baseUrl\":\"https://acme.sk/\"</p>"))).isEmpty();
+    }
 }
