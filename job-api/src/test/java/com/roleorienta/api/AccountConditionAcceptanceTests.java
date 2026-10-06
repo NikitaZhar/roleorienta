@@ -3,14 +3,6 @@ package com.roleorienta.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +29,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import(TestcontainersConfiguration.class)
 class AccountConditionAcceptanceTests {
 
-    private static final String PASSWORD = "secret-password";
     private static final String JAVA_SK = "{\"countries\":[\"sk\"],\"position\":\"java-developer\"}";
 
     @Autowired
@@ -52,7 +43,7 @@ class AccountConditionAcceptanceTests {
     @BeforeEach
     void setUp() {
         for (String table : new String[] {"delivered_vacancy", "pass_run", "unsuitable_mark", "search_condition",
-                "user_account", "vacancy", "position", "spring_session_attributes", "spring_session"}) {
+                "user_account", "vacancy_position_match", "job_posting", "vacancy", "position", "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("INSERT INTO position (code, name) VALUES ('java-developer', 'Java developer'), "
@@ -66,7 +57,7 @@ class AccountConditionAcceptanceTests {
      */
     @Test
     void registerLoginLogout() throws Exception {
-        Client client = new Client();
+        ApiTestClient client = new ApiTestClient(port());
         assertThat(client.send("GET", "/api/v1/countries", null).body()).isEqualTo("[{\"code\":\"SK\",\"name\":\"Slovakia\"}]");
         assertThat(client.send("GET", "/api/v1/positions?query=java", null).body()).contains("java-developer");
 
@@ -80,7 +71,7 @@ class AccountConditionAcceptanceTests {
 
         assertThat(client.send("POST", "/api/v1/auth/login", credentials("user@example.com")).status())
                 .isEqualTo(200);
-        Response me = client.send("GET", "/api/v1/me", null);
+        ApiTestClient.Response me = client.send("GET", "/api/v1/me", null);
         assertThat(me.status()).isEqualTo(200);
         assertThat(me.body()).contains("\"email\":\"user@example.com\"");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM spring_session", Integer.class)).isPositive();
@@ -96,13 +87,13 @@ class AccountConditionAcceptanceTests {
      */
     @Test
     void rejectsRequestsWithoutCsrfTokenOrWithInvalidFields() throws Exception {
-        Client client = new Client();
+        ApiTestClient client = new ApiTestClient(port());
         client.withoutCsrf = true;
         assertThat(client.send("POST", "/api/v1/auth/register", credentials("user@example.com")).status())
                 .isEqualTo(403);
 
         client.withoutCsrf = false;
-        Response invalid = client.send("POST", "/api/v1/auth/register", "{\"email\":\"not-an-email\",\"password\":\"x\"}");
+        ApiTestClient.Response invalid = client.send("POST", "/api/v1/auth/register", "{\"email\":\"not-an-email\",\"password\":\"x\"}");
         assertThat(invalid.status()).isEqualTo(400);
         assertThat(invalid.body()).contains("\"pointer\":\"/email\"").contains("\"pointer\":\"/password\"");
     }
@@ -117,9 +108,9 @@ class AccountConditionAcceptanceTests {
      */
     @Test
     void scenario3ChangeOfConditionsStartsNewList() throws Exception {
-        Client client = signedIn("user@example.com");
+        ApiTestClient client = signedIn("user@example.com");
         assertThat(client.send("GET", "/api/v1/me/search-condition", null).status()).isEqualTo(404);
-        Response first = client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        ApiTestClient.Response first = client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
         assertThat(first.status()).isEqualTo(200);
         assertThat(first.body()).isEqualTo(
                 "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"format\":null,\"portionLimit\":20}");
@@ -132,7 +123,7 @@ class AccountConditionAcceptanceTests {
         assertThat(client.send("PUT", "/api/v1/me/search-condition", JAVA_SK).status()).isEqualTo(412);
 
         client.ifMatch = first.etag();
-        Response limit = client.send("PUT", "/api/v1/me/search-condition",
+        ApiTestClient.Response limit = client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"portionLimit\":5}");
         assertThat(limit.status()).isEqualTo(200);
         assertThat(activeVersion()).isEqualTo(firstVersion);
@@ -143,7 +134,7 @@ class AccountConditionAcceptanceTests {
                 "{\"countries\":[\"DE\"],\"position\":\"devops-engineer\"}").body()).contains("\"pointer\":\"/countries\"");
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"position\":\"nobody\"}").body()).contains("\"pointer\":\"/position\"");
-        Response changed = client.send("PUT", "/api/v1/me/search-condition",
+        ApiTestClient.Response changed = client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\",\"format\":\"REMOTE\"}");
         assertThat(changed.status()).isEqualTo(200);
         long secondVersion = activeVersion();
@@ -155,7 +146,7 @@ class AccountConditionAcceptanceTests {
                 Integer.class, vacancyId)).isEqualTo(1);
 
         client.ifMatch = null;
-        Response current = client.send("GET", "/api/v1/me/search-condition", null);
+        ApiTestClient.Response current = client.send("GET", "/api/v1/me/search-condition", null);
         assertThat(current.etag()).isEqualTo(changed.etag());
         assertThat(current.body()).contains("\"position\":\"devops-engineer\"", "\"format\":\"REMOTE\"");
     }
@@ -168,13 +159,13 @@ class AccountConditionAcceptanceTests {
      */
     @Test
     void scenario14ConditionsArePrivate() throws Exception {
-        Client anonymous = new Client();
+        ApiTestClient anonymous = new ApiTestClient(port());
         assertThat(anonymous.send("GET", "/api/v1/me/search-condition", null).status()).isEqualTo(401);
         assertThat(anonymous.send("PUT", "/api/v1/me/search-condition", JAVA_SK).status()).isEqualTo(401);
 
-        Client first = signedIn("first@example.com");
+        ApiTestClient first = signedIn("first@example.com");
         first.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
-        Client second = signedIn("second@example.com");
+        ApiTestClient second = signedIn("second@example.com");
         assertThat(second.send("GET", "/api/v1/me/search-condition", null).status()).isEqualTo(404);
         second.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\"}");
 
@@ -182,15 +173,16 @@ class AccountConditionAcceptanceTests {
         assertThat(second.send("GET", "/api/v1/me/search-condition", null).body()).contains("devops-engineer");
     }
 
-    private Client signedIn(String email) throws IOException, InterruptedException {
-        Client client = new Client();
-        client.send("POST", "/api/v1/auth/register", credentials(email));
-        assertThat(client.send("POST", "/api/v1/auth/login", credentials(email)).status()).isEqualTo(200);
-        return client;
+    private ApiTestClient signedIn(String email) throws IOException, InterruptedException {
+        return ApiTestClient.signedIn(port(), email);
+    }
+
+    private int port() {
+        return Integer.parseInt(environment.getProperty("local.server.port"));
     }
 
     private static String credentials(String email) {
-        return "{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}";
+        return ApiTestClient.credentials(email);
     }
 
     private long activeVersion() {
@@ -219,63 +211,5 @@ class AccountConditionAcceptanceTests {
         jdbcTemplate.update("INSERT INTO unsuitable_mark (user_id, vacancy_id) SELECT user_id, ? FROM search_condition "
                 + "WHERE id = ?", vacancyId, conditionId);
         return vacancyId;
-    }
-
-    /**
-     * Ответ: код, тело, {@code ETag}.
-     *
-     * @param status код
-     * @param body   тело
-     * @param etag   заголовок {@code ETag}; {@code null} — нет
-     */
-    private record Response(int status, String body, String etag) {
-    }
-
-    /**
-     * Клиент как SPA: хранит cookie (сессия, CSRF-токен) и возвращает токен заголовком
-     * {@code X-XSRF-TOKEN} в изменяющих запросах; {@code If-Match} — если задан.
-     */
-    private final class Client {
-
-        private static final Pattern COOKIE = Pattern.compile("^([^=]+)=([^;]*)");
-
-        private final HttpClient http = HttpClient.newHttpClient();
-        private final Map<String, String> cookies = new LinkedHashMap<>();
-        private boolean withoutCsrf;
-        private String ifMatch;
-
-        Response send(String method, String path, String body) throws IOException, InterruptedException {
-            if (!"GET".equals(method) && !withoutCsrf && !cookies.containsKey("XSRF-TOKEN")) {
-                send("GET", "/api/v1/countries", null);
-            }
-            HttpRequest.Builder request = HttpRequest.newBuilder(
-                            URI.create("http://localhost:" + environment.getProperty("local.server.port") + path))
-                    .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                            : HttpRequest.BodyPublishers.ofString(body))
-                    .header("Content-Type", "application/json");
-            if (!cookies.isEmpty()) {
-                request.header("Cookie", String.join("; ", cookies.entrySet().stream()
-                        .map(cookie -> cookie.getKey() + "=" + cookie.getValue()).toList()));
-            }
-            if (!"GET".equals(method) && !withoutCsrf) {
-                request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
-            }
-            if (ifMatch != null && "PUT".equals(method)) {
-                request.header("If-Match", ifMatch);
-            }
-            HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-            for (String setCookie : response.headers().allValues("set-cookie")) {
-                Matcher cookie = COOKIE.matcher(setCookie);
-                if (cookie.find()) {
-                    if (cookie.group(2).isEmpty() || setCookie.contains("Max-Age=0")) {
-                        cookies.remove(cookie.group(1));
-                    } else {
-                        cookies.put(cookie.group(1), cookie.group(2));
-                    }
-                }
-            }
-            return new Response(response.statusCode(), response.body(),
-                    response.headers().firstValue("etag").orElse(null));
-        }
     }
 }

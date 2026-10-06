@@ -3,6 +3,7 @@ package com.roleorienta.api.web;
 import com.roleorienta.api.account.EmailTakenException;
 import com.roleorienta.api.condition.ConditionVersionException;
 import com.roleorienta.api.condition.InvalidFieldException;
+import com.roleorienta.api.vacancy.InvalidCursorException;
 import java.util.List;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -48,6 +49,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setProperty("errors", List.of(Map.of("pointer", exception.getPointer(),
                 "detail", exception.getMessage())));
         return problem;
+    }
+
+    /**
+     * @param exception курсор страницы испорчен или от другого списка
+     * @return {@code 400}
+     */
+    @ExceptionHandler(InvalidCursorException.class)
+    public ProblemDetail invalidCursor(InvalidCursorException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 
     /**
