@@ -114,7 +114,8 @@ class SuccessFactorsAdapterTests {
     }
 
     /**
-     * Отказ на второй странице — неполное чтение с прочитанным; на первой — источник недоступен.
+     * Отказ на второй странице — неполное чтение с прочитанным; на первой или первая страница — не список (заглушка;
+     * аудит §65) — источник недоступен, вакансии не закрываются.
      */
     @Test
     void failuresGivePartialOrUnavailable() {
@@ -124,6 +125,8 @@ class SuccessFactorsAdapterTests {
         assertThat(read.postings()).hasSize(25);
 
         pages.put("/" + ZF + "/search/|0", "503");
+        assertThat(adapter.read(ZF, "SK")).isInstanceOf(SourceReadResult.Unavailable.class);
+        pages.put("/" + ZF + "/search/|0", "<html><body>Maintenance</body></html>");
         assertThat(adapter.read(ZF, "SK")).isInstanceOf(SourceReadResult.Unavailable.class);
         assertThat(adapter.read("not a host", "SK")).isInstanceOf(SourceReadResult.Unavailable.class);
     }

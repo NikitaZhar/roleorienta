@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
+import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.http.TestHttpClients;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.sun.net.httpserver.HttpServer;
@@ -113,6 +114,24 @@ class TaleoAdapterTests {
 
         assertThat(read.complete()).isTrue();
         assertThat(read.postings()).isEmpty();
+    }
+
+    /**
+     * Аудит §65: фасета стран нет (а вакансии есть) — источник временно недоступен, а не пустое полное чтение; поиск
+     * отвечает 404 — отказ передаётся как есть (постоянный), а не временная ошибка разбора.
+     */
+    @Test
+    void missingCountryFacetOrSearchFailureIsUnavailable() {
+        answers.put("search||1",
+                "{\"requisitionList\":[],\"pagingData\":{\"totalCount\":52},\"facetResults\":[]}");
+        SourceReadResult noFacet = adapter.read(BOARD, "SK");
+        assertThat(noFacet).isInstanceOf(SourceReadResult.Unavailable.class);
+        assertThat(((SourceReadResult.Unavailable) noFacet).failure()).isInstanceOf(HttpResult.TemporaryFailure.class);
+
+        answers.remove("search||1");
+        SourceReadResult gone = adapter.read(BOARD, "SK");
+        assertThat(((SourceReadResult.Unavailable) gone).failure())
+                .isEqualTo(new HttpResult.PermanentFailure(HttpResult.Kind.NOT_FOUND, "HTTP 404"));
     }
 
     /**

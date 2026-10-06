@@ -52,10 +52,18 @@ export function ConditionsPage() {
       setFound([]);
       return;
     }
+    let current = true;
     const timer = setTimeout(() => {
-      positions(query.trim()).then(setFound, (failure: Error) => setMessage(failure.message));
+      positions(query.trim()).then((items) => {
+        if (current) {
+          setFound(items);
+        }
+      }, (failure: Error) => setMessage(failure.message));
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   function toggle(code: string) {
@@ -82,7 +90,7 @@ export function ConditionsPage() {
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
         setMessage('Conditions were changed in another window; reloaded, check and save again');
-        await load();
+        await load().catch((reload: Error) => setMessage(reload.message));
         return;
       }
       setMessage(failure instanceof ApiError && failure.fields.length > 0

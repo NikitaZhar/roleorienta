@@ -2,7 +2,9 @@ package com.roleorienta.worker.source;
 
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Доступ к источникам. {@link JpaRepository} даёт готовые операции (поиск по id, сохранение,
@@ -29,4 +31,30 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
             ORDER BY s.id
             """)
     List<Source> findToRead(String channelProvider);
+
+    /**
+     * Нужно ли источнику название работодателя от системы найма: компании-работодателя у него нет (доска обратного
+     * пути, §27, §34) и название ещё не записано (аудит §65).
+     *
+     * @param sourceId источник
+     * @return {@code true} — запросить название
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT s.employer_name IS NULL AND NOT EXISTS (SELECT 1 FROM company_source cs
+                                                           WHERE cs.source_id = s.id AND cs.role = 'EMPLOYER')
+            FROM source s WHERE s.id = ?1
+            """)
+    boolean needsEmployerName(Long sourceId);
+
+    /**
+     * Записывает название работодателя источника, если его ещё нет.
+     *
+     * @param sourceId источник
+     * @param name     название, как его даёт система найма
+     * @return 1 — записано, 0 — уже было
+     */
+    @Modifying
+    @Transactional
+    @Query(nativeQuery = true, value = "UPDATE source SET employer_name = ?2 WHERE id = ?1 AND employer_name IS NULL")
+    int nameEmployer(Long sourceId, String name);
 }

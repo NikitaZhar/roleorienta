@@ -34,6 +34,14 @@ public final class GreenhouseStub implements AutoCloseable {
         } catch (IOException exception) {
             throw new UncheckedIOException(exception);
         }
+        server.createContext("/v1/boards/" + BOARD, exchange -> {
+            byte[] bytes = "{\"name\":\"Acme Corp\",\"content\":\"\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(STATUS_OK, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
         server.createContext("/v1/boards/" + BOARD + "/jobs", exchange -> {
             byte[] bytes = body.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");

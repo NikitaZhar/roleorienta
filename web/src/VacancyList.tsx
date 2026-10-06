@@ -21,8 +21,10 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
   const [loaded, setLoaded] = useState(false);
   const [hasConditions, setHasConditions] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function more(from: string | null) {
+    setLoading(true);
     try {
       const next = await load(from);
       setItems((current) => (from === null ? next.items : [...current, ...next.items]));
@@ -33,6 +35,8 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
       setLoaded(true);
     } catch (failure) {
       setMessage((failure as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -71,7 +75,9 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
           </li>
         ))}
       </ul>
-      {cursor !== null && <button type="button" onClick={() => more(cursor)}>Load more</button>}
+      {cursor !== null && (
+        <button type="button" disabled={loading} onClick={() => more(cursor)}>Load more</button>
+      )}
     </section>
   );
 }

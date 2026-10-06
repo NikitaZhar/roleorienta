@@ -160,7 +160,7 @@ public class CareerScanHandler implements TaskHandler {
             return;
         }
         Optional<Document> homePage = homeResult instanceof HttpResult.Success success
-                ? Optional.of(Jsoup.parse(success.body(), home.toString())) : Optional.empty();
+                ? Optional.of(Jsoup.parse(success.body(), success.locationOr(home).toString())) : Optional.empty();
         Set<Board> boards = homePage.map(CareerLinks::boards).orElse(Set.of());
         Optional<String> careerUrl = homePage.flatMap(page -> CareerLinks.careerPage(page, site.host()));
         if (boards.isEmpty() && careerUrl.isEmpty()) {
@@ -237,6 +237,6 @@ public class CareerScanHandler implements TaskHandler {
     private Optional<Document> page(URI uri) {
         HttpResult result = http.get(uri);
         return result instanceof HttpResult.Success success
-                ? Optional.of(Jsoup.parse(success.body(), uri.toString())) : Optional.empty();
+                ? Optional.of(Jsoup.parse(success.body(), success.locationOr(uri).toString())) : Optional.empty();
     }
 }

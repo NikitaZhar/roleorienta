@@ -278,6 +278,24 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
+     * Название работодателя — {@code hiringOrganization.name} детали публикации (юрлицо, разместившее вакансию;
+     * образец {@code docs/samples/wd-ing-job.json}).
+     */
+    @Override
+    public Optional<String> employerName(String board, String externalId) {
+        HttpResult result = requestDetail(BOARD.matcher(board), externalId);
+        if (!(result instanceof HttpResult.Success success)) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode name = JSON.readTree(success.body()).path("hiringOrganization").path("name");
+            return name.isTextual() && !name.asText().isBlank() ? Optional.of(name.asText().strip()) : Optional.empty();
+        } catch (JsonProcessingException exception) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Деталь публикации: {@code jobPostingInfo} есть — публикация на месте (сведения обновятся);
      * 404/410 — её нет; прочее — проверить не удалось.
      */

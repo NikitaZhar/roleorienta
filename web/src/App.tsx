@@ -22,8 +22,12 @@ export function App() {
   }, []);
 
   async function signOut() {
-    await logout();
-    setAccount(null);
+    try {
+      await logout();
+      setAccount(null);
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
   }
 
   function show(next: View) {

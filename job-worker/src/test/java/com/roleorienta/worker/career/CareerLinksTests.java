@@ -160,7 +160,7 @@ class CareerLinksTests {
     /**
      * Nalgoo: ссылки на {@code <организация>.nalgoo-jobs.com} и «ворота» {@code ats.nalgoo.com/<язык>/gate/<организация>}
      * — доски; свой домен ({@code kariera.foxconn.sk}, образец {@code docs/samples/nalgoo-foxconn.html}) узнаётся по
-     * данным страницы.
+     * данным страницы; ключ {@code hiringOrganization} разметки JSON-LD — не организация Nalgoo (аудит §65).
      *
      * @throws java.io.IOException образец не прочитан
      */
@@ -172,6 +172,9 @@ class CareerLinksTests {
         Document foxconn = Jsoup.parse(java.nio.file.Files.readString(
                 java.nio.file.Path.of("../docs/samples/nalgoo-foxconn.html")), "https://kariera.foxconn.sk/");
         assertThat(CareerLinks.boards(foxconn)).contains(new Board("nalgoo", "foxconn"));
+        Document jobPosting = Jsoup.parse("<script type=\"application/ld+json\">{\"hiringOrganization\":\"ACME s.r.o.\"}"
+                + "</script><script>{\"organization\":\"foxconn\",\"api\":\"https://ats.nalgoo.com/api\"}</script>");
+        assertThat(CareerLinks.nalgooSite(jobPosting)).contains(new Board("nalgoo", "foxconn"));
     }
 
     /**
@@ -194,7 +197,7 @@ class CareerLinksTests {
     /**
      * Taleo: адрес раздела в данных скрипта кадровой страницы Slovnaft (образец {@code docs/samples/oracle-slovnaft.html},
      * {@code https:\/\/molgroup.taleo.net\/careersection\/external\/…}) — доска {@code molgroup.taleo.net/external};
-     * служебный путь {@code rest} — нет.
+     * служебный путь {@code rest} и вход {@code iam} — нет (аудит §65).
      *
      * @throws java.io.IOException образец не прочитан
      */
@@ -203,7 +206,8 @@ class CareerLinksTests {
         Document slovnaft = Jsoup.parse(java.nio.file.Files.readString(
                 java.nio.file.Path.of("../docs/samples/oracle-slovnaft.html")), "https://kariera.slovnaft.sk/");
         assertThat(CareerLinks.boards(slovnaft)).contains(new Board("taleo", "molgroup.taleo.net/external"));
-        Document rest = Jsoup.parse("<a href=\"https://acme.taleo.net/careersection/rest/jobboard/x\">x</a>");
+        Document rest = Jsoup.parse("<a href=\"https://acme.taleo.net/careersection/rest/jobboard/x\">x</a>"
+                + "<a href=\"https://acme.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en\">Login</a>");
         assertThat(CareerLinks.taleoBoards(rest)).isEmpty();
     }
 }

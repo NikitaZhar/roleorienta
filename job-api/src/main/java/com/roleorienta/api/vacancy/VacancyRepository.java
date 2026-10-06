@@ -21,14 +21,20 @@ import org.springframework.stereotype.Repository;
 public class VacancyRepository {
 
     /**
-     * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью; отметка — пользователя
-     * из первого параметра запроса.
+     * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью (нет компании-работодателя —
+     * название работодателя у системы найма для источника без компании, аудит §65); отметка — пользователя из первого
+     * параметра запроса.
      */
     private static final String COLUMNS = """
             v.id, v.title, v.primary_url, v.first_seen_at, v.last_confirmed_at, v.state, v.work_countries,
             v.country_uncertain, v.work_format,
-            (SELECT co.name FROM job_posting p JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'EMPLOYER'
-             JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1) AS employer,
+            coalesce((SELECT co.name FROM job_posting p
+                      JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'EMPLOYER'
+                      JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1),
+                     (SELECT s.employer_name FROM job_posting p JOIN source s ON s.id = p.source_id
+                      WHERE p.vacancy_id = v.id AND s.employer_name IS NOT NULL
+                        AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)
+                      ORDER BY s.id LIMIT 1)) AS employer,
             (SELECT co.name FROM job_posting p JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'AGENCY'
              JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1) AS agency,
             EXISTS (SELECT 1 FROM unsuitable_mark um WHERE um.user_id = ? AND um.vacancy_id = v.id) AS unsuitable""";

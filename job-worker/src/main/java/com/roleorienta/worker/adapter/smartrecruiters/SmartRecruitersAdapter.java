@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
@@ -113,6 +114,24 @@ public class SmartRecruitersAdapter implements SourceAdapter {
     /**
      * Текст и место со страницы вакансии (микроразметка {@code JobPosting}).
      */
+    /**
+     * Название работодателя — {@code og:site_name} кадровой страницы компании («JYSK»; образец
+     * {@code docs/samples/sr-jysk.html}).
+     */
+    @Override
+    public Optional<String> employerName(String board, String externalId) {
+        if (!BOARD.matcher(board).matches()) {
+            return Optional.empty();
+        }
+        HttpResult result = httpClient.get(URI.create(properties.careersUrl() + "/" + board + "?search=&page=0"));
+        if (!(result instanceof HttpResult.Success success)) {
+            return Optional.empty();
+        }
+        Element name = Jsoup.parse(success.body()).selectFirst("meta[property=og:site_name]");
+        return name == null || name.attr("content").isBlank() ? Optional.empty()
+                : Optional.of(name.attr("content").strip());
+    }
+
     @Override
     public FetchedPosting detail(String board, String externalId) {
         if (!BOARD.matcher(board).matches() || !externalId.chars().allMatch(Character::isDigit)) {

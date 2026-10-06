@@ -137,6 +137,26 @@ class ExternalHttpClientTests {
     }
 
     /**
+     * После переадресации ответ несёт конечный адрес (аудит §65: страница разбирается от него — относительные ссылки и
+     * хост доски SuccessFactors); без переадресации адреса нет.
+     */
+    @Test
+    void reportsFinalLocationAfterRedirect() {
+        respond("/careers", STATUS_OK, "text/plain", "jobs");
+        server.createContext("/kariera", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/careers");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+
+        HttpResult.Success redirected = (HttpResult.Success) client.get(uri("/kariera"));
+
+        assertThat(redirected.body()).isEqualTo("jobs");
+        assertThat(redirected.location()).isEqualTo(uri("/careers"));
+        assertThat(redirected.locationOr(uri("/kariera"))).isEqualTo(uri("/careers"));
+        assertThat(((HttpResult.Success) client.get(uri("/careers"))).location()).isNull();
+    }
+
+    /**
      * Редирект сам на себя — постоянный отказ, а не бесконечный цикл.
      */
     @Test

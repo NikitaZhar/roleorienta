@@ -8,13 +8,16 @@ import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
@@ -39,7 +42,8 @@ import org.springframework.stereotype.Component;
  *       входят только строки, где место называет страну: код страны отдельным полем или её название.</li>
  *   <li>Внешний id — путь вакансии {@code /job/<название>/<id>/}, как в ссылке списка.</li>
  *   <li>Текст — страница вакансии: {@code span.jobdescription} (микроразметка {@code itemprop=description}).</li>
- *   <li>Отказ на первой странице — источник недоступен; на следующих, пустая страница раньше объявленного числа
+ *   <li>Отказ на первой странице или первая страница без списка и без числа вакансий (заглушка, проверка на бота;
+ *       аудит §65) — источник недоступен; на следующих, пустая страница раньше объявленного числа
  *       или упор в потолок — неполное чтение (вакансии не закрываются).</li>
  * </ul>
  */
@@ -107,6 +111,10 @@ public class SuccessFactorsAdapter implements SourceAdapter {
                 total = declaredTotal(document);
             }
             List<FetchedPosting> rows = rows(document, board);
+            if (page == 0 && total < 0 && rows.isEmpty()) {
+                return new SourceReadResult.Unavailable(new HttpResult.TemporaryFailure(
+                        "SuccessFactors page is not a result list: " + board, Duration.ZERO));
+            }
             rows.forEach(posting -> postings.putIfAbsent(posting.externalId(), posting));
             offset += rows.size();
             if (rows.isEmpty() || total >= 0 && offset >= total) {
@@ -129,7 +137,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
             return null;
         }
         String url = site(board) + externalId;
-        if (!(httpClient.get(URI.create(url)) instanceof HttpResult.Success success)) {
+        Optional<URI> uri = uri(url);
+        if (uri.isEmpty() || !(httpClient.get(uri.get()) instanceof HttpResult.Success success)) {
             return null;
         }
         Element description = Jsoup.parse(success.body()).selectFirst(".jobdescription, [itemprop=description]");
@@ -152,7 +161,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
                 continue;
             }
             String path = link.attr("href").replaceFirst("^[A-Za-z]+://[^/]+", "");
-            if (!JOB_PATH.matcher(path).matches() || path.length() > MAX_EXTERNAL_ID) {
+            if (!JOB_PATH.matcher(path).matches() || path.length() > MAX_EXTERNAL_ID
+                    || uri(site(board) + path).isEmpty()) {
                 LOG.warn("SuccessFactors {}: posting path skipped: {}", board, path);
                 continue;
             }
@@ -192,6 +202,17 @@ public class SuccessFactorsAdapter implements SourceAdapter {
     private static List<FetchedPosting> filter(Map<String, FetchedPosting> postings, String country) {
         return postings.values().stream()
                 .filter(posting -> country == null || inCountry(posting.location(), country)).toList();
+    }
+
+    /**
+     * Адрес из строки страницы; недопустимый (пробел, «%» без кода в пути вакансии) — пусто, без исключения.
+     */
+    private static Optional<URI> uri(String url) {
+        try {
+            return Optional.of(new URI(url));
+        } catch (URISyntaxException invalid) {
+            return Optional.empty();
+        }
     }
 
     private String site(String board) {

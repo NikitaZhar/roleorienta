@@ -94,7 +94,8 @@ class ReadSourceFlowTests {
 
     /**
      * Первое чтение создаёт по вакансии на публикацию, полный обход и снимок ответа (объект в
-     * MinIO, ссылка с хешем в БД); повторная постановка в тот же день ничего не добавляет.
+     * MinIO, ссылка с хешем в БД); повторная постановка в тот же день ничего не добавляет. Источник без компании
+     * получает название работодателя от системы найма (аудит §65).
      */
     @Test
     void firstReadCreatesVacancies() {
@@ -116,6 +117,8 @@ class ReadSourceFlowTests {
         assertThat(key).matches(source.getId() + "/[0-9a-f]{64}");
         assertThat(s3.getObjectAsBytes(request -> request.bucket(snapshotProperties.bucket()).key(key))
                 .asUtf8String()).contains("Java Developer");
+        assertThat(jdbcTemplate.queryForObject("SELECT employer_name FROM source", String.class))
+                .isEqualTo("Acme Corp");
     }
 
     /**

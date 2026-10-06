@@ -28,6 +28,8 @@ import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
+import org.apache.hc.client5.http.protocol.RedirectLocations;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
@@ -212,10 +214,15 @@ public class ExternalHttpClient implements AutoCloseable {
             return new HttpResult.TemporaryFailure("Interrupted while waiting for host budget", Duration.ZERO);
         }
         HttpResult result;
+        HttpClientContext context = HttpClientContext.create();
         try {
-            result = httpClient.execute(request, this::toResult);
+            result = httpClient.execute(request, context, this::toResult);
         } catch (IOException exception) {
             result = fromException(exception);
+        }
+        RedirectLocations redirects = context.getRedirectLocations();
+        if (result instanceof HttpResult.Success success && redirects != null && redirects.size() > 0) {
+            result = new HttpResult.Success(success.status(), success.body(), redirects.get(redirects.size() - 1));
         }
         if (result instanceof HttpResult.TemporaryFailure temporary && temporary.retryAfter().isPositive()) {
             hostBudget.backOff(host, temporary.retryAfter());

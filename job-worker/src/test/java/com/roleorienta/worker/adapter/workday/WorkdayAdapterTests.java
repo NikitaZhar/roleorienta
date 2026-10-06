@@ -88,7 +88,9 @@ class WorkdayAdapterTests {
             String additional = exchange.getRequestURI().getPath().contains("/Multi")
                     ? "\"additionalLocations\":[\"IND.Pune\",\"USA.VA.Reston\"]," : "";
             byte[] bytes = ("{\"jobPostingInfo\":{\"title\":\"Java Developer\",\"location\":\"Vienna\","
-                    + additional + "\"jobDescription\":\"<p>Java</p>\"}}").getBytes(StandardCharsets.UTF_8);
+                    + additional + "\"jobDescription\":\"<p>Java</p>\"},"
+                    + "\"hiringOrganization\":{\"name\":\"Acme Slovakia s.r.o.\",\"url\":\"\"}}")
+                    .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
@@ -159,6 +161,16 @@ class WorkdayAdapterTests {
      * Деталь по {@code externalPath}: текст — {@code jobDescription}, места — {@code location} и
      * {@code additionalLocations} через «; ».
      */
+    /**
+     * Название работодателя — {@code hiringOrganization.name} детали публикации (аудит §65); публикации нет — пусто.
+     */
+    @Test
+    void namesEmployerFromPostingDetail() {
+        assertThat(adapter.employerName(BOARD, "/job/Vienna/Java-Developer")).contains("Acme Slovakia s.r.o.");
+        assertThat(adapter.employerName(BOARD, "/job/Gone/Java-Developer")).isEmpty();
+        assertThat(adapter.employerName("not a board", "/job/Vienna/Java-Developer")).isEmpty();
+    }
+
     @Test
     void readsDetailWithAdditionalLocations() {
         FetchedPosting detail = adapter.detail(BOARD, "/job/Multi/Java-Developer");

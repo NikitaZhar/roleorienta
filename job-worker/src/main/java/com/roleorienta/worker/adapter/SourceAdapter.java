@@ -70,4 +70,16 @@ public interface SourceAdapter {
     default FetchedPosting detail(String board, String externalId) {
         return null;
     }
+
+    /**
+     * Название работодателя, как его даёт система найма, — для источника без компании из реестра (доски обратного
+     * пути, §27, §34; аудит §65). Один запрос; вызывается, пока название не записано.
+     *
+     * @param board      идентификатор доски у провайдера
+     * @param externalId id одной из публикаций доски (Workday называет работодателя в детали публикации)
+     * @return название; пусто — провайдер не называет или запрос не удался
+     */
+    default Optional<String> employerName(String board, String externalId) {
+        return Optional.empty();
+    }
 }

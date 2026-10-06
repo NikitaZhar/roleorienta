@@ -85,7 +85,8 @@ export async function exchange<T>(method: string, path: string, body?: unknown,
     response = await send(method, path, body, ifMatch);
   }
   const text = await response.text();
-  const data = text.length > 0 ? JSON.parse(text) : undefined;
+  const json = (response.headers.get('Content-Type') ?? '').includes('json');
+  const data = json && text.length > 0 ? JSON.parse(text) : undefined;
   if (!response.ok) {
     throw new ApiError(response.status, data?.detail ?? data?.title ?? response.statusText, data?.errors ?? []);
   }

@@ -60,6 +60,9 @@ public class ReadSourceHandler implements TaskHandler {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Длина {@code source.employer_name}. */
+    private static final int MAX_EMPLOYER_NAME = 300;
+
     private static final Logger LOG = LoggerFactory.getLogger(ReadSourceHandler.class);
 
     private final SourceRepository sources;
@@ -123,6 +126,7 @@ public class ReadSourceHandler implements TaskHandler {
                     checkMissing(adapter, source, postings, unverified);
                 }
                 postings = withDetail(adapter, source, postings);
+                nameEmployer(adapter, source, postings);
                 run.read(postings.size(), read.partialReason());
                 recorder.record(run, postings, unverified);
                 yield new TaskOutcome.Done();
@@ -169,6 +173,22 @@ public class ReadSourceHandler implements TaskHandler {
                 }
             }
         }
+    }
+
+    /**
+     * Источник без компании-работодателя (доска обратного пути) получает название работодателя от системы найма —
+     * один раз, пока его нет (аудит §65: иначе в сведениях о вакансии работодатель «не указан», бизнес-описание §6).
+     */
+    private void nameEmployer(SourceAdapter adapter, Source source, List<FetchedPosting> postings) {
+        if (postings.isEmpty() || !sources.needsEmployerName(source.getId())) {
+            return;
+        }
+        adapter.employerName(source.getBoard(), postings.get(0).externalId())
+                .map(name -> name.length() > MAX_EMPLOYER_NAME ? name.substring(0, MAX_EMPLOYER_NAME) : name)
+                .ifPresent(name -> {
+                    sources.nameEmployer(source.getId(), name);
+                    LOG.info("Source {} employer named by provider: {}", source.getId(), name);
+                });
     }
 
     private List<FetchedPosting> withDetail(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {

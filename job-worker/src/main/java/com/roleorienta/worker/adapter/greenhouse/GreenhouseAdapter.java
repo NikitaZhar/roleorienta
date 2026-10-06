@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
@@ -61,6 +62,24 @@ public class GreenhouseAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(
                     new HttpResult.TemporaryFailure("Malformed Greenhouse response: " + exception.getOriginalMessage(),
                             Duration.ZERO));
+        }
+    }
+
+    /**
+     * Название работодателя — {@code name} описания доски {@code /v1/boards/<доска>} (образец
+     * {@code docs/samples/gh-sentinellabs-board.json}).
+     */
+    @Override
+    public Optional<String> employerName(String board, String externalId) {
+        HttpResult result = httpClient.get(URI.create(properties.baseUrl() + "/v1/boards/"
+                + URLEncoder.encode(board, StandardCharsets.UTF_8)));
+        if (!(result instanceof HttpResult.Success success)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(textOrNull(JSON.readTree(success.body()).path("name")));
+        } catch (JsonProcessingException exception) {
+            return Optional.empty();
         }
     }
 

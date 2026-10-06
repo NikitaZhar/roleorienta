@@ -1,5 +1,6 @@
 package com.roleorienta.worker.http;
 
+import java.net.URI;
 import java.time.Duration;
 
 /**
@@ -11,10 +12,29 @@ public sealed interface HttpResult {
     /**
      * Успешный ответ (2xx).
      *
-     * @param status код ответа
-     * @param body   тело ответа
+     * @param status   код ответа
+     * @param body     тело ответа
+     * @param location конечный адрес после переадресаций; {@code null} — переадресации не было
      */
-    record Success(int status, String body) implements HttpResult {
+    record Success(int status, String body, URI location) implements HttpResult {
+
+        /**
+         * Ответ без переадресации.
+         *
+         * @param status код ответа
+         * @param body   тело ответа
+         */
+        public Success(int status, String body) {
+            this(status, body, null);
+        }
+
+        /**
+         * @param requested запрошенный адрес
+         * @return адрес, по которому получен ответ: конечный после переадресаций или запрошенный
+         */
+        public URI locationOr(URI requested) {
+            return location == null ? requested : location;
+        }
     }
 
     /**

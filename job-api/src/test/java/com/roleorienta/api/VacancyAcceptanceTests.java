@@ -57,7 +57,8 @@ class VacancyAcceptanceTests {
     }
 
     /**
-     * Список страницами, сведения, сценарий 13 — отметка, смена условий, снятие.
+     * Список страницами, сведения (источник без компании — работодатель по названию у системы найма, аудит §65),
+     * сценарий 13 — отметка, смена условий, снятие.
      *
      * @throws Exception ошибка HTTP
      */
@@ -79,12 +80,20 @@ class VacancyAcceptanceTests {
                 null);
         assertThat(titles(next.body())).isEqualTo("First");
         assertThat(next.body()).contains("\"nextCursor\":null");
+        ApiTestClient.Response whole = client.send("GET", "/api/v1/me/vacancies?limit=3", null);
+        assertThat(titles(whole.body())).isEqualTo("Third,Second,First");
+        assertThat(whole.body()).contains("\"nextCursor\":null");
 
         ApiTestClient.Response details = client.send("GET", "/api/v1/me/vacancies/" + first, null);
         assertThat(details.status()).isEqualTo(200);
         assertThat(details.body()).contains("\"position\":\"First\"", "\"employer\":\"Employer Ltd\"",
                 "\"agency\":null", "\"countries\":[\"SK\"]", "\"format\":null", "\"countryUncertain\":false",
                 "\"url\":\"https://example.com/First\"", "\"state\":\"ACTIVE\"", "\"unsuitable\":false");
+        jdbcTemplate.update("DELETE FROM company_source WHERE source_id = (SELECT id FROM source WHERE board = ?)",
+                "vacancy-test-second");
+        jdbcTemplate.update("UPDATE source SET employer_name = 'Second Group' WHERE board = ?", "vacancy-test-second");
+        assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body())
+                .contains("\"employer\":\"Second Group\"");
 
         assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
         assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
@@ -106,7 +115,8 @@ class VacancyAcceptanceTests {
 
     /**
      * Сценарий 14 (список): вакансия первого пользователя второму недоступна — сведения и отметка {@code 404};
-     * без условий список пуст; курсор чужого списка — {@code 400}.
+     * без условий список пуст; курсор чужого списка — {@code 400} (и в накопленном списке, где у второго пользователя
+     * нет условий, и в отмеченных).
      *
      * @throws Exception ошибка HTTP
      */
@@ -124,6 +134,7 @@ class VacancyAcceptanceTests {
                 .isEqualTo("{\"items\":[],\"nextCursor\":null}");
         assertThat(other.send("GET", "/api/v1/me/vacancies/" + vacancy, null).status()).isEqualTo(404);
         assertThat(other.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/unsuitable", null).status()).isEqualTo(404);
+        assertThat(other.send("GET", "/api/v1/me/vacancies?cursor=" + ownerCursor, null).status()).isEqualTo(400);
         assertThat(other.send("GET", "/api/v1/me/unsuitable?cursor=" + ownerCursor, null).status()).isEqualTo(400);
         assertThat(new ApiTestClient(port()).send("GET", "/api/v1/me/vacancies", null).status()).isEqualTo(401);
     }

@@ -42,12 +42,14 @@ import org.springframework.stereotype.Component;
  *       не нужны.
  *       В ответе {@code requisitionList} по 25 ({@code contestNo} — номер вакансии, {@code column} — название и места),
  *       {@code pagingData.totalCount}. Страна сбора — фильтр {@code LOCATION} по id страны из фасетов первой страницы
- *       без фильтра (уровень 1, название страны); страны в фасетах нет — вакансий в ней нет.</li>
+ *       без фильтра (уровень 1, название страны); страны в фасетах нет — вакансий в ней нет; фасета стран нет совсем
+ *       (а вакансий больше нуля) — источник временно недоступен, не пустое чтение.</li>
  *   <li>Внешний id — номер вакансии ({@code contestNo}); страница —
  *       {@code /careersection/<раздел>/jobdetail.ftl?job=<номер>}.</li>
  *   <li>Текст — страница вакансии: поле {@code initialHistory}, части {@code !|!}, текстовые блоки начинаются с
  *       {@code !*!} и закодированы как в адресе ({@code %3Cp%3E…}).</li>
- *   <li>Отказ первого запроса — источник недоступен; на следующих страницах, пустая страница раньше объявленного числа
+ *   <li>Отказ первого запроса — источник недоступен с тем же отказом (404, запрет — постоянный); на следующих
+ *       страницах, пустая страница раньше объявленного числа
  *       или упор в потолок — неполное чтение.</li>
  * </ul>
  */
@@ -113,13 +115,14 @@ public class TaleoAdapter implements SourceAdapter {
         List<String> responses = new ArrayList<>();
         String location = null;
         if (country != null) {
-            Optional<JsonNode> all = search(search, null, 1, responses);
-            if (all.isEmpty()) {
-                return malformed("no answer to the search");
+            Answer all = search(search, null, 1, responses);
+            if (all.json() == null) {
+                return new SourceReadResult.Unavailable(all.failure());
             }
-            Optional<String> countryId = countryFacet(all.get(), country);
+            Optional<String> countryId = countryFacet(all.json(), country);
             if (countryId.isEmpty()) {
-                return SourceReadResult.Read.full(List.of(), responses);
+                return all.json().path("pagingData").path("totalCount").asInt(-1) == 0 || hasCountries(all.json())
+                        ? SourceReadResult.Read.full(List.of(), responses) : malformed("no country facet");
             }
             location = countryId.get();
         }
@@ -131,18 +134,18 @@ public class TaleoAdapter implements SourceAdapter {
         int total = -1;
         int seen = 0;
         for (int page = 1; page <= properties.maxPages(); page++) {
-            Optional<JsonNode> answer = search(search, location, page, responses);
-            if (answer.isEmpty()) {
+            Answer answer = search(search, location, page, responses);
+            if (answer.json() == null) {
                 if (page == 1) {
-                    return malformed("no answer to the search");
+                    return new SourceReadResult.Unavailable(answer.failure());
                 }
                 LOG.warn("Taleo {} read partially at page {}", board.group(), page);
                 return SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_FAILED,
                         responses);
             }
-            JsonNode jobs = answer.get().path("requisitionList");
+            JsonNode jobs = answer.json().path("requisitionList");
             if (page == 1) {
-                total = answer.get().path("pagingData").path("totalCount").asInt(-1);
+                total = answer.json().path("pagingData").path("totalCount").asInt(-1);
             }
             for (JsonNode job : jobs) {
                 posting(job, board).ifPresent(posting -> postings.putIfAbsent(posting.externalId(), posting));
@@ -225,9 +228,19 @@ public class TaleoAdapter implements SourceAdapter {
     }
 
     /**
-     * Страница поиска; отказ или ответ не JSON — пусто.
+     * Страница поиска: ответ или отказ.
+     *
+     * @param json    разобранный ответ; {@code null} — отказ
+     * @param failure отказ: ответ HTTP (404, запрет robots.txt — постоянный) или неразобранный ответ (временный)
      */
-    private Optional<JsonNode> search(URI search, String location, int page, List<String> responses) {
+    private record Answer(JsonNode json, HttpResult failure) {
+    }
+
+    /**
+     * Страница поиска; отказ передаётся как есть (аудит §65: раньше любой отказ становился временной ошибкой
+     * разбора, и удалённый раздел повторялся без конца).
+     */
+    private Answer search(URI search, String location, int page, List<String> responses) {
         String filter = location == null ? "" : "\"" + location + "\"";
         String body = "{\"multilineEnabled\":false,"
                 + "\"sortingSelection\":{\"sortBySelectionParam\":\"3\",\"ascendingSortingOrder\":\"false\"},"
@@ -238,18 +251,37 @@ public class TaleoAdapter implements SourceAdapter {
         HttpResult result = httpClient.postJson(search, body, TIME_ZONE);
         if (!(result instanceof HttpResult.Success success)) {
             LOG.warn("Taleo search {} page {}: {}", search, page, result);
-            return Optional.empty();
+            return new Answer(null, result);
         }
+        HttpResult malformed = new HttpResult.TemporaryFailure("Malformed Taleo answer: no requisition list",
+                Duration.ZERO);
         try {
             JsonNode answer = JSON.readTree(success.body());
             if (!answer.path("requisitionList").isArray()) {
-                return Optional.empty();
+                return new Answer(null, malformed);
             }
             responses.add(success.body());
-            return Optional.of(answer);
+            return new Answer(answer, null);
         } catch (JsonProcessingException exception) {
-            return Optional.empty();
+            return new Answer(null, malformed);
         }
+    }
+
+    /**
+     * В ответе есть фасет {@code LOCATION} со странами (уровень 1). Нет — по ответу нельзя сказать, что вакансий в
+     * стране нет (аудит §65: раньше это давало полное пустое чтение и закрытие вакансий).
+     */
+    static boolean hasCountries(JsonNode answer) {
+        for (JsonNode facet : answer.path("facetResults")) {
+            if ("LOCATION".equals(facet.path("id").asText())) {
+                for (JsonNode value : facet.path("facetValueResults")) {
+                    if (COUNTRY_LEVEL.equals(value.path("level").asText())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**

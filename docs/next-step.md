@@ -3,9 +3,9 @@
 Перезаписывается в конце каждого среза. Раздел «Долг» переносится без изменений, пока пункт не
 закрыт срезом.
 
-**Последний срез:** §64 — SPA: накопленный список, сведения о вакансии, отметки «не подходит», отмеченные. Следующий — аудит §65.
+**Последний срез:** §65 — аудит §55–§64: работодатель у досок обратного пути, полное пустое чтение при заглушке (SuccessFactors) и без фасета стран (Taleo), адрес после переадресации, курсор списка, SPA.
 
-**Состояние на 2026-10-06:** §63 в `main`, CI зелёный. §64 — в рабочем дереве, ждёт сборки и коммита владельца.
+**Состояние на 2026-10-06:** §64 в `main`, CI зелёный. §65 — в рабочем дереве, ждёт сборки и коммита владельца.
 
 **ПЕРВЫЙ ШАГ СЛЕДУЮЩЕЙ СЕССИИ — отложенные проверки на стенде (до любого нового среза).** 2026-10-06 в 14:2x
 с 9 471 найденного сайта снята отметка проверки (`FORMAT_UNSUPPORTED`, `NO_CAREER_PAGE`), чтобы перепроверить их
@@ -49,6 +49,17 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT c.
 docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT source, proof, status, count(*), count(start_url) FROM company_site WHERE found_at > now() - interval '1 day' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
 ```
 
+6. Название работодателя у источников без компании (аудит §65; записывается при первом чтении после V38, т. е.
+после полуночи 2026-10-07). Ждём ING, PwC, SentinelOne и др.; в SPA у их вакансий — работодатель:
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT provider, board, employer_name FROM source WHERE employer_name IS NOT NULL ORDER BY id LIMIT 20"
+```
+```
+docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT s.provider, count(*) FILTER (WHERE s.employer_name IS NULL) AS without_name, count(*) AS sources FROM source s WHERE NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id) GROUP BY 1"
+```
+Если `without_name` у Workday, Greenhouse или SmartRecruiters не уменьшается после чтений — разобрать лог job-worker
+(`employer named by provider`).
+
 **Решение владельца (2026-10-06): закрыть чтение кадровых страниц максимально до SPA.** Порядок:
 
 | Срез | Формат | Кого закрывает (замеры §48, §55) |
@@ -62,7 +73,7 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT so
 
 Не закрывается: своя страница без ссылок на вакансии (вакансии текстом на странице, у каждого сайта своя
 разметка) — итог `FORMAT_UNSUPPORTED`. Образцы ответов — `docs/samples/*.html` (сняты 2026-10-06). Срезов с аудита
-(§54) — 10; аудит — после 10-го среза (§64).
+(§65) — 0; аудит — после 10-го среза (§64).
 
 **SPA (подэтап 1.5; решение владельца 2026-10-06 — сейчас, поиск кадровой страницы — после проверок):**
 
@@ -71,7 +82,7 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT so
 | §62 | Сделано: каркас `web/` (React, TypeScript, Vite; прокси `/api` на job-api), вход, регистрация, выход; CI собирает SPA |
 | §63 | Сделано: условия поиска — страны, позиция, формат, лимит порции (API §32, версии условий) |
 | §64 | Сделано: накопленный список, объяснение пустого списка (без точной причины — она в 1.10), сведения о вакансии, отметка «не подходит», отмеченные (API §56) |
-| §65 | Аудит (10 срезов с §54) |
+| §65 | Сделано: аудит §55–§64 |
 
 **Порядок срезов — поиск сайта (по шагам алгоритма версии 3; технический документ §5.1):**
 

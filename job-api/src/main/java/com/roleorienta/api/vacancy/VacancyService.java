@@ -65,12 +65,15 @@ public class VacancyService {
     public VacancyPage delivered(long userId, String cursor, int limit) {
         Optional<ActiveCondition> condition = repository.activeCondition(userId);
         if (condition.isEmpty()) {
+            if (cursor != null && !cursor.isEmpty()) {
+                throw new InvalidCursorException();
+            }
             return new VacancyPage(List.of(), null);
         }
         String scope = CONDITION_SCOPE + condition.get().id();
         int size = size(limit);
         List<ListedRow> rows = repository.delivered(condition.get().id(), userId,
-                Instant.now().minus(properties.hideAfter()), decode(cursor, scope), size);
+                Instant.now().minus(properties.hideAfter()), decode(cursor, scope), size + 1);
         return page(rows, size, scope, condition.get().workFormat());
     }
 
@@ -82,7 +85,7 @@ public class VacancyService {
      */
     public VacancyPage marked(long userId, String cursor, int limit) {
         int size = size(limit);
-        List<ListedRow> rows = repository.marked(userId, decode(cursor, MARKED_SCOPE), size);
+        List<ListedRow> rows = repository.marked(userId, decode(cursor, MARKED_SCOPE), size + 1);
         return page(rows, size, MARKED_SCOPE, conditionFormat(userId));
     }
 
@@ -132,10 +135,16 @@ public class VacancyService {
         return repository.activeCondition(userId).map(ActiveCondition::workFormat).orElse(null);
     }
 
+    /**
+     * Страница из строк, запрошенных с одной лишней ({@code size + 1}): лишняя есть — следующая страница есть, курсор
+     * указывает на последнюю показанную; нет — {@code nextCursor} пустой (аудит §65: ровно полная последняя страница
+     * давала курсор на пустую).
+     */
     private VacancyPage page(List<ListedRow> rows, int size, String scope, String conditionFormat) {
-        List<VacancyItem> items = rows.stream().map(row -> item(row, conditionFormat)).toList();
-        ListedRow last = rows.isEmpty() ? null : rows.get(rows.size() - 1);
-        String next = rows.size() < size ? null : encode(scope, last.listedAt(), last.vacancy().id());
+        List<ListedRow> shown = rows.size() > size ? rows.subList(0, size) : rows;
+        List<VacancyItem> items = shown.stream().map(row -> item(row, conditionFormat)).toList();
+        ListedRow last = shown.isEmpty() ? null : shown.get(shown.size() - 1);
+        String next = rows.size() > size ? encode(scope, last.listedAt(), last.vacancy().id()) : null;
         return new VacancyPage(items, next);
     }
 
@@ -174,7 +183,12 @@ public class VacancyService {
             if (parts.length != 3 || !scope.equals(parts[0])) {
                 throw new InvalidCursorException();
             }
-            return new Cursor(Instant.EPOCH.plus(Long.parseLong(parts[1]), ChronoUnit.MICROS), Long.parseLong(parts[2]));
+            long micros = Long.parseLong(parts[1]);
+            long id = Long.parseLong(parts[2]);
+            if (micros < 0 || id <= 0) {
+                throw new InvalidCursorException();
+            }
+            return new Cursor(Instant.EPOCH.plus(micros, ChronoUnit.MICROS), id);
         } catch (IllegalArgumentException malformed) {
             throw new InvalidCursorException();
         }
