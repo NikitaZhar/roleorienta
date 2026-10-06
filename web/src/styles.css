@@ -58,3 +58,36 @@ button {
 .error {
   color: #b00020;
 }
+
+.narrow-form {
+  max-width: 480px;
+}
+
+fieldset {
+  border: 1px solid #e3e3e3;
+  padding: 8px 12px;
+}
+
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.choices button {
+  width: 100%;
+  text-align: left;
+}
+
+.ok {
+  color: #1b5e20;
+}

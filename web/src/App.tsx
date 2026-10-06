@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { type Account, currentAccount, logout } from './api';
+import { ConditionsPage } from './ConditionsPage';
 import { LoginPage } from './LoginPage';
 
 /**
- * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. Экраны после входа
- * (условия, накопленный список, сведения, отмеченные) добавляются следующими срезами подэтапа 1.5.
+ * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — условия
+ * поиска; накопленный список, сведения и отмеченные добавляются следующим срезом подэтапа 1.5.
  */
 export function App() {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -36,7 +37,7 @@ export function App() {
         <button type="button" onClick={signOut}>Sign out</button>
       </header>
       <main className="page">
-        <p>Signed in. Search conditions and the vacancy list come next.</p>
+        <ConditionsPage />
       </main>
     </>
   );

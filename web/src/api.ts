@@ -38,8 +38,11 @@ function csrfToken(): string | undefined {
   return cookie === undefined ? undefined : decodeURIComponent(cookie.substring(CSRF_COOKIE.length + 1));
 }
 
-async function send(method: string, path: string, body?: unknown): Promise<Response> {
+async function send(method: string, path: string, body?: unknown, ifMatch?: string | null): Promise<Response> {
   const headers: Record<string, string> = { Accept: 'application/json' };
+  if (ifMatch !== undefined && ifMatch !== null) {
+    headers['If-Match'] = ifMatch;
+  }
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
@@ -55,6 +58,40 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
   });
 }
 
+/** Ответ API: данные и версия ресурса (заголовок ETag; нет — null). */
+export interface Versioned<T> {
+  data: T;
+  etag: string | null;
+}
+
+/**
+ * Запрос к API с версией ресурса.
+ *
+ * @param method  HTTP-метод
+ * @param path    путь от корня, например /api/v1/me
+ * @param body    тело (JSON)
+ * @param ifMatch версия для заголовка If-Match (оптимистическая блокировка)
+ * @returns разобранный ответ и ETag; 204 — data undefined
+ * @throws ApiError ответ не 2xx
+ */
+export async function exchange<T>(method: string, path: string, body?: unknown,
+  ifMatch?: string | null): Promise<Versioned<T>> {
+  if (method !== 'GET' && csrfToken() === undefined) {
+    await fetch(TOKEN_SOURCE, { credentials: 'same-origin' });
+  }
+  let response = await send(method, path, body, ifMatch);
+  if (response.status === 403 && method !== 'GET') {
+    await fetch(TOKEN_SOURCE, { credentials: 'same-origin' });
+    response = await send(method, path, body, ifMatch);
+  }
+  const text = await response.text();
+  const data = text.length > 0 ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ApiError(response.status, data?.detail ?? data?.title ?? response.statusText, data?.errors ?? []);
+  }
+  return { data: data as T, etag: response.headers.get('ETag') };
+}
+
 /**
  * Запрос к API.
  *
@@ -65,20 +102,7 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
  * @throws ApiError ответ не 2xx
  */
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (method !== 'GET' && csrfToken() === undefined) {
-    await fetch(TOKEN_SOURCE, { credentials: 'same-origin' });
-  }
-  let response = await send(method, path, body);
-  if (response.status === 403 && method !== 'GET') {
-    await fetch(TOKEN_SOURCE, { credentials: 'same-origin' });
-    response = await send(method, path, body);
-  }
-  const text = await response.text();
-  const data = text.length > 0 ? JSON.parse(text) : undefined;
-  if (!response.ok) {
-    throw new ApiError(response.status, data?.detail ?? data?.title ?? response.statusText, data?.errors ?? []);
-  }
-  return data as T;
+  return (await exchange<T>(method, path, body)).data;
 }
 
 /** @returns вошедший пользователь; null — не вошёл (401) */
@@ -106,4 +130,60 @@ export function register(email: string, password: string): Promise<Account> {
 /** Выход: сессия закрывается. */
 export function logout(): Promise<void> {
   return request<void>('POST', '/api/v1/auth/logout');
+}
+
+/** Элемент справочника: код и название. */
+export interface CatalogItem {
+  code: string;
+  name: string;
+}
+
+/** Формат работы. */
+export type WorkFormat = 'OFFICE' | 'HYBRID' | 'REMOTE';
+
+/** Условия поиска (технический документ §8; бизнес-описание §7.2). */
+export interface SearchCondition {
+  countries: string[];
+  position: string;
+  format: WorkFormat | null;
+  portionLimit: number;
+}
+
+/** Условия к сохранению: лимит null — значение по умолчанию сервера. */
+export interface SearchConditionInput {
+  countries: string[];
+  position: string;
+  format: WorkFormat | null;
+  portionLimit: number | null;
+}
+
+/** @returns поддерживаемые страны поиска */
+export function countries(): Promise<CatalogItem[]> {
+  return request<CatalogItem[]>('GET', '/api/v1/countries');
+}
+
+/** @returns до 20 позиций словаря, в коде или названии которых есть query */
+export function positions(query: string): Promise<CatalogItem[]> {
+  return request<CatalogItem[]>('GET', '/api/v1/positions?query=' + encodeURIComponent(query));
+}
+
+/** @returns условия с версией; null — условия ещё не заданы (404) */
+export async function searchCondition(): Promise<Versioned<SearchCondition> | null> {
+  try {
+    return await exchange<SearchCondition>('GET', '/api/v1/me/search-condition');
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Сохраняет условия. Первое сохранение — без версии; изменение — с версией прежних условий
+ * (If-Match): чужое изменение между чтением и записью — 412.
+ */
+export function saveSearchCondition(condition: SearchConditionInput,
+  etag: string | null): Promise<Versioned<SearchCondition>> {
+  return exchange<SearchCondition>('PUT', '/api/v1/me/search-condition', condition, etag);
 }
