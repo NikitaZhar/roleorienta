@@ -16,7 +16,7 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>roleorienta-parent</name>
-    <description>Roleorienta — корневой модуль сборки: общие версии и правила для job-api и job-worker</description>
+    <description>Roleorienta — корневой модуль сборки: общие версии и правила для job-api, job-worker и web</description>
 
     <properties>
         <java.version>21</java.version>
@@ -63,6 +63,7 @@
     <modules>
         <module>job-api</module>
         <module>job-worker</module>
+        <module>web</module>
     </modules>
 
     <build>

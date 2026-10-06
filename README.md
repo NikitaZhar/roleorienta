@@ -26,13 +26,13 @@
 > Подэтап 1.5 начат: проходы раз в час выдают порции подходящих вакансий в накопленный список
 > (сценарии 1, 2, 8); API: регистрация и вход (сессии в PostgreSQL, CSRF), условия поиска с
 > версиями (сценарий 3), накопленный список по курсору, сведения о вакансии, отметки «не подходит»
-> (сценарий 13).
+> (сценарий 13). SPA (`web/`): вход и регистрация (§62); экраны условий и списка — следующие срезы.
 > Замер этапа 0 (§44): по IČO сайт находится лишь у ~16 % работодателей; вакансии массовых
 > работодателей — на государственном портале Služby zamestnanosti. С §45 портал подключён: работодатели
 > портала из реестра получают источник своих вакансий (вместе с объявлениями profesia.sk и kariera.sk,
 > которые портал привязывает к IČO); у компании читается один канал — своя кадровая страница или портал.
-> Следующие срезы (до списка, отметок и SPA): сайт компании и поиск кадровой страницы, SAP
-> SuccessFactors, собственная страница вакансий — `docs/next-step.md`. План — технический документ §15.
+> Следующие срезы: SPA — условия, накопленный список, сведения, отмеченные; поиск кадровой страницы в ядре —
+> после проверок на стенде — `docs/next-step.md`. План — технический документ §15.
 
 ## Архитектура
 
@@ -42,11 +42,13 @@
 |---|---|
 | `job-api` | REST API и пользовательские сценарии; владеет схемой БД (Flyway) |
 | `job-worker` | Фоновая работа: планировщик, outbox → RabbitMQ, общий сбор, проходы выдачи |
+| `web` | SPA (React, TypeScript, Vite): вход; дальше — условия, накопленный список, сведения, отмеченные. Собирается Maven-ом: Node.js скачивается в `web/node` |
 
 ## Стек
 
 Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, MinIO (S3), Apache HttpClient 5, Jsoup, Maven,
-JUnit 5 + Testcontainers, Checkstyle, GitHub Actions.
+JUnit 5 + Testcontainers, Checkstyle, GitHub Actions; SPA — React 19, TypeScript, Vite (Node.js скачивает
+frontend-maven-plugin, ставить не нужно).
 
 ## Запуск локально
 
@@ -54,9 +56,15 @@ JUnit 5 + Testcontainers, Checkstyle, GitHub Actions.
 
 ```bash
 docker compose up -d                       # PostgreSQL :5433, RabbitMQ :5672, MinIO :9000
-mvn -B -ntp verify                         # Checkstyle, компиляция, тесты (Testcontainers)
+mvn -B -ntp verify                         # Checkstyle, компиляция, тесты (Testcontainers), сборка SPA
 mvn -pl job-api spring-boot:run            # http://localhost:8080/actuator/health
 mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/health
+```
+
+SPA в разработке (после `mvn verify`; job-api запущен на :8080):
+
+```bash
+mvn -pl web frontend:npm -Dfrontend.npm.arguments="run dev"   # http://localhost:5173, /api — на job-api
 ```
 
 Настройки подключения — переменные окружения (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,

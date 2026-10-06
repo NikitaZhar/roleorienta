@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.roleorienta</groupId>
+        <artifactId>roleorienta-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>web</artifactId>
+    <packaging>pom</packaging>
+    <name>web</name>
+    <description>SPA (React, TypeScript, Vite): сборка Maven-ом — Node.js скачивается в web/node, ставить его не нужно</description>
+
+    <properties>
+        <!-- Node.js для сборки SPA; Vite 8 требует 20.19+ или 22.12+ (web/package.json, engines). -->
+        <node.version>v22.22.1</node.version>
+    </properties>
+
+    <build>
+        <plugins>
+            <!-- frontend-maven-plugin скачивает Node.js (с npm) в web/node и запускает npm:
+                 https://github.com/eirslett/frontend-maven-plugin -->
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>2.0.2</version>
+                <configuration>
+                    <nodeVersion>${node.version}</nodeVersion>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node</id>
+                        <goals>
+                            <goal>install-node-and-npm</goal>
+                        </goals>
+                    </execution>
+                    <!-- Зависимости строго по package-lock.json. -->
+                    <execution>
+                        <id>npm-ci</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>ci --no-audit --no-fund</arguments>
+                        </configuration>
+                    </execution>
+                    <!-- Проверка типов (tsc -b) и сборка статического артефакта в web/dist. -->
+                    <execution>
+                        <id>npm-build</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

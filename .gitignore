@@ -1,6 +1,12 @@
 # Maven
 target/
 
+# SPA (web/): зависимости и сборка
+node_modules/
+web/dist/
+web/node/
+*.tsbuildinfo
+
 # IDE
 .idea/
 *.iml

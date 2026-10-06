@@ -18,6 +18,7 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # verify: Checkstyle, компиляция и тесты (Testcontainers использует Docker раннера).
+      # verify: Checkstyle, компиляция и тесты (Testcontainers использует Docker раннера); модуль web —
+      # сборка SPA: Node.js скачивает frontend-maven-plugin.
       - name: Build and test
         run: mvn -B -ntp verify
