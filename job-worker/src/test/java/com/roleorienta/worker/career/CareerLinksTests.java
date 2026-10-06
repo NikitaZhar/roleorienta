@@ -156,4 +156,21 @@ class CareerLinksTests {
         Document portal = Jsoup.parse("<a href=\"https://jobs.cz/\">Jobs</a>", "https://www.acme.sk/");
         assertThat(CareerLinks.careerPage(portal, "www.acme.sk")).isEmpty();
     }
+
+    /**
+     * Nalgoo: ссылки на {@code <организация>.nalgoo-jobs.com} и «ворота» {@code ats.nalgoo.com/<язык>/gate/<организация>}
+     * — доски; свой домен ({@code kariera.foxconn.sk}, образец {@code docs/samples/nalgoo-foxconn.html}) узнаётся по
+     * данным страницы.
+     *
+     * @throws java.io.IOException образец не прочитан
+     */
+    @Test
+    void findsNalgooBoards() throws java.io.IOException {
+        assertThat(CareerLinks.board("https://billa.nalgoo-jobs.com/jobs/83976")).contains(new Board("nalgoo", "billa"));
+        assertThat(CareerLinks.board("https://ats.nalgoo.com/sk/gate/billa/positions")).contains(new Board("nalgoo", "billa"));
+        assertThat(CareerLinks.board("https://www.nalgoo-jobs.com/")).isEmpty();
+        Document foxconn = Jsoup.parse(java.nio.file.Files.readString(
+                java.nio.file.Path.of("../docs/samples/nalgoo-foxconn.html")), "https://kariera.foxconn.sk/");
+        assertThat(CareerLinks.boards(foxconn)).contains(new Board("nalgoo", "foxconn"));
+    }
 }

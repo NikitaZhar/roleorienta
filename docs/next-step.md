@@ -3,15 +3,15 @@
 Перезаписывается в конце каждого среза. Раздел «Долг» переносится без изменений, пока пункт не
 закрыт срезом.
 
-**Последний срез:** §57 — адаптер SAP SuccessFactors; кадровая ссылка и на кадровый хост другого домена.
+**Последний срез:** §58 — адаптер Nalgoo (публичный API кадровых сайтов).
 
-**Состояние на 2026-10-06:** §56 в `main`, CI зелёный. §57 — в рабочем дереве, ждёт сборки и коммита владельца.
+**Состояние на 2026-10-06:** §57 в `main`, CI зелёный. §58 — в рабочем дереве, ждёт сборки и коммита владельца.
 
 **ПЕРВЫЙ ШАГ СЛЕДУЮЩЕЙ СЕССИИ — отложенные проверки на стенде (до любого нового среза).** 2026-10-06 в 14:2x
 с 9 471 найденного сайта снята отметка проверки (`FORMAT_UNSUPPORTED`, `NO_CAREER_PAGE`), чтобы перепроверить их
 правилами §57; перепроверка начнётся только с суточного тика 2026-10-07 (цепочка дня 2026-10-06 уже прошла) и
 займёт ~12–16 часов (50 сайтов за задание). Выполнить по очереди, разобрать вывод, записать итог в стенограмму
-(дополнение к §57) и только затем продолжать план (§58).
+(дополнение к §57, §58) и только затем продолжать план (§59).
 
 1. Перепроверка идёт и не обрывается (исправление ключа продолжения, §57):
 ```
@@ -27,7 +27,8 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT st
 docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT check_result, count(*) FROM company_site WHERE checked_at > current_date - 1 GROUP BY 1 ORDER BY 2 DESC"
 ```
 
-3. Источники SuccessFactors и их вакансии (§57; ждём ZF, Kaufland, Lidl, VÚB, Schaeffler, Gestamp, Vaillant — те, чьи
+3. Источники SuccessFactors и Nalgoo и их вакансии (§57, §58; для Nalgoo заменить provider на 'nalgoo' — ждём
+BILLA ~133, Foxconn ~8; ждём ZF, Kaufland, Lidl, VÚB, Schaeffler, Gestamp, Vaillant — те, чьи
 сайты есть у ядра):
 ```
 docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT s.board, count(p.id) FROM source s LEFT JOIN job_posting p ON p.source_id = s.id WHERE s.provider = 'successfactors' GROUP BY 1"
@@ -53,7 +54,7 @@ docker compose exec -T postgres psql -U roleorienta -d roleorienta -c "SELECT so
 | Срез | Формат | Кого закрывает (замеры §48, §55) |
 |---|---|---|
 | §57 | Сделано: SAP SuccessFactors (Career Site Builder) | Lidl, Kaufland, VÚB, ZF (2), Schaeffler, Vaillant, Gestamp |
-| §58 | Nalgoo | BILLA, Foxconn, SSE, Markíza |
+| §58 | Сделано: Nalgoo | BILLA, Foxconn, SSE, Markíza |
 | §59 | Phenom | Allianz, DHL |
 | §60 | Oracle Recruiting, topjobs.sk, Teamio | Slovnaft, Slovenská sporiteľňa, McDonald's, dm |
 | §61 | Своя страница со ссылками на вакансии | Tesco, IKEA, Porsche, Tatra banka, Stellantis, Tate & Lyle |

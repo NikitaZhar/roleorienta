@@ -1,6 +1,7 @@
 package com.roleorienta.worker.career;
 
 import com.roleorienta.worker.adapter.greenhouse.GreenhouseAdapter;
+import com.roleorienta.worker.adapter.nalgoo.NalgooAdapter;
 import com.roleorienta.worker.adapter.personio.PersonioAdapter;
 import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
@@ -38,6 +39,8 @@ import org.jsoup.nodes.Element;
  *       {@code jobs.smartrecruiters.com/<компания>/…} → компания.</li>
  *   <li>SAP SuccessFactors Career Site Builder — сама страница с ресурсами {@code rmkcdn.successfactors.com} →
  *       хост страницы (§57).</li>
+ *   <li>Nalgoo — {@code <организация>.nalgoo-jobs.com}, {@code ats.nalgoo.com/<язык>/gate/<организация>/…} или сама
+ *       страница со своим доменом и данными {@code ats.nalgoo.com/api} + {@code "organization"} → организация (§58).</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
  *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
  *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена
@@ -59,6 +62,12 @@ final class CareerLinks {
             "(?:careers|jobs)\\.smartrecruiters\\.com/([A-Za-z0-9_-]+)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
     private static final Set<String> SMARTRECRUITERS_NOT_BOARDS = Set.of("robots", "sitemap", "api", "static", "oneclick-ui");
     private static final String SUCCESS_FACTORS_CDN = "rmkcdn.successfactors.com";
+    private static final Pattern NALGOO = Pattern.compile(
+            "(?:([a-z0-9-]+)\\.nalgoo-jobs\\.com|ats\\.nalgoo\\.com/[a-z]{2}/gate/([a-z0-9-]+))(?=$|[/?#])",
+            Pattern.CASE_INSENSITIVE);
+    private static final String NALGOO_API = "ats.nalgoo.com/api";
+    private static final Pattern NALGOO_ORGANIZATION = Pattern.compile(
+            "organization\\\\?\"\\s*:\\s*\\\\?\"([a-z0-9-]+)", Pattern.CASE_INSENSITIVE);
     private static final Set<String> CAREER_HOST_WORDS = Set.of("jobs", "careers", "career", "kariera", "karriere");
     private static final int CAREER_HOST_LABELS = 3;
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
@@ -77,8 +86,26 @@ final class CareerLinks {
     static Set<Board> boards(Document page) {
         Set<Board> boards = new LinkedHashSet<>();
         successFactorsSite(page).ifPresent(boards::add);
+        nalgooSite(page).ifPresent(boards::add);
         hrefs(page).forEach(href -> board(href).ifPresent(boards::add));
         return boards;
+    }
+
+    /**
+     * Страница сама — кадровый сайт Nalgoo на своём домене ({@code kariera.foxconn.sk}): в данных страницы — адрес API
+     * {@code ats.nalgoo.com/api} и имя организации ({@code "organization":"foxconn"}, кавычки бывают экранированы).
+     *
+     * @param page страница
+     * @return доска — организация; пусто — не Nalgoo
+     */
+    static Optional<Board> nalgooSite(Document page) {
+        String html = page.outerHtml();
+        if (!html.contains(NALGOO_API)) {
+            return Optional.empty();
+        }
+        Matcher organization = NALGOO_ORGANIZATION.matcher(html);
+        return organization.find() ? Optional.of(new Board(NalgooAdapter.PROVIDER, lower(organization.group(1))))
+                : Optional.empty();
     }
 
     /**
@@ -117,6 +144,12 @@ final class CareerLinks {
             String company = lower(smartRecruiters.group(1));
             return SMARTRECRUITERS_NOT_BOARDS.contains(company) ? Optional.empty()
                     : Optional.of(new Board(SmartRecruitersAdapter.PROVIDER, company));
+        }
+        Matcher nalgoo = NALGOO.matcher(link);
+        if (nalgoo.lookingAt()) {
+            String organization = lower(nalgoo.group(1) != null ? nalgoo.group(1) : nalgoo.group(2));
+            return "www".equals(organization) ? Optional.empty()
+                    : Optional.of(new Board(NalgooAdapter.PROVIDER, organization));
         }
         Matcher personio = PERSONIO.matcher(link);
         return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, lower(personio.group(1))))
