@@ -143,9 +143,9 @@ class StatePortalAdapterTests {
     }
 
     /**
-     * Сайт работодателя из детали первой своей вакансии портала: «Internetová adresa»; без неё — домен
-     * почты контакта со словом названия; почта на общем сервисе или на чужом домене (бухгалтер), IČO
-     * другой фирмы или только объявления площадки — сайта нет.
+     * Сайт работодателя из детали первой своей вакансии портала: «Internetová adresa» полным адресом (с путём,
+     * без схемы — https); без неё — домен почты контакта со словом названия; почта на общем сервисе или на
+     * чужом домене (бухгалтер), IČO другой фирмы или только объявления площадки — сайта нет.
      */
     @Test
     void findsEmployerSiteInOfferDetail() {
@@ -154,22 +154,25 @@ class StatePortalAdapterTests {
         offerPages.put(KIA + ":1", offers(2, profesiaOffer("1", "A"), portalOffer(uuid, "B")));
 
         detailPages.put(uuid, detail(KIA, "<a href=\"https://www.kia.sk/sk\">www.kia.sk</a>", "kia.com"));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("www.kia.sk", detailUrl));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("https://www.kia.sk/sk", null, detailUrl));
+
+        detailPages.put(uuid, detail(KIA, "www.kia.sk", "kia.com"));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("https://www.kia.sk", null, detailUrl));
 
         detailPages.put(uuid, detail(KIA, null, "kia.sk"));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite("kia.sk", detailUrl));
+        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, "kia.sk", detailUrl));
 
         detailPages.put(uuid, detail(KIA, null, "gmail.com"));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+        assertThat(adapter.employerSite(KIA)).contains(PortalSite.NONE);
 
         detailPages.put(uuid, detail(KIA, null, "ucto-plus.sk"));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+        assertThat(adapter.employerSite(KIA)).contains(PortalSite.NONE);
 
         detailPages.put(uuid, detail("12345678", null, "kia.sk"));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+        assertThat(adapter.employerSite(KIA)).contains(PortalSite.NONE);
 
         offerPages.put(KIA + ":1", offers(1, profesiaOffer("1", "A")));
-        assertThat(adapter.employerSite(KIA)).contains(new PortalSite(null, null));
+        assertThat(adapter.employerSite(KIA)).contains(PortalSite.NONE);
     }
 
     /**

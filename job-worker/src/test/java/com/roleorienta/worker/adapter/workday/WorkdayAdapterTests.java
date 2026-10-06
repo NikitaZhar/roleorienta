@@ -259,6 +259,22 @@ class WorkdayAdapterTests {
     /**
      * Хост не Workday — запрос не выполняется.
      */
+    /**
+     * Публикации без {@code externalPath} (две на доске, как у PwC) пропускаются: без адреса нет id, а
+     * пустой id дублировал ключ публикации. Остальные читаются, чтение полное.
+     */
+    @Test
+    void skipsPostingsWithoutExternalPath() {
+        pages.put(0, page(3, "Java Developer", "QA Engineer", "DevOps Engineer")
+                .replace("/job/Bratislava/QA-Engineer", "")
+                .replace("/job/Bratislava/DevOps-Engineer", ""));
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(BOARD);
+
+        assertThat(read.complete()).isTrue();
+        assertThat(read.postings()).extracting(FetchedPosting::title).containsExactly("Java Developer");
+    }
+
     @Test
     void rejectsForeignHost() {
         assertThat(adapter.read("example.com/External")).isEqualTo(new SourceReadResult.Unavailable(

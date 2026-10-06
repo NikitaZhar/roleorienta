@@ -122,7 +122,8 @@ public class CareerScanHandler implements TaskHandler {
     }
 
     private void check(Site site, Set<String> providers) {
-        URI home = URI.create(properties.scheme() + "://" + site.host() + "/");
+        URI home = URI.create(site.startUrl() != null ? site.startUrl()
+                : properties.scheme() + "://" + site.host() + "/");
         HttpResult homeResult = http.get(home);
         boolean closed = homeResult instanceof HttpResult.PermanentFailure failure
                 && failure.kind() == HttpResult.Kind.ACCESS_DENIED;

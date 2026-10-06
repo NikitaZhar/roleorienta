@@ -60,6 +60,8 @@ public class StatePortalAdapter implements SourceAdapter {
     private static final Pattern PROFESIA_OFFER = Pattern.compile("profesia\\.sk/(?:.*/)?O(\\d+)");
     private static final Pattern EMPLOYER_NUMBER = Pattern.compile("IČO:\\s*(\\d{8})");
     private static final int MAX_EXTERNAL_ID = 200;
+    /** Длина поля адреса стартовой страницы ({@code company_site.start_url}). */
+    private static final int MAX_ADDRESS = 2000;
     /** Домен почты контакта в детали вакансии: адрес собирается скриптом из имени и хоста. */
     private static final Pattern MAIL_HOST = Pattern.compile("let\\s+host\\s*=\\s*\"([^\"]+)\"");
     private static final Pattern HOST = Pattern.compile("[a-z0-9-]+(?:\\.[a-z0-9-]+)+");
@@ -179,15 +181,15 @@ public class StatePortalAdapter implements SourceAdapter {
 
     /**
      * Сайт работодателя: первая своя вакансия портала на первой странице его списка, в её детали —
-     * «Internetová adresa», иначе домен контактной почты — не общий почтовый сервис и со словом или
-     * инициалами названия компании (почта бывает на домене бухгалтера или агентства; технический
-     * документ §5.1). IČO детали должно совпасть с {@code board}.
+     * «Internetová adresa» полным адресом, иначе домен контактной почты — не общий почтовый сервис и со словом
+     * или инициалами названия компании (почта бывает на домене бухгалтера или агентства; технический документ
+     * §5.1). Домен почты здесь не проверяется — это делает шаг поиска сайта. IČO детали должно совпасть с
+     * {@code board}.
      *
      * @param board IČO работодателя
-     * @return сайт или его отсутствие; пусто — страница не получена
+     * @return сайт или {@link PortalSite#NONE}; пусто — страница не получена
      */
     public Optional<PortalSite> employerSite(String board) {
-        PortalSite none = new PortalSite(null, null);
         if (!REGISTRATION_NUMBER.matcher(board).matches()
                 || !(httpClient.get(offersUri(board, properties.offersPageSize(), 1))
                         instanceof HttpResult.Success list)) {
@@ -195,7 +197,7 @@ public class StatePortalAdapter implements SourceAdapter {
         }
         Matcher offer = PORTAL_OFFER.matcher(list.body());
         if (!offer.find()) {
-            return Optional.of(none);
+            return Optional.of(PortalSite.NONE);
         }
         URI detailUri = URI.create(properties.baseUrl() + "/pracovne-ponuky/" + offer.group(1));
         if (!(httpClient.get(detailUri) instanceof HttpResult.Success detail)) {
@@ -204,19 +206,40 @@ public class StatePortalAdapter implements SourceAdapter {
         Document document = Jsoup.parse(detail.body(), detailUri.toString());
         Element number = value(document, "IČO");
         if (number == null || !withoutLeadingZeros(number.text()).equals(withoutLeadingZeros(board))) {
-            return Optional.of(none);
+            return Optional.of(PortalSite.NONE);
         }
         Element web = value(document, "Internetová adresa");
-        String host = web == null ? null : host(web.selectFirst("a[href]") == null ? web.text()
+        String website = web == null ? null : website(web.selectFirst("a[href]") == null ? web.text()
                 : web.selectFirst("a[href]").attr("href"));
-        if (host == null) {
-            Matcher mail = MAIL_HOST.matcher(detail.body());
-            host = mail.find() ? host(mail.group(1)) : null;
-            Element name = value(document, "Názov spoločnosti");
-            host = host == null || PUBLIC_MAIL.contains(host) || name == null || !namesCompany(host, name.text())
-                    ? null : host;
+        if (website != null) {
+            return Optional.of(new PortalSite(website, null, detailUri.toString()));
         }
-        return Optional.of(host == null ? none : new PortalSite(host, detailUri.toString()));
+        Matcher mail = MAIL_HOST.matcher(detail.body());
+        String mailHost = mail.find() ? host(mail.group(1)) : null;
+        Element name = value(document, "Názov spoločnosti");
+        if (mailHost == null || PUBLIC_MAIL.contains(mailHost) || name == null || !namesCompany(mailHost, name.text())) {
+            return Optional.of(PortalSite.NONE);
+        }
+        return Optional.of(new PortalSite(null, mailHost, detailUri.toString()));
+    }
+
+    /**
+     * Полный адрес сайта ({@code www.firma.sk/sk/kariera} → {@code https://www.firma.sk/sk/kariera}); без схемы
+     * — {@code https}; хост не похож на хост или адрес длиннее поля — {@code null}.
+     */
+    private static String website(String address) {
+        String text = address == null ? "" : address.trim();
+        String absolute = text.contains("://") ? text : "https://" + text;
+        if (host(text) == null || absolute.length() > MAX_ADDRESS) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(absolute);
+            return "http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())
+                    ? uri.toString() : null;
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
     }
 
     /**

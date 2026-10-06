@@ -50,12 +50,13 @@ public class CareerScanRepository {
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
-                SELECT s.id, s.company_id, s.host FROM company_site s JOIN company c ON c.id = s.company_id
+                SELECT s.id, s.company_id, s.host, s.start_url FROM company_site s JOIN company c ON c.id = s.company_id
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL AND s.status = 'FOUND'
                   AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
                 ORDER BY s.checked_at NULLS FIRST, s.id LIMIT ?
-                """, (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host")),
+                """, (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host"),
+                        row.getString("start_url")),
                 (double) recheckAfter.toSeconds(), limit);
     }
 
@@ -118,8 +119,9 @@ public class CareerScanRepository {
      * @param id        запись {@code company_site}
      * @param companyId компания
      * @param host      хост сайта
+     * @param startUrl  адрес стартовой страницы (с портала, с путём); {@code null} — главная хоста
      */
-    public record Site(long id, long companyId, String host) {
+    public record Site(long id, long companyId, String host, String startUrl) {
     }
 
     /**

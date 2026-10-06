@@ -31,7 +31,8 @@ import org.springframework.stereotype.Component;
  * {@code offset/limit}. Поля публикации — {@code title}, {@code externalPath} (внешний id и ссылка),
  * {@code locationsText}; {@code total} приходит только на первой странице. Текста в списке нет —
  * он читается деталью ({@link #detail}). У публикации в нескольких местах {@code locationsText} —
- * сводка «2 Locations»: место в списке считается не полученным, места берутся из детали.
+ * сводка «2 Locations»: место в списке считается не полученным, места берутся из детали. Публикация
+ * без {@code externalPath} пропускается (нет id; пустой id дублировал бы ключ публикации).
  *
  * <p>Доска — {@code <тенант>.<dc>.myworkdayjobs.com/<сайт>}; другой хост не читается (отказ
  * {@code BLOCKED}). Отказ на первой странице — источник недоступен; на следующих, пустая страница
@@ -225,6 +226,11 @@ public class WorkdayAdapter implements SourceAdapter {
             JsonNode jobs = json.path("jobPostings");
             for (JsonNode job : jobs) {
                 String path = job.path("externalPath").asText();
+                if (path.isBlank()) {
+                    LOG.warn("Workday board {}: posting \"{}\" without externalPath skipped", board,
+                            job.path("title").asText());
+                    continue;
+                }
                 String location = textOrNull(job.path("locationsText"));
                 if (location != null && LOCATIONS_SUMMARY.matcher(location).matches()) {
                     location = null;

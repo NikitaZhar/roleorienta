@@ -52,6 +52,10 @@ class StatePortalTests {
     /** Своя вакансия портала у {@link #EMPLOYER}; в её детали — почта на домене {@link #EMPLOYER_HOST}. */
     private static final String OFFER_UUID = "0b8c1f2e-3a4d-4e5f-8a9b-0c1d2e3f4a5b";
     private static final String EMPLOYER_HOST = "employer-test.sk";
+    /** Сайт по домену почты {@link #EMPLOYER_HOST}: IČO работодателя — на странице «Kontakt». */
+    private static final String MAIL_SITE = "www." + EMPLOYER_HOST;
+    /** «Internetová adresa» в детали вакансии; {@code null} — поля нет (сайт берётся по почте). */
+    private static volatile String website;
     private static final Map<String, Integer> OFFERS = Map.of(EMPLOYER, 2, AGENCY, 1, OWN_PAGE, 3,
             NOT_REGISTERED, 1);
     private static final HttpServer PORTAL = startPortal();
@@ -76,6 +80,8 @@ class StatePortalTests {
     @DynamicPropertySource
     static void portalProperties(DynamicPropertyRegistry registry) {
         registry.add("app.state-portal.base-url", () -> "http://127.0.0.1:" + PORTAL.getAddress().getPort());
+        registry.add("app.site-check.home-url",
+                () -> "http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/site/{host}/");
     }
 
     /**
@@ -95,6 +101,7 @@ class StatePortalTests {
         jdbcTemplate.update("DELETE FROM outbox_event");
         jdbcTemplate.update("DELETE FROM task");
         jdbcTemplate.update("DELETE FROM portal_employer");
+        website = null;
         String numbers = "'" + String.join("','", NUMBERS) + "'";
         jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
                 + "registration_number IN (" + numbers + "))");
@@ -148,27 +155,51 @@ class StatePortalTests {
     }
 
     /**
-     * Сайт с портала: у подключённого работодателя без сайта сайт берётся из детали его вакансии (домен
-     * почты контакта) и записывается сайтом компании; работодателя с найденным сайтом второй раз не
-     * ищут.
+     * Сайт с портала по домену почты контакта: у подключённого работодателя без сайта открывается
+     * {@code www.<домен>}, IČO работодателя — на странице «Kontakt» по ссылке с главной: сайт записан с
+     * подтверждением {@code PORTAL_MAIL}; работодателя с найденным сайтом второй раз не ищут.
      */
     @Test
-    void takesEmployerSiteFromPortalOffer() {
+    void takesEmployerSiteFromPortalMail() {
+        runSiteStep();
+
+        assertThat(employerSites()).containsExactly(EMPLOYER + ":" + MAIL_SITE + ":null:STATE_PORTAL:PORTAL_MAIL:"
+                + "http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
+        assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
+                + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
+    }
+
+    /**
+     * «Internetová adresa» с путём — сайт без проверки ({@code STATE_PORTAL}), адрес с путём — стартовая
+     * страница поиска кадровой страницы.
+     */
+    @Test
+    void takesEmployerWebsiteWithPath() {
+        website = "www.employer-test.sk/sk/";
+
+        runSiteStep();
+
+        assertThat(employerSites()).containsExactly(EMPLOYER + ":" + MAIL_SITE + ":https://www.employer-test.sk/sk/"
+                + ":STATE_PORTAL:STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort()
+                + "/pracovne-ponuky/" + OFFER_UUID);
+    }
+
+    private void runSiteStep() {
         handler.enqueueList("test");
         runQueuedTasks();
         handler.enqueueCheck("test");
         runQueuedTasks();
         handler.enqueueSite("test");
         runQueuedTasks();
+    }
 
-        assertThat(jdbcTemplate.queryForList("""
-                SELECT c.registration_number || ':' || s.host || ':' || s.source || ':' || s.proof || ':' || s.evidence_url
+    private List<String> employerSites() {
+        return jdbcTemplate.queryForList("""
+                SELECT c.registration_number || ':' || s.host || ':' || coalesce(s.start_url, 'null') || ':'
+                       || s.source || ':' || s.proof || ':' || s.evidence_url
                 FROM company_site s JOIN company c ON c.id = s.company_id
-                WHERE c.registration_number IN (?, ?)
-                """, String.class, EMPLOYER, OWN_PAGE)).containsExactly(EMPLOYER + ":" + EMPLOYER_HOST
-                + ":STATE_PORTAL:STATE_PORTAL:http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
-        assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
-                + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
+                WHERE c.registration_number IN (?, ?) AND s.status = 'FOUND'
+                """, String.class, EMPLOYER, OWN_PAGE);
     }
 
     /**
@@ -207,7 +238,7 @@ class StatePortalTests {
 
     /**
      * Заглушка портала: список работодателей — одна страница со всеми IČO; вакансии работодателя —
-     * объявленное число из {@link #OFFERS} (нет — ноль).
+     * объявленное число из {@link #OFFERS} (нет — ноль); сайт по домену почты — {@code /site/<хост>/}.
      */
     private static HttpServer startPortal() {
         try {
@@ -227,7 +258,9 @@ class StatePortalTests {
                 if (exchange.getRequestURI().getPath().endsWith(OFFER_UUID)) {
                     respond(exchange, "<html><body><dl><div><dt class=\"vpm-data-panel__key\">IČO</dt>"
                             + "<dd class=\"vpm-data-panel__value\">" + EMPLOYER + "</dd></div><div><dt class=\"vpm-data-panel__key\">"
-                            + "Názov spoločnosti</dt><dd>Employer Test s. r. o.</dd></div></dl>"
+                            + "Názov spoločnosti</dt><dd>Employer Test s. r. o.</dd></div>"
+                            + (website == null ? "" : "<div><dt class=\"vpm-data-panel__key\">Internetová adresa</dt>"
+                                    + "<dd>" + website + "</dd></div>") + "</dl>"
                             + "<script> { let name = \"hr\"; let host = \"" + EMPLOYER_HOST + "\"; } </script>"
                             + "</body></html>");
                     return;
@@ -239,6 +272,10 @@ class StatePortalTests {
                 respond(exchange, "<html><body><main><span>" + OFFERS.getOrDefault(number, 0)
                         + " pracovných ponúk,</span>" + offer + "</main></body></html>");
             });
+            server.createContext("/site/" + MAIL_SITE + "/", exchange -> respond(exchange,
+                    exchange.getRequestURI().getPath().endsWith("/kontakt")
+                            ? "<html><body><p>Employer Test s. r. o., IČO: " + EMPLOYER + "</p></body></html>"
+                            : "<html><body><a href=\"kontakt\">Kontakt</a></body></html>"));
             server.start();
             return server;
         } catch (IOException exception) {

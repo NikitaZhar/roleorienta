@@ -7,13 +7,19 @@ import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.PortalSite;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
+import com.roleorienta.worker.site.SiteVerifier;
+import com.roleorienta.worker.site.SiteVerifier.Verdict;
 import com.roleorienta.worker.stateportal.StatePortalRepository.DueEmployer;
+import com.roleorienta.worker.stateportal.StatePortalRepository.FoundSite;
+import com.roleorienta.worker.stateportal.StatePortalRepository.SiteEmployer;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +37,10 @@ import org.springframework.stereotype.Component;
  *       реестре, не агентства и без своего источника: есть ли у них вакансии на портале (вместе с
  *       объявлениями площадок, привязанными к IČO). Есть — подключается источник портала. Каждый день,
  *       пока есть работодатели к проверке; повтор — через {@link StatePortalProperties#recheckAfter()}.</li>
- *   <li>{@code site} — у компаний с подключённым порталом и без сайта: сайт из детали их вакансии на
- *       портале («Internetová adresa», иначе домен контактной почты) записывается сайтом компании; его
- *       проверяет поиск кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
+ *   <li>{@code site} — у компаний с подключённым порталом и без найденного сайта (шаг 2 алгоритма поиска
+ *       сайта версии 3): сайт из детали их вакансии на портале («Internetová adresa» полным адресом, иначе
+ *       домен контактной почты с проверкой сайта) записывается сайтом компании; его проверяет поиск
+ *       кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
  * </ol>
  *
  * <p>Отказ страницы списка — повтор задания с того же места; отказ проверки одного работодателя — он
@@ -52,6 +59,11 @@ public class StatePortalHandler implements TaskHandler {
     private static final String LIST = "list";
     private static final String CHECK = "check";
     private static final String SITE = "site";
+    private static final String STATE_PORTAL = "STATE_PORTAL";
+    private static final String PORTAL_MAIL = "PORTAL_MAIL";
+    private static final String PORTAL_MAIL_403 = "PORTAL_MAIL_403";
+    private static final String GROUP_SITE = "GROUP_SITE";
+    private static final String WWW = "www.";
     private static final String SLOVAKIA = "SK";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(StatePortalHandler.class);
@@ -60,19 +72,22 @@ public class StatePortalHandler implements TaskHandler {
     private final StatePortalRepository repository;
     private final TaskService taskService;
     private final StatePortalProperties properties;
+    private final SiteVerifier verifier;
 
     /**
      * @param adapter     адаптер портала
      * @param repository  работодатели портала и подключение
      * @param taskService постановка следующего задания цепочки
      * @param properties  работодателей за задание, срок повторной проверки
+     * @param verifier    проверка сайта по домену почты (IČO, бренд)
      */
     public StatePortalHandler(StatePortalAdapter adapter, StatePortalRepository repository,
-            TaskService taskService, StatePortalProperties properties) {
+            TaskService taskService, StatePortalProperties properties, SiteVerifier verifier) {
         this.adapter = adapter;
         this.repository = repository;
         this.taskService = taskService;
         this.properties = properties;
+        this.verifier = verifier;
     }
 
     /**
@@ -176,18 +191,17 @@ public class StatePortalHandler implements TaskHandler {
      * Поиск сайтов; взято полное число — следующее задание.
      */
     private TaskOutcome site(String period, int round) {
-        List<DueEmployer> due = repository.employersForSite(properties.checksPerTask(), properties.recheckAfter());
+        List<SiteEmployer> due = repository.employersForSite(properties.checksPerTask(), properties.recheckAfter());
         int read = 0;
         int found = 0;
-        for (DueEmployer employer : due) {
+        for (SiteEmployer employer : due) {
             Optional<PortalSite> site = adapter.employerSite(employer.registrationNumber());
             if (site.isEmpty()) {
                 LOG.warn("State portal employer {}: site not read", employer.registrationNumber());
                 continue;
             }
-            repository.recordSite(employer, site.get());
             read++;
-            found += site.get().host() == null ? 0 : 1;
+            found += recordSite(employer, site.get()) ? 1 : 0;
         }
         LOG.info("State portal sites: {} of {} employers read, {} sites found", read, due.size(), found);
         if (read == 0 && !due.isEmpty()) {
@@ -197,6 +211,44 @@ public class StatePortalHandler implements TaskHandler {
             next(SITE, period, round + 1);
         }
         return new TaskOutcome.Done();
+    }
+
+    /**
+     * Итог шага 2 алгоритма версии 3 (технический документ §5.1) по ответу портала: «Internetová adresa» —
+     * {@code STATE_PORTAL} без проверки (адрес указал сам работодатель рядом со своим IČO; адрес с путём —
+     * стартовая страница); домен почты — проверка сайта {@code www.<домен>}: IČO или бренд —
+     * {@code PORTAL_MAIL}, закрыт для программы — {@code PORTAL_MAIL_403}, открылся без подтверждения —
+     * {@code GROUP_SITE} (почта на домене самого работодателя), не существует — сайта нет. Временный отказ
+     * сайта — не записывается, работодатель проверяется следующим заданием.
+     *
+     * @return записан ли найденный сайт
+     */
+    private boolean recordSite(SiteEmployer employer, PortalSite site) {
+        FoundSite found = null;
+        if (site.website() != null) {
+            URI uri = URI.create(site.website());
+            String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+            boolean home = (path.isEmpty() || "/".equals(path)) && uri.getRawQuery() == null;
+            found = new FoundSite(uri.getHost().toLowerCase(Locale.ROOT), home ? null : site.website(),
+                    site.evidenceUrl(), STATE_PORTAL);
+        } else if (site.mailHost() != null) {
+            String host = site.mailHost().startsWith(WWW) ? site.mailHost() : WWW + site.mailHost();
+            Verdict verdict = verifier.verify(host, employer.registrationNumber(), employer.name());
+            if (verdict == Verdict.TEMPORARY) {
+                LOG.info("State portal employer {}: mail site {} not answering, checked later",
+                        employer.registrationNumber(), host);
+                return false;
+            }
+            String proof = switch (verdict) {
+                case REGISTRATION_NUMBER, BRAND -> PORTAL_MAIL;
+                case CLOSED -> PORTAL_MAIL_403;
+                case OPENED -> GROUP_SITE;
+                case GONE, TEMPORARY -> null;
+            };
+            found = proof == null ? null : new FoundSite(host, null, site.evidenceUrl(), proof);
+        }
+        repository.recordSite(employer, found);
+        return found != null;
     }
 
     private void next(String step, String period, int position) {

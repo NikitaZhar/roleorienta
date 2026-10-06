@@ -1,7 +1,6 @@
 package com.roleorienta.worker.stateportal;
 
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
-import com.roleorienta.worker.adapter.stateportal.PortalSite;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import java.time.Duration;
 import java.util.List;
@@ -113,11 +112,11 @@ public class StatePortalRepository {
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторного поиска
-     * @return работодатели с компанией
+     * @return работодатели с компанией и её названием из реестра
      */
-    public List<DueEmployer> employersForSite(int limit, Duration recheckAfter) {
+    public List<SiteEmployer> employersForSite(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
-                SELECT p.registration_number, c.id FROM portal_employer p
+                SELECT p.registration_number, c.id, c.name FROM portal_employer p
                 JOIN source s ON s.provider = ? AND s.board = p.registration_number
                 JOIN company_source cs ON cs.source_id = s.id
                 JOIN company c ON c.id = cs.company_id
@@ -127,28 +126,49 @@ public class StatePortalRepository {
                                   WHERE site.company_id = c.id AND site.status = 'FOUND')
                 ORDER BY p.site_checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
-                """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
+                """, (row, number) -> new SiteEmployer(row.getString(1), row.getLong(2), row.getString(3)),
                 StatePortalAdapter.PROVIDER, (double) recheckAfter.toSeconds(), limit);
     }
 
     /**
-     * Итог поиска сайта одной транзакцией: отметка «искали»; сайт найден — он записывается сайтом компании
-     * с источником {@code STATE_PORTAL} (дальше его проверяет поиск кадровой страницы).
+     * Итог поиска сайта одной транзакцией: отметка «искали»; сайт найден — он записывается найденным сайтом
+     * компании с источником {@code STATE_PORTAL} (дальше его проверяет поиск кадровой страницы).
      *
      * @param employer работодатель с компанией
-     * @param site     сайт; {@code host == null} — не найден
+     * @param site     сайт; {@code null} — не найден
      */
     @Transactional
-    public void recordSite(DueEmployer employer, PortalSite site) {
+    public void recordSite(SiteEmployer employer, FoundSite site) {
         jdbcTemplate.update("UPDATE portal_employer SET site_checked_at = now() WHERE registration_number = ?",
                 employer.registrationNumber());
-        if (site.host() != null) {
+        if (site != null) {
             jdbcTemplate.update("""
-                    INSERT INTO company_site (company_id, host, evidence_url, source, proof)
-                    VALUES (?, ?, ?, 'STATE_PORTAL', 'STATE_PORTAL')
+                    INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
+                    VALUES (?, ?, ?, ?, 'STATE_PORTAL', ?)
                     ON CONFLICT (company_id, host) DO NOTHING
-                    """, employer.companyId(), site.host(), site.evidenceUrl());
+                    """, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
         }
+    }
+
+    /**
+     * Работодатель портала к поиску сайта.
+     *
+     * @param registrationNumber IČO, как на портале
+     * @param companyId          компания реестра
+     * @param name               название компании в реестре (для проверки бренда)
+     */
+    public record SiteEmployer(String registrationNumber, long companyId, String name) {
+    }
+
+    /**
+     * Найденный сайт с портала.
+     *
+     * @param host        хост сайта
+     * @param startUrl    адрес стартовой страницы; {@code null} — главная хоста
+     * @param evidenceUrl деталь вакансии портала, на которой найден адрес
+     * @param proof       способ подтверждения ({@code company_site.proof})
+     */
+    public record FoundSite(String host, String startUrl, String evidenceUrl, String proof) {
     }
 
     /**

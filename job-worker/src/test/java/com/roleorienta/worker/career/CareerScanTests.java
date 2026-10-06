@@ -109,6 +109,19 @@ class CareerScanTests {
     }
 
     /**
+     * Адрес стартовой страницы с путём (с портала) — поиск начинается с него, а не с главной хоста.
+     */
+    @Test
+    void startsFromStartUrl() {
+        jdbcTemplate.update("UPDATE company_site SET start_url = 'http://' || host || '/sk/'");
+        PAGES.put("/sk/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+
+        runScan();
+
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+    }
+
+    /**
      * Кандидат (сайт без доказательства принадлежности) поиском кадровой страницы не проверяется и итог
      * компании не меняет.
      */
