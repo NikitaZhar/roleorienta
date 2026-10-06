@@ -28,7 +28,7 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Шаги 3–4 поиска сайта — адрес по названию — на заглушке сайтов и настоящей PostgreSQL (технический документ
  * §5.1): IČO на странице «Kontakt» угаданного адреса — находка; ответ 403 по {@code www.бренд.sk} и сайт группы без
- * второго источника — кандидаты; компания без признака найма не проверяется.
+ * второго источника — кандидаты; компания без признака найма проверяется, только если в ней 10+ сотрудников (RÚZ).
  */
 @SpringBootTest(properties = "app.http.allow-private-addresses=true")
 @ActiveProfiles("test")
@@ -39,10 +39,12 @@ class SiteNameTests {
     private static final String ALFA = "90200001";
     /** {@code www.betaplast.sk} отвечает 403, {@code www.betaplast.com} — сайт группы. */
     private static final String BETA = "90200002";
-    /** Без источника вакансий (нет признака найма) — не проверяется. */
+    /** Без источника вакансий, 5 сотрудников (RÚZ) — не проверяется. */
     private static final String GAMA = "90200003";
+    /** Без источника вакансий, 50 сотрудников (RÚZ) — проверяется. */
+    private static final String DELTA = "90200004";
     private static final Map<String, String> NAMES = Map.of(ALFA, "Alfaplast s.r.o.", BETA, "Betaplast a.s.",
-            GAMA, "Gamaplast s.r.o.");
+            GAMA, "Gamaplast s.r.o.", DELTA, "Deltaplast s.r.o.");
     private static final String GROUP_TEXT = "Betaplast is a global manufacturer of plastic parts for the automotive "
             + "industry with plants on four continents, serving car makers and their suppliers with precise, "
             + "reliable components and engineering support for more than thirty years.";
@@ -78,7 +80,7 @@ class SiteNameTests {
 
     /**
      * Чистые записи; Словакия — активная страна сбора; у {@link #ALFA} и {@link #BETA} — источник портала (признак
-     * найма), у {@link #ALFA} — итог «сайт не найден».
+     * найма), у {@link #ALFA} — итог «сайт не найден»; число сотрудников у {@link #GAMA} и {@link #DELTA}.
      */
     @BeforeEach
     void setUp() {
@@ -106,12 +108,15 @@ class SiteNameTests {
                     WHERE c.registration_number = ? AND s.provider = 'sluzbyzamestnanosti' AND s.board = ?
                     """, number, number);
         }
+        jdbcTemplate.update("UPDATE company SET employees_min = 5 WHERE registration_number = ?", GAMA);
+        jdbcTemplate.update("UPDATE company SET employees_min = 50 WHERE registration_number = ?", DELTA);
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE registration_number = ?", ALFA);
     }
 
     /**
-     * Находка по IČO снимает итог «сайт не найден»; у {@link #BETA} — два кандидата; {@link #GAMA} не проверялась;
+     * Находка по IČO снимает итог «сайт не найден»; у {@link #BETA} — два кандидата; {@link #GAMA} (5 сотрудников) не
+     * проверялась, {@link #DELTA} (50) — проверялась;
      * повторный шаг в тот же срок ничего не добавляет.
      */
     @Test
@@ -125,8 +130,9 @@ class SiteNameTests {
                 BETA + ":www.betaplast.sk:HTTP_403:CANDIDATE");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check k JOIN company c ON c.id = "
                 + "k.company_id WHERE c.registration_number = ?", Integer.class, ALFA)).isZero();
-        assertThat(jdbcTemplate.queryForObject("SELECT site_name_checked_at IS NULL FROM company "
-                + "WHERE registration_number = ?", Boolean.class, GAMA)).isTrue();
+        assertThat(jdbcTemplate.queryForList("SELECT registration_number || ':' || (site_name_checked_at IS NOT NULL) "
+                + "FROM company WHERE registration_number IN (?, ?) ORDER BY 1", String.class, GAMA, DELTA))
+                .containsExactly(GAMA + ":false", DELTA + ":true");
 
         handler.enqueue("second");
         runQueuedTasks();

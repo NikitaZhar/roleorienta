@@ -7,6 +7,7 @@ import com.roleorienta.worker.career.CareerScanHandler;
 import com.roleorienta.worker.collect.ReadSourceHandler;
 import com.roleorienta.worker.delivery.RunPassHandler;
 import com.roleorienta.worker.geo.GeoImportHandler;
+import com.roleorienta.worker.intake.CompanySizeHandler;
 import com.roleorienta.worker.intake.RegistryIntakeHandler;
 import com.roleorienta.worker.match.MatchVacanciesHandler;
 import com.roleorienta.worker.site.SiteNameHandler;
@@ -28,7 +29,7 @@ class RabbitTopologyTests {
     void discoveryTasksGoToDiscoveryQueue() {
         assertThat(RabbitTopology.DISCOVERY_TYPES).containsExactlyInAnyOrder(RegistryIntakeHandler.TYPE,
                 SiteScanHandler.TYPE, WikidataSiteHandler.TYPE, CareerScanHandler.TYPE, BoardDiscoveryHandler.TYPE,
-                StatePortalHandler.TYPE, GeoImportHandler.TYPE);
+                StatePortalHandler.TYPE, GeoImportHandler.TYPE, CompanySizeHandler.TYPE);
         assertThat(RabbitTopology.routingKey(StatePortalHandler.TYPE)).isEqualTo(RabbitTopology.DISCOVERY_ROUTING_KEY);
     }
 

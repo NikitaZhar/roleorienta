@@ -9,9 +9,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param companiesPerTask компаний за задание (до 36 адресов на компанию; задание укладывается в аренду)
  * @param recheckAfter     срок до повторной проверки компании без найденного сайта
+ * @param minEmployees     компания без признака найма берётся, если в ней не меньше стольких сотрудников (RÚZ)
  */
 @ConfigurationProperties("app.site-name")
 public record SiteNameProperties(
         @DefaultValue("10") int companiesPerTask,
-        @DefaultValue("30d") Duration recheckAfter) {
+        @DefaultValue("30d") Duration recheckAfter,
+        @DefaultValue("10") int minEmployees) {
 }

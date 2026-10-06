@@ -26,26 +26,28 @@ public class SiteNameRepository {
 
     /**
      * Компании к проверке: действующие компании Словакии — активной страны сбора — с признаком найма (у компании
-     * есть источник вакансий: портал или доска системы найма; решение владельца, §48), без найденного сайта, не
-     * проверенные по названию или проверенные давнее срока. Сначала не проверенные.
+     * есть источник вакансий: портал или доска системы найма; решение владельца, §48) или с числом сотрудников
+     * не меньше {@code minEmployees} (RÚZ, §53), без найденного сайта, не проверенные по названию или проверенные
+     * давнее срока. Сначала не проверенные.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторной проверки
+     * @param minEmployees нижняя граница числа сотрудников
      * @return компании с IČO и названием
      */
-    public List<DueCompany> dueCompanies(int limit, Duration recheckAfter) {
+    public List<DueCompany> dueCompanies(int limit, Duration recheckAfter, int minEmployees) {
         return jdbcTemplate.query("""
                 SELECT c.id, c.registration_number, c.name FROM company c
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.country = ? AND c.terminated_on IS NULL
-                  AND EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id)
+                  AND (c.employees_min >= ? OR EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id))
                   AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND')
                   AND (c.site_name_checked_at IS NULL
                        OR c.site_name_checked_at < now() - make_interval(secs => ?))
                 ORDER BY c.site_name_checked_at NULLS FIRST, c.id
                 LIMIT ?
                 """, (row, number) -> new DueCompany(row.getLong(1), row.getString(2), row.getString(3)),
-                COUNTRY, (double) recheckAfter.toSeconds(), limit);
+                COUNTRY, minEmployees, (double) recheckAfter.toSeconds(), limit);
     }
 
     /**

@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
  *       ответ 403 по адресу {@code www.бренд.sk} / {@code www.бренд.com} — кандидат {@code HTTP_403}.</li>
  * </ol>
  *
- * <p>Компании — с признаком найма, по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
+ * <p>Компании — с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
  * число — следующее задание цепочки. Задание идёт в свою очередь: проверка одной компании — до 36 адресов.
  * Временный отказ адреса пропускается: компания перепроверяется через срок.</p>
  */
@@ -84,7 +84,8 @@ public class SiteNameHandler implements TaskHandler {
         JsonNode payload = parse(task.payload());
         String period = payload.path("period").asText();
         int round = payload.path("round").asInt(1);
-        List<DueCompany> due = repository.dueCompanies(properties.companiesPerTask(), properties.recheckAfter());
+        List<DueCompany> due = repository.dueCompanies(properties.companiesPerTask(), properties.recheckAfter(),
+                properties.minEmployees());
         int found = 0;
         for (DueCompany company : due) {
             List<NameSite> sites = check(company);

@@ -38,3 +38,5 @@ app:
     enabled: false           # шаг «Wikidata» ставится из теста вручную
   site-name:
     enabled: false           # шаг «адрес по названию» ставится из теста вручную
+  company-size:
+    enabled: false           # шаг «число сотрудников из RÚZ» ставится из теста вручную
