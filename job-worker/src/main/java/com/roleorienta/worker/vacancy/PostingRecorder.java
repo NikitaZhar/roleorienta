@@ -10,7 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Неполное чтение: добавляются только новые публикации (они подтверждены); сохранённые не
  *       меняются и не закрываются, но теряют подтверждение — их вакансии нуждаются в повторной
  *       проверке (технический документ §4).</li>
+ *   <li>Ссылка публикации не http(s) (пустая, {@code javascript:} и т. п.; аудит §66): новая публикация не
+ *       записывается, известная теряет подтверждение, но не меняется и не закрывается — ссылка уходит в
+ *       сведения о вакансии и в SPA.</li>
  *   <li>Отказ источника: сведения не меняются, подтверждения нет — вакансии источника нуждаются в
  *       повторной проверке.</li>
  * </ul>
@@ -36,6 +42,14 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class PostingRecorder {
+
+    /**
+     * Ссылка http(s) с хостом. Только начало адреса: пробел или иной недопустимый для {@code java.net.URI} знак дальше
+     * в пути (адрес как есть со страницы) ссылку не отменяет.
+     */
+    private static final Pattern WEB_URL = Pattern.compile("(?i)https?://[^/?#\\s:@][^/?#\\s]*(?:[/?#].*)?",
+            Pattern.DOTALL);
+    private static final Logger LOG = LoggerFactory.getLogger(PostingRecorder.class);
 
     private final JobPostingRepository postings;
     private final VacancyRepository vacancies;
@@ -87,7 +101,14 @@ public class PostingRecorder {
         Map<String, JobPosting> known = postings.findBySourceId(source.getId()).stream()
                 .collect(Collectors.toMap(JobPosting::getExternalId, Function.identity()));
         Set<Long> touched = new HashSet<>();
+        Set<String> notVerified = new HashSet<>(unverified);
         for (FetchedPosting posting : fetched) {
+            if (!isWebUrl(posting.url())) {
+                LOG.warn("Source {}: posting {} skipped, link is not http(s): {}", source.getId(),
+                        posting.externalId(), posting.url());
+                notVerified.add(posting.externalId());
+                continue;
+            }
             JobPosting existing = known.remove(posting.externalId());
             if (existing == null) {
                 Vacancy vacancy = vacancies.save(new Vacancy(posting.title(), posting.url(), now));
@@ -102,7 +123,7 @@ public class PostingRecorder {
             }
         }
         for (JobPosting missing : known.values()) {
-            if (complete && !unverified.contains(missing.getExternalId())) {
+            if (complete && !notVerified.contains(missing.getExternalId())) {
                 missing.markMissing(properties.closeAfterMissingReads(), now);
             } else {
                 missing.markUnconfirmed();
@@ -110,6 +131,14 @@ public class PostingRecorder {
             touched.add(missing.getVacancy().getId());
         }
         refreshStates(touched, now);
+    }
+
+    /**
+     * @param url ссылка публикации
+     * @return {@code true} — адрес http(s) с хостом
+     */
+    static boolean isWebUrl(String url) {
+        return url != null && WEB_URL.matcher(url).matches();
     }
 
     /**

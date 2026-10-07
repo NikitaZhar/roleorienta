@@ -138,7 +138,8 @@ class CareerLinksTests {
     /**
      * Сайт SuccessFactors узнаётся по содержимому (образец {@code docs/samples/sf-zf.html}) — доска его хост; другой
      * сайт — нет. Кадровая ссылка на кадровый хост другого домена ({@code jobs.kaufland.com} с {@code kaufland.sk})
-     * принимается, на площадку из двух частей ({@code jobs.cz}) — нет.
+     * принимается, на площадку из двух частей ({@code jobs.cz}) и на кадровый хост с другим именем домена
+     * ({@code jobs.sap.com}) — нет; своя кадровая ссылка — раньше кадрового хоста другого домена (аудит §66).
      *
      * @throws java.io.IOException образец не прочитан
      */
@@ -155,6 +156,13 @@ class CareerLinksTests {
         assertThat(CareerLinks.careerPage(home, "www.kaufland.sk")).contains("https://jobs.kaufland.com/");
         Document portal = Jsoup.parse("<a href=\"https://jobs.cz/\">Jobs</a>", "https://www.acme.sk/");
         assertThat(CareerLinks.careerPage(portal, "www.acme.sk")).isEmpty();
+        Document partner = Jsoup.parse("""
+                <a href="https://jobs.sap.com/">Partner jobs</a><a href="https://careers.acme.com/">Careers</a>
+                <a href="/kariera">Kariéra</a>
+                """, "https://www.acme.sk/");
+        assertThat(CareerLinks.careerPage(partner, "www.acme.sk")).contains("https://www.acme.sk/kariera");
+        Document onlyPartner = Jsoup.parse("<a href=\"https://jobs.sap.com/\">Jobs</a>", "https://www.acme.sk/");
+        assertThat(CareerLinks.careerPage(onlyPartner, "www.acme.sk")).isEmpty();
     }
 
     /**

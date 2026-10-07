@@ -158,10 +158,6 @@ class WorkdayAdapterTests {
     }
 
     /**
-     * Деталь по {@code externalPath}: текст — {@code jobDescription}, места — {@code location} и
-     * {@code additionalLocations} через «; ».
-     */
-    /**
      * Название работодателя — {@code hiringOrganization.name} детали публикации (аудит §65); публикации нет — пусто.
      */
     @Test
@@ -171,6 +167,10 @@ class WorkdayAdapterTests {
         assertThat(adapter.employerName("not a board", "/job/Vienna/Java-Developer")).isEmpty();
     }
 
+    /**
+     * Деталь по {@code externalPath}: текст — {@code jobDescription}, места — {@code location} и
+     * {@code additionalLocations} через «; ».
+     */
     @Test
     void readsDetailWithAdditionalLocations() {
         FetchedPosting detail = adapter.detail(BOARD, "/job/Multi/Java-Developer");

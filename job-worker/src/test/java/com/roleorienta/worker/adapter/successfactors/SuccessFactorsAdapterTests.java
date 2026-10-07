@@ -103,14 +103,21 @@ class SuccessFactorsAdapterTests {
     }
 
     /**
-     * Kaufland на запрос по месту ответил вакансиями Германии: в список Словакии не входит ни одна, чтение полное.
+     * Kaufland на запрос по месту ответил «ничего не найдено» ({@code #noresults}) и показал последние вакансии
+     * Германии: вакансий страны нет, чтение полное. Ответ «ничего не найдено» без строк и без числа вакансий — тоже
+     * полное пустое чтение, а не заглушка (аудит §66).
      */
     @Test
-    void dropsRowsOfOtherCountries() {
+    void noResultsAnswerIsEmptyFullRead() {
         SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(KAUFLAND, "SK");
 
         assertThat(read.complete()).isTrue();
         assertThat(read.postings()).isEmpty();
+
+        pages.put("/" + ZF + "/search/|0", "<html><body><div id=\"noresults\">No jobs</div></body></html>");
+        SourceReadResult.Read empty = (SourceReadResult.Read) adapter.read(ZF, "SK");
+        assertThat(empty.complete()).isTrue();
+        assertThat(empty.postings()).isEmpty();
     }
 
     /**

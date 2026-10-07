@@ -72,8 +72,8 @@ public class VacancyService {
         }
         String scope = CONDITION_SCOPE + condition.get().id();
         int size = size(limit);
-        List<ListedRow> rows = repository.delivered(condition.get().id(), userId,
-                Instant.now().minus(properties.hideAfter()), decode(cursor, scope), size + 1);
+        List<ListedRow> rows = repository.delivered(condition.get().id(), Instant.now().minus(properties.hideAfter()),
+                decode(cursor, scope), size + 1);
         return page(rows, size, scope, condition.get().workFormat());
     }
 

@@ -51,8 +51,10 @@ import org.jsoup.nodes.Element;
  *       служебные {@code rest}, {@code theme} — не разделы, аудит §65).</li>
  *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
  *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
- *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена
- *       ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57).</li>
+ *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена с тем же именем
+ *       домена ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57). Ссылки своего сайта идут первыми; кадровый
+ *       хост с другим именем ({@code jobs.sap.com} с {@code firma.sk}) не принимается — иначе доски чужой
+ *       кадровой страницы записались бы как доски компании (аудит §66).</li>
  * </ul>
  */
 final class CareerLinks {
@@ -220,8 +222,9 @@ final class CareerLinks {
 
     /**
      * @param page страница сайта
-     * @param host хост сайта
-     * @return адрес кадровой страницы того же сайта или его поддомена; пусто — ссылки нет
+     * @param host хост сайта с портом, если он указан в адресе ({@code URI.getAuthority()})
+     * @return адрес кадровой страницы: того же сайта или его поддомена, иначе кадрового хоста другого домена с тем же
+     *         именем домена; пусто — ссылки нет
      */
     static Optional<String> careerPage(Document page, String host) {
         return careerLinks(page, host).stream().findFirst();
@@ -251,21 +254,42 @@ final class CareerLinks {
         return CAREER_WORDS.stream().anyMatch(heading::contains);
     }
 
+    /**
+     * Кадровые ссылки страницы: сначала ссылки своего сайта и его поддоменов с кадровым словом или на кадровый
+     * поддомен ({@code jobs.firma.sk}), затем ссылки на кадровый хост другого домена с тем же именем домена.
+     */
     private static List<String> careerLinks(Document page, String host) {
-        List<String> links = new ArrayList<>();
+        List<String> own = new ArrayList<>();
+        List<String> otherDomain = new ArrayList<>();
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
-            boolean careerHost = link != null && careerHost(link.getHost());
-            if (link == null || !careerHost && !sameOrSubSite(host, link.getAuthority())) {
+            if (link == null) {
                 continue;
             }
             String words = ((link.getPath() == null ? "" : link.getPath()) + " " + anchor.text())
                     .toLowerCase(Locale.ROOT);
-            if ((careerHost || CAREER_WORDS.stream().anyMatch(words::contains)) && !links.contains(link.toString())) {
-                links.add(link.toString());
+            if (sameOrSubSite(host, link.getAuthority())) {
+                if ((careerHost(link.getHost()) || CAREER_WORDS.stream().anyMatch(words::contains))
+                        && !own.contains(link.toString())) {
+                    own.add(link.toString());
+                }
+            } else if (careerHost(link.getHost()) && sameDomainName(host, link.getHost())
+                    && !otherDomain.contains(link.toString())) {
+                otherDomain.add(link.toString());
             }
         }
-        return links;
+        own.addAll(otherDomain);
+        return own;
+    }
+
+    /**
+     * Одно имя домена без учёта зоны: {@code kaufland} у {@code www.kaufland.sk} и {@code jobs.kaufland.com}.
+     */
+    private static boolean sameDomainName(String host, String other) {
+        String[] hostLabels = withoutWww(host).split("\\.");
+        String[] otherLabels = lower(other).split("\\.");
+        return hostLabels.length >= 2 && otherLabels.length >= 2
+                && hostLabels[hostLabels.length - 2].equals(otherLabels[otherLabels.length - 2]);
     }
 
     /**

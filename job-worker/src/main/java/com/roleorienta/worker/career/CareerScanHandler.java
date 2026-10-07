@@ -162,7 +162,8 @@ public class CareerScanHandler implements TaskHandler {
         Optional<Document> homePage = homeResult instanceof HttpResult.Success success
                 ? Optional.of(Jsoup.parse(success.body(), success.locationOr(home).toString())) : Optional.empty();
         Set<Board> boards = homePage.map(CareerLinks::boards).orElse(Set.of());
-        Optional<String> careerUrl = homePage.flatMap(page -> CareerLinks.careerPage(page, site.host()));
+        Optional<String> careerUrl = homePage.flatMap(page -> CareerLinks.careerPage(page,
+                URI.create(page.location()).getAuthority()));
         if (boards.isEmpty() && careerUrl.isEmpty()) {
             careerUrl = standardCareerPage(home);
         }
@@ -213,7 +214,8 @@ public class CareerScanHandler implements TaskHandler {
     /**
      * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
      * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
-     * кадровой ссылке ({@code deeper}).
+     * кадровой ссылке ({@code deeper}). Хост и путь кадровой страницы — по её конечному адресу после
+     * переадресаций (аудит §66).
      */
     private Set<Board> careerBoards(URI careerUrl, boolean deeper) {
         Optional<Document> careerPage = page(careerUrl);
@@ -224,13 +226,14 @@ public class CareerScanHandler implements TaskHandler {
         if (!boards.isEmpty()) {
             return boards;
         }
-        if (careerUrl.toString().length() <= MAX_BOARD && (CareerLinks.hasJobPosting(careerPage.get()) || CareerLinks
-                .vacancyLinks(careerPage.get(), careerUrl, VACANCY_CHECKS).stream()
+        URI actual = URI.create(careerPage.get().location());
+        if (actual.toString().length() <= MAX_BOARD && (CareerLinks.hasJobPosting(careerPage.get()) || CareerLinks
+                .vacancyLinks(careerPage.get(), actual, VACANCY_CHECKS).stream()
                 .map(link -> page(URI.create(link)))
                 .anyMatch(vacancy -> vacancy.isPresent() && CareerLinks.hasJobPosting(vacancy.get())))) {
-            return Set.of(new Board(JobPostingAdapter.PROVIDER, careerUrl.toString()));
+            return Set.of(new Board(JobPostingAdapter.PROVIDER, actual.toString()));
         }
-        Optional<String> next = deeper ? CareerLinks.deeperCareerPage(careerPage.get(), careerUrl) : Optional.empty();
+        Optional<String> next = deeper ? CareerLinks.deeperCareerPage(careerPage.get(), actual) : Optional.empty();
         return next.isPresent() ? careerBoards(URI.create(next.get()), false) : Set.of();
     }
 

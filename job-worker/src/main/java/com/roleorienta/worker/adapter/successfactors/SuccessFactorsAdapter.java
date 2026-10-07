@@ -37,13 +37,17 @@ import org.springframework.stereotype.Component;
  *   <li>Список — {@code /search/?q=&locationsearch=<страна по-английски>&startrow=N}: строки
  *       {@code tr.data-row}, ссылка {@code a.jobTitle-link} — {@code /job/<название>/<id>/}, место
  *       {@code span.jobLocation} — «Levice, NI, SK, 934 01». Число вакансий — в {@code .paginationLabel}
- *       («1 – 25 of 36»), страницы — сдвигом {@code startrow} на число строк страницы. Поиску по месту сайт
- *       отвечает по-разному (у Kaufland «Slovensko» дал вакансии Германии), поэтому с фильтром страны в список
- *       входят только строки, где место называет страну: код страны отдельным полем или её название.</li>
+ *       («1 – 25 of 36»), страницы — сдвигом {@code startrow} на число строк страницы. Поиску по месту
+ *       сайтов нельзя доверять полностью, поэтому с фильтром страны в список входят только строки, где место
+ *       называет страну: код страны отдельным полем или её название.</li>
  *   <li>Внешний id — путь вакансии {@code /job/<название>/<id>/}, как в ссылке списка.</li>
  *   <li>Текст — страница вакансии: {@code span.jobdescription} (микроразметка {@code itemprop=description}).</li>
- *   <li>Отказ на первой странице или первая страница без списка и без числа вакансий (заглушка, проверка на бота;
- *       аудит §65) — источник недоступен; на следующих, пустая страница раньше объявленного числа
+ *   <li>Ответ «ничего не найдено» ({@code #noresults}; ниже сайт показывает последние вакансии вне поиска — у
+ *       Kaufland вакансии Германии, образец {@code sf-kaufland.html}) — вакансий нет, полное пустое чтение (аудит
+ *       §66).</li>
+ *   <li>Отказ на первой странице или первая страница без списка, без числа вакансий и без ответа «ничего не
+ *       найдено» (заглушка, проверка на бота, смена разметки; аудит §65) — источник недоступен, вакансии не
+ *       закрываются; на следующих, пустая страница раньше объявленного числа
  *       или упор в потолок — неполное чтение (вакансии не закрываются).</li>
  * </ul>
  */
@@ -59,6 +63,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
     private static final Pattern TOTAL = Pattern.compile("(\\d[\\d\\s.,]*)\\s*$");
     private static final int MAX_EXTERNAL_ID = 200;
     private static final String HOST_PLACEHOLDER = "{host}";
+    /** Блок ответа «по запросу ничего не найдено». */
+    private static final String NO_RESULTS = "noresults";
     private static final Logger LOG = LoggerFactory.getLogger(SuccessFactorsAdapter.class);
 
     private final ExternalHttpClient httpClient;
@@ -107,6 +113,9 @@ public class SuccessFactorsAdapter implements SourceAdapter {
             }
             responses.add(success.body());
             Document document = Jsoup.parse(success.body());
+            if (page == 0 && document.getElementById(NO_RESULTS) != null) {
+                return SourceReadResult.Read.full(List.of(), responses);
+            }
             if (page == 0) {
                 total = declaredTotal(document);
             }
@@ -173,13 +182,20 @@ public class SuccessFactorsAdapter implements SourceAdapter {
     }
 
     /**
-     * Объявленное число вакансий — последнее число в {@code .paginationLabel} («Results 1 – 25 of 36»); нет —
-     * {@code -1} (список читается, пока страницы не пустые).
+     * Объявленное число вакансий — последнее число в {@code .paginationLabel} («Results 1 – 25 of 36»); нет или не
+     * число ({@code int} не вмещает) — {@code -1} (список читается, пока страницы не пустые; адаптер не бросает).
      */
     private static int declaredTotal(Document page) {
         Element label = page.selectFirst(".paginationLabel");
         Matcher total = TOTAL.matcher(label == null ? "" : label.text());
-        return total.find() ? Integer.parseInt(total.group(1).replaceAll("\\D", "")) : -1;
+        if (!total.find()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(total.group(1).replaceAll("\\D", ""));
+        } catch (NumberFormatException tooLong) {
+            return -1;
+        }
     }
 
     /**

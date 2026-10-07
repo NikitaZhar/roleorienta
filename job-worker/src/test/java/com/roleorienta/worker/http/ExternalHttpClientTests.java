@@ -36,6 +36,7 @@ class ExternalHttpClientTests {
     private static final Instant NOW = Instant.parse("2026-09-28T12:00:00Z");
     private static final int STATUS_OK = 200;
     private static final int STATUS_FOUND = 302;
+    private static final int STATUS_TEMPORARY_REDIRECT = 307;
     private static final int STATUS_TOO_MANY_REQUESTS = 429;
     private static final int STATUS_SERVICE_UNAVAILABLE = 503;
     private static final String USER_AGENT = "RoleorientaTest/1.0 (+https://example.com)";
@@ -170,6 +171,105 @@ class ExternalHttpClientTests {
     }
 
     /**
+     * Переадресации клиент проходит сам (аудит §66): 307 повторяет POST с тем же телом, 302 после POST — запрос
+     * {@code GET} без тела (RFC 9110 §15.4).
+     */
+    @Test
+    void redirect307KeepsPostAnd302TurnsIntoGet() {
+        server.createContext("/echo", exchange -> {
+            byte[] requestBody = exchange.getRequestBody().readAllBytes();
+            send(exchange, STATUS_OK, (exchange.getRequestMethod() + " " + new String(requestBody,
+                    StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
+        });
+        server.createContext("/temporary", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/echo");
+            send(exchange, STATUS_TEMPORARY_REDIRECT, new byte[0]);
+        });
+        server.createContext("/found", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/echo");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+
+        assertThat(((HttpResult.Success) client.postJson(uri("/temporary"), "{\"page\":2}")).body())
+                .isEqualTo("POST {\"page\":2}");
+        assertThat(((HttpResult.Success) client.postJson(uri("/found"), "{\"page\":2}")).body())
+                .isEqualTo("GET ");
+    }
+
+    /**
+     * Относительная {@code Location} без {@code /} от адреса без пути ({@code http://хост}) разрешается от корня
+     * сайта: {@code URI.resolve} склеил бы хост и путь (аудит §66).
+     */
+    @Test
+    void relativeRedirectFromAddressWithoutPath() {
+        respond("/careers", STATUS_OK, "text/plain", "jobs");
+        server.createContext("/", exchange -> {
+            exchange.getResponseHeaders().set("Location", "careers");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+
+        HttpResult.Success result = (HttpResult.Success) client.get(URI.create("http://127.0.0.1:" + port()));
+
+        assertThat(result.body()).isEqualTo("jobs");
+        assertThat(result.location()).isEqualTo(uri("/careers"));
+    }
+
+    /**
+     * Каждый шаг переадресации занимает место в очереди своего хоста: robots.txt, первый запрос, цель (аудит §66).
+     * Порт вне 1–65535 в {@code Location} — постоянный отказ без исключения.
+     */
+    @Test
+    void everyRedirectHopReservesHostBudget() throws IOException {
+        List<String> reserved = new java.util.ArrayList<>();
+        respond("/careers", STATUS_OK, "text/plain", "jobs");
+        server.createContext("/kariera", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/careers");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+        server.createContext("/bad-port", exchange -> {
+            exchange.getResponseHeaders().set("Location", "http://127.0.0.1:99999/");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+
+        try (ExternalHttpClient counting = client(properties(true), host -> {
+            reserved.add(host);
+            return Optional.of(Duration.ZERO);
+        })) {
+            assertThat(counting.get(uri("/kariera"))).isInstanceOf(HttpResult.Success.class);
+            assertThat(reserved).hasSize(3);
+            assertThat(kind(counting.get(uri("/bad-port")))).isEqualTo(HttpResult.Kind.BLOCKED);
+        }
+    }
+
+    /**
+     * Переадресация на другое происхождение сверяется с robots.txt цели: запрещённый там путь не запрашивается.
+     */
+    @Test
+    void redirectToOtherOriginChecksItsRobots() throws IOException {
+        HttpServer other = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        other.createContext("/robots.txt", exchange ->
+                send(exchange, STATUS_OK, "User-agent: *\nDisallow: /private\n".getBytes(StandardCharsets.UTF_8)));
+        other.createContext("/private", exchange -> {
+            requests.incrementAndGet();
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+        other.start();
+        try {
+            server.createContext("/open", exchange -> {
+                exchange.getResponseHeaders().set("Location",
+                        "http://127.0.0.1:" + other.getAddress().getPort() + "/private/1");
+                send(exchange, STATUS_FOUND, new byte[0]);
+            });
+
+            assertThat(kind(client.get(uri("/open")))).isEqualTo(HttpResult.Kind.USE_FORBIDDEN);
+            assertThat(requests.get()).isZero();
+        } finally {
+            other.stop(0);
+        }
+    }
+
+    /**
      * Ответ дольше таймаута чтения — временный отказ.
      */
     @Test
@@ -276,6 +376,28 @@ class ExternalHttpClientTests {
             budgeted.get(uri("/busy"));
         }
         assertThat(backOffs).containsEntry("127.0.0.1", Duration.ofSeconds(120));
+    }
+
+    /**
+     * Переадресация на путь, запрещённый robots.txt, — постоянный отказ без запроса цели: шаг переадресации
+     * сверяется с robots.txt так же, как первый запрос (аудит §66).
+     */
+    @Test
+    void robotsDisallowAppliesToRedirectTarget() {
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/robots.txt", exchange ->
+                send(exchange, STATUS_OK, "User-agent: *\nDisallow: /private\n".getBytes(StandardCharsets.UTF_8)));
+        server.createContext("/private", exchange -> {
+            requests.incrementAndGet();
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+        server.createContext("/open", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/private/1");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+
+        assertThat(kind(client.get(uri("/open")))).isEqualTo(HttpResult.Kind.USE_FORBIDDEN);
+        assertThat(requests.get()).isZero();
     }
 
     /**

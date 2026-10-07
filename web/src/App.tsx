@@ -16,6 +16,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('list');
   const [opened, setOpened] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     currentAccount().then(setAccount, (failure: Error) => setError(failure.message));
@@ -24,13 +25,15 @@ export function App() {
   async function signOut() {
     try {
       await logout();
+      setNotice(null);
       setAccount(null);
     } catch (failure) {
-      setError((failure as Error).message);
+      setNotice('Sign out failed: ' + (failure as Error).message);
     }
   }
 
   function show(next: View) {
+    setNotice(null);
     setOpened(null);
     setView(next);
   }
@@ -57,6 +60,7 @@ export function App() {
         <button type="button" onClick={signOut}>Sign out</button>
       </header>
       <main className="page">
+        {notice !== null && <p className="error">{notice}</p>}
         {opened !== null && <VacancyPage id={opened} onBack={() => setOpened(null)} />}
         {opened === null && view === 'list' && (
           <VacancyList title="Vacancies" load={vacancies} emptyMarked={false} onOpen={setOpened}

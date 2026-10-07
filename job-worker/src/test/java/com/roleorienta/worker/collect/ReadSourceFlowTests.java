@@ -201,6 +201,29 @@ class ReadSourceFlowTests {
     }
 
     /**
+     * Ссылка публикации не http(s) (аудит §66): новая публикация не записывается, известная не закрывается и не
+     * меняет ссылку — вакансия нуждается в повторной проверке.
+     */
+    @Test
+    void postingWithoutWebLinkIsNotRecorded() {
+        STUB.respondWithJobs("101", "Java Developer");
+        readOnce("r1");
+        String badLinks = "{\"jobs\":[{\"id\":101,\"title\":\"Java Developer\","
+                + "\"absolute_url\":\"javascript:alert(1)\"},"
+                + "{\"id\":102,\"title\":\"QA Engineer\",\"absolute_url\":\"\"}]}";
+        STUB.respond(200, badLinks);
+
+        readOnce("r2");
+        readOnce("r3");
+        readOnce("r4");
+
+        assertThat(count("vacancy")).isEqualTo(1);
+        assertThat(vacancyState("Java Developer")).isEqualTo("NEEDS_RECHECK");
+        assertThat(jdbcTemplate.queryForObject("SELECT primary_url FROM vacancy", String.class))
+                .isEqualTo("https://job-boards.greenhouse.io/acme/jobs/101");
+    }
+
+    /**
      * Отказ источника: вакансия нуждается в повторной проверке и не закрывается.
      */
     @Test

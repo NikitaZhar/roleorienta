@@ -22,8 +22,9 @@ public class VacancyRepository {
 
     /**
      * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью (нет компании-работодателя —
-     * название работодателя у системы найма для источника без компании, аудит §65); отметка — пользователя из первого
-     * параметра запроса.
+     * название работодателя у системы найма для источника без компании, аудит §65). Отметки «не подходит» здесь нет:
+     * в накопленном списке её не бывает, в списке отмеченных она есть всегда, строки списка её не показывают — она
+     * считается только для сведений о вакансии ({@link #UNSUITABLE}, аудит §66).
      */
     private static final String COLUMNS = """
             v.id, v.title, v.primary_url, v.first_seen_at, v.last_confirmed_at, v.state, v.work_countries,
@@ -36,8 +37,11 @@ public class VacancyRepository {
                         AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)
                       ORDER BY s.id LIMIT 1)) AS employer,
             (SELECT co.name FROM job_posting p JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'AGENCY'
-             JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1) AS agency,
-            EXISTS (SELECT 1 FROM unsuitable_mark um WHERE um.user_id = ? AND um.vacancy_id = v.id) AS unsuitable""";
+             JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1) AS agency""";
+
+    /** Отметка «не подходит» пользователя из параметра запроса — для сведений о вакансии. */
+    private static final String UNSUITABLE =
+            "EXISTS (SELECT 1 FROM unsuitable_mark um WHERE um.user_id = ? AND um.vacancy_id = v.id) AS unsuitable";
 
     /**
      * Вакансия видна в накопленном списке версии условий (те же правила, что у выдачи job-worker): не закрыта,
@@ -79,21 +83,20 @@ public class VacancyRepository {
      * Видимая часть накопленного списка версии условий, новые сверху.
      *
      * @param condition    версия условий
-     * @param userId       её пользователь
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param after        курсор: строки строго после него; {@code null} — с начала
      * @param limit        не больше
      * @return строки с моментом выдачи
      */
-    public List<ListedRow> delivered(long condition, long userId, Instant visibleSince, Cursor after, int limit) {
-        List<Object> arguments = new ArrayList<>(List.of(userId, condition, utc(visibleSince)));
+    public List<ListedRow> delivered(long condition, Instant visibleSince, Cursor after, int limit) {
+        List<Object> arguments = new ArrayList<>(List.of(condition, utc(visibleSince)));
         String page = page(after, "d.delivered_at", "d.vacancy_id", arguments);
         arguments.add(limit);
         return jdbcTemplate.query("SELECT " + COLUMNS + ", d.delivered_at AS listed_at FROM delivered_vacancy d "
                 + "JOIN search_condition c ON c.id = d.search_condition_id JOIN vacancy v ON v.id = d.vacancy_id "
                 + "WHERE d.search_condition_id = ? AND " + VISIBLE + page
-                + " ORDER BY d.delivered_at DESC, d.vacancy_id DESC LIMIT ?", VacancyRepository::listed,
-                arguments.toArray());
+                + " ORDER BY d.delivered_at DESC, d.vacancy_id DESC LIMIT ?",
+                (row, number) -> listed(row, false), arguments.toArray());
     }
 
     /**
@@ -105,13 +108,13 @@ public class VacancyRepository {
      * @return строки с моментом отметки
      */
     public List<ListedRow> marked(long userId, Cursor after, int limit) {
-        List<Object> arguments = new ArrayList<>(List.of(userId, userId));
+        List<Object> arguments = new ArrayList<>(List.of(userId));
         String page = page(after, "u.marked_at", "u.vacancy_id", arguments);
         arguments.add(limit);
         return jdbcTemplate.query("SELECT " + COLUMNS + ", u.marked_at AS listed_at FROM unsuitable_mark u "
                 + "JOIN vacancy v ON v.id = u.vacancy_id WHERE u.user_id = ?" + page
-                + " ORDER BY u.marked_at DESC, u.vacancy_id DESC LIMIT ?", VacancyRepository::listed,
-                arguments.toArray());
+                + " ORDER BY u.marked_at DESC, u.vacancy_id DESC LIMIT ?",
+                (row, number) -> listed(row, true), arguments.toArray());
     }
 
     /**
@@ -120,8 +123,9 @@ public class VacancyRepository {
      * @return вакансия, если она выдавалась пользователю или отмечена им; иначе пусто
      */
     public Optional<VacancyRow> accessible(long userId, long vacancyId) {
-        return jdbcTemplate.query("SELECT " + COLUMNS + " FROM vacancy v WHERE v.id = ? AND " + ACCESSIBLE,
-                (row, number) -> vacancy(row), userId, vacancyId, userId, userId).stream().findFirst();
+        return jdbcTemplate.query("SELECT " + COLUMNS + ", " + UNSUITABLE + " FROM vacancy v WHERE v.id = ? AND "
+                + ACCESSIBLE, (row, number) -> vacancy(row, row.getBoolean("unsuitable")), userId, vacancyId, userId,
+                userId).stream().findFirst();
     }
 
     /**
@@ -154,11 +158,11 @@ public class VacancyRepository {
         return " AND (" + timeColumn + ", " + idColumn + ") < (?, ?)";
     }
 
-    private static ListedRow listed(ResultSet row, int number) throws SQLException {
-        return new ListedRow(vacancy(row), row.getObject("listed_at", OffsetDateTime.class).toInstant());
+    private static ListedRow listed(ResultSet row, boolean unsuitable) throws SQLException {
+        return new ListedRow(vacancy(row, unsuitable), row.getObject("listed_at", OffsetDateTime.class).toInstant());
     }
 
-    private static VacancyRow vacancy(ResultSet row) throws SQLException {
+    private static VacancyRow vacancy(ResultSet row, boolean unsuitable) throws SQLException {
         Array countries = row.getArray("work_countries");
         Boolean uncertain = (Boolean) row.getObject("country_uncertain");
         return new VacancyRow(row.getLong("id"), row.getString("title"),
@@ -168,7 +172,7 @@ public class VacancyRepository {
                 new Publication(row.getString("primary_url"),
                         row.getObject("first_seen_at", OffsetDateTime.class).toInstant(),
                         row.getObject("last_confirmed_at", OffsetDateTime.class).toInstant(), row.getString("state"),
-                        row.getBoolean("unsuitable")));
+                        unsuitable));
     }
 
     private static OffsetDateTime utc(Instant instant) {

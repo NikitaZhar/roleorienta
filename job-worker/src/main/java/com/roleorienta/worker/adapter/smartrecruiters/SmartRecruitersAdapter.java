@@ -112,9 +112,6 @@ public class SmartRecruitersAdapter implements SourceAdapter {
     }
 
     /**
-     * Текст и место со страницы вакансии (микроразметка {@code JobPosting}).
-     */
-    /**
      * Название работодателя — {@code og:site_name} кадровой страницы компании («JYSK»; образец
      * {@code docs/samples/sr-jysk.html}).
      */
@@ -132,6 +129,9 @@ public class SmartRecruitersAdapter implements SourceAdapter {
                 : Optional.of(name.attr("content").strip());
     }
 
+    /**
+     * Текст и место со страницы вакансии (микроразметка {@code JobPosting}).
+     */
     @Override
     public FetchedPosting detail(String board, String externalId) {
         if (!BOARD.matcher(board).matches() || !externalId.chars().allMatch(Character::isDigit)) {

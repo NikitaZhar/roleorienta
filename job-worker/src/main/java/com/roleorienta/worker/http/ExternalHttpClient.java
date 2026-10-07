@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -28,8 +29,6 @@ import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.protocol.HttpClientContext;
-import org.apache.hc.client5.http.protocol.RedirectLocations;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
@@ -37,6 +36,7 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.core5.http.io.support.ClassicRequestBuilder;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.stereotype.Component;
 
@@ -48,12 +48,14 @@ import org.springframework.stereotype.Component;
  * {@link SystemDefaultDnsResolver}, который проверяет каждый полученный адрес по
  * {@link AddressPolicy}. Соединение идёт ровно на проверенный адрес — в том числе на каждом
  * редиректе, поэтому подмена DNS-ответа между проверкой и соединением (DNS-rebinding) не помогает.
+ * Переадресации клиент проходит сам, шаг за шагом (аудит §66): каждый шаг — схема, robots.txt своего
+ * происхождения и бюджет своего хоста; цикл или больше {@code max-redirects} шагов — постоянный отказ.
  * https://hc.apache.org/httpcomponents-client-5.4.x/</p>
  *
  * <p>Перед запросом место в очереди к хосту резервирует {@link HostBudget} (общий для реплик
  * промежуток между запросами); запрос ждёт своего места, а если очередь длиннее потолка —
  * возвращается временный отказ без запроса. {@code Retry-After} ответа сдвигает очередь хоста.
- * Редирект на другой хост бюджет не резервирует. User-Agent — из {@link PolitenessProperties}.</p>
+ * Каждый шаг переадресации резервирует бюджет своего хоста. User-Agent — из {@link PolitenessProperties}.</p>
  *
  * <p>Путь сверяется с robots.txt происхождения ({@link RobotsRules}, кэш на сутки в памяти
  * реплики); запрет — постоянный отказ {@code USE_FORBIDDEN} без запроса (технический документ
@@ -74,6 +76,12 @@ public class ExternalHttpClient implements AutoCloseable {
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
     private static final int STATUS_OK_MIN = 200;
     private static final int STATUS_OK_MAX = 299;
+    private static final int STATUS_TEMPORARY_REDIRECT = 307;
+    private static final int STATUS_PERMANENT_REDIRECT = 308;
+    /** Переадресации, которые клиент проходит (как Apache HttpClient): 300, 304 и прочие 3xx — итог. */
+    private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, STATUS_TEMPORARY_REDIRECT,
+            STATUS_PERMANENT_REDIRECT);
+    private static final int MAX_PORT = 65_535;
     private static final int STATUS_UNAUTHORIZED = 401;
     private static final int STATUS_FORBIDDEN = 403;
     private static final int STATUS_NOT_FOUND = 404;
@@ -87,6 +95,7 @@ public class ExternalHttpClient implements AutoCloseable {
     private final CloseableHttpClient httpClient;
     private final HostBudget hostBudget;
     private final int maxBodyBytes;
+    private final int maxRedirects;
     private final Clock clock;
     private final String robotsToken;
     private final Map<String, CachedRobots> robotsByOrigin = new ConcurrentHashMap<>();
@@ -103,6 +112,7 @@ public class ExternalHttpClient implements AutoCloseable {
         this.httpClient = buildClient(properties, politeness.userAgent());
         this.hostBudget = hostBudget;
         this.maxBodyBytes = properties.maxBodyBytes();
+        this.maxRedirects = properties.maxRedirects();
         this.clock = clock;
         this.robotsToken = politeness.userAgent().split("/", 2)[0].strip();
         this.robotsExemptHosts = politeness.robotsExemptHosts().stream()
@@ -157,16 +167,50 @@ public class ExternalHttpClient implements AutoCloseable {
     }
 
     private HttpResult execute(URI uri, ClassicHttpRequest request) {
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        if (!ALLOWED_SCHEMES.contains(scheme) || uri.getHost() == null) {
-            return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not an http(s) URL: " + uri);
+        return follow(uri, request, true);
+    }
+
+    /**
+     * Запрос с переадресациями: каждый шаг проверяется отдельно — схема, robots.txt происхождения шага (если
+     * {@code checkRobots}; хосты-исключения — без проверки) и бюджет его хоста. 307 и 308 повторяют метод и тело,
+     * прочие переадресации — {@code GET}.
+     *
+     * @param uri         адрес
+     * @param request     запрос
+     * @param checkRobots сверять ли шаги с robots.txt ({@code false} — запрос самого robots.txt)
+     * @return итог последнего шага; успех после переадресации несёт конечный адрес
+     */
+    private HttpResult follow(URI uri, ClassicHttpRequest request, boolean checkRobots) {
+        URI current = uri;
+        ClassicHttpRequest step = request;
+        Set<URI> visited = new HashSet<>();
+        for (int hop = 0;; hop++) {
+            String scheme = current.getScheme() == null ? "" : current.getScheme().toLowerCase(Locale.ROOT);
+            if (!ALLOWED_SCHEMES.contains(scheme) || current.getHost() == null) {
+                return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not an http(s) URL: " + current);
+            }
+            if (checkRobots && !robotsExemptHosts.contains(current.getHost().toLowerCase(Locale.ROOT))) {
+                Optional<HttpResult> refusal = robotsRefusal(current);
+                if (refusal.isPresent()) {
+                    return refusal.get();
+                }
+            }
+            Hop answer = send(current, step);
+            if (answer instanceof Done done) {
+                return hop > 0 && done.result() instanceof HttpResult.Success success
+                        ? new HttpResult.Success(success.status(), success.body(), current) : done.result();
+            }
+            Redirect redirect = (Redirect) answer;
+            visited.add(current);
+            if (hop >= maxRedirects || visited.contains(redirect.target())) {
+                return new HttpResult.PermanentFailure(HttpResult.Kind.CLIENT_ERROR,
+                        "Redirect loop or more than " + maxRedirects + " redirects: " + uri);
+            }
+            step = redirect.status() == STATUS_TEMPORARY_REDIRECT || redirect.status() == STATUS_PERMANENT_REDIRECT
+                    ? ClassicRequestBuilder.copy(step).setUri(redirect.target()).build()
+                    : new HttpGet(redirect.target());
+            current = redirect.target();
         }
-        Optional<HttpResult> robotsRefusal = robotsExemptHosts.contains(uri.getHost().toLowerCase(Locale.ROOT))
-                ? Optional.empty() : robotsRefusal(uri);
-        if (robotsRefusal.isPresent()) {
-            return robotsRefusal.get();
-        }
-        return send(uri, request);
     }
 
     /**
@@ -179,7 +223,7 @@ public class ExternalHttpClient implements AutoCloseable {
         if (cached == null || cached.fetchedAt().plus(ROBOTS_TTL).isBefore(clock.instant())) {
             URI robotsUri = URI.create(origin + ROBOTS_PATH);
             RobotsRules rules;
-            switch (send(robotsUri, new HttpGet(robotsUri))) {
+            switch (follow(robotsUri, new HttpGet(robotsUri), false)) {
                 case HttpResult.Success success -> rules = RobotsRules.parse(success.body(), robotsToken);
                 case HttpResult.PermanentFailure failure -> {
                     if (failure.kind() == HttpResult.Kind.NO_SUCH_HOST) {
@@ -201,33 +245,75 @@ public class ExternalHttpClient implements AutoCloseable {
                 HttpResult.Kind.USE_FORBIDDEN, "Disallowed by robots.txt: " + uri));
     }
 
-    private HttpResult send(URI uri, ClassicHttpRequest request) {
+    /**
+     * Один шаг: итог или переадресация.
+     */
+    private sealed interface Hop permits Done, Redirect {
+    }
+
+    /**
+     * @param result итог шага
+     */
+    private record Done(HttpResult result) implements Hop {
+    }
+
+    /**
+     * @param target адрес из {@code Location}, разрешённый от адреса шага
+     * @param status код переадресации
+     */
+    private record Redirect(URI target, int status) implements Hop {
+    }
+
+    private Hop send(URI uri, ClassicHttpRequest request) {
         String host = uri.getHost().toLowerCase(Locale.ROOT);
         Optional<Duration> wait = hostBudget.reserve(host);
         if (wait.isEmpty()) {
-            return new HttpResult.TemporaryFailure("Host budget exhausted: " + host, Duration.ZERO);
+            return new Done(new HttpResult.TemporaryFailure("Host budget exhausted: " + host, Duration.ZERO));
         }
         try {
             Thread.sleep(wait.get());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return new HttpResult.TemporaryFailure("Interrupted while waiting for host budget", Duration.ZERO);
+            return new Done(new HttpResult.TemporaryFailure("Interrupted while waiting for host budget",
+                    Duration.ZERO));
         }
-        HttpResult result;
-        HttpClientContext context = HttpClientContext.create();
+        Hop hop;
         try {
-            result = httpClient.execute(request, context, this::toResult);
+            hop = httpClient.execute(request, response -> answer(uri, response));
         } catch (IOException exception) {
-            result = fromException(exception);
+            hop = new Done(fromException(exception));
         }
-        RedirectLocations redirects = context.getRedirectLocations();
-        if (result instanceof HttpResult.Success success && redirects != null && redirects.size() > 0) {
-            result = new HttpResult.Success(success.status(), success.body(), redirects.get(redirects.size() - 1));
-        }
-        if (result instanceof HttpResult.TemporaryFailure temporary && temporary.retryAfter().isPositive()) {
+        if (hop instanceof Done done && done.result() instanceof HttpResult.TemporaryFailure temporary
+                && temporary.retryAfter().isPositive()) {
             hostBudget.backOff(host, temporary.retryAfter());
         }
-        return result;
+        return hop;
+    }
+
+    /**
+     * 301, 302, 303, 307, 308 с {@code Location} — переадресация (адрес разрешается от адреса шага; у адреса без пути —
+     * от {@code /}: {@code URI.resolve} иначе склеивает хост и относительный путь); порт цели 0 или больше 65535 —
+     * постоянный отказ (запрос с таким адресом Apache HttpClient не строит — исключение); прочее — итог.
+     */
+    private Hop answer(URI uri, ClassicHttpResponse response) throws IOException {
+        int status = response.getCode();
+        Header location = response.getFirstHeader(HttpHeaders.LOCATION);
+        if (REDIRECT_STATUSES.contains(status) && location != null
+                && location.getValue() != null && !location.getValue().isBlank()) {
+            URI base = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? uri.resolve("/") : uri;
+            try {
+                URI target = base.resolve(location.getValue().strip());
+                if (target.getPort() == 0 || target.getPort() > MAX_PORT) {
+                    return new Done(new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED,
+                            "Redirect port out of range: " + target));
+                }
+                return new Redirect(target, status);
+            } catch (IllegalArgumentException malformed) {
+                return new Done(new HttpResult.PermanentFailure(HttpResult.Kind.CLIENT_ERROR,
+                        "Malformed redirect location: " + location.getValue()));
+            }
+        }
+        return new Done(toResult(response));
     }
 
     /**
@@ -328,8 +414,6 @@ public class ExternalHttpClient implements AutoCloseable {
                 .build();
         RequestConfig requestConfig = RequestConfig.custom()
                 .setResponseTimeout(Timeout.ofMilliseconds(properties.readTimeout().toMillis()))
-                .setMaxRedirects(properties.maxRedirects())
-                .setCircularRedirectsAllowed(false)
                 .build();
         return HttpClients.custom()
                 .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create()
@@ -339,6 +423,7 @@ public class ExternalHttpClient implements AutoCloseable {
                 .setDefaultRequestConfig(requestConfig)
                 .setUserAgent(userAgent)
                 .disableAutomaticRetries()
+                .disableRedirectHandling()
                 .build();
     }
 }

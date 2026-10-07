@@ -33,15 +33,15 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
     List<Source> findToRead(String channelProvider);
 
     /**
-     * Нужно ли источнику название работодателя от системы найма: компании-работодателя у него нет (доска обратного
-     * пути, §27, §34) и название ещё не записано (аудит §65).
+     * Нужно ли источнику название работодателя от системы найма: он не связан ни с одной компанией (доска обратного
+     * пути, §27, §34) и название ещё не записано (аудит §65). Правило то же, что у API сведений о вакансии: источник
+     * кадрового агентства название работодателя не получает (аудит §66).
      *
      * @param sourceId источник
      * @return {@code true} — запросить название
      */
     @Query(nativeQuery = true, value = """
-            SELECT s.employer_name IS NULL AND NOT EXISTS (SELECT 1 FROM company_source cs
-                                                           WHERE cs.source_id = s.id AND cs.role = 'EMPLOYER')
+            SELECT s.employer_name IS NULL AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)
             FROM source s WHERE s.id = ?1
             """)
     boolean needsEmployerName(Long sourceId);

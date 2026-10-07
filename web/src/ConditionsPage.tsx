@@ -58,7 +58,11 @@ export function ConditionsPage() {
         if (current) {
           setFound(items);
         }
-      }, (failure: Error) => setMessage(failure.message));
+      }, (failure: Error) => {
+        if (current) {
+          setMessage(failure.message);
+        }
+      });
     }, 300);
     return () => {
       current = false;
