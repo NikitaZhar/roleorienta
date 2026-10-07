@@ -6,15 +6,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * IČO из текста страницы: восьмизначный номер после подписи «IČO» (или «ICO»), с двоеточием или
- * без, цифры могут быть разделены пробелами («IČO: 12 345 678»). Номер без подписи не берётся —
- * восемь цифр встречаются где угодно. Торговый кодекс Словакии (§3a) обязывает предпринимателя
- * указывать на сайте данные о себе; обычно — на страницах «Kontakt», «O nás» или в подвале.
+ * IČO из текста страницы: номер из 5–8 цифр после подписи — «IČO», «I.Č.O.», «IČ», «ICO», «Company ID»,
+ * «Reg. No.», «Registration No.» (с двоеточием или без), цифры могут быть разделены пробелами
+ * («IČO: 12 345 678»). Короткий номер дополняется ведущими нулями до восьми цифр («IČO: 684881» → 00684881).
+ * Номер без подписи не берётся — цифры встречаются где угодно. Правило — как в скрипте замера
+ * {@code survey/site-search.py} (стенограмма §73); подпись внутри слова («Mexico») не считается. Торговый
+ * кодекс Словакии (§3a) обязывает предпринимателя указывать на сайте данные о себе; обычно — на страницах
+ * «Kontakt», «O nás» или в подвале.
  */
 final class IcoExtractor {
 
-    private static final Pattern ICO = Pattern.compile(
-            "(?iu)(?<![\\p{L}])I[ČC]O(?![\\p{L}])\\s*[:.]?\\s*((?:\\d[ \\u00A0]?){7}\\d)(?!\\d)");
+    private static final Pattern ICO = Pattern.compile("(?iu)(?<![\\p{L}])"
+            + "(?:I\\.?\\s?Č\\.?\\s?O\\.?|I\\.?\\s?Č\\.?|ICO|IČ|company\\s+id|reg(?:istration)?\\.?\\s*no\\.?)"
+            + "\\s*[:.]?\\s*((?:\\d[\\s\\u00A0]?){5,8})(?!\\d)");
     private static final int DIGITS = 8;
 
     private IcoExtractor() {
@@ -22,16 +26,14 @@ final class IcoExtractor {
 
     /**
      * @param text текст страницы
-     * @return найденные IČO по порядку, без повторов
+     * @return найденные IČO (восемь цифр) по порядку, без повторов
      */
     static Set<String> extract(String text) {
         Set<String> numbers = new LinkedHashSet<>();
         Matcher matcher = ICO.matcher(text);
         while (matcher.find()) {
             String digits = matcher.group(1).replaceAll("\\D", "");
-            if (digits.length() == DIGITS) {
-                numbers.add(digits);
-            }
+            numbers.add("0".repeat(DIGITS - digits.length()) + digits);
         }
         return numbers;
     }

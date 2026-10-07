@@ -19,14 +19,14 @@ import org.jsoup.nodes.Document;
  *   <li>страница не заглушка продажи домена и в её видимом тексте не меньше {@link #MIN_WORDS} слов;</li>
  *   <li>сайт в зоне {@code .sk} либо есть признак Словакии (slovensk…, slovakia в тексте или сегмент пути
  *       {@code /sk/});</li>
- *   <li>бренд совпадает с первым словом домена (или, от трёх букв, содержится в нём) и есть отдельным
- *       словом в видимом тексте (текст сравнивается без диакритики); бренд до трёх букв — ещё и в заголовке
- *       {@code title}. В названии из двух слов и больше бренд — только два первых слова: слитно в домене и
- *       подряд в тексте ({@link #confirmingBrands}); первое слово бывает нарицательным (Gelateria Paris →
- *       {@code gelateria.sk}, MÓDA MORA → {@code moda.sk}; стенограмма §51).</li>
+ *   <li>бренд ({@link #keys}: первое слово, первые два слова слитно) совпадает с первым словом домена (или, от
+ *       трёх букв, содержится в нём) и есть отдельным словом в видимом тексте (текст сравнивается без
+ *       диакритики); бренд до трёх букв — ещё и в заголовке {@code title}.</li>
  * </ul>
  *
- * <p>Сайт группы ({@link #groupSite}) — кандидат, не находка. Правила перенесены из скрипта замера {@code survey/site-search.py} (стенограмма §48).</p>
+ * <p>Домен, зона и путь берутся из конечного адреса страницы после переадресаций. Сайт группы
+ * ({@link #groupSite}) — кандидат, не находка. Правила — как в скрипте замера {@code survey/site-search.py}, на
+ * котором измерен топ-500 (стенограмма §73; правило двух слов §51 снято).</p>
  */
 final class SiteBrand {
 
@@ -48,6 +48,8 @@ final class SiteBrand {
             + "buy this domain|parked|hugedomains|sedo\\.com|afternic|dan\\.com|godaddy|domain_profile");
     private static final Pattern SLOVAK_SIGNAL = Pattern.compile("(?iu)slovensk|\\bslovakia\\b|\\bslovak republic\\b");
     private static final Set<String> SLOVAK_SEGMENTS = Set.of("sk", "sk-sk", "sk_sk", "slovakia");
+    /** Второй уровень в двухбуквенной зоне: регистрируемый домен — три последние части ({@code firma.co.kr}). */
+    private static final Set<String> SECOND_LEVEL = Set.of("co", "com", "org", "net", "ac");
     private static final Set<String> SKIPPED_WORDS = Set.of("a", "the", "and");
     /** Общие слова названий: сайт с таким доменом подтверждается только IČO, не брендом. */
     private static final Set<String> GENERIC = Set.of(("obec mesto mestska skola zakladna stredna spojena gymnazium "
@@ -61,8 +63,8 @@ final class SiteBrand {
     }
 
     /**
-     * @param host        хост сайта (по нему — первое слово домена и зона)
-     * @param page        разобранная страница; её адрес — для сегмента пути {@code /sk/}
+     * @param host        конечный хост сайта после переадресаций (по нему — первое слово домена и зона)
+     * @param page        разобранная страница; её адрес (конечный) — для сегмента пути {@code /sk/}
      * @param html        исходный текст страницы — для признаков заглушки
      * @param companyName название компании из реестра
      * @return подтверждает ли бренд сайт
@@ -77,8 +79,8 @@ final class SiteBrand {
             return false;
         }
         List<String> inText = new ArrayList<>();
-        for (String brand : confirmingBrands(companyName)) {
-            if (matchesDomain(brand.replace("-", ""), plainHost) && word(brand).matcher(text).find()) {
+        for (String brand : keys(companyName)) {
+            if (matchesDomain(brand, plainHost) && word(brand).matcher(text).find()) {
                 inText.add(brand);
             }
         }
@@ -219,17 +221,19 @@ final class SiteBrand {
     }
 
     /**
-     * Бренды, которыми сайт подтверждается брендом: в названии из одного слова — оно; из двух и больше — только
-     * два первых слова через дефис ({@code gelateria-paris}: в домене слитно, в тексте подряд). Общие слова
-     * брендом не считаются.
+     * Регистрируемый домен хоста: {@code firma.sk}, {@code firma.com}, {@code firma.co.kr} (второй уровень co, com,
+     * org, net, ac в двухбуквенной зоне — три последние части).
      *
-     * @param companyName название компании
-     * @return бренды
+     * @param host хост
+     * @return домен в нижнем регистре
      */
-    static List<String> confirmingBrands(String companyName) {
-        List<String> brands = brands(companyName);
-        String brand = brands.isEmpty() ? null : brands.get(brands.size() - 1);
-        return brand == null || GENERIC.contains(brand) ? List.of() : List.of(brand);
+    static String registrable(String host) {
+        String[] labels = host.toLowerCase(Locale.ROOT).split("\\.");
+        int count = labels.length;
+        if (count >= 3 && SECOND_LEVEL.contains(labels[count - 2]) && labels[count - 1].length() == 2) {
+            return String.join(".", labels[count - 3], labels[count - 2], labels[count - 1]);
+        }
+        return count >= 2 ? labels[count - 2] + "." + labels[count - 1] : host.toLowerCase(Locale.ROOT);
     }
 
     private static String ascii(String text) {
@@ -264,10 +268,9 @@ final class SiteBrand {
     }
 
     /**
-     * Бренд отдельным словом; бренд из двух слов ({@code a-b}) — слова подряд через пробел или дефис.
+     * Бренд отдельным словом.
      */
     private static Pattern word(String brand) {
-        String phrase = Pattern.quote(brand).replace("-", "\\E[\\s-]*\\Q");
-        return Pattern.compile("(?iu)(?<![\\p{L}\\p{N}])" + phrase + "(?![\\p{L}\\p{N}])");
+        return Pattern.compile("(?iu)(?<![\\p{L}\\p{N}])" + Pattern.quote(brand) + "(?![\\p{L}\\p{N}])");
     }
 }

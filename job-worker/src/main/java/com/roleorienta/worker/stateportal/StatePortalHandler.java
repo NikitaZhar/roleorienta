@@ -225,7 +225,8 @@ public class StatePortalHandler implements TaskHandler {
      * Итог шага 2 алгоритма версии 3 (технический документ §5.1) по ответу портала: «Internetová adresa» —
      * {@code STATE_PORTAL} без проверки (адрес указал сам работодатель рядом со своим IČO; адрес с путём —
      * стартовая страница); домен почты — проверка сайта {@code www.<домен>}: IČO или бренд —
-     * {@code PORTAL_MAIL}, закрыт для программы — {@code PORTAL_MAIL_403}, открылся без подтверждения —
+     * {@code PORTAL_MAIL}, ответ 401/403 — {@code PORTAL_MAIL_403} (запрет robots.txt — сайта нет, как в скрипте
+     * замера; стенограмма §73), открылся без подтверждения —
      * {@code GROUP_SITE} (почта на домене самого работодателя), не существует — сайта нет. Временный отказ
      * сайта — сайт не записывается, работодатель проверяется снова через срок перепроверки.
      *
@@ -252,7 +253,7 @@ public class StatePortalHandler implements TaskHandler {
                 case REGISTRATION_NUMBER, BRAND -> PORTAL_MAIL;
                 case CLOSED -> PORTAL_MAIL_403;
                 case GROUP, OPENED -> GROUP_SITE;
-                case GONE, TEMPORARY -> null;
+                case ROBOTS, GONE, TEMPORARY -> null;
             };
             found = proof == null ? null : new FoundSite(host, null, site.evidenceUrl(), proof);
         }

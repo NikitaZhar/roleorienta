@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.TestHttpClients;
+import com.roleorienta.worker.site.SiteVerifier.Check;
 import com.roleorienta.worker.site.SiteVerifier.Verdict;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -25,13 +26,14 @@ class SiteVerifierTests {
 
     private static final String NUMBER = "01234567";
     private static final String NAME = "Alfaplast Slovakia s.r.o.";
+    private static final String REDIRECT = "redirect:";
     /** Видимый текст длиннее порога заглушки. */
     private static final String FILLER = "Vyrábame plastové diely pre automobilový priemysel a dodávame ich zákazníkom "
             + "v celej Európe už viac ako dvadsať rokov, s dôrazom na kvalitu, presnosť a spoľahlivosť dodávok "
             + "a na dlhodobé partnerstvá s našimi odberateľmi a dodávateľmi.";
 
     private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
-    /** Страница по пути: тело; нет — 404; {@code "403"} — 403. */
+    /** Страница по пути: тело; нет — 404; {@code "403"} — 403; {@code "redirect:<путь>"} — 302 на путь. */
     private final Map<String, String> pages = new HashMap<>();
 
     private HttpServer server;
@@ -45,6 +47,12 @@ class SiteVerifierTests {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/", exchange -> {
             String page = pages.get(exchange.getRequestURI().getPath());
+            if (page != null && page.startsWith(REDIRECT)) {
+                exchange.getResponseHeaders().set("Location", page.substring(REDIRECT.length()));
+                exchange.sendResponseHeaders(302, -1);
+                exchange.close();
+                return;
+            }
             int status = page == null ? 404 : "403".equals(page) ? 403 : 200;
             byte[] bytes = status == 200 ? page.getBytes(StandardCharsets.UTF_8) : new byte[0];
             exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
@@ -101,22 +109,36 @@ class SiteVerifierTests {
     }
 
     /**
-     * Название из двух слов: сайт по первому, нарицательному слову брендом не подтверждается
-     * ({@code gelateria.sk} для «Gelateria Paris»), по двум словам — слитно в домене, подряд в тексте —
-     * подтверждается; текст сравнивается без диакритики («Móda Mora» → {@code modamora.sk}).
+     * Название из двух слов: сайт подтверждается и первым словом ({@code gelateria.sk} для «Gelateria Paris»),
+     * и двумя словами слитно в домене; текст сравнивается без диакритики («Móda Mora» → {@code moda.sk}). Правило
+     * скрипта замера (§73).
      */
     @Test
-    void multiWordNameNeedsBothWords() {
+    void firstWordOfNameConfirms() {
         pages.put("/", html("Gelateria", "<p>Gelateria Paris. " + FILLER + "</p>"));
 
-        assertThat(verifier.verify("www.gelateria.sk", "", NUMBER, "Gelateria Paris, s.r.o.")).isEqualTo(Verdict.OPENED);
+        assertThat(verifier.verify("www.gelateria.sk", "", NUMBER, "Gelateria Paris, s.r.o.")).isEqualTo(Verdict.BRAND);
         assertThat(verifier.verify("www.gelateriaparis.sk", "", NUMBER, "Gelateria Paris, s.r.o."))
                 .isEqualTo(Verdict.BRAND);
 
         pages.put("/", html("Móda Mora", "<p>Móda Mora. " + FILLER + "</p>"));
-        assertThat(verifier.verify("www.moda.sk", "", NUMBER, "MÓDA MORA, a.s.")).isEqualTo(Verdict.OPENED);
-        assertThat(verifier.verify("www.modamora.sk", "", NUMBER, "MÓDA MORA, a.s.")).isEqualTo(Verdict.BRAND);
-        assertThat(SiteBrand.confirmingBrands(NAME)).containsExactly("alfaplast");
+        assertThat(verifier.verify("www.moda.sk", "", NUMBER, "MÓDA MORA, a.s.")).isEqualTo(Verdict.BRAND);
+    }
+
+    /**
+     * Правила бренда — по конечному адресу после переадресации: тот же текст, что подтверждает
+     * {@code www.alfaplast.sk} без переадресации, после переадресации на чужой хост (заглушка, {@code 127.0.0.1})
+     * сайт не подтверждает; адрес ответа — конечный.
+     */
+    @Test
+    void brandCheckedOnFinalAddress() {
+        pages.put("/", REDIRECT + "/home");
+        pages.put("/home", html("Alfaplast", "<p>Alfaplast. " + FILLER + "</p>"));
+
+        Check check = verifier.check("www.alfaplast.sk", "", NUMBER, NAME);
+
+        assertThat(check.verdict()).isEqualTo(Verdict.OPENED);
+        assertThat(check.location().getPath()).isEqualTo("/home");
     }
 
     /**
@@ -133,7 +155,8 @@ class SiteVerifierTests {
     }
 
     /**
-     * 403 — закрыт для программы; 404 — сайта нет.
+     * 403 — закрыт для программы; 404 — сайта нет. Регистрируемый домен — две последние части, у
+     * {@code co.kr} — три.
      */
     @Test
     void closedAndGoneSites() {
@@ -142,6 +165,8 @@ class SiteVerifierTests {
 
         pages.remove("/");
         assertThat(verify("alfaplast.sk")).isEqualTo(Verdict.GONE);
+        assertThat(SiteBrand.registrable("sk.firma.com")).isEqualTo("firma.com");
+        assertThat(SiteBrand.registrable("www.yura.co.kr")).isEqualTo("yura.co.kr");
     }
 
     /**

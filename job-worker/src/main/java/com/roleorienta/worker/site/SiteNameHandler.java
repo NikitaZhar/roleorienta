@@ -5,13 +5,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.site.SiteNameRepository.DueCompany;
 import com.roleorienta.worker.site.SiteNameRepository.NameSite;
-import com.roleorienta.worker.site.SiteVerifier.Verdict;
+import com.roleorienta.worker.site.SiteVerifier.Check;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,9 +26,13 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>IČO на странице — находка {@code REGISTRATION_NUMBER} (шаг 3; дальше не проверяется);</li>
  *   <li>иначе первый адрес, подтверждённый брендом, — находка {@code BRAND} (шаг 4);</li>
- *   <li>иначе сайт группы ({@code GROUP_SITE}): находка, если тот же домен дал другой источник, иначе кандидат;
- *       ответ 403 по адресу {@code www.бренд.sk} / {@code www.бренд.com} — кандидат {@code HTTP_403}.</li>
+ *   <li>иначе сайт группы ({@code GROUP_SITE}): находка, если тот же регистрируемый домен (конечного адреса
+ *       после переадресаций) дал другой источник, иначе кандидат; ответ 401/403 по адресу {@code www.бренд.sk} /
+ *       {@code www.бренд.com} — кандидат {@code HTTP_403}; запрет robots.txt — не кандидат.</li>
  * </ol>
+ *
+ * <p>Правила — как в скрипте замера {@code survey/site-search.py} (стенограмма §73). Записывается угаданный хост;
+ * доказательство ({@code evidence_url}) — конечный адрес ответа.</p>
  *
  * <p>Компании — с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
  * число — следующее задание цепочки. Задание идёт в свою очередь: проверка одной компании — до 36 адресов.
@@ -41,7 +48,6 @@ public class SiteNameHandler implements TaskHandler {
     private static final String PROOF_BRAND = "BRAND";
     private static final String PROOF_GROUP = "GROUP_SITE";
     private static final String PROOF_403 = "HTTP_403";
-    private static final String WWW = "www.";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(SiteNameHandler.class);
 
@@ -108,27 +114,32 @@ public class SiteNameHandler implements TaskHandler {
         NameSite brand = null;
         NameSite group = null;
         List<NameSite> candidates = new ArrayList<>();
+        Set<String> otherDomains = null;
         for (SiteAddress address : SiteBrand.addresses(company.name())) {
-            Verdict verdict = verifier.verify(address.host(), address.path(), company.registrationNumber(),
+            Check check = verifier.check(address.host(), address.path(), company.registrationNumber(),
                     company.name());
-            switch (verdict) {
+            URI at = check.location();
+            switch (check.verdict()) {
                 case REGISTRATION_NUMBER -> {
-                    return List.of(site(address, PROOF_NUMBER, true));
+                    return List.of(site(address, at, PROOF_NUMBER, true));
                 }
-                case BRAND -> brand = brand == null ? site(address, PROOF_BRAND, true) : brand;
+                case BRAND -> brand = brand == null ? site(address, at, PROOF_BRAND, true) : brand;
                 case GROUP -> {
-                    String domain = address.host().startsWith(WWW) ? address.host().substring(WWW.length())
-                            : address.host();
-                    NameSite site = site(address, PROOF_GROUP, repository.hasDomain(company.id(), domain));
+                    if (otherDomains == null) {
+                        otherDomains = repository.otherHosts(company.id()).stream().map(SiteBrand::registrable)
+                                .collect(Collectors.toSet());
+                    }
+                    NameSite site = site(address, at, PROOF_GROUP,
+                            otherDomains.contains(SiteBrand.registrable(check.host())));
                     group = group == null && site.found() ? site : group;
                     candidates.add(site);
                 }
                 case CLOSED -> {
                     if (SiteBrand.brandHome(address.host(), company.name())) {
-                        candidates.add(site(address, PROOF_403, false));
+                        candidates.add(site(address, at, PROOF_403, false));
                     }
                 }
-                case OPENED, GONE, TEMPORARY -> {
+                case ROBOTS, OPENED, GONE, TEMPORARY -> {
                     // подтверждения нет — адрес не записывается
                 }
             }
@@ -139,9 +150,9 @@ public class SiteNameHandler implements TaskHandler {
         return group != null ? List.of(group) : candidates;
     }
 
-    private NameSite site(SiteAddress address, String proof, boolean found) {
+    private NameSite site(SiteAddress address, URI at, String proof, boolean found) {
         String url = verifier.start(address.host(), address.path()).toString();
-        return new NameSite(address.host(), address.path().isEmpty() ? null : url, url, proof, found);
+        return new NameSite(address.host(), address.path().isEmpty() ? null : url, at.toString(), proof, found);
     }
 
     private static String key(String period, int round) {

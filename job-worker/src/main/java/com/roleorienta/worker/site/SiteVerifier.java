@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
  * открывается стартовая страница; IČO компании рядом с подписью в её видимом тексте ({@link IcoExtractor}) или
  * на одной из первых {@link #LEGAL_LINKS_MAX} ссылок с неё на контакты и реквизиты того же хоста (kontakt,
  * impressum, ochrana osobných údajov, obchodné podmienky, o nás …); иначе — бренд названия ({@link SiteBrand}).
+ * Ссылки на реквизиты и правила бренда — по конечному адресу стартовой страницы после переадресаций, как в
+ * скрипте замера {@code survey/site-search.py} (стенограмма §73).
  * Общий компонент шагов, которые проверяют найденный адрес: почта портала (шаг 2), адрес по названию (шаги 3–4).
  */
 @Component
@@ -54,15 +56,34 @@ public class SiteVerifier {
      *         реквизиты итог не меняют
      */
     public Verdict verify(String host, String path, String registrationNumber, String companyName) {
+        return check(host, path, registrationNumber, companyName).verdict();
+    }
+
+    /**
+     * То же, что {@link #verify}, и конечный адрес стартовой страницы.
+     *
+     * @param host               хост сайта
+     * @param path               путь стартовой страницы без ведущей косой черты; пустой — главная
+     * @param registrationNumber IČO компании
+     * @param companyName        название компании из реестра
+     * @return итог, адрес и хост, по которым получен ответ (конечные после переадресаций; без ответа или без
+     *         переадресации — стартовый адрес и данный хост)
+     */
+    public Check check(String host, String path, String registrationNumber, String companyName) {
         URI start = start(host, path);
         return switch (httpClient.get(start)) {
-            case HttpResult.TemporaryFailure temporary -> Verdict.TEMPORARY;
-            case HttpResult.PermanentFailure failure -> switch (failure.kind()) {
-                case ACCESS_DENIED, USE_FORBIDDEN -> Verdict.CLOSED;
+            case HttpResult.TemporaryFailure temporary -> new Check(Verdict.TEMPORARY, start, host);
+            case HttpResult.PermanentFailure failure -> new Check(switch (failure.kind()) {
+                case ACCESS_DENIED -> Verdict.CLOSED;
+                case USE_FORBIDDEN -> Verdict.ROBOTS;
                 case TOO_LARGE -> Verdict.OPENED;
                 default -> Verdict.GONE;
-            };
-            case HttpResult.Success success -> verdict(start, host, success.body(), registrationNumber, companyName);
+            }, start, host);
+            case HttpResult.Success success -> {
+                URI at = success.locationOr(start);
+                String finalHost = success.location() == null || at.getHost() == null ? host : at.getHost();
+                yield new Check(verdict(at, finalHost, success.body(), registrationNumber, companyName), at, finalHost);
+            }
         };
     }
 
@@ -77,7 +98,7 @@ public class SiteVerifier {
 
     /**
      * Итог по открывшейся стартовой странице: IČO на ней или на странице реквизитов, иначе бренд, иначе признак
-     * сайта группы.
+     * сайта группы. {@code start} и {@code host} — конечный адрес и хост после переадресаций.
      */
     private Verdict verdict(URI start, String host, String html, String registrationNumber, String companyName) {
         Document page = Jsoup.parse(html, start.toString());
@@ -146,11 +167,23 @@ public class SiteVerifier {
         GROUP,
         /** Страница открылась, подтверждения нет. */
         OPENED,
-        /** Сайт закрыт для программы: 401/403 или robots.txt. */
+        /** Сайт закрыт для программы: 401/403. */
         CLOSED,
+        /** Стартовая страница запрещена robots.txt; запрос не отправлялся. */
+        ROBOTS,
         /** Сайт не существует (в том числе домена нет), удалён или адрес недопустим. */
         GONE,
         /** Временный отказ: проверить позже. */
         TEMPORARY
+    }
+
+    /**
+     * Итог проверки и адрес ответа.
+     *
+     * @param verdict  итог
+     * @param location конечный адрес стартовой страницы после переадресаций; без ответа — стартовый
+     * @param host     конечный хост после переадресаций; без переадресации — проверяемый хост
+     */
+    public record Check(Verdict verdict, URI location, String host) {
     }
 }

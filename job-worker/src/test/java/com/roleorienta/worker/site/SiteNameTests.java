@@ -142,6 +142,25 @@ class SiteNameTests {
     }
 
     /**
+     * Сайт группы — находка, если другой источник дал тот же регистрируемый домен (§73): у {@link #BETA} сайт
+     * {@code sk.betaplast.com} из Wikidata (кандидат), угаданный {@code www.betaplast.com} — сайт группы.
+     */
+    @Test
+    void groupSiteConfirmedBySameRegistrableDomain() {
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, proof, status)
+                SELECT id, 'sk.betaplast.com', 'https://www.wikidata.org/', 'WIKIDATA', 'WIKIDATA', 'CANDIDATE'
+                FROM company
+                WHERE registration_number = ?
+                """, BETA);
+
+        handler.enqueue("group");
+        runQueuedTasks();
+
+        assertThat(sites()).contains(BETA + ":www.betaplast.com:GROUP_SITE:FOUND");
+    }
+
+    /**
      * Приоритетная компания (§71) проверяется по названию без условия о размере: у {@link #GAMA} 5 сотрудников и нет
      * источника вакансий.
      */

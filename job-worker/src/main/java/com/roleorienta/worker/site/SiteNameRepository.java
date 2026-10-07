@@ -53,14 +53,11 @@ public class SiteNameRepository {
 
     /**
      * @param companyId компания
-     * @param domain    домен без {@code www.}
-     * @return есть ли у компании сайт на этом домене из другого источника (находка или кандидат)
+     * @return хосты сайтов компании из других источников (не {@code NAME}): находки и кандидаты
      */
-    public boolean hasDomain(long companyId, String domain) {
-        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM company_site
-                               WHERE company_id = ? AND source <> ? AND regexp_replace(host, '^www\\.', '') = ?)
-                """, Boolean.class, companyId, SOURCE, domain));
+    public List<String> otherHosts(long companyId) {
+        return jdbcTemplate.queryForList("SELECT host FROM company_site WHERE company_id = ? AND source <> ?",
+                String.class, companyId, SOURCE);
     }
 
     /**
