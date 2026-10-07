@@ -1,6 +1,7 @@
 package com.roleorienta.worker.task;
 
 import com.roleorienta.worker.outbox.OutboxRepository;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class TaskService {
+
+    /** Незавершённое задание цепочки, не менявшееся дольше, новую цепочку не держит (потерянное сообщение). */
+    private static final Duration CHAIN_STALE_AFTER = Duration.ofDays(1);
 
     private final TaskRepository taskRepository;
     private final OutboxRepository outboxRepository;
@@ -42,6 +46,22 @@ public class TaskService {
         Optional<Long> taskId = taskRepository.insertIfAbsent(type, taskKey, payload);
         taskId.ifPresent(outboxRepository::insertTaskEvent);
         return taskId.isPresent();
+    }
+
+    /**
+     * Ставит первое задание цепочки (шаг, который идёт заданиями одно за другим), только если цепочка этого типа
+     * не идёт. Иначе ключ с днём запускал бы новую цепочку каждые сутки рядом с недошедшей вчерашней: цепочки шли
+     * параллельно по одним и тем же компаниям, делили очередь к хосту, задания выходили за аренду и
+     * перезапускались без конца (стенограмма §70).
+     *
+     * @param type    тип задания
+     * @param taskKey ключ первого задания
+     * @param payload параметры в JSON
+     * @return {@code true} — задание создано; {@code false} — цепочка идёт или ключ уже был
+     */
+    @Transactional
+    public boolean startChain(String type, String taskKey, String payload) {
+        return !taskRepository.hasActive(type, CHAIN_STALE_AFTER) && enqueue(type, taskKey, payload);
     }
 
     /**

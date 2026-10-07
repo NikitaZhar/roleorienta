@@ -171,6 +171,22 @@ class TaskFlowTests {
     }
 
     /**
+     * Цепочка идёт (незавершённое задание её типа) — новая не ставится; завершилась — ставится; задание, не
+     * менявшееся больше суток (потерянное сообщение), цепочку не держит (стенограмма §70).
+     */
+    @Test
+    void newChainStartsOnlyWhenPreviousOneEnded() {
+        assertThat(taskService.startChain("CHAIN", "chain:day-1:1", PAYLOAD)).isTrue();
+        assertThat(taskService.startChain("CHAIN", "chain:day-2:1", PAYLOAD)).isFalse();
+
+        jdbcTemplate.update("UPDATE task SET state = 'DONE' WHERE task_key = 'chain:day-1:1'");
+        assertThat(taskService.startChain("CHAIN", "chain:day-2:1", PAYLOAD)).isTrue();
+
+        jdbcTemplate.update("UPDATE task SET updated_at = now() - interval '2 days' WHERE task_key = 'chain:day-2:1'");
+        assertThat(taskService.startChain("CHAIN", "chain:day-3:1", PAYLOAD)).isTrue();
+    }
+
+    /**
      * Исключение обработчика: задание FAILED, исключение пробрасывается; через брокер сообщение
      * уходит в DLQ.
      */

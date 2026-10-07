@@ -1,21 +1,17 @@
 import { useEffect, useState } from 'react';
-import { searchCondition, type VacancyItem, type VacancyPage } from './api';
+import { searchCondition, type VacancyItem, vacancies } from './api';
 import { countriesText, dateText, formatText } from './format';
 
 interface Props {
-  title: string;
-  load: (cursor: string | null) => Promise<VacancyPage>;
-  emptyMarked: boolean;
   onOpen: (id: number) => void;
-  onConditions: () => void;
 }
 
 /**
- * Список вакансий страницами по курсору («Load more»): накопленный список или отмеченные «не подходит».
- * Пустой накопленный список объясняется: нет условий — задать их; условия есть — подходящих вакансий пока
- * нет (проходы выдачи раз в час). Точная причина (обход стран не завершён и т. п.) — подэтап 1.10.
+ * Накопленный список страницами по курсору («Load more»), новые сверху. Пустой список объясняется: что искать
+ * не задано — задать выше; задано — подходящих вакансий пока нет (проходы выдачи раз в час). Точная причина
+ * (обход стран не завершён и т. п.) — подэтап 1.10.
  */
-export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: Props) {
+export function VacancyList({ onOpen }: Props) {
   const [items, setItems] = useState<VacancyItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -26,10 +22,10 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
   async function more(from: string | null) {
     setLoading(true);
     try {
-      const next = await load(from);
+      const next = await vacancies(from);
       setItems((current) => (from === null ? next.items : [...current, ...next.items]));
       setCursor(next.nextCursor);
-      if (from === null && next.items.length === 0 && !emptyMarked) {
+      if (from === null && next.items.length === 0) {
         setHasConditions((await searchCondition()) !== null);
       }
       setLoaded(true);
@@ -42,7 +38,7 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
 
   useEffect(() => {
     more(null);
-  }, [load]);
+  }, []);
 
   if (message !== null) {
     return <p className="error">{message}</p>;
@@ -52,15 +48,9 @@ export function VacancyList({ title, load, emptyMarked, onOpen, onConditions }: 
   }
   return (
     <section>
-      <h2>{title}</h2>
-      {items.length === 0 && emptyMarked && <p>No vacancies are marked as not suitable.</p>}
-      {items.length === 0 && !emptyMarked && !hasConditions && (
-        <p>
-          Search conditions are not set yet.{' '}
-          <button type="button" onClick={onConditions}>Set conditions</button>
-        </p>
-      )}
-      {items.length === 0 && !emptyMarked && hasConditions && (
+      <h2>Vacancies</h2>
+      {items.length === 0 && !hasConditions && <p>Choose a country and a vacancy above and press Search.</p>}
+      {items.length === 0 && hasConditions && (
         <p>No matching vacancies yet. New vacancies are added to the list every hour.</p>
       )}
       <ul className="vacancies">

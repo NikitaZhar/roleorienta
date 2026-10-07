@@ -9,7 +9,9 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -23,7 +25,9 @@ import org.springframework.stereotype.Component;
  * запроса на компанию, пауза на хост), дальше — только компании, спрошенные давнее срока.
  *
  * <p>RÚZ не ответил по компании — она остаётся к запросу следующим заданием; не ответил ни разу за задание —
- * повтор задания позже. Нет разрешения в {@code source_permission} — задание ничего не делает.</p>
+ * повтор задания позже. Нет разрешения в {@code source_permission} — задание ничего не делает. Задание не дольше
+ * {@link CompanySizeProperties#taskTimeBudget()}: дальше — следующее задание цепочки (иначе при медленном RÚZ
+ * задание выходило за аренду и перезапускалось без конца; стенограмма §70).</p>
  */
 @Component
 public class CompanySizeHandler implements TaskHandler {
@@ -38,29 +42,32 @@ public class CompanySizeHandler implements TaskHandler {
     private final CompanySizeRepository repository;
     private final TaskService taskService;
     private final CompanySizeProperties properties;
+    private final Clock clock;
 
     /**
      * @param client      категория из RÚZ
      * @param repository  компании к запросу и запись
      * @param taskService постановка следующего задания цепочки
-     * @param properties  компаний за задание, срок повтора
+     * @param properties  компаний за задание, срок повтора, время задания
+     * @param clock       часы — время задания
      */
     public CompanySizeHandler(RuzClient client, CompanySizeRepository repository, TaskService taskService,
-            CompanySizeProperties properties) {
+            CompanySizeProperties properties, Clock clock) {
         this.client = client;
         this.repository = repository;
         this.taskService = taskService;
         this.properties = properties;
+        this.clock = clock;
     }
 
     /**
      * Ставит первое задание цепочки.
      *
      * @param period часть ключа: день (шаг ставится раз в сутки)
-     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     * @return поставлено ли (цепочка этого шага ещё идёт или повтор в тот же день — ничего не добавляется)
      */
     public boolean enqueue(String period) {
-        return taskService.enqueue(TYPE, key(period, 1), payload(period, 1));
+        return taskService.startChain(TYPE, key(period, 1), payload(period, 1));
     }
 
     @Override
@@ -78,19 +85,25 @@ public class CompanySizeHandler implements TaskHandler {
             return new TaskOutcome.Done();
         }
         List<DueCompany> due = repository.dueCompanies(properties.companiesPerTask(), properties.recheckAfter());
+        Instant deadline = clock.instant().plus(properties.taskTimeBudget());
+        int asked = 0;
         int answered = 0;
         for (DueCompany company : due) {
+            if (asked > 0 && !clock.instant().isBefore(deadline)) {
+                break;
+            }
+            asked++;
             Optional<RuzSize> size = client.size(company.registrationNumber());
             if (size.isPresent()) {
                 repository.record(company.id(), size.get().employeesMin());
                 answered++;
             }
         }
-        LOG.info("Company size from RÚZ: {} of {} companies answered", answered, due.size());
+        LOG.info("Company size from RÚZ: {} of {} companies answered", answered, asked);
         if (answered == 0 && !due.isEmpty()) {
             return new TaskOutcome.Retry("RÚZ not answering", Duration.ZERO);
         }
-        if (due.size() == properties.companiesPerTask()) {
+        if (due.size() == properties.companiesPerTask() || asked < due.size()) {
             taskService.enqueue(TYPE, key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();

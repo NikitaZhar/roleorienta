@@ -36,7 +36,7 @@ public class CompanySizeRepository {
 
     /**
      * Компании к запросу: действующие компании Словакии — активной страны сбора, — которых не спрашивали или
-     * спрашивали давнее срока. Сначала не спрошенные.
+     * спрашивали давнее срока. Сначала приоритетные (§71), затем не спрошенные.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторного запроса
@@ -49,7 +49,7 @@ public class CompanySizeRepository {
                 WHERE c.country = ? AND c.terminated_on IS NULL
                   AND (c.employees_checked_at IS NULL
                        OR c.employees_checked_at < now() - make_interval(secs => ?))
-                ORDER BY c.employees_checked_at NULLS FIRST, c.id
+                ORDER BY c.priority DESC, c.employees_checked_at NULLS FIRST, c.id
                 LIMIT ?
                 """, (row, number) -> new DueCompany(row.getLong(1), row.getString(2)),
                 COUNTRY, (double) recheckAfter.toSeconds(), limit);

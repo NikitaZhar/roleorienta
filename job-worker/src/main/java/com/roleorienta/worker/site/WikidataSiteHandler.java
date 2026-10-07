@@ -75,10 +75,10 @@ public class WikidataSiteHandler implements TaskHandler {
      * Ставит первое задание цепочки.
      *
      * @param period часть ключа: день (шаг идёт раз в сутки)
-     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     * @return поставлено ли (цепочка этого шага ещё идёт или повтор в тот же день — ничего не добавляется)
      */
     public boolean enqueue(String period) {
-        return taskService.enqueue(TYPE, key(period, 1), payload(period, 1));
+        return taskService.startChain(TYPE, key(period, 1), payload(period, 1));
     }
 
     @Override

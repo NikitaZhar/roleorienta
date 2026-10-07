@@ -1,0 +1,501 @@
+rank,registration_number,name,city,turnover_eur,period,ownership_code
+1,35757442,"VOLKSWAGEN SLOVAKIA, a.s.",Bratislava,12520644000,2024-01 — 2024-12,7
+2,35876832,Kia Slovakia s. r. o.,Teplička nad Váhom,8077801000,2024-01 — 2024-12,7
+3,31322832,"SLOVNAFT, a.s.",Bratislava,5554529000,2024-01 — 2024-12,7
+4,35829052,"Slovenské elektrárne, a.s.",Bratislava - mestská časť Ružinov,3726360000,2024-01 — 2024-12,8
+5,36199222,NIPPON STEEL SLOVAKIA s. r. o.,Košice - mestská časť Šaca,2684573000,2024-01 — 2024-12,7
+6,35793783,"Lidl Slovenská republika, s.r.o.",Bratislava - mestská časť Ružinov,2089037000,2023-03 — 2024-02,7
+7,36256013,"PCA Slovakia, s.r.o.",Trnava,2028810000,2024-01 — 2024-12,7
+8,35876557,Mobis Slovakia s.r.o.,Gbeľany,2000318000,2024-01 — 2024-12,7
+9,35790164,Kaufland Slovenská republika v.o.s.,Bratislava - mestská časť Nové Mesto,1754436000,2023-03 — 2024-02,7
+10,36709557,"Continental Tires Slovakia, s.r.o.",Púchov,1750751000,2024-01 — 2024-12,7
+11,36249564,SAMSUNG Electronics Slovakia s.r.o.,Galanta,1715019000,2024-01 — 2024-12,7
+12,31321828,"TESCO STORES SR, a.s.",Bratislava - mestská časť Ružinov,1712726000,2023-03 — 2024-02,7
+13,36707341,"ZF Slovakia, a.s.",Trnava,883267000,2024-01 — 2024-12,7
+14,34142941,"PHOENIX Zdravotnícke zásobovanie, a.s.",Bratislava,830032000,2023-02 — 2024-01,8
+15,36386553,"Schaeffler Kysuce, spol. s r.o.",Kysucké Nové Mesto,764794177,2024-01 — 2024-12,7
+16,51286378,Magna PT s.r.o.,Kechnec,701647820,2024-01 — 2024-12,7
+17,35777087,ORLEN Unipetrol Slovakia s. r. o.,Bratislava - mestská časť Nové Mesto,692457576,2024-01 — 2024-12,7
+18,36372285,Panasonic Industrial Devices Slovakia s.r.o.,Trstená,687221972,2024-01 — 2024-12,7
+19,48006122,"MSM EXPORT, s.r.o.",Dubnica nad Váhom,645373232,2024-01 — 2024-12,8
+20,35913061,"YURA Corporation Slovakia, s. r. o.",Lednické Rovne,612691432,2024-01 — 2024-12,7
+21,35697270,"Orange Slovensko, a.s.",Bratislava,576441000,2024-01 — 2024-12,7
+22,36830348,"Tate & Lyle Slovakia, s.r.o.",Boleráz,568432419,2023-04 — 2024-03,7
+23,35683724,"Foxconn Slovakia, spol. s r.o.",Nitra,558737000,2024-01 — 2024-12,7
+24,45952671,METRO Cash & Carry SR s. r. o.,Ivanka pri Dunaji,550716212,2023-10 — 2024-09,7
+25,36562939,Alza.sk s. r. o.,Bratislava - mestská časť Ružinov,542737247,2024-01 — 2024-12,7
+26,31362788,"Porsche Slovakia, spol. s r.o.",Bratislava,521226234,2024-01 — 2024-12,7
+27,31347215,Škoda Auto Slovensko s.r.o.,Bratislava,510375567,2024-01 — 2024-12,7
+28,48046434,"Brose Prievidza, spol. s r.o.",Prievidza,479058684,2024-01 — 2024-12,7
+29,30998140,"Schaeffler Skalica, spol. s r.o.",Skalica,455089230,2024-01 — 2024-12,7
+30,35825251,HBPO Slovakia s.r.o.,Lozorno,443019682,2024-01 — 2024-12,7
+31,35895772,Vaillant Industrial Slovakia s.r.o.,Skalica,440789000,2024-01 — 2024-12,7
+32,31393781,"dm drogerie markt, s.r.o.",Bratislava - mestská časť Ružinov,439281875,2023-10 — 2024-09,7
+33,35739487,NAY a.s.,Bratislava,415453444,2024-01 — 2024-12,7
+34,34109340,PROTHERM PRODUCTION s.r.o.,Skalica,399933737,2024-01 — 2024-12,7
+35,31341489,"GROUPE SEB Slovensko, spol. s r. o.",Bratislava,399013210,2024-01 — 2024-12,7
+36,50333836,Rascon Europe central s. r. o.,Bratislava - mestská časť Staré Mesto,382852282,2024-01 — 2024-12,7
+37,48302392,Jaguar Land Rover Slovakia s.r.o.,Nitra,373018000,2023-04 — 2024-03,7
+38,36441392,SUNGWOO HITECH Slovakia s.r.o.,Žilina,367584987,2024-01 — 2024-12,7
+39,00214973,Danucem Slovensko a.s.,Rohožník,363182000,2024-01 — 2024-12,8
+40,31344259,Philip Morris Slovakia s.r.o.,Bratislava - mestská časť Ružinov,343390726,2024-01 — 2024-12,7
+41,50060872,MVM CEEnergy Slovakia s.r.o.,Bratislava - mestská časť Ružinov,332916712,2024-01 — 2024-12,7
+42,35780754,Mercedes-Benz Slovakia s. r. o.,Bratislava - mestská časť Petržalka,329851738,2024-01 — 2024-12,7
+43,31382541,ASBIS SK spol. s r.o.,Bratislava,326002033,2024-01 — 2024-12,7
+44,45860637,"MET Slovakia, a. s.",Bratislava - mestská časť Staré Mesto,317214347,2024-01 — 2024-12,7
+45,35857749,"ArcelorMittal Gonvarri SSC Slovakia, s.r.o.",Senica,306930134,2024-01 — 2024-12,7
+46,36699624,"VeCom SK, a.s.",Bratislava - mestská časť Petržalka,300187539,2024-01 — 2024-12,7
+47,36347884,SEOYON E-HWA AUTOMOTIVE SLOVAKIA s.r.o.,Považská Bystrica,297830999,2024-01 — 2024-12,7
+48,31568211,Nestlé Slovensko s.r.o.,Prievidza,278851719,2024-01 — 2024-12,7
+49,31329519,MEGGLE Slovakia s. r. o.,Bratislava - mestská časť Ružinov,277668871,2024-01 — 2024-12,7
+50,31411606,"Vertiv Slovakia, a. s.",Nové Mesto nad Váhom,267700945,2024-01 — 2024-12,8
+51,36380032,"METRANS /Danubia/, a.s.",Dunajská Streda,265678209,2024-01 — 2024-12,7
+52,47746122,Hyundai Transys Slovakia s. r. o.,Žilina,261689465,2024-01 — 2024-12,7
+53,35820322,"VOP Nováky, a.s.",Nováky,259848533,2024-01 — 2024-12,8
+54,00698750,BANCO CASINO SLOVAKIA a.s.,Bratislava,250806740,2024-01 — 2024-12,7
+55,35796111,"WESTech, spol. s r.o.",Bratislava - mestská časť Ružinov,250745215,2024-01 — 2024-12,8
+56,35829761,ZF Active Safety Slovakia s.r.o.,Nové Mesto nad Váhom,245620510,2024-01 — 2024-12,7
+57,47249153,"Haleon Levice, s.r.o.",Levice,245568768,2024-01 — 2024-12,7
+58,36436861,"TIPSPORT SK, a.s.",Žilina,243970062,2024-01 — 2024-12,7
+59,53835603,VAILLANT GROUP Heat Pump Production s.r.o.,Skalica,242991823,2024-01 — 2024-12,7
+60,50020188,TERNO real estate s.r.o.,Bratislava - mestská časť Petržalka,242963556,2024-01 — 2024-12,7
+61,47918101,AUTOCENTRUM AAA AUTO a.s.,Bratislava,242710009,2024-01 — 2024-12,7
+62,35919868,Hyundai Steel Slovakia s.r.o.,Gbeľany,241799204,2024-01 — 2024-12,7
+63,51231735,MERKURY SHOP s.r.o.,Prešov,241091139,2024-01 — 2024-12,7
+64,36610577,Apcom Slovakia s. r. o.,Bratislava - mestská časť Ružinov,238694200,2024-01 — 2024-12,7
+65,35950234,BIC Slovakia s.r.o.,Sereď,238380199,2024-01 — 2024-12,7
+66,31595804,RAVEN a.s.,Považská Bystrica,237156505,2024-01 — 2024-12,8
+67,36714640,"PRODCEN DHOLLANDIA, s. r. o.",Predmier,236873208,2024-01 — 2024-12,8
+68,17324246,"HENKEL SLOVENSKO, spol. s r.o.",Bratislava - mestská časť Ružinov,234922902,2024-01 — 2024-12,7
+69,35878282,Tomra Sorting s. r. o.,Senec,233490783,2024-01 — 2024-12,7
+70,36042773,Nemak Slovakia s.r.o.,Ladomerská Vieska,230534865,2024-01 — 2024-12,7
+71,36751758,Marelli Kechnec Slovakia s.r.o.,Kechnec,229972000,2024-01 — 2024-12,7
+72,36235164,"BOGE Elastmetall Slovakia, a.s.",Trnava,227576915,2024-01 — 2024-12,7
+73,48258946,OBI Slovakia s.r.o.,Bratislava,226135106,2024-01 — 2024-12,7
+74,44553412,"Slovenské elektrárne – energetické služby, s.r.o.",Bratislava - mestská časť Ružinov,217556133,2024-01 — 2024-12,7
+75,47988673,Yanfeng International Automotive Technology Slovakia s.r.o.,Bratislava,214615314,2024-01 — 2024-12,7
+76,44537948,"Euro-Mall, s. r. o.",Bratislava,213557718,2024-01 — 2024-12,7
+77,31354572,IKEA Industry Slovakia s. r. o.,Malacky,212892000,2023-09 — 2024-08,7
+78,31319459,"Porsche Inter Auto Slovakia, spol. s r.o.",Bratislava - mestská časť Petržalka,212163224,2024-01 — 2024-12,7
+79,35942894,Kia Sales Slovakia s. r. o.,Bratislava,206774151,2024-01 — 2024-12,7
+80,31356915,SLOVNAFT MONTÁŽE A OPRAVY a.s.,Bratislava - mestská časť Ružinov,205566025,2024-01 — 2024-12,7
+81,36239593,"ZSE Elektrárne, s.r.o.",Trakovice,205286227,2024-01 — 2024-12,7
+82,36707309,SJG Slovakia s.r.o.,Lietavská Lúčka,202878170,2024-01 — 2024-12,7
+83,51112736,BMW Slovenská republika s. r. o.,Bratislava - mestská časť Ružinov,202488420,2024-01 — 2024-12,7
+84,51443287,"Siemens Mobility, s. r. o.",Bratislava,200993570,2023-10 — 2024-09,7
+85,17317282,STRABAG s.r.o.,Bratislava,196861115,2024-01 — 2024-12,7
+86,30841143,Prysmian Kablo s.r.o.,Bratislava - mestská časť Ružinov,195747669,2024-01 — 2024-12,7
+87,36406317,"SLOVWOOD Ružomberok, a.s.",Ružomberok,195394387,2024-01 — 2024-12,8
+88,43814808,"ENAGRO, a.s.",Leopoldov,194908277,2024-01 — 2024-12,7
+89,36187828,BSH Drives and Pumps s.r.o.,Michalovce,193894448,2024-01 — 2024-12,7
+90,34103236,"MAGNA SLOVTECA, s.r.o.",Nové Mesto nad Váhom,192644211,2024-01 — 2024-12,7
+91,44896735,HAVI Logistics s.r.o.,Zavar,189646879,2024-01 — 2024-12,7
+92,35920050,"ILJIN SLOVAKIA, s.r.o.",Pravenec,188068695,2024-01 — 2024-12,7
+93,31651518,"EUROVIA SK, a.s.",Košice,187884769,2024-01 — 2024-12,8
+94,31735151,MECOM GROUP s.r.o.,Humenné,185638665,2024-01 — 2024-12,7
+95,36401137,"FERONA Slovakia, a.s.",Žilina,183569658,2024-01 — 2024-12,7
+96,35917121,"DONGHEE Slovakia, s.r.o.",Strečno,182489195,2024-01 — 2024-12,7
+97,44680449,MAHLE Thermal and Fluid Systems Slovakia s. r. o.,Námestovo,182109509,2024-01 — 2024-12,7
+98,36314242,"ELGAS, s.r.o.",Považská Bystrica,181323824,2024-01 — 2024-12,7
+99,31648479,"Plzeňský Prazdroj Slovensko, a.s.",Veľký Šariš,181084095,2024-01 — 2024-12,7
+100,35798513,Artifex Systems Slovakia s. r. o.,Lozorno,179979405,2024-01 — 2024-12,7
+101,50957414,"Eurovea byty, s. r. o.",Bratislava - mestská časť Staré Mesto,178340065,2024-01 — 2024-12,7
+102,31420494,Agropodnik a. s. Trnava,Trnava,177720115,2024-01 — 2024-12,7
+103,47188545,"Samsung SDS Global SCL Slovakia, s.r.o.",Galanta,177164220,2024-01 — 2024-12,7
+104,36259233,"ENVIRAL, a.s.",Leopoldov,176432135,2024-01 — 2024-12,7
+105,31708030,ViaPharma SK s. r. o.,Bratislava - mestská časť Petržalka,176232023,2024-01 — 2024-12,7
+106,34152199,Bidfood Slovakia s. r. o.,Nové Mesto nad Váhom,175791785,2023-07 — 2024-06,7
+107,35828161,Hedin Automotive Slovakia s. r. o.,Bratislava,173471957,2024-01 — 2024-12,7
+108,47771089,Visteon Electronics Slovakia s. r. o.,Námestovo,172440673,2024-01 — 2024-12,7
+109,35706686,"I.D.C. Holding, a.s.",Bratislava,165346265,2024-01 — 2024-12,7
+110,35838949,HORNBACH - Baumarkt SK spol. s r.o.,Bratislava,164325174,2023-03 — 2024-02,7
+111,46113177,"Energie2, a.s.",Bratislava,161623626,2024-01 — 2024-12,7
+112,31411011,"Tate & Lyle Boleraz, s.r.o.",Boleráz,160480811,2023-04 — 2024-03,7
+113,48146676,Siemens Healthcare s. r. o.,Bratislava - mestská časť Karlova Ves,159635975,2023-10 — 2024-09,7
+114,31371205,DERTOUR SK a. s.,Bratislava - mestská časť Nové Mesto,159337812,2024-01 — 2024-12,7
+115,36523968,"Heineken Slovensko Distribúcia, spol. s r.o.",Hurbanovo,158303787,2024-01 — 2024-12,7
+116,35716266,Považský cukor a.s.,Trenčianska Teplá,157259674,2023-03 — 2024-02,8
+117,36773123,"TAURIS, a.s.",Rimavská Sobota,156563675,2024-01 — 2024-12,7
+118,47255374,"Gestamp Nitra, s. r. o.",Lužianky,154898210,2024-01 — 2024-12,7
+119,35811650,GRUPO ANTOLIN BRATISLAVA s.r.o.,Bratislava,154646549,2024-01 — 2024-12,7
+120,35712783,"FAST PLUS, a.s.",Bratislava - mestská časť Ružinov,154482377,2024-01 — 2024-12,7
+121,50248685,"Solar 2009, a. s.",Trnava,154318279,2024-01 — 2024-12,8
+122,35736003,"Renault Slovensko, spol. s r.o.",Bratislava,154165029,2024-01 — 2024-12,7
+123,00684881,"FORTUNA SK, a.s.",Bratislava,152927764,2024-01 — 2024-12,7
+124,47239255,Schindler Dunajská Streda a. s.,Kostolné Kračany,152456022,2024-01 — 2024-12,7
+125,31560636,"Tatry mountain resorts, a.s.",Liptovský Mikuláš,152282000,2023-11 — 2024-10,8
+126,31444873,"MARKÍZA - SLOVAKIA, spol. s r.o.",Bratislava - Záhorská Bystrica,151790458,2024-01 — 2024-12,7
+127,46693874,FORTISCHEM a. s.,Nováky,151779900,2024-01 — 2024-12,7
+128,35838248,C & A Mode s.r.o.,Kočovce,151389010,2023-03 — 2024-02,7
+129,36513555,"KE Prešov Elektrik, s.r.o.",Prešov,150377138,2024-01 — 2024-12,7
+130,36821730,GPV Slovakia (Nova) s. r. o.,Nová Dubnica,150009543,2024-01 — 2024-12,7
+131,46868674,Pepco Slovakia s. r. o.,Bratislava-Ružinov,149292701,2023-10 — 2024-09,7
+132,36045161,"Bekaert Slovakia, s.r.o.",Sládkovičovo,148918329,2024-01 — 2024-12,8
+133,36650871,"Delta Electronics (Slovakia), s.r.o.",Dubnica nad Váhom,145505872,2024-01 — 2024-12,7
+134,31626572,Danfoss Power Solutions a.s.,Považská Bystrica,144947401,2024-01 — 2024-12,7
+135,31345182,"Johnson & Johnson, s.r.o.",Bratislava,143868872,2024-01 — 2024-12,7
+136,50111990,"HAGARD: HAL, spol. s r.o.",Nitra,143636959,2024-01 — 2024-12,7
+137,35849436,"IKEA Bratislava, s.r.o.",Bratislava,143633988,2023-09 — 2024-08,7
+138,36723304,Novartis Slovakia s.r.o.,Bratislava,142792741,2024-01 — 2024-12,7
+139,36787507,"LPP Slovakia, s.r.o.",Banská Bystrica,142584973,2023-02 — 2024-01,7
+140,35953080,OLYMPIC CASINO SLOVAKIA s. r. o.,Bratislava - mestská časť Staré Mesto,142283959,2024-01 — 2024-12,7
+141,35729066,"Volvo Group Slovakia, s.r.o.",Senec,142246320,2024-01 — 2024-12,7
+142,35775203,"MEROCO, a.s.",Leopoldov,141817394,2024-01 — 2024-12,8
+143,55132561,"BDS Slovakia, s. r. o.",Bratislava - mestská časť Nové Mesto,141534217,2024-01 — 2024-12,7
+144,35792850,OPmobility C-Power Slovakia s. r. o.,Lozorno,141328128,2024-01 — 2024-12,7
+145,36697109,"CTP Invest SK, spol. s r.o.",Bratislava-Staré Mesto,141314911,2024-01 — 2024-12,7
+146,34126520,"Johns Manville Slovakia, a.s.",Trnava,140754984,2024-01 — 2024-12,7
+147,35938111,Inter Cars Slovenská republika s.r.o.,Bratislava - mestská časť Ružinov,140072059,2024-01 — 2024-12,7
+148,35826649,Scania Slovakia s.r.o.,Senec,139212702,2024-01 — 2024-12,7
+149,35703156,"Poľnoservis, a.s.",Leopoldov,139161393,2023-07 — 2024-06,7
+150,44315911,"BIO OIL Development s.r.o. & co., k.s.",Trnava,138718982,2024-01 — 2024-12,7
+151,35703466,"ALEF Distribution SK, s. r. o.",Bratislava,138207510,2023-04 — 2024-03,7
+152,31349307,Siemens s.r.o.,Bratislava - Karlova Ves,137126957,2023-10 — 2024-09,7
+153,35782587,"GECO, s. r. o.",Bratislava,136188457,2024-01 — 2024-12,7
+154,47258811,"TSR Slovakia, s.r.o.",Bytča,135730512,2024-01 — 2024-12,7
+155,35976721,Deutsche Telekom Systems Solutions Slovakia s.r.o.,Košice - mestská časť Juh,135486758,2024-01 — 2024-12,7
+156,35928158,Golde Lozorno spol. s r.o.,Lozorno,132003658,2024-01 — 2024-12,7
+157,31562540,HYZA a.s.,Topoľčany,131295352,2024-01 — 2024-12,8
+158,53696387,Magna Electronics Slovakia s.r.o.,Kechnec,131003368,2024-01 — 2024-12,7
+159,36528391,"Heineken Slovensko, a.s.",Hurbanovo,128626552,2024-01 — 2024-12,7
+160,53340671,STRABAG Pozemné staviteľstvo s.r.o.,Bratislava - mestská časť Ružinov,127691690,2024-01 — 2024-12,7
+161,50600737,Minebea Slovakia s.r.o.,Košice - mestská časť Barca,127368133,2023-04 — 2024-03,7
+162,31674267,"ELTRA, s.r.o.",Košice,127262581,2024-01 — 2024-12,7
+163,35785306,DXC Technology Slovakia s. r. o.,Bratislava 22,126821968,2023-04 — 2024-03,7
+164,36381306,Metsa Tissue Slovakia s.r.o.,Žilina,126697331,2024-01 — 2024-12,7
+165,36319198,Kofola a.s.,Rajecká Lesná,126095109,2024-01 — 2024-12,7
+166,35898526,CEVA Ground Logistics Slovakia s.r.o.,Bratislava - mestská časť Ružinov,125746140,2024-01 — 2024-12,7
+167,31596061,LKQ SK s.r.o.,Bratislava - mestská časť Nové Mesto,125083707,2024-01 — 2024-12,7
+168,31651321,SYRÁREŇ BEL SLOVENSKO a.s.,Michalovce,124968525,2024-01 — 2024-12,8
+169,35843624,"Slovenská produkčná, a.s.",Bratislava,124658669,2024-01 — 2024-12,8
+170,31342451,"Procter & Gamble, spol. s r.o.",Bratislava,124495811,2023-07 — 2024-06,7
+171,36565911,Miba Steeltec s.r.o.,Vráble,124301668,2023-02 — 2024-01,7
+172,31423230,"Semikron Danfoss, s.r.o.",Vrbové,122952759,2024-01 — 2024-12,7
+173,31420796,LOWA PRODUCTION s. r. o.,Bošany,122163133,2024-01 — 2024-12,7
+174,34106880,"Snop Automotive Malacky, a. s.",Malacky,121505371,2023-06 — 2024-05,7
+175,50402285,Digital Smile s.r.o.,Bratislava - mestská časť Staré Mesto,121016988,2024-01 — 2024-12,7
+176,36801089,"VICENTE TORNS SLOVAKIA, a.s.",Veľké Kosihy,120463292,2024-01 — 2024-12,7
+177,47144190,Metrostav Slovakia a. s.,Bratislava-mestská časť Ružinov,119804230,2024-01 — 2024-12,7
+178,47220899,Carcoustics Slovakia Nováky s. r. o.,Nováky,119760610,2024-01 — 2024-12,7
+179,35962488,Cloetta Slovakia s.r.o.,Levice,119258887,2024-01 — 2024-12,7
+180,31345603,BASF Slovensko spol. s r.o.,Bratislava - mestská časť Petržalka,119222535,2024-01 — 2024-12,7
+181,36869899,Crown Commercial Slovakia s.r.o.,Kechnec,118584541,2024-01 — 2024-12,7
+182,36289833,Atlas Copco s. r. o.,Bratislava,118202197,2024-01 — 2024-12,7
+183,44168802,"AirExplore, s. r. o.",Bratislava - mestská časť Ružinov,117807924,2024-01 — 2024-12,7
+184,48054704,Iberte s. r. o.,Bratislava - mestská časť Staré Mesto,115226166,2024-01 — 2024-12,7
+185,36322792,Neuwerk Slovakia s. r. o.,Dolné Vestenice,114839675,2024-01 — 2024-12,7
+186,35883103,XLSK Nábytok s. r. o.,Bratislava,114768724,2023-04 — 2024-03,7
+187,31611559,"AT Computer, s.r.o.",Žilina,114656456,2023-10 — 2024-09,7
+188,31615716,"Považská cementáreň, a.s.",Ladce,114625580,2024-01 — 2024-12,8
+189,00153052,"SHP Harmanec, a.s.",Harmanec,114197256,2024-01 — 2024-12,8
+190,31579710,Zeppelin SK s.r.o.,Banská Bystrica - Kráľová,113957996,2024-01 — 2024-12,7
+191,35820349,Sisecam Automotive Slovakia s.r.o.,Malacky,113046736,2024-01 — 2024-12,7
+192,35832517,VETROPACK NEMŠOVÁ s.r.o.,Nemšová,112855114,2024-01 — 2024-12,7
+193,36059323,"KRONOSPAN, s.r.o.",Zvolen,112556731,2023-10 — 2024-09,7
+194,53819012,"LEONI Wiring Systems Slovakia, spol. s r. o.",Trenčín,112464775,2024-01 — 2024-12,7
+195,35890487,"ARVAL SLOVAKIA, s.r.o.",Bratislava - mestská časť Staré Mesto,112254786,2024-01 — 2024-12,7
+196,44201010,CROWN Bevcan Slovakia s. r. o.,Kechnec,112246781,2024-01 — 2024-12,7
+197,51749858,"ArcelorMittal Gonvarri Nitra, s. r. o.",Senica,110955467,2024-01 — 2024-12,7
+198,36246093,SAM INDUSTRIES a. s.,Bratislava,110894885,2024-01 — 2024-12,7
+199,35864648,"Accenture Technology Solutions - Slovakia, s.r.o.",Bratislava,109904663,2023-09 — 2024-08,7
+200,35818425,P Automobil Import s.r.o.,Bratislava,109453948,2024-01 — 2024-12,7
+201,36391361,"SAKER, s.r.o.",Horný Hričov,108918874,2024-01 — 2024-12,8
+202,54192391,Daimler Truck & Bus Slovakia s.r.o.,Senec,108619046,2024-01 — 2024-12,7
+203,36759228,IEE Sensing Slovakia s.r.o.,Veľká Ida,107428133,2024-01 — 2024-12,7
+204,35930209,"TECHNOGYM E.E., s. r.o.",Bratislava - mestská časť Ružinov,107006518,2024-01 — 2024-12,7
+205,35727144,"DHL Exel Slovakia, s. r. o.",Senec,106964262,2024-01 — 2024-12,7
+206,31611788,Skanska SK a.s.,Bratislava,106425093,2024-01 — 2024-12,7
+207,36352411,APIS Plastic Slovakia s. r. o.,Dubnica nad Váhom,106335181,2024-01 — 2024-12,7
+208,44268637,"Solvent SR, spol. s r.o.",Lužianky,106287435,2024-01 — 2024-12,8
+209,35893427,Minebea AccessSolutions Slovakia s. r. o.,Košice,105795129,2023-04 — 2024-03,7
+210,47880627,"Smartwings Slovakia, s.r.o.",Bratislava,105756821,2024-01 — 2024-12,7
+211,30223300,GeWiS Slovakia s. r. o.,Prievidza,105625435,2024-01 — 2024-12,8
+212,36250783,"SCHINDLER ESKALÁTORY, s.r.o.",Dunajská Streda,105191861,2024-01 — 2024-12,7
+213,48166006,MAHLE Thermal and Fluid Systems Senica s. r. o.,Senica,104373874,2024-01 — 2024-12,7
+214,54639425,"CETIN Networks, s.r.o.",Bratislava - mestská časť Staré Mesto,103428000,2024-01 — 2024-12,7
+215,51087723,"DEFENCE TRADE SLOVAKIA, s.r.o.",Trenčín,103401785,2024-01 — 2024-12,7
+216,31667228,"Unilever Slovensko, spol. s r.o.",Bratislava - mestská časť Ružinov,102873901,2024-01 — 2024-12,7
+217,36703923,"TOPTRANS EU, a.s.",Nitra,102312376,2024-01 — 2024-12,7
+218,44939426,Webasto Convertibles Slovakia s.r.o.,Veľký Meder,102265228,2024-01 — 2024-12,7
+219,35694254,Teta drogérie SR s. r.o.,Lužianky,101793150,2024-01 — 2024-12,8
+220,50731564,EF Parts & Logistic Service s. r. o.,Bratislava - mestská časť Ružinov,101641229,2024-01 — 2024-12,7
+221,36300683,UCED Tepláreň Považská Bystrica s. r. o.,Považská Bystrica,101201837,2024-01 — 2024-12,7
+222,35974133,JYSK s.r.o.,Bratislava,100380896,2023-09 — 2024-08,7
+223,31337147,"IBM Slovensko, spol. s r.o. - v slovenskom jazyku, IBM Slovakia, Ltd. - v anglickom jazyku",Bratislava - mestská časť Ružinov,100315506,2024-01 — 2024-12,7
+224,43821103,Stavebniny DEK s.r.o.,Žilina,100275877,2024-01 — 2024-12,7
+225,00694321,Miba Sinter Slovakia s.r.o.,Dolný Kubín,98750134,2023-02 — 2024-01,7
+226,31322093,Imperial Brands Slovakia a. s.,Bratislava,98748678,2023-10 — 2024-09,7
+227,35759143,"Bayer, spol. s r.o.",Bratislava - mestská časť Staré Mesto,98036860,2024-01 — 2024-12,7
+228,43775098,Partizánske Building Components-SK s.r.o.,Partizánske,97636517,2024-01 — 2024-12,7
+229,35837331,"Summit Motors Slovakia, spol. s r.o.",Bratislava - mestská časť Vajnory,97401424,2023-04 — 2024-03,7
+230,31628109,"Knauf Insulation, s.r.o.",Nová Baňa,96761158,2024-01 — 2024-12,7
+231,31358152,"NX Cargo-Partner Slovakia, s. r. o.",Bratislava - mestská časť Petržalka,96088201,2024-01 — 2024-12,7
+232,36840611,Daejung Europe s.r.o.,Dubnica nad Váhom,95993247,2024-01 — 2024-12,7
+233,31398693,KROMBERG & Schubert s.r.o.,Kolárovo,95567403,2024-01 — 2024-12,7
+234,44156979,SPORTISIMO SK s. r. o.,Bratislava,95068469,2023-04 — 2024-03,7
+235,48288331,DAECHANG SEAT SK s. r. o.,Kysucké Nové Mesto,94552406,2024-01 — 2024-12,7
+236,47247754,LEYARD EUROPE s.r.o.,Záborské,94480234,2024-01 — 2024-12,7
+237,46833323,Saneca Pharmaceuticals a. s.,Hlohovec,94470137,2024-01 — 2024-12,7
+238,31678343,STD DONIVO a.s.,Vranov nad Topľou,94328354,2024-01 — 2024-12,8
+239,35845180,NEXPLUS SK s.r.o.,Šurany,93736672,2024-01 — 2024-12,7
+240,47658827,Decathlon SK s. r. o.,Bratislava - mestská časť Ružinov,93565360,2024-01 — 2024-12,7
+241,36779644,"Inditex Slovakia, s. r. o.",Bratislava,93355429,2023-02 — 2024-01,7
+242,47681225,Mondelez Slovakia s.r.o.,Bratislava-Nové Mesto,92843462,2024-01 — 2024-12,7
+243,36030554,"Cortizo Slovakia, a.s.",Nová Baňa,91986101,2024-01 — 2024-12,7
+244,35782986,"Duvenbeck Slovensko, s.r.o.",Bratislava,91773310,2024-01 — 2024-12,7
+245,31339603,"KUEHNE + NAGEL, s. r. o.",Bratislava - mestská časť Ružinov,91602654,2024-01 — 2024-12,7
+246,51811391,ZWIRN area s.r.o.,Bratislava - mestská časť Ružinov,90865964,2024-01 — 2024-12,7
+247,44799951,BENTELER Automotive SK s. r. o.,Malacky,90448424,2024-01 — 2024-12,7
+248,36198749,"Carmeuse Slovakia, s.r.o.",Košice - mestská časť Juh,89807560,2024-01 — 2024-12,7
+249,35882409,Bourbon Automotive Plastics Nitra s.r.o. v skratke Bourbon AP Nitra s.r.o.,Čab,89130418,2023-10 — 2024-09,7
+250,31364951,WOODCOTE GROUP a.s.,Bratislava - mestská časť Nové Mesto,88891231,2023-08 — 2024-07,7
+251,48074811,KTS ENGINEERING s.r.o.,Bratislava - mestská časť Ružinov,88851419,2024-01 — 2024-12,7
+252,35702257,"Veolia Energia Slovensko, a. s.",Bratislava - mestská časť Petržalka,88462113,2024-01 — 2024-12,7
+253,46553509,MSM GROUP s.r.o.,Dubnica nad Váhom,87907976,2024-01 — 2024-12,7
+254,55125379,GOLDBECK Slovensko s.r.o.,Bratislava - mestská časť Vrakuňa,87553513,2023-04 — 2024-03,7
+255,53819071,BizLink Industry Slovakia spol. s r. o.,Stará Turá,87039169,2024-01 — 2024-12,7
+256,00613797,"OSRAM, a.s.",Nové Zámky,86452771,2024-01 — 2024-12,7
+257,36018040,"Gemer Pannónia, s.r.o.",Rimavská Sobota,86392834,2024-01 — 2024-12,7
+258,35717301,Lentimex spol. s r.o.,Bratislava,86117326,2024-01 — 2024-12,8
+259,51015161,INTERCABLE s. r. o.,Kriváň,86004186,2024-01 — 2024-12,7
+260,44500734,"SkyToll, a. s.",Bratislava,85943921,2024-01 — 2024-12,7
+261,44044739,"PPC Investments, a. s.",Bratislava,85282706,2024-01 — 2024-12,7
+262,31362681,KMV BEV SK s. r. o.,Malacky,84652808,2024-01 — 2024-12,7
+263,36838951,"MX Logistika SL, spol. s r.o.",Bratislava,84628992,2023-04 — 2024-03,7
+264,35814586,"Ptáček - veľkoobchod, a. s.",Bratislava,84268207,2024-01 — 2024-12,7
+265,47719311,Akebono Brake Slovakia s. r. o.,Trenčín,84198684,2023-04 — 2024-03,7
+266,53613244,"Kyndryl Services Slovensko, spol. s r.o.",Bratislava - mestská časť Petržalka,83698692,2023-04 — 2024-03,7
+267,35760800,"LIND MOBLER SLOVAKIA, s.r.o.",Krupina,83564713,2023-07 — 2024-06,7
+268,47858168,Medline Assembly Slovakia s.r.o.,Partizánske,83304024,2024-01 — 2024-12,7
+269,52934039,Deutsche Telekom IT & Telecommunications Slovakia s.r.o.,Košice - mestská časť Juh,83270366,2024-01 — 2024-12,7
+270,36597384,Unomedical s.r.o.,Michalovce,83202970,2024-01 — 2024-12,7
+271,36514179,"STIGA Slovakia, s.r.o.",Poprad,82806464,2024-01 — 2024-12,7
+272,43860125,Pow-en a. s.,Bratislava,82732274,2024-01 — 2024-12,7
+273,31380999,"UNIMEDIA, s.r.o.",Bratislava - mestská časť Nové Mesto,81844133,2024-01 — 2024-12,8
+274,00896225,Swietelsky-Slovakia spol. s r.o.,Bratislava,81841174,2023-04 — 2024-03,7
+275,34144137,tk accelis Materials Slovakia s. r. o.,Nové Zámky,81778917,2023-10 — 2024-09,7
+276,31647758,"Unilabs Slovensko, s. r. o.",Martin,81460052,2024-01 — 2024-12,7
+277,36283576,"PENAM SLOVAKIA, a.s.",Nitra,81344420,2024-01 — 2024-12,7
+278,36718271,H & M Hennes & Mauritz SK s.r.o.,Bratislava,81303155,2023-12 — 2024-11,7
+279,36652211,C.L.N. Slovakia s.r.o.,Košice - mestská časť Šaca,81279724,2024-01 — 2024-12,7
+280,48136999,Packeta Slovakia s. r. o.,Bratislava - mestská časť Nové Mesto,80934838,2024-01 — 2024-12,7
+281,35793708,"GU SLOVENSKO, s.r.o.",Lužianky,80665233,2024-01 — 2024-12,7
+282,31568386,"SLOVENSKÉ CUKROVARY, s.r.o.",Sereď,80571559,2023-03 — 2024-02,7
+283,36396222,Aricoma Systems s.r.o.,Bratislava - mestská časť Petržalka,80560519,2024-01 — 2024-12,8
+284,31626599,"thyssenkrupp rothe erde Slovakia, a.s.",Považská Bystrica,80557823,2023-10 — 2024-09,7
+285,54471711,BENTELER Automotive Bratislava s.r.o.,Bratislava - mestská časť Devínska Nová Ves,80533368,2024-01 — 2024-12,7
+286,43815910,"Audia Plastics, s. r. o.",Voderady,80495486,2024-01 — 2024-12,7
+287,36644030,"Stredoslovenská vodárenská prevádzková spoločnosť, a.s.",Banská Bystrica,79685952,2024-01 — 2024-12,7
+288,46014195,Fuel Traders Corporation s. r. o.,Bratislava - mestská časť Staré Mesto,79530232,2024-01 — 2024-12,8
+289,36348783,MAN Components s.r.o.,Bánovce nad Bebravou,79319693,2024-01 — 2024-12,7
+290,35919302,Bonfiglioli Slovakia s.r.o.,Považská Bystrica,78644635,2024-01 — 2024-12,7
+291,36322067,Gabor spol. s r.o.,Bánovce nad Bebravou,78616184,2024-01 — 2024-12,7
+292,31441751,AGROSERVIS spol. s r.o.,Komárno,78526765,2024-01 — 2024-12,8
+293,46798889,Mondelez SR Production s.r.o.,Bratislava,78386986,2024-01 — 2024-12,7
+294,35898933,DEICHMANN-OBUV SK s.r.o.,Dunajská Streda,77989044,2024-01 — 2024-12,7
+295,47454750,"SPOLCHEMIE SK, s. r. o.",Bratislava - mestská časť Ružinov,77856034,2024-01 — 2024-12,7
+296,36387592,"Rettenmeier Tatra Timber, s.r.o.",Liptovský Hrádok,77721384,2024-01 — 2024-12,7
+297,46919872,TEDi Betriebs s. r. o.,Bratislava - mestská časť Ružinov,77487393,2023-05 — 2024-04,7
+298,36204731,CONTINENTAL TOBACCO SLOVAKIA s. r. o.,Rimavská Sobota,77391044,2024-01 — 2024-12,7
+299,35895136,"Dr.Max Holding SK, a.s.",Bratislava - mestská časť Petržalka,77255689,2024-01 — 2024-12,7
+300,00693511,SLOVAKTUAL s.r.o.,Pravenec,77093111,2024-01 — 2024-12,7
+301,36545694,"VITA - ZEL & company, spol. s r.o.",Marcelová,76683133,2024-01 — 2024-12,8
+302,36667242,"Hörnlein, k.s.",Šahy,76629232,2024-01 — 2024-12,7
+303,35887117,"Roche Slovensko, s.r.o.",Bratislava - mestská časť Staré Mesto,76485575,2024-01 — 2024-12,7
+304,31389139,"Saint-Gobain Construction Products, s.r.o.",Bratislava,75448163,2024-01 — 2024-12,7
+305,54527571,Action Slovakia s.r.o.,Bratislava - mestská časť Staré Mesto,75111991,2024-01 — 2024-12,7
+306,35737328,SAP Slovensko s.r.o.,Bratislava - mestská časť Staré Mesto,74970142,2024-01 — 2024-12,7
+307,35786299,Amazon /Slovakia/ s.r.o.,Bratislava - mestská časť Staré Mesto,74648827,2024-01 — 2024-12,7
+308,34120149,"Savencia Fromage & Dairy SK, a. s.",Liptovský Mikuláš,74633728,2024-01 — 2024-12,8
+309,35733209,MAN Truck & Bus Slovakia s.r.o.,Bratislava - mestská časť Ružinov,74501480,2024-01 — 2024-12,7
+310,44298170,HOCHTIEF SK s.r.o.,Bratislava,74320589,2024-01 — 2024-12,7
+311,35892404,C.S. CARGO Slovakia a.s.,Bratislava,74285776,2024-01 — 2024-12,7
+312,55507557,Doropharm Health s.r.o.,Bratislava - mestská časť Nové Mesto,74187309,2024-01 — 2024-12,7
+313,36846902,"TN logistica SK, s.r.o.",Bratislava,74074633,2024-01 — 2024-12,8
+314,35687355,Zentiva International a.s.,Bratislava,73746000,2024-01 — 2024-12,7
+315,31705472,"Terichem Tervakoski, a.s.",Svit,73353169,2024-01 — 2024-12,8
+316,31412106,CEMMAC a.s.,Horné Srnie,73302533,2024-01 — 2024-12,8
+317,36364568,"Towercom, a. s.",Bratislava,73172999,2024-01 — 2024-12,7
+318,34115901,"Marius Pedersen, a.s.",Trenčín,73154557,2024-01 — 2024-12,7
+319,36400955,"HYDAC Electronic, s.r.o.",Tvrdošín,73085388,2024-01 — 2024-12,7
+320,36232157,ISTERMEAT a.s.,Dunajská Streda,72625753,2024-01 — 2024-12,8
+321,36634280,"TUBEX SLOVAKIA, s.r.o.",Žarnovica,72359616,2024-01 — 2024-12,7
+322,36638927,Hydro Extrusion Slovakia a.s.,Žiar nad Hronom,72352349,2024-01 — 2024-12,7
+323,31329217,Slovak Parcel Service s.r.o.,Ivanka pri Dunaji,72151367,2024-01 — 2024-12,7
+324,17320712,Auto Palace Bratislava s. r. o.,Bratislava - mestská časť Nové Mesto,71483588,2024-01 — 2024-12,7
+325,35752700,DACHSER Slovakia a. s.,Lozorno,71447704,2024-01 — 2024-12,8
+326,51087618,"G-TEKT Slovakia, s.r.o.",Nitra,71284950,2023-04 — 2024-03,7
+327,35710438,C Automobil Import s. r. o.,Bratislava,70887952,2024-01 — 2024-12,7
+328,46640231,AbbVie s. r. o.,Bratislava,70363525,2024-01 — 2024-12,7
+329,31372074,"Nexi Central Europe, a.s.",Bratislava - mestská časť Petržalka,69876787,2024-01 — 2024-12,7
+330,00685852,"Messer Tatragas, spol. s r.o.",Bratislava,69255597,2024-01 — 2024-12,8
+331,36697338,Immergas Europe s.r.o.,Poprad - Matejovce,68687135,2024-01 — 2024-12,7
+332,36798436,"PPC Energy, a.s.",Bratislava,68461197,2024-01 — 2024-12,7
+333,35834498,Direct Parcel Distribution SK s.r.o.,Bratislava - mestská časť Ružinov,68247024,2024-01 — 2024-12,7
+334,44996365,"ECS Slovensko, s. r. o.",Bratislava,67691230,2024-01 — 2024-12,7
+335,36543357,SIIX EMS Slovakia s.r.o.,Nitra,66121498,2024-01 — 2024-12,7
+336,36367028,"Hyundam Slovakia, s. r. o.",Žilina,66094066,2024-01 — 2024-12,7
+337,36396711,MSM LAND SYSTEMS s.r.o.,Trenčín,66061318,2024-01 — 2024-12,7
+338,35895373,"Metalimpex Slovakia, s.r.o.",Trnava,65524607,2024-01 — 2024-12,7
+339,46120602,Metrostav DS a.s.,Bratislava - mestská časť Ružinov,65408708,2024-01 — 2024-12,7
+340,36168165,Fakultná nemocnica AGEL Košice-Šaca a. s.,Košice - Šaca,65003913,2024-01 — 2024-12,7
+341,36506184,ANDRITZ Slovakia s.r.o.,Humenné,64909322,2024-01 — 2024-12,7
+342,47687461,KFTS s. r. o.,Rajec,64750408,2024-01 — 2024-12,7
+343,43991599,KiK textil a Non-Food spol. s r. o.,Bratislava,64439244,2024-01 — 2024-12,7
+344,35958120,"Lyreco CE, SE",Pezinok,64415223,2024-01 — 2024-12,7
+345,35871229,"KraussMaffei Technologies, spol. s r.o.",Sučany,64355499,2024-01 — 2024-12,7
+346,46071890,Garrett Motion Slovakia s. r. o.,Záborské,64302932,2024-01 — 2024-12,7
+347,35757345,"DSV Slovakia, s.r.o.",Senec,64053271,2024-01 — 2024-12,7
+348,36840211,VFS Financial Services Slovakia s.r.o.,Senec,64039146,2024-01 — 2024-12,7
+349,36011509,PPS Group a.s.,Detva,63880197,2024-01 — 2024-12,8
+350,35718625,YIT Slovakia a.s.,Bratislava - mestská časť Ružinov,63641379,2024-01 — 2024-12,7
+351,31594352,"LEONI Slovakia, spol. s r. o.",Trenčianska Teplá,63339708,2024-01 — 2024-12,7
+352,35798076,Klauke Slovakia s.r.o.,Dolný Kubín,63317518,2023-10 — 2024-09,7
+353,35955015,Oberbank Leasing s.r.o.,Bratislava - mestská časť Ružinov,62924198,2023-10 — 2024-09,8
+354,31368956,"Baumit, spol. s r. o.",Bratislava,62581818,2024-01 — 2024-12,7
+355,31578896,Evonik Fermas s.r.o.,Slovenská Ľupča,62567460,2024-01 — 2024-12,7
+356,36694088,"MEVIS Slovakia, s.r.o.",Šamorín,62497913,2024-01 — 2024-12,7
+357,31416373,Silgan Metal Packaging Nove Mesto a. s.,Nové Mesto nad Váhom,62472074,2024-01 — 2024-12,7
+358,36808822,"ZWL Slovakia - Výroba ozubených kolies Sučany, s. r. o.",Sučany,62452246,2024-01 — 2024-12,7
+359,31407536,"NEW YORKER Slovakia, s.r.o.",Bratislava,62387203,2024-01 — 2024-12,7
+360,31327222,DSV Road s. r. o.,Bratislava,62143158,2024-01 — 2024-12,7
+361,31354467,"DHL Logistics (Slovakia), spol. s r.o.",Senec,62086814,2024-01 — 2024-12,7
+362,31615317,"Elektrovod Slovakia, s.r.o.",Žilina,61868308,2024-01 — 2024-12,7
+363,36653781,"Albéa Slovakia, s.r.o.",Bratislava,61524980,2024-01 — 2024-12,7
+364,17321450,"exe, a.s.",Bratislava - mestská časť Ružinov,61367934,2024-01 — 2024-12,8
+365,55553753,DHL Supply Chain (Slovakia) s. r. o.,Trnava,61328939,2024-01 — 2024-12,7
+366,35718986,"JAF HOLZ Slovakia, s.r.o.",Špačince,61293741,2024-01 — 2024-12,7
+367,47618248,"Wertheim T, s.r.o.",Dunajská Streda,61286520,2024-01 — 2024-12,7
+368,35742470,ArcelorMittal Building Solutions Slovakia s. r. o.,Senica,61150202,2024-01 — 2024-12,7
+369,46019138,"Bluefin Century, s. r. o. v konkurze",Bratislava,61045278,2024-01 — 2024-12,7
+370,36242578,JASPLASTIK-SK spol. s r.o.,Matúškovo,61020542,2024-01 — 2024-12,8
+371,36624942,GLS General Logistics Systems Slovakia s.r.o.,Budča,60986161,2023-04 — 2024-03,7
+372,45469156,"Finportal, a. s.",Bratislava,60707777,2024-01 — 2024-12,7
+373,53186931,"DHL Freight Slovakia, s. r. o.",Bratislava - mestská časť Ružinov,60393712,2024-01 — 2024-12,7
+374,35785403,"KARIREAL SLOVAKIA, a.s.",Pezinok,59850233,2024-01 — 2024-12,8
+375,45412464,"HSF System SK, s.r.o.",Žilina,59599232,2024-01 — 2024-12,8
+376,35760419,"Asseco Central Europe, a. s.",Bratislava - mestská časť Ružinov,59553000,2024-01 — 2024-12,8
+377,36439851,"Démos trade, s.r.o.",Žilina,59355811,2024-01 — 2024-12,7
+378,36650935,Camfil s.r.o.,Levice,59207837,2024-01 — 2024-12,7
+379,35923253,TEVA Pharmaceuticals Slovakia s.r.o.,Bratislava,59103050,2024-01 — 2024-12,7
+380,35920203,"MAKOS, a.s.",Bardejov,59005171,2023-07 — 2024-06,8
+381,46410759,Medtronic Slovakia s. r. o.,Bratislava - mestská časť Ružinov,58516615,2023-05 — 2024-04,7
+382,36331163,SaarGummi Slovakia s.r.o.,Dolné Vestenice,58459827,2024-01 — 2024-12,8
+383,31352316,Orkla Foods Slovensko s. r. o.,Bratislava - mestská časť Ružinov,58434900,2024-01 — 2024-12,7
+384,36531359,"Smurfit Westrock Slovakia, a. s.",Štúrovo,58172807,2024-01 — 2024-12,7
+385,36865338,Edscha Velky Meder s. r. o.,Veľký Meder,58094289,2024-01 — 2024-12,7
+386,36245895,"FMC - dialyzačné služby, s.r.o.",Bratislava - mestská časť Ružinov,57610136,2024-01 — 2024-12,7
+387,31363695,JOHNSON CONTROLS INTERNATIONAL spol. s r.o.,Bratislava - mestská časť Staré Mesto,57491000,2023-10 — 2024-09,7
+388,51750155,"FC ecom, s.r.o. v konkurze",Bratislava - mestská časť Ružinov,57484987,2024-01 — 2024-12,7
+389,36717061,"IBERTAX, a.s.",Bratislava,57216303,2024-01 — 2024-12,7
+390,31403344,"PLAČEK PREMIUM, s. r. o.",Bratislava,57177498,2023-07 — 2024-06,7
+391,44393326,"Merck Sharp & Dohme, s.r.o.",Bratislava - mestská časť Petržalka,57095504,2024-01 — 2024-12,7
+392,45921610,Amgen Slovakia s.r.o.,Bratislava - mestská časť Staré Mesto,56936996,2024-01 — 2024-12,7
+393,35968486,"Veolia Energia Levice, a.s.",Bratislava - mestská časť Petržalka,56572836,2024-01 — 2024-12,7
+394,31361358,OVB Allfinanz Slovensko a. s.,Bratislava - mestská časť Nové Mesto,56389077,2024-01 — 2024-12,7
+395,35914581,"Dongil Rubber Belt Slovakia, s.r.o.",Považská Bystrica,56388878,2024-01 — 2024-12,7
+396,50798162,Air International Thermal ( Slovakia) s.r.o.,Nitra,56342792,2024-01 — 2024-12,7
+397,36237035,Eissmann Automotive Slovensko s. r. o.,Holíč,56304471,2024-01 — 2024-12,7
+398,35955660,"DATALOGIC SLOVAKIA, s.r.o.",Zavar,56044905,2024-01 — 2024-12,7
+399,44558970,"Ayvens Slovakia, s. r. o.",Bratislava,55909773,2024-01 — 2024-12,7
+400,36796921,Lenovo (Slovakia) s.r.o.,Bratislava - mestská časť Staré Mesto,55753897,2023-04 — 2024-03,7
+401,36297364,"Bel Power Solutions, s.r.o.",Dubnica nad Váhom,55702331,2024-01 — 2024-12,7
+402,31388841,"Viessmann, s.r.o.",Bratislava - mestská časť Ružinov,55498415,2024-01 — 2024-12,7
+403,31373861,Linde Gas s. r. o.,Bratislava - mestská časť Vajnory,55046737,2024-01 — 2024-12,7
+404,36389501,Franke Slovakia s.r.o.,Strečno,55037787,2024-01 — 2024-12,7
+405,31697402,"TATRA TEXTIL, s.r.o.",Hozelec,54875432,2024-01 — 2024-12,8
+406,31344046,Ericsson Slovakia spol. s r.o.,Bratislava,54853595,2024-01 — 2024-12,7
+407,54771048,"Global Ordnance Europe, s.r.o.",Bratislava - mestská časť Ružinov,54844066,2024-01 — 2024-12,7
+408,31351603,FedEx Express Slovakia s.r.o.,Bratislava 36,54728418,2023-06 — 2024-05,7
+409,35916249,"GLOVIS SLOVAKIA, s.r.o.",Žilina,54664815,2024-01 — 2024-12,7
+410,31412572,MILSY a.s.,Bánovce nad Bebravou,54576015,2024-01 — 2024-12,7
+411,31341381,"GEBRÜDER WEISS, s.r.o.",Senec,54316483,2024-01 — 2024-12,7
+412,46509500,"Modivo Slovakia, s. r. o.",Bratislava - mestská časť Ružinov,54007469,2023-02 — 2024-01,7
+413,35712881,HORTIM - SK s.r.o.,Senec,53891892,2024-01 — 2024-12,7
+414,36541991,"Heineken Slovensko Sladovne, a.s.",Hurbanovo,53734870,2024-01 — 2024-12,7
+415,36482889,"CEMM THOME SK, spol. s r.o.",Prešov,53728192,2024-01 — 2024-12,7
+416,35967480,Constellium Extrusions Levice s.r.o.,Levice - časť Géňa,53624700,2024-01 — 2024-12,7
+417,31336884,BRENNTAG SLOVAKIA s.r.o.,Pezinok,53606474,2024-01 — 2024-12,7
+418,35948566,SWEP Slovakia s.r.o.,Seňa,53567937,2024-01 — 2024-12,7
+419,50927477,VMT Trade s.r.o.,Dubnica nad Váhom,53555452,2024-01 — 2024-12,7
+420,51002264,Rolling Stock Lease s. r. o.,Bratislava - mestská časť Staré Mesto,53476233,2024-01 — 2024-12,7
+421,54485711,"JNTL Consumer Health (Slovakia), s.r.o.",Bratislava - mestská časť Ružinov,53363145,2024-01 — 2024-12,7
+422,51173981,"Asseco International, a.s.",Bratislava - mestská časť Ružinov,53079523,2024-01 — 2024-12,7
+423,53773411,"Nemocnica BORY, a. s.",Bratislava - mestská časť Petržalka,53067711,2024-01 — 2024-12,7
+424,35951371,Marel Slovakia s.r.o.,Nitra,52978638,2024-01 — 2024-12,7
+425,36299626,"Levare Cable, s. r. o.",Dubnica nad Váhom,52952205,2024-01 — 2024-12,7
+426,35706678,Jungheinrich spol. s r.o.,Senec,52828369,2024-01 — 2024-12,7
+427,31389325,"ABB, s.r.o.",Bratislava,52727487,2024-01 — 2024-12,7
+428,36868281,"LVD S3, a. s.",Tornaľa,52676193,2024-01 — 2024-12,7
+429,31392229,McDonald's Slovakia spol. s r.o.,Bratislava - mestská časť Petržalka,52582594,2024-01 — 2024-12,7
+430,31619380,"DOKA DREVO, s.r.o.",Banská Bystrica,52502474,2024-01 — 2024-12,7
+431,36294161,"GORAL, spol. s r.o.",Trenčín,52357487,2024-01 — 2024-12,7
+432,47254556,Gnotec Slovakia s.r.o.,Čadca,52176730,2024-01 — 2024-12,7
+433,36377147,"Mountfield SK, s.r.o.",Martin,52100423,2024-01 — 2024-12,7
+434,36340251,MTA SLOVAKIA s.r.o.,Bánovce nad Bebravou,52033511,2024-01 — 2024-12,7
+435,36384551,Quehenberger Logistics SVK a.s.,Ružomberok,51934934,2024-01 — 2024-12,7
+436,36205214,KOSIT a.s.,Košice,51652582,2024-01 — 2024-12,8
+437,36673234,Greatech Mechatronics (Slovakia) s. r. o.,Nové Mesto nad Váhom,51619268,2024-01 — 2024-12,7
+438,50063707,European Appliances Slovakia spol. s r.o.,Bratislava,51571553,2024-01 — 2024-12,7
+439,35744723,"RWA SLOVAKIA, spol. s r.o.",Bratislava,51567227,2024-01 — 2024-12,7
+440,35939389,"ENPAY TRANSFORMER COMPONENTS, s.r.o.","Krškany (pošta Levice, PSČ 934 01)",51503662,2024-01 — 2024-12,7
+441,36458236,Hedin Automotive Prešov s. r. o.,Prešov,51458621,2024-01 — 2024-12,8
+442,35739347,"PricewaterhouseCoopers Slovensko, s.r.o.",Bratislava - mestská časť Staré Mesto,51393619,2024-01 — 2024-12,7
+443,44927380,"Nemocnica s poliklinikou Štefana Kukuru Michalovce, a.s.",Michalovce,51383090,2024-01 — 2024-12,7
+444,36734063,MAHLE Engine Components Slovakia s.r.o.,Dolný Kubín,51328960,2024-01 — 2024-12,7
+445,35879807,Bang Joo Electronics Slovakia spol. s r.o,Šurany,51297160,2024-01 — 2024-12,7
+446,52255794,Handtmann Kechnec s. r. o.,Kechnec,51286528,2024-01 — 2024-12,7
+447,36188981,"TAJBA, a.s.",Čaňa,51087327,2024-01 — 2024-12,7
+448,36197777,"TRUMPF Slovakia, s.r.o.",Košice,51044492,2023-07 — 2024-06,7
+449,45594929,Nemocnica AGEL Zvolen a.s.,Zvolen,50969264,2024-01 — 2024-12,7
+450,30222362,"AR SHELVING, s.r.o.",Bytča,50569325,2024-01 — 2024-12,7
+451,35966289,ENGIE Services a.s.,Bratislava,50346398,2024-01 — 2024-12,7
+452,35723394,"SCHNEIDER ELECTRIC SLOVAKIA, spol. s r.o.",Bratislava,50345238,2024-01 — 2024-12,7
+453,55523692,Frutree s. r. o.,Hlohovec,50110953,2024-01 — 2024-12,7
+454,30223041,New Originals (SK) s. r. o.,Banská Bystrica,50105780,2024-01 — 2024-12,8
+455,35950765,Estamp Slovakia s.r.o.,Zlaté Moravce,50095919,2024-01 — 2024-12,7
+456,36457728,ZEOCEM s.r.o.,Bystré,50038198,2024-01 — 2024-12,8
+457,36240729,"Dan - Slovakia Agrar, a.s.",Veľký Meder,49933613,2024-01 — 2024-12,7
+458,31344275,Danone s.r.o.,Bratislava - mestská časť Ružinov,49923435,2024-01 — 2024-12,7
+459,36432130,PHA Slovakia s.r.o.,Bytča,49916254,2024-01 — 2024-12,7
+460,36473871,"STIEBEL ELTRON Slovakia, s.r.o.",Poprad,49886288,2024-01 — 2024-12,7
+461,35889519,Shin Heung Precision Slovakia s.r.o.,Šaľa - Veča,49764121,2024-01 — 2024-12,7
+462,35817887,Sensus Slovensko s. r. o.,Stará Turá,49735644,2024-01 — 2024-12,7
+463,34145311,"UNIQA Group Service Center Slovakia, spol. s r.o.",Nitra,49715017,2024-01 — 2024-12,7
+464,36416215,"HOVAL, s.r.o.",Istebné,49395385,2023-04 — 2024-03,7
+465,36729680,Nexis Fibers a.s.,Humenné,49374553,2024-01 — 2024-12,7
+466,31335632,TCHIBO SLOVENSKO spol. s r.o.,Bratislava,49128874,2024-01 — 2024-12,7
+467,43874746,Scania Finance Slovak Republic s. r. o.,Senec,49069806,2024-01 — 2024-12,7
+468,31344143,F Automobil Import s.r.o.,Bratislava - mestská časť Ružinov,48769319,2024-01 — 2024-12,7
+469,35918985,CIKAUTXO SK s.r.o.,Nové Zámky,48764900,2024-01 — 2024-12,7
+470,53557913,"Mazda Motor Slovakia, s. r. o.",Bratislava - mestská časť Ružinov,48440059,2023-04 — 2024-03,7
+471,43937969,"STADA PHARMA Slovakia, s. r. o.",Bratislava,48409815,2024-01 — 2024-12,7
+472,36669016,Galliker Slovakia s.r.o.,Senec,48307496,2024-01 — 2024-12,7
+473,44802030,Marti a. s.,Žilina - Bánová,48122974,2024-01 — 2024-12,7
+474,34112278,"HSF, s.r.o.",Malacky,48064723,2024-01 — 2024-12,7
+475,44323182,Datamars Slovakia s. r. o.,Nitra,47923136,2024-01 — 2024-12,7
+476,36381047,HERN s.r.o.,Námestovo,47911351,2023-12 — 2024-11,7
+477,34144790,"SLOVENSKÉ LIEČEBNÉ KÚPELE PIEŠŤANY, a.s.",Piešťany,47446709,2024-01 — 2024-12,8
+478,35900733,"Goldbeck, s.r.o.",Bratislava,47183196,2023-04 — 2024-03,7
+479,45650276,Atos Slovakia s. r. o.,Bratislava,47139120,2024-01 — 2024-12,7
+480,50487027,SLOVIL s.r.o.,Bratislava - mestská časť Vrakuňa,47127315,2024-01 — 2024-12,7
+481,47736194,"OPTIMUM SK, s. r. o.",Bratislava - mestská časť Karlova Ves,47053194,2024-01 — 2024-12,7
+482,30229529,VVISS spol. s r.o.,Madunice,46957601,2024-01 — 2024-12,8
+483,52297365,O Automobil Import s.r.o.,Bratislava - mestská časť Ružinov,46914314,2024-01 — 2024-12,7
+484,35971967,"UPC BROADBAND SLOVAKIA, s.r.o.",Bratislava,46737216,2024-01 — 2024-12,7
+485,44548605,"Regional Card Processing Centre, s. r. o.",Bratislava - mestská časť Staré Mesto,46728752,2024-01 — 2024-12,7
+486,18047351,europlac s.r.o.,Topoľčany,46645599,2024-01 — 2024-12,8
+487,36472565,"SYNOT TIP, a.s.",Poprad - Matejovce,46583437,2024-01 — 2024-12,7
+488,35938048,SEONG JI SLOVAKIA s.r.o.,Bratislava,46305994,2024-01 — 2024-12,7
+489,35745843,BUSINESS LEASE SLOVAKIA s.r.o.,Bratislava - mestská časť Staré Mesto,46286027,2024-01 — 2024-12,7
+490,31421482,Elster s. r. o.,Stará Turá,45913509,2024-01 — 2024-12,7
+491,47034122,Gartner Slovakia s.r.o.,Bratislava-Podunajské Biskupice,45903007,2023-05 — 2024-04,7
+492,44731159,SCONTO Nábytok s. r. o.,Trnava,45895563,2024-01 — 2024-12,7
+493,35879157,"CEVA Contract Logistics Slovakia, s.r.o.",Kostolné Kračany,45873464,2024-01 — 2024-12,7
+494,36863513,"SPIE Elektrovod, a. s.",Bratislava 26,45860769,2024-01 — 2024-12,7
+495,47236787,Booster Precision Components (Belusa) s.r.o.,Beluša,45759593,2024-01 — 2024-12,7
+496,36611760,Reutter SK s.r.o.,Myjava,45755508,2024-01 — 2024-12,7
+497,35872209,Pankl Automotive Slovakia s.r.o.,Topoľčany,45740481,2024-01 — 2024-12,7
+498,35873841,KK Group Cooling Slovakia s. r. o.,Čachtice,45663113,2024-01 — 2024-12,7
+499,35751622,LOGISTEED Slovakia s. r. o.,Senec,45399148,2023-04 — 2024-03,7
+500,50438336,"Hewlett Packard Enterprise Slovakia, s.r.o.",Bratislava - mestská časť Ružinov,45259082,2023-11 — 2024-10,7

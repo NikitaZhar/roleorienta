@@ -12,10 +12,13 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param companiesPerTask компаний за задание (два запроса на компанию, пауза 1 с на хост — задание укладывается
  *                         в аренду)
  * @param recheckAfter     срок до повторного запроса (категория меняется с годовой отчётностью)
+ * @param taskTimeBudget   задание не дольше: дальше — следующее задание цепочки (задание укладывается в аренду и
+ *                         при медленном ответе RÚZ; стенограмма §70)
  */
 @ConfigurationProperties("app.company-size")
 public record CompanySizeProperties(
         @DefaultValue("https://www.registeruz.sk/cruz-public/api") URI baseUrl,
         @DefaultValue("200") int companiesPerTask,
-        @DefaultValue("365d") Duration recheckAfter) {
+        @DefaultValue("365d") Duration recheckAfter,
+        @DefaultValue("5m") Duration taskTimeBudget) {
 }

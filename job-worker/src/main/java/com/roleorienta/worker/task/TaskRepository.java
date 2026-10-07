@@ -43,6 +43,22 @@ public class TaskRepository {
     }
 
     /**
+     * Есть ли у типа незавершённое задание (QUEUED, RUNNING, WAITING), менявшееся за последние {@code staleAfter}:
+     * цепочка этого типа ещё идёт. Задание, не менявшееся дольше, цепочку не держит (потерянное сообщение не должно
+     * останавливать шаг навсегда).
+     *
+     * @param type       тип задания
+     * @param staleAfter задания, не менявшиеся дольше (по часам БД), не учитываются
+     * @return {@code true} — цепочка идёт
+     */
+    public boolean hasActive(String type, Duration staleAfter) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM task WHERE type = ? AND state IN ('QUEUED', 'RUNNING', 'WAITING')
+                                                    AND updated_at > now() - make_interval(secs => ?))
+                """, Boolean.class, type, (double) staleAfter.toSeconds()));
+    }
+
+    /**
      * Захватывает задание на выполнение: QUEUED → RUNNING с арендой. Условие на состояние делает
      * захват единственным: повторно доставленное сообщение задание уже не захватит.
      *

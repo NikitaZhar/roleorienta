@@ -97,7 +97,8 @@ class SiteNameTests {
         NAMES.forEach((number, name) -> jdbcTemplate.update("""
                 INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')
                 ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL, name = EXCLUDED.name,
-                                                                         site_name_checked_at = NULL
+                                                                         site_name_checked_at = NULL,
+                                                                         priority = FALSE
                 """, number, name));
         for (String number : List.of(ALFA, BETA)) {
             jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES ('sluzbyzamestnanosti', ?, 'SK')",
@@ -138,6 +139,21 @@ class SiteNameTests {
         runQueuedTasks();
 
         assertThat(sites()).hasSize(3);
+    }
+
+    /**
+     * Приоритетная компания (§71) проверяется по названию без условия о размере: у {@link #GAMA} 5 сотрудников и нет
+     * источника вакансий.
+     */
+    @Test
+    void priorityCompanyIsCheckedRegardlessOfSize() {
+        jdbcTemplate.update("UPDATE company SET priority = TRUE WHERE registration_number = ?", GAMA);
+
+        handler.enqueue("priority");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT site_name_checked_at IS NOT NULL FROM company "
+                + "WHERE registration_number = ?", Boolean.class, GAMA)).isTrue();
     }
 
     private List<String> sites() {

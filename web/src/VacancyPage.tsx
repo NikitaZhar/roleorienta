@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { markUnsuitable, unmarkUnsuitable, vacancy, type VacancyDetails } from './api';
+import { vacancy, type VacancyDetails } from './api';
 import { countriesText, dateText, formatText } from './format';
 
 interface Props {
@@ -15,7 +15,8 @@ const STATES: Record<string, string> = {
 
 /**
  * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна и формат с пометками
- * неопределённости, ссылка на первичную публикацию, даты проверки, состояние; отметка «не подходит» и её снятие.
+ * неопределённости, ссылка на первичную публикацию, даты проверки, состояние. Отметка «не подходит» на этапе
+ * стабилизации ядра не показывается (API её сохраняет).
  */
 export function VacancyPage({ id, onBack }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
@@ -24,22 +25,6 @@ export function VacancyPage({ id, onBack }: Props) {
   useEffect(() => {
     vacancy(id).then(setDetails, (failure: Error) => setMessage(failure.message));
   }, [id]);
-
-  async function toggle() {
-    if (details === null) {
-      return;
-    }
-    try {
-      if (details.publication.unsuitable) {
-        await unmarkUnsuitable(id);
-      } else {
-        await markUnsuitable(id);
-      }
-      onBack();
-    } catch (failure) {
-      setMessage((failure as Error).message);
-    }
-  }
 
   if (message !== null) {
     return <p className="error">{message} <button type="button" onClick={onBack}>Back</button></p>;
@@ -72,9 +57,6 @@ export function VacancyPage({ id, onBack }: Props) {
         {publication.url !== null && (
           <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">Open the posting</a>
         )}
-        <button type="button" onClick={toggle}>
-          {publication.unsuitable ? 'Return to the list' : 'Not suitable'}
-        </button>
       </div>
     </article>
   );

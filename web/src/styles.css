@@ -45,6 +45,7 @@ label {
 }
 
 input,
+select,
 button {
   font: inherit;
   padding: 8px 10px;
@@ -63,17 +64,6 @@ button {
   max-width: 480px;
 }
 
-fieldset {
-  border: 1px solid #e3e3e3;
-  padding: 8px 12px;
-}
-
-label.inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
 .choices {
   list-style: none;
   margin: 0;
@@ -86,20 +76,6 @@ label.inline {
 .choices button {
   width: 100%;
   text-align: left;
-}
-
-.ok {
-  color: #1b5e20;
-}
-
-nav {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-nav .current {
-  font-weight: 600;
 }
 
 .vacancies {

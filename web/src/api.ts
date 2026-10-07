@@ -225,7 +225,6 @@ export interface Publication {
   firstSeenAt: string;
   lastConfirmedAt: string | null;
   state: 'ACTIVE' | 'NEEDS_RECHECK' | 'CLOSED';
-  unsuitable: boolean;
 }
 
 /** Сведения о вакансии (бизнес-описание §6). */
@@ -237,31 +236,13 @@ export interface VacancyDetails {
   publication: Publication;
 }
 
-function page(path: string, cursor: string | null): Promise<VacancyPage> {
-  return request<VacancyPage>('GET', cursor === null ? path : path + '?cursor=' + encodeURIComponent(cursor));
-}
-
 /** @returns страница накопленного списка */
 export function vacancies(cursor: string | null): Promise<VacancyPage> {
-  return page('/api/v1/me/vacancies', cursor);
-}
-
-/** @returns страница отмеченных «не подходит» */
-export function unsuitableVacancies(cursor: string | null): Promise<VacancyPage> {
-  return page('/api/v1/me/unsuitable', cursor);
+  const path = '/api/v1/me/vacancies';
+  return request<VacancyPage>('GET', cursor === null ? path : path + '?cursor=' + encodeURIComponent(cursor));
 }
 
 /** @returns сведения о вакансии */
 export function vacancy(id: number): Promise<VacancyDetails> {
   return request<VacancyDetails>('GET', '/api/v1/me/vacancies/' + id);
-}
-
-/** Отметка «не подходит»: вакансия уходит из накопленного списка этого пользователя. */
-export function markUnsuitable(id: number): Promise<void> {
-  return request<void>('PUT', '/api/v1/me/vacancies/' + id + '/unsuitable');
-}
-
-/** Снятие отметки: вакансия возвращается по правилам выдачи. */
-export function unmarkUnsuitable(id: number): Promise<void> {
-  return request<void>('DELETE', '/api/v1/me/vacancies/' + id + '/unsuitable');
 }

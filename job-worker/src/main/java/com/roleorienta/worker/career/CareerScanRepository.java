@@ -60,7 +60,8 @@ public class CareerScanRepository {
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
      * @return основные сайты ({@link #MAIN_SITE}; кандидаты и прочие найденные сайты не проверяются) действующих
-     *         компаний активных стран сбора, ещё не проверенные или проверенные давнее срока
+     *         компаний активных стран сбора, ещё не проверенные или проверенные давнее срока; сайты приоритетных
+     *         компаний — первыми (§71)
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
@@ -68,7 +69,7 @@ public class CareerScanRepository {
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL AND s.status = 'FOUND' AND s.id = %s
                   AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
-                ORDER BY s.checked_at NULLS FIRST, s.id LIMIT ?
+                ORDER BY c.priority DESC, s.checked_at NULLS FIRST, s.id LIMIT ?
                 """.formatted(MAIN_SITE), (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host"),
                         row.getString("start_url")),
                 (double) recheckAfter.toSeconds(), limit);

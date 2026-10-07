@@ -46,7 +46,7 @@ public class CareerScanTick {
     public void tick() {
         try {
             String today = LocalDate.now(clock).toString();
-            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(CareerScanHandler.TYPE,
+            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.startChain(CareerScanHandler.TYPE,
                     CareerScanHandler.taskKey(today), CareerScanHandler.payload(today)));
         } catch (DataAccessException exception) {
             LOG.warn("Career scan tick failed, will retry on next tick", exception);
