@@ -29,7 +29,8 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Шаг «Wikidata» поиска сайта на заглушке SPARQL-сервиса и сайтов и настоящей PostgreSQL (технический документ
  * §5.1): постраничный ответ, IČO без ведущего нуля, открывшийся сайт — находка, ответ 403 — находка с
- * {@code WIKIDATA_403}, несуществующая страница — кандидат; компания с найденным сайтом не проверяется.
+ * {@code WIKIDATA_403}, несуществующая страница и запрет robots.txt — кандидат; адрес с путём — стартовая
+ * страница; компания с найденным сайтом не проверяется.
  */
 @SpringBootTest(properties = {"app.http.allow-private-addresses=true", "app.wikidata.page-size=2",
     "app.wikidata.sites-per-task=2"})
@@ -43,17 +44,19 @@ class WikidataSiteTests {
     private static final String CLOSED = "90100002";
     /** Сайта нет (404); в Wikidata IČO записан без ведущего нуля. */
     private static final String MISSING = "01234567";
+    /** Сайт запрещён robots.txt заглушки — кандидат (§74). */
+    private static final String FORBIDDEN = "90100008";
     /** Уже есть найденный сайт — не проверяется. */
     private static final String HAS_SITE = "90100004";
     /** Нет в реестре. */
     private static final String UNKNOWN = "90100005";
     /** Сайты временно не отвечают (503) — регистрируются только в тесте цепочки. */
     private static final List<String> BUSY = List.of("90100006", "90100007");
-    private static final List<String> REGISTERED = List.of(OPENS, CLOSED, MISSING, HAS_SITE);
+    private static final List<String> REGISTERED = List.of(OPENS, CLOSED, MISSING, HAS_SITE, FORBIDDEN);
     /** Строки ответа Wikidata: IČO, путь сайта на заглушке. */
     private static final List<String[]> ROWS = List.of(new String[] {"1234567", "/missing"},
             new String[] {OPENS, "/opens"}, new String[] {CLOSED, "/closed"}, new String[] {HAS_SITE, "/opens"},
-            new String[] {UNKNOWN, "/opens"}, new String[] {BUSY.get(0), "/busy"},
+            new String[] {UNKNOWN, "/opens"}, new String[] {FORBIDDEN, "/forbidden"}, new String[] {BUSY.get(0), "/busy"},
             new String[] {BUSY.get(1), "/busy"});
     private static final Pattern OFFSET = Pattern.compile("OFFSET[+ ](\\d+)");
     private static final Pattern LIMIT = Pattern.compile("LIMIT[+ ](\\d+)");
@@ -126,14 +129,17 @@ class WikidataSiteTests {
                 MISSING + ":127.0.0.1:WIKIDATA:WIKIDATA:CANDIDATE:http://www.wikidata.org/entity/Q1234567",
                 OPENS + ":127.0.0.1:WIKIDATA:WIKIDATA:FOUND:http://www.wikidata.org/entity/Q" + OPENS,
                 CLOSED + ":127.0.0.1:WIKIDATA:WIKIDATA_403:FOUND:http://www.wikidata.org/entity/Q" + CLOSED,
-                HAS_SITE + ":has-site.sk:COMMON_CRAWL:REGISTRATION_NUMBER:FOUND:http://has-site.sk/kontakt");
+                HAS_SITE + ":has-site.sk:COMMON_CRAWL:REGISTRATION_NUMBER:FOUND:http://has-site.sk/kontakt",
+                FORBIDDEN + ":127.0.0.1:WIKIDATA:WIKIDATA:CANDIDATE:http://www.wikidata.org/entity/Q" + FORBIDDEN);
+        assertThat(jdbcTemplate.queryForObject("SELECT s.start_url FROM company_site s JOIN company c ON c.id = "
+                + "s.company_id WHERE c.registration_number = ?", String.class, OPENS)).isEqualTo(base() + "/opens");
         assertThat(jdbcTemplate.queryForList("SELECT c.registration_number FROM company_check k "
                 + "JOIN company c ON c.id = k.company_id", String.class)).containsExactly(MISSING);
 
         handler.enqueue("second");
         runQueuedTasks();
 
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(5);
     }
 
     /**
@@ -144,7 +150,7 @@ class WikidataSiteTests {
     void chainStopsWhenWholeBatchFailsTemporarily() {
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) SELECT id, "
                 + "'done-' || registration_number || '.sk', 'http://done.sk', 'WIKIDATA', 'WIKIDATA' FROM company "
-                + "WHERE registration_number IN (?, ?, ?)", OPENS, CLOSED, MISSING);
+                + "WHERE registration_number IN (?, ?, ?, ?)", OPENS, CLOSED, MISSING, FORBIDDEN);
         for (String number : BUSY) {
             jdbcTemplate.update("""
                     INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')
@@ -187,7 +193,7 @@ class WikidataSiteTests {
 
     /**
      * Заглушка: {@code /sparql} — строки {@link #ROWS} по {@code LIMIT}/{@code OFFSET} запроса; {@code /opens}
-     * — страница, {@code /closed} — 403, прочее — 404.
+     * — страница, {@code /closed} — 403, {@code /forbidden} — запрещён robots.txt, прочее — 404.
      */
     private static HttpServer startServer() {
         try {
@@ -207,6 +213,10 @@ class WikidataSiteTests {
             });
             server.createContext("/", exchange -> {
                 String path = exchange.getRequestURI().getPath();
+                if ("/robots.txt".equals(path)) {
+                    respond(exchange, 200, "User-agent: *\nDisallow: /forbidden\n");
+                    return;
+                }
                 respond(exchange, "/opens".equals(path) ? 200 : "/closed".equals(path) ? 403
                         : "/busy".equals(path) ? 503 : 404,
                         "<html><body>Company</body></html>");

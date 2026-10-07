@@ -117,9 +117,11 @@ public class StatePortalRepository {
     }
 
     /**
-     * Работодатели портала к поиску сайта (§47): источник портала подключён к их компании, у компании нет
-     * ни одного найденного сайта (кандидаты не считаются), сайт не искали дольше {@code recheckAfter}. Сначала
-     * те, где не искали.
+     * Работодатели портала к поиску сайта (§47): работодатель из списка портала есть в реестре (по IČO;
+     * страна — активная страна сбора) и действует — независимо от того, подключён ли к компании источник портала
+     * (у компании может быть своя кадровая страница или она — агентство; как в скрипте замера, §74); у компании
+     * нет ни одного найденного сайта (кандидаты не считаются), сайт не искали дольше {@code recheckAfter}.
+     * Сначала те, где не искали.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторного поиска
@@ -128,9 +130,9 @@ public class StatePortalRepository {
     public List<SiteEmployer> employersForSite(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT p.registration_number, c.id, c.name FROM portal_employer p
-                JOIN source s ON s.provider = ? AND s.board = p.registration_number
-                JOIN company_source cs ON cs.source_id = s.id
-                JOIN company c ON c.id = cs.company_id
+                JOIN company c ON c.country = 'SK'
+                     AND c.registration_number IN (p.registration_number, ltrim(p.registration_number, '0'))
+                JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL
                   AND (p.site_checked_at IS NULL OR p.site_checked_at < now() - make_interval(secs => ?))
                   AND NOT EXISTS (SELECT 1 FROM company_site site
@@ -138,7 +140,7 @@ public class StatePortalRepository {
                 ORDER BY p.site_checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
                 """, (row, number) -> new SiteEmployer(row.getString(1), row.getLong(2), row.getString(3)),
-                StatePortalAdapter.PROVIDER, (double) recheckAfter.toSeconds(), limit);
+                (double) recheckAfter.toSeconds(), limit);
     }
 
     /**

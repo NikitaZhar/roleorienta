@@ -75,18 +75,16 @@ public class WikidataSiteRepository {
      * проверка сайта. Повторная запись того же хоста ничего не меняет.
      *
      * @param companyId компания
-     * @param host      хост сайта
-     * @param item      адрес элемента Wikidata — доказательство
-     * @param proof     {@code WIKIDATA} или {@code WIKIDATA_403}
-     * @param found     {@code true} — находка, {@code false} — кандидат (сайт не открылся)
+     * @param site      сайт и итог открытия
      */
     @Transactional
-    public void record(long companyId, String host, String item, String proof, boolean found) {
+    public void record(long companyId, Site site) {
         jdbcTemplate.update("""
-                INSERT INTO company_site (company_id, host, evidence_url, source, proof, status)
-                VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
-                """, companyId, host, item, SOURCE, proof, found ? "FOUND" : "CANDIDATE");
-        if (found) {
+                INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
+                """, companyId, site.host(), site.startUrl(), site.item(), SOURCE, site.proof(),
+                site.found() ? "FOUND" : "CANDIDATE");
+        if (site.found()) {
             jdbcTemplate.update("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
                     companyId);
         }
@@ -99,5 +97,17 @@ public class WikidataSiteRepository {
      * @param registrationNumber IČO
      */
     public record DueCompany(long id, String registrationNumber) {
+    }
+
+    /**
+     * Сайт из Wikidata с итогом открытия.
+     *
+     * @param host     хост сайта
+     * @param startUrl адрес сайта из Wikidata с путём — стартовая страница; {@code null} — главная
+     * @param item     адрес элемента Wikidata — доказательство
+     * @param proof    {@code WIKIDATA} или {@code WIKIDATA_403}
+     * @param found    {@code true} — находка, {@code false} — кандидат (сайт не открылся)
+     */
+    public record Site(String host, String startUrl, String item, String proof, boolean found) {
     }
 }

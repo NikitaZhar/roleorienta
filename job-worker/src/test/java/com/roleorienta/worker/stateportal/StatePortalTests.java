@@ -229,6 +229,18 @@ class StatePortalTests {
                 + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
     }
 
+    /**
+     * Сайт ищется и у работодателя портала, к компании которого источник портала не подключён — у неё своя
+     * кадровая страница (как в скрипте замера, §74).
+     */
+    @Test
+    void searchesSiteOfEmployerWithOwnPage() {
+        runSiteStep();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
+                + "WHERE registration_number = ?", Boolean.class, OWN_PAGE)).isTrue();
+    }
+
     private void runSiteStep() {
         handler.enqueueList("test");
         runQueuedTasks();

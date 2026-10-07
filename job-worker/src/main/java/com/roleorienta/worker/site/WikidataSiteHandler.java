@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.site.WikidataSiteRepository.DueCompany;
+import com.roleorienta.worker.site.WikidataSiteRepository.Site;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
@@ -29,14 +30,19 @@ import org.springframework.stereotype.Component;
  *
  * <ul>
  *   <li>открылся (в том числе тело больше потолка) — находка {@code WIKIDATA};</li>
- *   <li>закрыт для программы (401/403 или robots.txt) — находка {@code WIKIDATA_403};</li>
- *   <li>не существует, удалён или адрес недопустим — кандидат {@code WIKIDATA};</li>
+ *   <li>ответ 401/403 — находка {@code WIKIDATA_403};</li>
+ *   <li>запрещён robots.txt, не существует, удалён или адрес недопустим — кандидат {@code WIKIDATA}
+ *       (кандидат подтверждает сайт группы того же домена, §73);</li>
  *   <li>временный отказ — компания остаётся к проверке следующим заданием.</li>
  * </ul>
  *
  * <p>Взято полное число компаний и хоть что-то записано — следующее задание цепочки (компании с временным
  * отказом остаются к проверке; если весь пакет — они, цепочка ждёт следующего дня, а не крутится вхолостую). Нет разрешения на использование Wikidata —
  * задание ничего не делает. Wikidata не ответила — повтор позже.</p>
+ *
+ * <p>Адрес сайта из Wikidata с путём ({@code firma.com/sk/}) — стартовая страница поиска кадровой страницы
+ * ({@code company_site.start_url}). Правила — как в скрипте замера {@code survey/site-search.py} (стенограмма
+ * §74).</p>
  */
 @Component
 public class WikidataSiteHandler implements TaskHandler {
@@ -133,14 +139,17 @@ public class WikidataSiteHandler implements TaskHandler {
             return false;
         }
         host = host.toLowerCase(Locale.ROOT);
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String startUrl = (path.isEmpty() || "/".equals(path)) && uri.getRawQuery() == null ? null : uri.toString();
         switch (httpClient.get(uri)) {
-            case HttpResult.Success success -> repository.record(company.id(), host, site.item(), OPENED, true);
+            case HttpResult.Success success -> repository.record(company.id(),
+                    new Site(host, startUrl, site.item(), OPENED, true));
             case HttpResult.PermanentFailure failure -> {
                 switch (failure.kind()) {
-                    case TOO_LARGE -> repository.record(company.id(), host, site.item(), OPENED, true);
-                    case ACCESS_DENIED, USE_FORBIDDEN -> repository.record(company.id(), host, site.item(), CLOSED,
-                            true);
-                    default -> repository.record(company.id(), host, site.item(), OPENED, false);
+                    case TOO_LARGE -> repository.record(company.id(), new Site(host, startUrl, site.item(), OPENED, true));
+                    case ACCESS_DENIED -> repository.record(company.id(),
+                            new Site(host, startUrl, site.item(), CLOSED, true));
+                    default -> repository.record(company.id(), new Site(host, startUrl, site.item(), OPENED, false));
                 }
             }
             case HttpResult.TemporaryFailure temporary -> {
