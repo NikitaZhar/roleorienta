@@ -14,6 +14,7 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -41,7 +42,8 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>Главная страница: ссылки на доски Workday, Greenhouse, Personio ({@link CareerLinks}).</li>
  *   <li>Досок нет — кадровая страница сайта, как в скрипте замера топ-500 (§76): ссылка с главной с кадровым словом
- *       ({@link CareerLinks}); страница засчитывается, только если в её тексте есть кадровое слово (пробный адрес —
+ *       ({@link CareerLinks}); сайт сам кадровый ({@code kariera.sconto.sk}) и на главной кадровые слова — кадровая
+ *       страница — главная (§79); страница засчитывается, только если в её тексте есть кадровое слово (пробный адрес —
  *       и если переадресация не привела на главную).
  *       Нет ссылки, ссылка не кадровая или главная не открылась — пробные адреса: {@code /kariera},
  *       {@code /sk/kariera}, {@code /careers}, {@code /kariera-a-praca}, {@code /pre-uchadzacov},
@@ -75,6 +77,8 @@ public class CareerScanHandler implements TaskHandler {
     private static final int VACANCY_CHECKS = 3;
     /** Длина {@code source.board} в схеме. */
     private static final int MAX_BOARD = 200;
+    /** Длина {@code company_site.career_url} в схеме. */
+    private static final int MAX_URL = 2000;
     /** Пробные адреса кадровой страницы на сайте, когда на главной нет ссылки или главная закрыта. */
     private static final List<String> CAREER_PATHS = List.of("/kariera", "/sk/kariera", "/careers", "/kariera-a-praca",
             "/pre-uchadzacov");
@@ -146,9 +150,16 @@ public class CareerScanHandler implements TaskHandler {
         String day = day(task.payload());
         List<Site> sites = repository.nextSites(properties.sitesPerTask(), properties.recheckAfter());
         Set<String> providers = repository.permittedProviders();
-        checkInParallel(sites, providers);
-        if (sites.size() == properties.sitesPerTask()) {
-            taskService.enqueue(TYPE, continuationKey(day, sites.get(sites.size() - 1).id()), payload(day));
+        List<Site> checked;
+        try {
+            checked = checkInParallel(sites, providers);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return new TaskOutcome.Retry("CAREER_SCAN interrupted", Duration.ZERO);
+        }
+        if (sites.size() == properties.sitesPerTask() || checked.size() < sites.size()) {
+            long last = checked.stream().mapToLong(Site::id).max().orElse(sites.get(sites.size() - 1).id());
+            taskService.enqueue(TYPE, continuationKey(day, last), payload(day));
         }
         return new TaskOutcome.Done();
     }
@@ -158,27 +169,37 @@ public class CareerScanHandler implements TaskHandler {
      * ответов сайтов, поэтому по одному задание не укладывалось в аренду. Вежливость к хостам не меняется — промежуток
      * между запросами к одному хосту держит общий бюджет в БД ({@code app.http.politeness.host-interval}). Сайты задания
      * принадлежат разным компаниям (у компании проверяется один основной сайт), итог каждого пишется своей транзакцией.
-     * Ошибка проверки одного сайта, как и прежде, завершает задание ошибкой (повтор — таблица заданий); остальные
-     * сайты к этому моменту уже проверены и записаны.
+     *
+     * <p>Срок задания — {@link CareerProperties#checkTimeBudget()} (аудит §78): после него новые сайты не начинаются,
+     * остаются непроверенными и достаются следующему заданию цепочки (ключ продолжения — по последнему проверенному
+     * сайту); начатые проверки доделываются. Ошибка проверки одного сайта (ошибка кода или данных) завершает задание
+     * ошибкой, как и до §77 ({@code FAILED}; недоступность БД — повтор задания); остальные сайты к этому моменту уже
+     * записаны.</p>
+     *
+     * @return проверенные сайты
+     * @throws InterruptedException поток задания прерван — задание повторяется
      */
-    private void checkInParallel(List<Site> sites, Set<String> providers) {
-        List<Callable<Void>> checks = sites.stream().map(site -> (Callable<Void>) () -> {
+    private List<Site> checkInParallel(List<Site> sites, Set<String> providers) throws InterruptedException {
+        long deadline = System.nanoTime() + properties.checkTimeBudget().toNanos();
+        List<Callable<Optional<Site>>> checks = sites.stream().map(site -> (Callable<Optional<Site>>) () -> {
+            if (System.nanoTime() - deadline > 0) {
+                return Optional.empty();
+            }
             check(site, providers);
-            return null;
+            return Optional.of(site);
         }).toList();
         int threads = Math.max(1, Math.min(parallelSites, sites.size()));
+        List<Site> checked = new ArrayList<>();
         try (ExecutorService pool = Executors.newFixedThreadPool(threads,
                 Thread.ofPlatform().name("career-scan-", 0).factory())) {
-            for (Future<Void> done : pool.invokeAll(checks)) {
-                done.get();
+            for (Future<Optional<Site>> done : pool.invokeAll(checks)) {
+                done.get().ifPresent(checked::add);
             }
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("CAREER_SCAN interrupted", interrupted);
         } catch (ExecutionException failed) {
             throw failed.getCause() instanceof RuntimeException runtime ? runtime
                     : new IllegalStateException("CAREER_SCAN site check failed", failed.getCause());
         }
+        return checked;
     }
 
     private static String day(String payload) {
@@ -207,6 +228,10 @@ public class CareerScanHandler implements TaskHandler {
         if (boards.isEmpty()) {
             careerPage = careerLink.flatMap(link -> page(URI.create(link))).filter(CareerLinks::isCareerPage);
             if (careerPage.isEmpty()) {
+                careerPage = homePage.filter(page -> CareerLinks.careerSite(URI.create(page.location()).getHost())
+                        && CareerLinks.isCareerPage(page));
+            }
+            if (careerPage.isEmpty()) {
                 careerPage = standardCareerPage(home, hostAnswers(homeResult));
             }
             boards = careerPage.map(page -> careerBoards(page, true)).orElse(Set.of());
@@ -217,7 +242,7 @@ public class CareerScanHandler implements TaskHandler {
             repository.record(site, Set.of(), CheckResult.UNREACHABLE, null, Role.EMPLOYER);
             return;
         }
-        Optional<String> careerUrl = careerPage.isPresent() ? careerPage.map(Document::location) : careerLink;
+        String careerUrl = careerUrl(careerPage, careerLink, boards);
         Set<Board> permitted = boards.stream().filter(board -> providers.contains(board.provider()))
                 .collect(Collectors.toSet());
         Optional<Role> role = repository.permittedRole(site.companyId());
@@ -229,8 +254,18 @@ public class CareerScanHandler implements TaskHandler {
             result = !boards.isEmpty() ? CheckResult.SOURCE_FOUND
                     : careerPage.isPresent() ? CheckResult.FORMAT_UNSUPPORTED : CheckResult.NO_CAREER_PAGE;
         }
-        repository.record(site, permitted, result, careerUrl.orElse(null), role.orElse(Role.EMPLOYER));
+        repository.record(site, permitted, result, careerUrl, role.orElse(Role.EMPLOYER));
         LOG.info("Site {} of company {}: {} {}", site.host(), site.companyId(), result, boards);
+    }
+
+    /**
+     * Адрес кадровой страницы для записи: конечный адрес найденной кадровой страницы; доски на главной — ссылка с
+     * главной (страница не открывалась); иначе {@code null} — кадровая страница не найдена, отвергнутая ссылка не
+     * записывается (аудит §78). Адрес длиннее колонки ({@value #MAX_URL}) не записывается.
+     */
+    private static String careerUrl(Optional<Document> careerPage, Optional<String> careerLink, Set<Board> boards) {
+        String url = careerPage.map(Document::location).orElse(boards.isEmpty() ? null : careerLink.orElse(null));
+        return url == null || url.length() > MAX_URL ? null : url;
     }
 
     /**
@@ -255,6 +290,25 @@ public class CareerScanHandler implements TaskHandler {
      * @return кадровая страница; пусто — ни один адрес не подошёл
      */
     private Optional<Document> standardCareerPage(URI home, boolean hostAnswers) {
+        for (URI candidate : careerCandidates(home, hostAnswers)) {
+            Optional<Document> page = careerPage(candidate, home);
+            if (page.isPresent()) {
+                return page;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Пробные кадровые адреса по порядку: пути на сайте (если хост отвечает), кадровые поддомены домена сайта,
+     * кадровые хосты бренда (первое слово регистрируемого домена); схема — схема главной. У сайта по IP-адресу —
+     * только пути.
+     *
+     * @param home        главная (стартовая страница) сайта
+     * @param hostAnswers хост сайта отвечает — пробовать пути на нём
+     * @return адреса для проверки
+     */
+    static List<URI> careerCandidates(URI home, boolean hostAnswers) {
         List<URI> candidates = new ArrayList<>();
         if (hostAnswers) {
             CAREER_PATHS.stream().map(home::resolve).forEach(candidates::add);
@@ -264,15 +318,10 @@ public class CareerScanHandler implements TaskHandler {
             CAREER_SUBDOMAINS.forEach(sub -> candidates.add(
                     URI.create(home.getScheme() + "://" + sub + "." + domain + "/")));
             String brand = SiteBrand.registrable(domain).split("\\.")[0];
-            BRAND_CAREER_HOSTS.forEach(pattern -> candidates.add(URI.create("https://" + pattern.formatted(brand) + "/")));
+            BRAND_CAREER_HOSTS.forEach(pattern -> candidates.add(
+                    URI.create(home.getScheme() + "://" + pattern.formatted(brand) + "/")));
         }
-        for (URI candidate : candidates) {
-            Optional<Document> page = careerPage(candidate, home);
-            if (page.isPresent()) {
-                return page;
-            }
-        }
-        return Optional.empty();
+        return candidates;
     }
 
     /**
@@ -285,9 +334,18 @@ public class CareerScanHandler implements TaskHandler {
         return page(address).filter(CareerLinks::isCareerPage).filter(page -> !isHome(URI.create(page.location()), home));
     }
 
+    /**
+     * Главная сайта: тот же хост (без {@code www.}) и пустой путь или путь стартовой страницы ({@code /sk/} у сайта со
+     * стартовым адресом с портала или из Wikidata, аудит §78).
+     */
     private static boolean isHome(URI address, URI home) {
-        String path = address.getPath() == null ? "" : address.getPath().replaceAll("/+$", "");
-        return path.isEmpty() && withoutWww(address.getHost()).equals(withoutWww(home.getHost()));
+        String path = trimmedPath(address);
+        return withoutWww(address.getHost()).equals(withoutWww(home.getHost()))
+                && (path.isEmpty() || path.equals(trimmedPath(home)));
+    }
+
+    private static String trimmedPath(URI address) {
+        return address.getPath() == null ? "" : address.getPath().replaceAll("/+$", "");
     }
 
     private static String withoutWww(String host) {

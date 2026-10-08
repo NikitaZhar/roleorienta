@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
  * <p>Правила — как в скрипте замера {@code survey/site-search.py} (стенограмма §73). Записывается угаданный хост;
  * доказательство ({@code evidence_url}) — конечный адрес ответа.</p>
  *
- * <p>Компании — с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
+ * <p>Компании — приоритетные (эталон, §71), с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
  * число — следующее задание цепочки. Задание идёт в свою очередь: проверка одной компании — до 36 адресов.
  * Временный отказ адреса пропускается: компания перепроверяется через срок.</p>
  */
@@ -45,6 +45,8 @@ public class SiteNameHandler implements TaskHandler {
     public static final String TYPE = "SITE_NAME";
 
     private static final String PROOF_NUMBER = "REGISTRATION_NUMBER";
+    /** Длина {@code company_site.evidence_url} в схеме. */
+    private static final int MAX_URL = 2000;
     private static final String PROOF_BRAND = "BRAND";
     private static final String PROOF_GROUP = "GROUP_SITE";
     private static final String PROOF_403 = "HTTP_403";
@@ -150,9 +152,14 @@ public class SiteNameHandler implements TaskHandler {
         return group != null ? List.of(group) : candidates;
     }
 
+    /**
+     * Находка или кандидат: доказательство — конечный адрес ответа; длиннее колонки ({@value #MAX_URL}) — стартовый
+     * адрес (аудит §78: иначе запись нарушила бы ограничение, задание — {@code FAILED}).
+     */
     private NameSite site(SiteAddress address, URI at, String proof, boolean found) {
         String url = verifier.start(address.host(), address.path()).toString();
-        return new NameSite(address.host(), address.path().isEmpty() ? null : url, at.toString(), proof, found);
+        String evidence = at.toString().length() > MAX_URL ? url : at.toString();
+        return new NameSite(address.host(), address.path().isEmpty() ? null : url, evidence, proof, found);
     }
 
     private static String key(String period, int round) {

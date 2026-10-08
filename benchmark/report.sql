@@ -26,16 +26,18 @@ SELECT CASE rank WHEN 1 THEN '1 page found, read'
                  WHEN 2 THEN '2 page found, format unsupported'
                  WHEN 3 THEN '3 no page'
                  WHEN 4 THEN '4 site unreachable'
-                 WHEN 5 THEN '5 site not checked'
-                 ELSE '6 no site' END AS career_page,
+                 WHEN 5 THEN '5 use forbidden'
+                 WHEN 6 THEN '6 site not checked'
+                 ELSE '7 no site' END AS career_page,
        count(*) AS companies
 FROM (SELECT b.company_id,
-             min(CASE WHEN s.id IS NULL THEN 6
+             min(CASE WHEN s.id IS NULL THEN 7
                       WHEN s.check_result = 'SOURCE_FOUND' THEN 1
                       WHEN s.check_result = 'FORMAT_UNSUPPORTED' THEN 2
                       WHEN s.check_result = 'NO_CAREER_PAGE' THEN 3
                       WHEN s.check_result = 'UNREACHABLE' THEN 4
-                      ELSE 5 END) AS rank
+                      WHEN s.check_result = 'USE_FORBIDDEN' THEN 5
+                      ELSE 6 END) AS rank
       FROM benchmark.company b
       LEFT JOIN public.company_site s ON s.company_id = b.company_id AND s.status = 'FOUND'
       WHERE b.company_id IS NOT NULL

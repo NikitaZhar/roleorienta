@@ -124,6 +124,46 @@ class CareerLinksTests {
     }
 
     /**
+     * Аудит §78: «Spolupráca v regióne» — не кадровое слово («práca v» — только с начала слова); хост с брендом сайта в
+     * имени — кадровый сайт группы ({@code skupinazse.sk} у {@code zse.sk}, как в скрипте); ссылка на саму страницу («Kariéra» с {@code href="#"})
+     * — не кадровая, пока в якоре или хосте сайта нет кадрового слова ({@code kariera.acme.sk/}, {@code /#kariera}).
+     */
+    @Test
+    void rejectsCooperationOtherBrandAndSelfLink() {
+        Document cooperation = Jsoup.parse("<a href=\"/region\">Spolupráca v regióne</a>", "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(cooperation, "acme.sk")).isEmpty();
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<p>Spolupráca v regióne</p>"))).isFalse();
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<p>Práca v našom tíme</p>"))).isTrue();
+
+        Document groupBrand = Jsoup.parse("<a href=\"https://www.skupinazse.sk/Kariera\">Kariéra</a>", "https://www.zse.sk/");
+        assertThat(CareerLinks.careerPage(groupBrand, "www.zse.sk")).contains("https://www.skupinazse.sk/Kariera");
+        Document hyphenBrand = Jsoup.parse("<a href=\"https://www.skoda-auto-group.com/careers\">Careers</a>",
+                "https://www.skoda-auto.sk/");
+        assertThat(CareerLinks.careerPage(hyphenBrand, "www.skoda-auto.sk"))
+                .contains("https://www.skoda-auto-group.com/careers");
+
+        Document menu = Jsoup.parse("<a href=\"#\">Kariéra</a><a href=\"/kariera\">Kariéra</a>", "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(menu, "acme.sk")).contains("https://acme.sk/kariera");
+        Document section = Jsoup.parse("<a href=\"/#kariera\">Pozície</a>", "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(section, "acme.sk")).contains("https://acme.sk/");
+        Document careerSite = Jsoup.parse("<a href=\"/\">Kariéra</a>", "https://kariera.acme.sk/");
+        assertThat(CareerLinks.careerPage(careerSite, "kariera.acme.sk")).contains("https://kariera.acme.sk/");
+    }
+
+    /**
+     * §79: адрес ссылки с «é» — в кодировке для запроса (RWA: {@code /kariéra+2500++1003045}); сайт сам кадровый — по
+     * кадровому слову в имени хоста.
+     */
+    @Test
+    void encodesLinkAndRecognizesCareerSite() {
+        Document rwa = Jsoup.parse("<a href=\"/kariéra+2500++1003045\">Kariéra</a>", "https://www.rwa.sk/");
+        assertThat(CareerLinks.careerPage(rwa, "www.rwa.sk")).contains("https://www.rwa.sk/kari%C3%A9ra+2500++1003045");
+        assertThat(CareerLinks.careerSite("kariera.sconto.sk")).isTrue();
+        assertThat(CareerLinks.careerSite("www.dm-jobs.sk")).isTrue();
+        assertThat(CareerLinks.careerSite("www.sconto.sk")).isFalse();
+    }
+
+    /**
      * SmartRecruiters: кадровая страница компании и вакансия — доска компании в нижнем регистре;
      * служебные пути — не доски.
      */
@@ -139,8 +179,7 @@ class CareerLinksTests {
 
     /**
      * Кадровая страница на поддомене сайта; чужой хост с тем же окончанием — не поддомен; шаг вглубь —
-     * другая кадровая ссылка, не сама страница; стандартный адрес — кадровая страница, только если в
-     * заголовке кадровое слово.
+     * другая кадровая ссылка, не сама страница; страница — кадровая, только если в её тексте кадровое слово.
      */
     @Test
     void findsCareerSubdomainDeeperPageAndStandardPage() {

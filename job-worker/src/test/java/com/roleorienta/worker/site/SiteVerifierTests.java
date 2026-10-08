@@ -170,6 +170,16 @@ class SiteVerifierTests {
     }
 
     /**
+     * Главная запрещена robots.txt — {@code ROBOTS}, а не {@code CLOSED} (§73: запрет robots.txt отделён от 401/403).
+     */
+    @Test
+    void robotsDisallowIsNotClosed() {
+        pages.put("/robots.txt", "User-agent: *\nDisallow: /");
+        pages.put("/", "<p>Alfaplast</p>");
+        assertThat(verify("alfaplast.sk")).isEqualTo(Verdict.ROBOTS);
+    }
+
+    /**
      * Бренды названия: правовая форма и «Slovakia» отброшены; общие слова брендом не считаются.
      */
     @Test

@@ -41,7 +41,10 @@ class SiteNameTests {
     private static final String BETA = "90200002";
     /** Без источника вакансий, 5 сотрудников (RÚZ) — не проверяется. */
     private static final String GAMA = "90200003";
-    /** Без источника вакансий, 50 сотрудников (RÚZ) — проверяется. */
+    /**
+     * Без источника вакансий, 50 сотрудников (RÚZ) — проверяется; {@code www.deltaplast.sk} отвечает 403, но запрещён
+     * robots.txt — не кандидат.
+     */
     private static final String DELTA = "90200004";
     private static final Map<String, String> NAMES = Map.of(ALFA, "Alfaplast s.r.o.", BETA, "Betaplast a.s.",
             GAMA, "Gamaplast s.r.o.", DELTA, "Deltaplast s.r.o.");
@@ -175,6 +178,21 @@ class SiteNameTests {
                 + "WHERE registration_number = ?", Boolean.class, GAMA)).isTrue();
     }
 
+    /**
+     * Запрет robots.txt — не кандидат {@code HTTP_403} (§73): у {@link #DELTA} адрес {@code www.deltaplast.sk} отвечал
+     * бы 403, но robots.txt его запрещает — запрос не отправляется, сайт не записывается.
+     */
+    @Test
+    void robotsDisallowedAddressIsNotCandidate() {
+        handler.enqueue("robots");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site s JOIN company c ON c.id = s.company_id "
+                + "WHERE c.registration_number = ?", Integer.class, DELTA)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT site_name_checked_at IS NOT NULL FROM company "
+                + "WHERE registration_number = ?", Boolean.class, DELTA)).isTrue();
+    }
+
     private List<String> sites() {
         return jdbcTemplate.queryForList("""
                 SELECT c.registration_number || ':' || s.host || ':' || s.proof || ':' || s.status
@@ -211,7 +229,8 @@ class SiteNameTests {
                             "<html><body><a href=\"kontakt\">Kontakt</a></body></html>");
                     case "/site/www.alfaplast.sk/kontakt" -> respond(exchange, 200,
                             "<html><body><p>Alfaplast s.r.o., IČO: " + ALFA + "</p></body></html>");
-                    case "/site/www.betaplast.sk/" -> respond(exchange, 403, "");
+                    case "/site/www.betaplast.sk/", "/site/www.deltaplast.sk/" -> respond(exchange, 403, "");
+                    case "/robots.txt" -> respond(exchange, 200, "User-agent: *\nDisallow: /site/www.deltaplast.sk/");
                     case "/site/www.betaplast.com/" -> respond(exchange, 200,
                             "<html><head><title>Betaplast</title></head><body><p>" + GROUP_TEXT + "</p></body></html>");
                     default -> respond(exchange, 404, "");

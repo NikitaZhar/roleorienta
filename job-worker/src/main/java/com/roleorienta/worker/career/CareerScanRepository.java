@@ -1,6 +1,7 @@
 package com.roleorienta.worker.career;
 
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -88,7 +89,9 @@ public class CareerScanRepository {
      */
     @Transactional
     public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl, Role role) {
-        for (Board board : boards) {
+        // Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не ждут друг друга (аудит §78).
+        for (Board board : boards.stream().sorted(Comparator.comparing(Board::provider).thenComparing(Board::board))
+                .toList()) {
             jdbcTemplate.update("""
                     INSERT INTO source (provider, board, country) SELECT ?, ?, country FROM company WHERE id = ?
                     ON CONFLICT (provider, board) DO NOTHING

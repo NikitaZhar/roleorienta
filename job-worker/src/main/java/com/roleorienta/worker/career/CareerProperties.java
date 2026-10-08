@@ -11,9 +11,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param sitesPerTask сайтов за одно задание
  * @param recheckAfter срок до перепроверки сайта и доски (технический документ §17)
  * @param boardsPerTask блоков индекса или досок за одно задание обратного пути
- * @param checkTimeBudget сколько задание обратного пути проверяет доски, прежде чем передать остаток
- *                        следующему: проверка доски SmartRecruiters — чтение всего списка (сотни
- *                        страниц), а задание должно уложиться в аренду
+ * @param checkTimeBudget сколько задание обратного пути проверяет доски, а задание проверки сайтов начинает новые
+ *                        сайты, прежде чем передать остаток следующему (аудит §78): проверка доски SmartRecruiters —
+ *                        чтение всего списка (сотни страниц), у сайта — до десятка пробных хостов, а задание должно
+ *                        уложиться в аренду
  */
 @ConfigurationProperties("app.career")
 public record CareerProperties(

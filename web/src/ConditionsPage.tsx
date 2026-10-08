@@ -7,8 +7,13 @@ interface Props {
   onSaved: () => void;
 }
 
-/** Формат и лимит порции текущих условий: экран их не показывает и при сохранении не меняет. */
+/**
+ * Страны, формат и лимит порции текущих условий: экран показывает одну страну, формат и лимит не показывает. Пока
+ * выбрана первая из сохранённых стран, сохраняются все прежние страны — условия с несколькими странами (экран §63) не
+ * теряют стран и не получают новую версию без изменения (аудит §78).
+ */
 interface Kept {
+  countries: string[];
   format: WorkFormat | null;
   portionLimit: number | null;
 }
@@ -25,7 +30,7 @@ export function ConditionsPage({ onSaved }: Props) {
   const [position, setPosition] = useState<CatalogItem | null>(null);
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<CatalogItem[]>([]);
-  const [kept, setKept] = useState<Kept>({ format: null, portionLimit: null });
+  const [kept, setKept] = useState<Kept>({ countries: [], format: null, portionLimit: null });
   const [etag, setEtag] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -39,7 +44,7 @@ export function ConditionsPage({ onSaved }: Props) {
     } else {
       const condition = current.data;
       setCountry(condition.countries[0] ?? '');
-      setKept({ format: condition.format, portionLimit: condition.portionLimit });
+      setKept({ countries: condition.countries, format: condition.format, portionLimit: condition.portionLimit });
       const matches = await positions(condition.position);
       setPosition(matches.find((item) => item.code === condition.position)
         ?? { code: condition.position, name: condition.position });
@@ -82,13 +87,13 @@ export function ConditionsPage({ onSaved }: Props) {
     }
     try {
       const saved = await saveSearchCondition({
-        countries: [country],
+        countries: country === kept.countries[0] ? kept.countries : [country],
         position: position.code,
         format: kept.format,
         portionLimit: kept.portionLimit,
       }, etag);
       setEtag(saved.etag);
-      setKept({ format: saved.data.format, portionLimit: saved.data.portionLimit });
+      setKept({ countries: saved.data.countries, format: saved.data.format, portionLimit: saved.data.portionLimit });
       setMessage(null);
       onSaved();
     } catch (failure) {

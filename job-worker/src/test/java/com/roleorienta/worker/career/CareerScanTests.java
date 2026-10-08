@@ -3,7 +3,9 @@ package com.roleorienta.worker.career;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -11,7 +13,9 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +42,10 @@ class CareerScanTests {
     private static final Map<String, String> PAGES = new ConcurrentHashMap<>();
     /** Страница-заглушка: ответ 403. */
     private static final String FORBIDDEN = "403";
+    /** Страница-заглушка: ответ 500. */
+    private static final String SERVER_ERROR = "500";
+    /** Страница-заглушка: переадресация 302 на адрес после префикса. */
+    private static final String REDIRECT = "redirect:";
     private static final HttpServer SITE = startSite();
     private static final String HOST = "127.0.0.1:" + SITE.getAddress().getPort();
 
@@ -49,6 +57,12 @@ class CareerScanTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ExternalHttpClient http;
+
+    @Autowired
+    private CareerScanRepository repository;
 
     /**
      * Остановка сайта.
@@ -257,8 +271,8 @@ class CareerScanTests {
     /**
      * Кадровая страница — как в скрипте замера (§76): ссылка «Spolupráca» — не кадровая (в словаре нет голого
      * «práca»), страница по ссылке «Kariéra» без кадровых слов в тексте не засчитывается — пробуются пробные адреса
-     * ({@code /kariera-a-praca}); главная не открылась (404) — пробные адреса тоже пробуются; сайт сам кадровый — ссылка
-     * на раздел главной ({@code /#pozicie}) засчитывается, конечный адрес — главная.
+     * ({@code /kariera-a-praca}); главная не открылась (404) — пробные адреса тоже пробуются; ссылка на раздел главной
+     * с кадровым словом в якоре ({@code /#kariera}) засчитывается, конечный адрес — главная.
      */
     @Test
     void findsCareerPageLikeSurveyScript() {
@@ -281,7 +295,7 @@ class CareerScanTests {
 
         jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
         PAGES.clear();
-        PAGES.put("/", "<h1>Kariéra v Alfe</h1><a href=\"/#pozicie\">Voľné pozície</a>");
+        PAGES.put("/", "<h1>Kariéra v Alfe</h1><a href=\"/#kariera\">Pozície</a>");
         runScan();
         assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
         assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
@@ -307,6 +321,64 @@ class CareerScanTests {
                 .containsExactly("SOURCE_FOUND", "SOURCE_FOUND", "SOURCE_FOUND");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM source", Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source", Integer.class)).isEqualTo(3);
+    }
+
+    /**
+     * Пробный адрес, переадресованный на главную (сайт отвечает главной на любой адрес), не засчитывается, даже если в
+     * меню главной есть «Kariéra»; кадровой страницы нет — адрес не записывается (аудит §78).
+     */
+    @Test
+    void probeRedirectedToHomeIsNotCareerPage() {
+        PAGES.put("/", "<nav>Kariéra</nav><p>Vitajte</p>");
+        PAGES.put("/kariera", REDIRECT + "/");
+
+        runScan();
+
+        assertThat(checkResult()).isEqualTo("NO_CAREER_PAGE");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class)).isNull();
+    }
+
+    /**
+     * Главная отвечает 5xx (хост не отвечает): пробные пути на том же хосте не запрашиваются — итог «сайт не ответил»,
+     * хотя {@code /kariera} есть (§76).
+     */
+    @Test
+    void probesNoPathsWhenHostDoesNotAnswer() {
+        PAGES.put("/", SERVER_ERROR);
+        PAGES.put("/kariera", "<h1>Kariéra</h1>");
+
+        runScan();
+
+        assertThat(checkResult()).isEqualTo("UNREACHABLE");
+    }
+
+    /**
+     * Пробные адреса: пути (если хост отвечает), кадровые поддомены, кадровые хосты бренда — со схемой главной; у
+     * поддомена бренд — первое слово регистрируемого домена.
+     */
+    @Test
+    void careerCandidatesFollowSurveyScript() {
+        assertThat(CareerScanHandler.careerCandidates(URI.create("http://sk.acme.com/"), false)).extracting(URI::toString)
+                .containsExactly("http://kariera.sk.acme.com/", "http://jobs.sk.acme.com/", "http://careers.sk.acme.com/",
+                        "http://jobs.acme.com/", "http://careers.acme.com/", "http://www.acme-jobs.sk/");
+        assertThat(CareerScanHandler.careerCandidates(URI.create("https://www.acme.sk/"), true)).hasSize(11)
+                .startsWith(URI.create("https://www.acme.sk/kariera"));
+    }
+
+    /**
+     * Срок задания истёк (0 с) — новые сайты не начинаются, остаются непроверенными; продолжение цепочки поставлено
+     * (аудит §78).
+     */
+    @Test
+    void stopsStartingSitesAfterTimeBudget() {
+        CareerScanHandler noTime = new CareerScanHandler(http, repository, taskService, new CareerProperties("http", 25,
+                Duration.ofDays(30), 20, Duration.ZERO), 6);
+
+        noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("budget"), 0));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site", Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key LIKE 'career-scan:budget:%'",
+                Integer.class)).isEqualTo(1);
     }
 
     private void runScan() {
@@ -335,7 +407,13 @@ class CareerScanTests {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/", exchange -> {
                 String page = PAGES.get(exchange.getRequestURI().getPath());
-                int status = page == null ? 404 : FORBIDDEN.equals(page) ? 403 : 200;
+                if (page != null && page.startsWith(REDIRECT)) {
+                    exchange.getResponseHeaders().set("Location", page.substring(REDIRECT.length()));
+                    exchange.sendResponseHeaders(302, -1);
+                    exchange.close();
+                    return;
+                }
+                int status = page == null ? 404 : FORBIDDEN.equals(page) ? 403 : SERVER_ERROR.equals(page) ? 500 : 200;
                 byte[] bytes = status != 200 ? new byte[0] : ("<html><body>" + page + "</body></html>")
                         .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");

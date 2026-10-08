@@ -54,8 +54,8 @@ import org.jsoup.nodes.Element;
  *       или адресе которой кадровое слово ({@link #CAREER_WORDS}). Принимается ссылка того же регистрируемого домена
  *       ({@code kariera.firma.sk}, {@code www.firma.sk} с {@code sk.firma.sk}); ссылка на кадровый хост другого домена с
  *       тем же именем домена ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57) — и без кадрового слова; ссылка с
- *       кадровым словом на систему найма ({@code acme.teamtailor.com}) или на хост с брендом сайта
- *       ({@code acme-group.com}). Площадки вакансий ({@code jobs.cz}, {@code teamio} …) не принимаются. Ссылки своего
+ *       кадровым словом на систему найма ({@code acme.teamtailor.com}) или на хост, в имени которого есть бренд сайта
+ *       ({@code acme-group.com}, {@code skupinazse.sk} у {@code zse.sk}; как в скрипте, решение владельца §78). Площадки вакансий ({@code jobs.cz}, {@code teamio} …) не принимаются. Ссылки своего
  *       домена идут первыми; кадровый хост с другим именем ({@code jobs.sap.com} с {@code firma.sk}) не принимается —
  *       иначе доски чужой кадровой страницы записались бы как доски компании (аудит §66).</li>
  * </ul>
@@ -91,11 +91,11 @@ final class CareerLinks {
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
     /**
      * Кадровые слова — словарь скрипта замера ({@code CAREER_WORDS} в {@code survey/employer-survey.py}). «Práca» — только
-     * в сочетаниях («práca u nás», «práca v …»): голое слово находится внутри «spolupráca» (страницы о сотрудничестве,
-     * §75).
+     * в сочетаниях («práca u nás», «práca v …») и с начала слова: иначе оно находится внутри «spolupráca»
+     * («Spolupráca v regióne» — страница о сотрудничестве, §75, аудит §78).
      */
     private static final Pattern CAREER_WORDS = Pattern.compile(
-            "kari[eé]r|career|\\bjobs?\\b|pr[aá]ca u n[aá]s|pr[aá]ca vo? |pre uch[aá]dza[čc]"
+            "kari[eé]r|career|\\bjobs?\\b|\\bpr[aá]ca u n[aá]s|\\bpr[aá]ca vo? |pre uch[aá]dza[čc]"
                     + "|vo[ľl]n[ée] (?:poz[ií]cie|miesta|pracovn)|pracovn[ée] (?:ponuky|poz[ií]cie|miesta)|ponuky pr[aá]ce"
                     + "|pridaj sa|po[ďd]te k n[aá]m|join us|work with us|zamestnanie|n[aá]bor",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
@@ -246,8 +246,8 @@ final class CareerLinks {
     /**
      * @param page страница сайта
      * @param host хост сайта с портом, если он указан в адресе ({@code URI.getAuthority()})
-     * @return адрес кадровой страницы: того же сайта или его поддомена, иначе кадрового хоста другого домена с тем же
-     *         именем домена; пусто — ссылки нет
+     * @return адрес первой кадровой ссылки по правилам класса (своего регистрируемого домена, затем другого домена);
+     *         пусто — ссылки нет
      */
     static Optional<String> careerPage(Document page, String host) {
         return careerLinks(page, host).stream().findFirst();
@@ -259,7 +259,7 @@ final class CareerLinks {
      *
      * @param page       кадровая страница
      * @param careerPage её адрес
-     * @return адрес другой кадровой страницы того же сайта; пусто — нет
+     * @return адрес другой кадровой страницы по правилам класса (своего домена, затем другого); пусто — нет
      */
     static Optional<String> deeperCareerPage(Document page, URI careerPage) {
         String current = normalized(careerPage.toString());
@@ -282,12 +282,18 @@ final class CareerLinks {
 
     /**
      * Кадровые ссылки страницы (правила — в описании класса): сначала ссылки своего регистрируемого домена, затем
-     * ссылки других доменов; адрес — без якоря ({@code /#career} → {@code /}: якорь серверу не передаётся).
+     * ссылки других доменов; адрес — без якоря ({@code /#career} → {@code /}: якорь серверу не передаётся) и в кодировке
+     * для запроса ({@code /kari%C3%A9ra}, §79). Ссылка
+     * на саму страницу (меню «Kariéra» с {@code href="#"}) — кадровая, только если кадровое слово в её якоре
+     * ({@code /#career}) или в хосте сайта ({@code kariera.xxxlutz.sk}, {@code dm-jobs.sk}): сайт сам кадровый
+     * (аудит §78).
      */
     private static List<String> careerLinks(Document page, String host) {
         String siteHost = host.replaceFirst(":\\d+$", "");
         String domain = SiteBrand.registrable(withoutWww(siteHost));
         String brand = domain.split("\\.")[0];
+        String self = normalized(ascii(page.location()));
+        boolean onCareerSite = careerSite(siteHost);
         List<String> own = new ArrayList<>();
         List<String> otherDomain = new ArrayList<>();
         for (Element anchor : page.select("a[href]")) {
@@ -296,8 +302,12 @@ final class CareerLinks {
                 continue;
             }
             String linkHost = lower(link.getHost());
-            String address = link.toString().replaceFirst("#.*$", "");
+            String address = link.toASCIIString().replaceFirst("#.*$", "");
             boolean careerWords = CAREER_WORDS.matcher(anchor.text() + " " + link).find();
+            if (normalized(address).equals(self) && !onCareerSite
+                    && (link.getFragment() == null || !CAREER_WORDS.matcher(link.getFragment()).find())) {
+                continue;
+            }
             if (sameOrSubSite(host, link.getAuthority()) || SiteBrand.registrable(linkHost).equals(domain)) {
                 if ((careerHost(linkHost) || careerWords) && !own.contains(address)) {
                     own.add(address);
@@ -312,6 +322,23 @@ final class CareerLinks {
         }
         own.addAll(otherDomain);
         return own;
+    }
+
+    /**
+     * @param host хост сайта
+     * @return {@code true} — сайт сам кадровый: в имени хоста кадровое слово ({@code kariera.sconto.sk}, {@code dm-jobs.sk})
+     */
+    static boolean careerSite(String host) {
+        return host != null && CAREER_WORDS.matcher(host).find();
+    }
+
+    /**
+     * Адрес с не-ASCII символами в кодировке для запроса ({@code /kariéra} → {@code /kari%C3%A9ra}; §79: сервер не
+     * принимает адрес с «é» как есть); неразбираемый — как есть.
+     */
+    private static String ascii(String link) {
+        URI parsed = uri(link);
+        return parsed == null ? link : parsed.toASCIIString();
     }
 
     /**

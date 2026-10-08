@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskRecord;
+import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -12,6 +14,8 @@ import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -60,6 +64,18 @@ class CompanySizeTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private RuzClient client;
+
+    @Autowired
+    private CompanySizeRepository repository;
+
+    @Autowired
+    private TaskService taskService;
+
+    @Autowired
+    private CompanySizeProperties properties;
 
     /**
      * RÚZ — заглушка.
@@ -114,6 +130,22 @@ class CompanySizeTests {
         runQueuedTasks();
 
         assertThat(sizes()).startsWith(MEDIUM + ":1");
+    }
+
+    /**
+     * Срок задания истёк (0 с): спрошена одна компания, остальные — следующему заданию цепочки (§70, аудит §78).
+     */
+    @Test
+    void stopsAskingAfterTimeBudget() {
+        CompanySizeHandler noTime = new CompanySizeHandler(client, repository, taskService, new CompanySizeProperties(
+                properties.baseUrl(), properties.companiesPerTask(), properties.recheckAfter(), Duration.ZERO),
+                Clock.systemUTC());
+
+        noTime.handle(new TaskRecord(0, CompanySizeHandler.TYPE, "{\"period\": \"budget\", \"round\": 1}", 0));
+
+        assertThat(sizes()).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key = 'company-size:budget:2'",
+                Integer.class)).isEqualTo(1);
     }
 
     private List<String> sizes() {
