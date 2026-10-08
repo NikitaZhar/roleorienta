@@ -288,6 +288,27 @@ class CareerScanTests {
                 .isEqualTo("http://" + HOST + "/");
     }
 
+    /**
+     * Сайты задания проверяются одновременно (§77): у трёх компаний сайт со ссылкой на одну доску Workday — все три
+     * проверены одним заданием, доска подключена один раз и связана с каждой компанией.
+     */
+    @Test
+    void checksSitesOfTaskInParallel() {
+        jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', '22222222', 'Beta s.r.o.', 'RPO'), ('SK', '33333333', 'Gama s.r.o.', 'RPO')");
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "SELECT id, ?, 'http://' || ? || '/kontakt', 'COMMON_CRAWL', 'REGISTRATION_NUMBER' FROM company "
+                + "WHERE registration_number <> '11111111'", HOST, HOST);
+        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+
+        runScan();
+
+        assertThat(jdbcTemplate.queryForList("SELECT check_result FROM company_site", String.class))
+                .containsExactly("SOURCE_FOUND", "SOURCE_FOUND", "SOURCE_FOUND");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM source", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source", Integer.class)).isEqualTo(3);
+    }
+
     private void runScan() {
         String key = CareerScanHandler.taskKey("test-" + System.nanoTime());
         taskService.enqueue(CareerScanHandler.TYPE, key, CareerScanHandler.payload("test"));

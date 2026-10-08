@@ -19,12 +19,18 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -55,7 +61,8 @@ import org.springframework.stereotype.Component;
  *       же хосте); не открылось ничего — итог «сайт не ответил» (у компании — «источник недоступен»).</li>
  * </ol>
  *
- * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, дальше — следующее задание.
+ * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, проверяемых одновременно (не больше
+ * {@code app.career.parallel-sites}, §77), дальше — следующее задание.
  * Подключённые источники читает общий сбор (раз в сутки).</p>
  */
 @Component
@@ -82,19 +89,22 @@ public class CareerScanHandler implements TaskHandler {
     private final CareerScanRepository repository;
     private final TaskService taskService;
     private final CareerProperties properties;
+    private final int parallelSites;
 
     /**
-     * @param http        внешний HTTP-клиент
-     * @param repository  сайты и источники
-     * @param taskService постановка следующего задания
-     * @param properties  схема, сайтов за задание, срок перепроверки
+     * @param http          внешний HTTP-клиент
+     * @param repository    сайты и источники
+     * @param taskService   постановка следующего задания
+     * @param properties    схема, сайтов за задание, срок перепроверки
+     * @param parallelSites сколько сайтов задания проверяется одновременно ({@code app.career.parallel-sites})
      */
     public CareerScanHandler(ExternalHttpClient http, CareerScanRepository repository, TaskService taskService,
-            CareerProperties properties) {
+            CareerProperties properties, @Value("${app.career.parallel-sites:6}") int parallelSites) {
         this.http = http;
         this.repository = repository;
         this.taskService = taskService;
         this.properties = properties;
+        this.parallelSites = parallelSites;
     }
 
     /**
@@ -136,13 +146,39 @@ public class CareerScanHandler implements TaskHandler {
         String day = day(task.payload());
         List<Site> sites = repository.nextSites(properties.sitesPerTask(), properties.recheckAfter());
         Set<String> providers = repository.permittedProviders();
-        for (Site site : sites) {
-            check(site, providers);
-        }
+        checkInParallel(sites, providers);
         if (sites.size() == properties.sitesPerTask()) {
             taskService.enqueue(TYPE, continuationKey(day, sites.get(sites.size() - 1).id()), payload(day));
         }
         return new TaskOutcome.Done();
+    }
+
+    /**
+     * Сайты задания проверяются одновременно, не больше {@code parallelSites} (§77): почти всё время проверки — ожидание
+     * ответов сайтов, поэтому по одному задание не укладывалось в аренду. Вежливость к хостам не меняется — промежуток
+     * между запросами к одному хосту держит общий бюджет в БД ({@code app.http.politeness.host-interval}). Сайты задания
+     * принадлежат разным компаниям (у компании проверяется один основной сайт), итог каждого пишется своей транзакцией.
+     * Ошибка проверки одного сайта, как и прежде, завершает задание ошибкой (повтор — таблица заданий); остальные
+     * сайты к этому моменту уже проверены и записаны.
+     */
+    private void checkInParallel(List<Site> sites, Set<String> providers) {
+        List<Callable<Void>> checks = sites.stream().map(site -> (Callable<Void>) () -> {
+            check(site, providers);
+            return null;
+        }).toList();
+        int threads = Math.max(1, Math.min(parallelSites, sites.size()));
+        try (ExecutorService pool = Executors.newFixedThreadPool(threads,
+                Thread.ofPlatform().name("career-scan-", 0).factory())) {
+            for (Future<Void> done : pool.invokeAll(checks)) {
+                done.get();
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("CAREER_SCAN interrupted", interrupted);
+        } catch (ExecutionException failed) {
+            throw failed.getCause() instanceof RuntimeException runtime ? runtime
+                    : new IllegalStateException("CAREER_SCAN site check failed", failed.getCause());
+        }
     }
 
     private static String day(String payload) {

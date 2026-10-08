@@ -18,7 +18,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("app.career")
 public record CareerProperties(
         @DefaultValue("https") String scheme,
-        @DefaultValue("50") int sitesPerTask,
+        @DefaultValue("25") int sitesPerTask,
         @DefaultValue("30d") Duration recheckAfter,
         @DefaultValue("20") int boardsPerTask,
         @DefaultValue("4m") Duration checkTimeBudget) {
