@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Под leader-lock ставит работу с государственным порталом: список работодателей — раз в неделю
- * (ключ — неделя ISO, например {@code 2026-W40}), проверку работодателей — раз в день. Повторный тик в
+ * (ключ — неделя ISO, например {@code 2026-W40}), проверку работодателей, поиск сайта и шаг «страница компании на
+ * profesia.sk» (§82) — раз в день. Повторный тик в
  * той же неделе или дне ничего не добавляет. Выключается свойством {@code app.state-portal.enabled=false}.
  */
 @Component
@@ -27,16 +28,20 @@ public class StatePortalTick {
 
     private final PostgresLeaderLock leaderLock;
     private final StatePortalHandler handler;
+    private final ProfesiaSiteHandler profesia;
     private final Clock clock;
 
     /**
      * @param leaderLock leader-lock
      * @param handler    постановка шагов
+     * @param profesia   постановка шага «страница компании на profesia.sk» (§82)
      * @param clock      часы
      */
-    public StatePortalTick(PostgresLeaderLock leaderLock, StatePortalHandler handler, Clock clock) {
+    public StatePortalTick(PostgresLeaderLock leaderLock, StatePortalHandler handler, ProfesiaSiteHandler profesia,
+            Clock clock) {
         this.leaderLock = leaderLock;
         this.handler = handler;
+        this.profesia = profesia;
         this.clock = clock;
     }
 
@@ -52,6 +57,7 @@ public class StatePortalTick {
                 handler.enqueueList(week);
                 handler.enqueueCheck(today.toString());
                 handler.enqueueSite(today.toString());
+                profesia.enqueue(today.toString());
             });
         } catch (DataAccessException exception) {
             LOG.warn("State portal tick failed, will retry on next tick", exception);

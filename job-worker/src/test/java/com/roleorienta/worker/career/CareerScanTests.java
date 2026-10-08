@@ -180,19 +180,29 @@ class CareerScanTests {
     }
 
     /**
-     * Кандидат (сайт без доказательства принадлежности) поиском кадровой страницы не проверяется и итог
-     * компании не меняет.
+     * Кандидат компании без найденного сайта (§81) проверяется: доска подключена с ролью «кадровый сайт группы», итог
+     * компании не меняется. Кандидат компании с найденным сайтом не проверяется.
      */
     @Test
-    void doesNotScanCandidateSite() {
+    void connectsCandidateBoardAsGroupSite() {
         jdbcTemplate.update("UPDATE company_site SET status = 'CANDIDATE', proof = 'GROUP_SITE'");
         PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
 
         runScan();
 
-        assertThat(connectedSources()).isEmpty();
-        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site", Boolean.class)).isTrue();
+        assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+        assertThat(jdbcTemplate.queryForObject("SELECT role FROM company_source", String.class)).isEqualTo("GROUP");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check", Integer.class)).isZero();
+
+        jdbcTemplate.update("UPDATE company_site SET checked_at = NULL, check_result = NULL");
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "SELECT id, 'found-site.invalid', 'http://found-site.invalid/', 'WIKIDATA', 'WIKIDATA' FROM company");
+        jdbcTemplate.update("UPDATE company_site SET checked_at = now() WHERE status = 'FOUND'");
+        runScan();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site WHERE status = 'CANDIDATE'",
+                Boolean.class)).isTrue();
     }
 
     /**

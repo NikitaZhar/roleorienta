@@ -60,7 +60,7 @@ import org.jsoup.nodes.Element;
  *       иначе доски чужой кадровой страницы записались бы как доски компании (аудит §66).</li>
  * </ul>
  */
-final class CareerLinks {
+public final class CareerLinks {
 
     private static final Pattern WORKDAY = Pattern.compile(
             "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([A-Za-z0-9_-]+)(?=$|[/?#])",
@@ -325,11 +325,22 @@ final class CareerLinks {
     }
 
     /**
-     * @param host хост сайта
+     * @param host хост сайта (или адрес страницы)
      * @return {@code true} — сайт сам кадровый: в имени хоста кадровое слово ({@code kariera.sconto.sk}, {@code dm-jobs.sk})
      */
     static boolean careerSite(String host) {
         return host != null && CAREER_WORDS.matcher(host).find();
+    }
+
+    /**
+     * Ссылка ведёт на кадровую страницу: кадровое слово в адресе ({@code prazdroj.sk/kariera}, {@code careers.…}) или
+     * доска поддерживаемой системы найма (§82: ссылка со страницы компании на profesia.sk).
+     *
+     * @param url абсолютный адрес
+     * @return {@code true} — кадровая ссылка
+     */
+    public static boolean careerLink(String url) {
+        return careerSite(url) || board(url).isPresent();
     }
 
     /**

@@ -14,7 +14,8 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
 
     /**
      * Источники к чтению — все, кроме источника канала ниже кадровой страницы (государственный портал),
-     * если у его компании есть другой источник: у компании читается один канал (бизнес-описание §4.1).
+     * если у его компании есть другой источник: у компании читается один канал (бизнес-описание §4.1). Кадровый сайт
+     * группы (роль {@code GROUP}, §81) портал не отключает: принадлежность доски не подтверждена.
      * {@link Query} с {@code nativeQuery} — запрос на SQL PostgreSQL, Spring Data превращает строки в
      * {@link Source}. https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html
      *
@@ -26,6 +27,7 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
             WHERE s.provider <> ?1
                OR NOT EXISTS (SELECT 1 FROM company_source own
                               JOIN company_source other ON other.company_id = own.company_id
+                                                           AND other.role <> 'GROUP'
                               JOIN source o ON o.id = other.source_id
                               WHERE own.source_id = s.id AND o.provider <> ?1)
             ORDER BY s.id

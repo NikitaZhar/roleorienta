@@ -54,7 +54,7 @@ public class RabbitTopology {
      * цикл пакетов); соответствие проверяет тест. Прочие типы — сбор.
      */
     static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "SITE_WIKIDATA",
-            "CAREER_SCAN", "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT", "COMPANY_SIZE");
+            "CAREER_SCAN", "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT", "COMPANY_SIZE", "PROFESIA_SITE");
 
     /** Очередь заданий «адрес по названию» (шаги 3–4 поиска сайта). */
     public static final String SITE_NAME_QUEUE = "roleorienta.jobs.site-name";

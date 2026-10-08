@@ -21,7 +21,8 @@ import org.springframework.stereotype.Repository;
 public class VacancyRepository {
 
     /**
-     * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью (нет компании-работодателя —
+     * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью (работодатель — и компания
+     * с кадровым сайтом группы, роль {@code GROUP}, §81; нет компании-работодателя —
      * название работодателя у системы найма для источника без компании, аудит §65). Отметки «не подходит» здесь нет:
      * в накопленном списке её не бывает, в списке отмеченных она есть всегда, строки списка её не показывают — она
      * считается только для сведений о вакансии ({@link #UNSUITABLE}, аудит §66).
@@ -30,7 +31,7 @@ public class VacancyRepository {
             v.id, v.title, v.primary_url, v.first_seen_at, v.last_confirmed_at, v.state, v.work_countries,
             v.country_uncertain, v.work_format,
             coalesce((SELECT co.name FROM job_posting p
-                      JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'EMPLOYER'
+                      JOIN company_source cs ON cs.source_id = p.source_id AND cs.role IN ('EMPLOYER', 'GROUP')
                       JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1),
                      (SELECT s.employer_name FROM job_posting p JOIN source s ON s.id = p.source_id
                       WHERE p.vacancy_id = v.id AND s.employer_name IS NOT NULL

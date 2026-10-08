@@ -47,7 +47,7 @@ public class StatePortalRepository {
      * Работодатели портала к проверке: есть в реестре (Словакия, по IČO; страна — активная страна сбора),
      * действуют, не кадровое
      * агентство, у компании ещё нет ни одного источника (своя кадровая страница или уже подключённый
-     * портал — один канал на компанию), не проверялись дольше {@code recheckAfter}. Сначала
+     * портал — один канал на компанию; кадровый сайт группы, роль {@code GROUP}, §81, не в счёт), не проверялись дольше {@code recheckAfter}. Сначала
      * непроверенные.
      *
      * @param limit        не больше
@@ -62,7 +62,7 @@ public class StatePortalRepository {
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL AND NOT c.agency
                   AND (p.checked_at IS NULL OR p.checked_at < now() - make_interval(secs => ?))
-                  AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id)
+                  AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id AND cs.role <> 'GROUP')
                 ORDER BY p.checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
                 """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
@@ -161,6 +161,71 @@ public class StatePortalRepository {
                     ON CONFLICT (company_id, host) DO NOTHING
                     """, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
         }
+    }
+
+    /**
+     * Работодатели портала к шагу «страница компании на profesia.sk» (§82): есть в реестре и действуют (страна —
+     * активная страна сбора), у их источника портала есть действующее объявление profesia.sk (внешний id
+     * {@code profesia:<номер>}, §45), страницу компании не смотрели или смотрели давнее {@code recheckAfter}; приоритетные
+     * компании (эталон, §71) — первыми.
+     *
+     * @param limit        сколько работодателей
+     * @param recheckAfter срок повторной проверки
+     * @return работодатели с адресом последнего подтверждённого объявления profesia.sk
+     */
+    public List<ProfesiaEmployer> employersForProfesia(int limit, Duration recheckAfter) {
+        return jdbcTemplate.query("""
+                SELECT registration_number, company_id, url FROM (
+                SELECT DISTINCT ON (p.registration_number) p.registration_number, c.id AS company_id, jp.url,
+                       c.priority, p.profesia_checked_at
+                FROM portal_employer p
+                JOIN company c ON c.country = 'SK'
+                     AND c.registration_number IN (p.registration_number, ltrim(p.registration_number, '0'))
+                JOIN collection_country cc ON cc.country = c.country AND cc.active
+                JOIN source s ON s.provider = ? AND s.board = p.registration_number
+                JOIN job_posting jp ON jp.source_id = s.id AND jp.external_id LIKE 'profesia:%'
+                                   AND jp.closed_at IS NULL
+                WHERE c.terminated_on IS NULL
+                  AND (p.profesia_checked_at IS NULL OR p.profesia_checked_at < now() - make_interval(secs => ?))
+                ORDER BY p.registration_number, jp.last_confirmed_at DESC) due
+                ORDER BY priority DESC, profesia_checked_at NULLS FIRST, registration_number
+                LIMIT ?
+                """, (row, number) -> new ProfesiaEmployer(row.getString(1), row.getLong(2), row.getString(3)),
+                StatePortalAdapter.PROVIDER, (double) recheckAfter.toSeconds(), limit);
+    }
+
+    /**
+     * Итог шага «страница компании на profesia.sk» одной транзакцией: отметка «смотрели»; ссылка найдена — найденный
+     * сайт компании (источник {@code STATE_PORTAL}, подтверждение {@code PROFESIA}); тот же хост был кандидатом (сайт
+     * группы, ответ 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его).
+     *
+     * @param employer работодатель
+     * @param site     сайт или кадровая страница; {@code null} — ссылки нет
+     */
+    @Transactional
+    public void recordProfesia(ProfesiaEmployer employer, FoundSite site) {
+        jdbcTemplate.update("UPDATE portal_employer SET profesia_checked_at = now() WHERE registration_number = ?",
+                employer.registrationNumber());
+        if (site != null) {
+            jdbcTemplate.update("""
+                    INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
+                    VALUES (?, ?, ?, ?, 'STATE_PORTAL', ?)
+                    ON CONFLICT (company_id, host) DO UPDATE
+                        SET status = 'FOUND', proof = EXCLUDED.proof,
+                            start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
+                        WHERE company_site.status = 'CANDIDATE'
+                    """, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
+        }
+    }
+
+    /**
+     * Работодатель портала к шагу «страница компании на profesia.sk».
+     *
+     * @param registrationNumber IČO, как на портале
+     * @param companyId          компания реестра
+     * @param adUrl              адрес объявления на profesia.sk
+     */
+    public record ProfesiaEmployer(String registrationNumber, long companyId, String adUrl) {
     }
 
     /**

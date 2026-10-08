@@ -21,7 +21,7 @@ SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.company_site s
 FROM benchmark.company b WHERE b.company_id IS NOT NULL;
 
 
-\echo '4. Ядро сейчас: кадровая страница — лучший итог среди найденных сайтов компании (сравнимо с группами замера топ-500, §72)'
+\echo '4. Ядро сейчас: кадровая страница — лучший итог среди проверяемых сайтов компании (как итог компании, §80; сравнимо с группами замера топ-500, §72)'
 SELECT CASE rank WHEN 1 THEN '1 page found, read'
                  WHEN 2 THEN '2 page found, format unsupported'
                  WHEN 3 THEN '3 no page'
@@ -40,6 +40,13 @@ FROM (SELECT b.company_id,
                       ELSE 6 END) AS rank
       FROM benchmark.company b
       LEFT JOIN public.company_site s ON s.company_id = b.company_id AND s.status = 'FOUND'
+           -- проверяемые сайты (CareerScanRepository.CHECKED_SITE): сайт из Common Crawl — только основной, то есть
+           -- первый из Common Crawl у компании без других найденных сайтов
+           AND (s.source <> 'COMMON_CRAWL'
+                OR s.id = (SELECT min(m.id) FROM public.company_site m
+                           WHERE m.company_id = s.company_id AND m.status = 'FOUND' AND m.source = 'COMMON_CRAWL')
+                   AND NOT EXISTS (SELECT 1 FROM public.company_site o WHERE o.company_id = s.company_id
+                                   AND o.status = 'FOUND' AND o.source <> 'COMMON_CRAWL'))
       WHERE b.company_id IS NOT NULL
       GROUP BY b.company_id) best
 GROUP BY 1 ORDER BY 1;
@@ -55,3 +62,17 @@ FROM (SELECT b.company_id,
       JOIN public.source src ON src.id = cs.source_id
       GROUP BY b.company_id) per_company
 GROUP BY 1 ORDER BY 1;
+
+\echo '6. Ядро сейчас: кандидаты компаний без найденного сайта (§81) — итог поиска кадровой страницы на кандидате'
+SELECT s.proof, coalesce(s.check_result, 'NOT_CHECKED') AS check_result, count(DISTINCT s.company_id) AS companies
+FROM benchmark.company b
+JOIN public.company_site s ON s.company_id = b.company_id AND s.status = 'CANDIDATE'
+WHERE NOT EXISTS (SELECT 1 FROM public.company_site f WHERE f.company_id = b.company_id AND f.status = 'FOUND')
+GROUP BY 1, 2 ORDER BY 1, 2;
+
+\echo '7. Ядро сейчас: кадровые сайты групп (§81) — компании с доской группы и число её вакансий'
+SELECT count(DISTINCT b.company_id) AS companies,
+       count(DISTINCT b.company_id) FILTER (WHERE EXISTS (SELECT 1 FROM public.job_posting p
+                                                          WHERE p.source_id = cs.source_id)) AS with_vacancies
+FROM benchmark.company b
+JOIN public.company_source cs ON cs.company_id = b.company_id AND cs.role = 'GROUP';

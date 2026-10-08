@@ -37,6 +37,15 @@ public class CareerScanRepository {
             s.status = 'FOUND' AND (s.source <> 'COMMON_CRAWL' OR s.id = %s)""".formatted(MAIN_SITE);
 
     /**
+     * Кандидат компании без найденного сайта (§81: сайт группы, ответ 403) — проверяется; найденные доски
+     * подключаются с ролью «кадровый сайт группы» ({@link Role#GROUP}): принадлежность не подтверждена, поэтому итог
+     * компании не меняется, а вакансии доски — только страны сбора (отбор адаптера по стране).
+     */
+    private static final String CANDIDATE_SITE = """
+            s.status = 'CANDIDATE' AND NOT EXISTS (SELECT 1 FROM company_site f
+                                                   WHERE f.company_id = s.company_id AND f.status = 'FOUND')""";
+
+    /**
      * Итог компании — лучший итог её проверяемых сайтов ({@link #CHECKED_SITE}; бизнес-описание §4.2); компания с
      * любым подключённым источником (в том числе государственного портала, §45) — «подключена». Первая дата итога
      * сохраняется.
@@ -44,7 +53,8 @@ public class CareerScanRepository {
     private static final String COMPANY_RESULT = """
             INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
             SELECT company_id,
-                   CASE WHEN EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = s.company_id)
+                   CASE WHEN EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = s.company_id
+                                     AND cs.role <> 'GROUP')
                             THEN 'CONNECTED'
                        ELSE CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
                                               WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
@@ -68,7 +78,8 @@ public class CareerScanRepository {
     /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
-     * @return проверяемые сайты ({@link #CHECKED_SITE}; кандидаты не проверяются) действующих компаний активных стран
+     * @return проверяемые сайты ({@link #CHECKED_SITE}) и кандидаты компаний без найденного сайта
+     *         ({@link #CANDIDATE_SITE}) действующих компаний активных стран
      *         сбора, ещё не проверенные или проверенные давнее срока, — не больше одного сайта компании за задание:
      *         сайты задания проверяются одновременно, а итог компании пересчитывается по всем её сайтам — два сайта
      *         одной компании в одном задании записали бы итог, не видя друг друга (§80); сайты приоритетных
@@ -76,25 +87,27 @@ public class CareerScanRepository {
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
-                SELECT id, company_id, host, start_url FROM (
-                    SELECT s.id, s.company_id, s.host, s.start_url, c.priority, s.checked_at,
+                SELECT id, company_id, host, start_url, status FROM (
+                    SELECT s.id, s.company_id, s.host, s.start_url, s.status, c.priority, s.checked_at,
                            row_number() OVER (PARTITION BY s.company_id ORDER BY s.checked_at NULLS FIRST, s.id)
                                AS company_order
                     FROM company_site s JOIN company c ON c.id = s.company_id
                     JOIN collection_country cc ON cc.country = c.country AND cc.active
-                    WHERE c.terminated_on IS NULL AND %s
+                    WHERE c.terminated_on IS NULL AND (%s OR %s)
                       AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))) due
                 WHERE company_order = 1
                 ORDER BY priority DESC, checked_at NULLS FIRST, id LIMIT ?
-                """.formatted(CHECKED_SITE), (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"),
-                        row.getString("host"), row.getString("start_url")),
+                """.formatted(CHECKED_SITE, CANDIDATE_SITE), (row, number) -> new Site(row.getLong("id"),
+                        row.getLong("company_id"), row.getString("host"), row.getString("start_url"),
+                        "CANDIDATE".equals(row.getString("status"))),
                 (double) recheckAfter.toSeconds(), limit);
     }
 
     /**
      * Итог проверки сайта одной транзакцией: найденные источники подключаются (уже подключённый —
      * не дублируется) и связываются с компанией, сайт отмечается проверенным, итог компании
-     * ({@code company_check}) пересчитывается.
+     * ({@code company_check}) пересчитывается. У кандидата (§81) доски подключаются с ролью {@link Role#GROUP}
+     * (кадровое агентство — не подключаются), итог компании не меняется.
      *
      * @param site      сайт
      * @param boards    найденные источники
@@ -104,6 +117,12 @@ public class CareerScanRepository {
      */
     @Transactional
     public void record(Site site, Set<Board> boards, CheckResult result, String careerUrl, Role role) {
+        jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ?, career_url = ? WHERE id = ?",
+                result.name(), careerUrl, site.id());
+        if (site.candidate() && role != Role.EMPLOYER) {
+            return;
+        }
+        Role linkRole = site.candidate() ? Role.GROUP : role;
         // Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не ждут друг друга (аудит §78).
         for (Board board : boards.stream().sorted(Comparator.comparing(Board::provider).thenComparing(Board::board))
                 .toList()) {
@@ -115,11 +134,11 @@ public class CareerScanRepository {
                     INSERT INTO company_source (company_id, source_id, role)
                     SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?
                     ON CONFLICT DO NOTHING
-                    """, site.companyId(), role.name(), board.provider(), board.board());
+                    """, site.companyId(), linkRole.name(), board.provider(), board.board());
         }
-        jdbcTemplate.update("UPDATE company_site SET checked_at = now(), check_result = ?, career_url = ? WHERE id = ?",
-                result.name(), careerUrl, site.id());
-        jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+        if (!site.candidate()) {
+            jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+        }
     }
 
     /**
@@ -153,8 +172,9 @@ public class CareerScanRepository {
      * @param companyId компания
      * @param host      хост сайта
      * @param startUrl  адрес стартовой страницы (с портала, с путём); {@code null} — главная хоста
+     * @param candidate кандидат (§81): доски — с ролью {@link Role#GROUP}, итог компании не пересчитывается
      */
-    public record Site(long id, long companyId, String host, String startUrl) {
+    public record Site(long id, long companyId, String host, String startUrl, boolean candidate) {
     }
 
     /**
@@ -180,6 +200,11 @@ public class CareerScanRepository {
         /** Работодатель. */
         EMPLOYER,
         /** Кадровое агентство — размещающая сторона. */
-        AGENCY
+        AGENCY,
+        /**
+         * Кадровый сайт группы (§81): доска на сайте-кандидате компании без найденного сайта; итог компании и канал
+         * портала не меняет.
+         */
+        GROUP
     }
 }

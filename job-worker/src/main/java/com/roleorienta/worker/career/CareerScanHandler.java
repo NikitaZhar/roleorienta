@@ -16,6 +16,7 @@ import com.roleorienta.worker.task.TaskService;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -42,8 +43,9 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>Главная страница: ссылки на доски Workday, Greenhouse, Personio ({@link CareerLinks}).</li>
  *   <li>Досок нет — кадровая страница сайта, как в скрипте замера топ-500 (§76): ссылка с главной с кадровым словом
- *       ({@link CareerLinks}); сайт сам кадровый ({@code kariera.sconto.sk}) и на главной кадровые слова — кадровая
- *       страница — главная (§79); страница засчитывается, только если в её тексте есть кадровое слово (пробный адрес —
+ *       ({@link CareerLinks}); сайт сам кадровый ({@code kariera.sconto.sk}) или стартовый адрес — кадровая страница
+ *       ({@code prazdroj.sk/kariera}, ссылка с profesia.sk, §82) и на ней кадровые слова — кадровая страница — она
+ *       (§79); страница засчитывается, только если в её тексте есть кадровое слово (пробный адрес —
  *       и если переадресация не привела на главную).
  *       Нет ссылки, ссылка не кадровая или главная не открылась — пробные адреса: {@code /kariera},
  *       {@code /sk/kariera}, {@code /careers}, {@code /kariera-a-praca}, {@code /pre-uchadzacov},
@@ -221,14 +223,16 @@ public class CareerScanHandler implements TaskHandler {
         }
         Optional<Document> homePage = homeResult instanceof HttpResult.Success success
                 ? Optional.of(Jsoup.parse(success.body(), success.locationOr(home).toString())) : Optional.empty();
-        Set<Board> boards = homePage.map(CareerLinks::boards).orElse(Set.of());
+        Set<Board> boards = new LinkedHashSet<>(homePage.map(CareerLinks::boards).orElse(Set.of()));
+        // Стартовый адрес — сама доска системы найма (ссылка со страницы компании на profesia.sk, §82).
+        CareerLinks.board(home.toString()).ifPresent(boards::add);
         Optional<String> careerLink = homePage.flatMap(page -> CareerLinks.careerPage(page,
                 URI.create(page.location()).getAuthority()));
         Optional<Document> careerPage = Optional.empty();
         if (boards.isEmpty()) {
             careerPage = careerLink.flatMap(link -> page(URI.create(link))).filter(CareerLinks::isCareerPage);
             if (careerPage.isEmpty()) {
-                careerPage = homePage.filter(page -> CareerLinks.careerSite(URI.create(page.location()).getHost())
+                careerPage = homePage.filter(page -> CareerLinks.careerSite(page.location())
                         && CareerLinks.isCareerPage(page));
             }
             if (careerPage.isEmpty()) {
