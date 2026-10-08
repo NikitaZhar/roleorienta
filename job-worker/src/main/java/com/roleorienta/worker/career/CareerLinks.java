@@ -8,6 +8,7 @@ import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
 import com.roleorienta.worker.adapter.taleo.TaleoAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
+import com.roleorienta.worker.site.SiteBrand;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -49,12 +50,14 @@ import org.jsoup.nodes.Element;
  *       jobsearch.ftl} ({@code jobdetail.ftl}, {@code moresearch.ftl}) в тексте страницы (бывает только в данных
  *       скрипта, с экранированными {@code \/}) → {@code <компания>.taleo.net/<раздел>} (§60; вход {@code …/iam/…},
  *       служебные {@code rest}, {@code theme} — не разделы, аудит §65).</li>
- *   <li>Кадровая страница — ссылка того же сайта (хост без учёта {@code www.}) или его поддомена
- *       ({@code kariera.firma.sk}, {@code jobs.firma.sk}), в адресе или тексте которой «kariéra», «práca»,
- *       «jobs», «career», «voľné pozície» и т. п.; либо ссылка на кадровый хост другого домена с тем же именем
- *       домена ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57). Ссылки своего сайта идут первыми; кадровый
- *       хост с другим именем ({@code jobs.sap.com} с {@code firma.sk}) не принимается — иначе доски чужой
- *       кадровой страницы записались бы как доски компании (аудит §66).</li>
+ *   <li>Кадровая страница — как в скрипте замера топ-500 ({@code survey/employer-survey.py}, §76): ссылка, в тексте
+ *       или адресе которой кадровое слово ({@link #CAREER_WORDS}). Принимается ссылка того же регистрируемого домена
+ *       ({@code kariera.firma.sk}, {@code www.firma.sk} с {@code sk.firma.sk}); ссылка на кадровый хост другого домена с
+ *       тем же именем домена ({@code jobs.kaufland.com} с {@code kaufland.sk}, §57) — и без кадрового слова; ссылка с
+ *       кадровым словом на систему найма ({@code acme.teamtailor.com}) или на хост с брендом сайта
+ *       ({@code acme-group.com}). Площадки вакансий ({@code jobs.cz}, {@code teamio} …) не принимаются. Ссылки своего
+ *       домена идут первыми; кадровый хост с другим именем ({@code jobs.sap.com} с {@code firma.sk}) не принимается —
+ *       иначе доски чужой кадровой страницы записались бы как доски компании (аудит §66).</li>
  * </ul>
  */
 final class CareerLinks {
@@ -86,10 +89,30 @@ final class CareerLinks {
     private static final Set<String> CAREER_HOST_WORDS = Set.of("jobs", "careers", "career", "kariera", "karriere");
     private static final int CAREER_HOST_LABELS = 3;
     private static final Set<String> GREENHOUSE_NOT_BOARDS = Set.of("embed", "robots", "favicon");
-    private static final List<String> CAREER_WORDS = List.of("kariera", "kariéra", "career", "jobs", "job-",
-            "praca", "práca", "pracovne-ponuky", "pracovné ponuky", "volne-pozicie", "voľné pozície",
-            "volne-miesta", "voľné miesta", "pridaj-sa", "pridajte sa", "join-us", "hiring",
-            "uchadzac", "uchádzač", "poďte k nám", "podte-k-nam", "join us", "work with us", "work-with-us");
+    /**
+     * Кадровые слова — словарь скрипта замера ({@code CAREER_WORDS} в {@code survey/employer-survey.py}). «Práca» — только
+     * в сочетаниях («práca u nás», «práca v …»): голое слово находится внутри «spolupráca» (страницы о сотрудничестве,
+     * §75).
+     */
+    private static final Pattern CAREER_WORDS = Pattern.compile(
+            "kari[eé]r|career|\\bjobs?\\b|pr[aá]ca u n[aá]s|pr[aá]ca vo? |pre uch[aá]dza[čc]"
+                    + "|vo[ľl]n[ée] (?:poz[ií]cie|miesta|pracovn)|pracovn[ée] (?:ponuky|poz[ií]cie|miesta)|ponuky pr[aá]ce"
+                    + "|pridaj sa|po[ďd]te k n[aá]m|join us|work with us|zamestnanie|n[aá]bor",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /** Сколько первых символов текста страницы проверяется на кадровые слова (как в скрипте). */
+    private static final int CAREER_TEXT_LIMIT = 300_000;
+    /** Площадки вакансий и продажи доменов — не кадровая страница компании (скрипт: {@code FOOTER_HOSTS}). */
+    private static final Pattern JOB_PORTAL_HOSTS = Pattern.compile(
+            "almacareer|jobs\\.cz|prace\\.cz|atmoskop|platy\\.(?:sk|cz)|teamio|cvonline|hugedomains|sedo|afternic",
+            Pattern.CASE_INSENSITIVE);
+    /** Хосты систем найма (скрипт: {@code ATS_HOSTS}). */
+    private static final Pattern RECRUITING_HOSTS = Pattern.compile(
+            "myworkdayjobs|greenhouse|personio|smartrecruiters|successfactors|nalgoo|nelisa|topjobs|teamtailor|recruitee"
+                    + "|lever\\.co|workable|breezy|softgarden|taleo|oraclecloud|icims|eightfold|avature|phenom|radancy"
+                    + "|talentbrew|traffit|jobangels",
+            Pattern.CASE_INSENSITIVE);
+    /** Бренд сайта короче — в чужом хосте не ищется (скрипт: {@code len(brand) >= 3}). */
+    private static final int MIN_BRAND = 3;
 
     private CareerLinks() {
     }
@@ -245,37 +268,46 @@ final class CareerLinks {
     }
 
     /**
-     * @param page страница, открытая по стандартному адресу ({@code /kariera})
-     * @return {@code true} — в заголовке страницы есть кадровое слово: это кадровая страница, а не
-     *         заглушка сайта, отвечающая на любой адрес
+     * Проверка кадровой страницы, как в скрипте замера: кадровое слово в видимом тексте страницы (первые
+     * {@value #CAREER_TEXT_LIMIT} символов). Страница по ссылке «Kariéra» или по пробному адресу без кадровых слов —
+     * не кадровая (заглушка, страница о сотрудничестве).
+     *
+     * @param page открытая страница
+     * @return {@code true} — в тексте страницы есть кадровое слово
      */
     static boolean isCareerPage(Document page) {
-        String heading = (page.title() + " " + page.select("h1").text()).toLowerCase(Locale.ROOT);
-        return CAREER_WORDS.stream().anyMatch(heading::contains);
+        String text = page.text();
+        return CAREER_WORDS.matcher(text.substring(0, Math.min(text.length(), CAREER_TEXT_LIMIT))).find();
     }
 
     /**
-     * Кадровые ссылки страницы: сначала ссылки своего сайта и его поддоменов с кадровым словом или на кадровый
-     * поддомен ({@code jobs.firma.sk}), затем ссылки на кадровый хост другого домена с тем же именем домена.
+     * Кадровые ссылки страницы (правила — в описании класса): сначала ссылки своего регистрируемого домена, затем
+     * ссылки других доменов; адрес — без якоря ({@code /#career} → {@code /}: якорь серверу не передаётся).
      */
     private static List<String> careerLinks(Document page, String host) {
+        String siteHost = host.replaceFirst(":\\d+$", "");
+        String domain = SiteBrand.registrable(withoutWww(siteHost));
+        String brand = domain.split("\\.")[0];
         List<String> own = new ArrayList<>();
         List<String> otherDomain = new ArrayList<>();
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
-            if (link == null) {
+            if (link == null || link.getHost() == null) {
                 continue;
             }
-            String words = ((link.getPath() == null ? "" : link.getPath()) + " " + anchor.text())
-                    .toLowerCase(Locale.ROOT);
-            if (sameOrSubSite(host, link.getAuthority())) {
-                if ((careerHost(link.getHost()) || CAREER_WORDS.stream().anyMatch(words::contains))
-                        && !own.contains(link.toString())) {
-                    own.add(link.toString());
+            String linkHost = lower(link.getHost());
+            String address = link.toString().replaceFirst("#.*$", "");
+            boolean careerWords = CAREER_WORDS.matcher(anchor.text() + " " + link).find();
+            if (sameOrSubSite(host, link.getAuthority()) || SiteBrand.registrable(linkHost).equals(domain)) {
+                if ((careerHost(linkHost) || careerWords) && !own.contains(address)) {
+                    own.add(address);
                 }
-            } else if (careerHost(link.getHost()) && sameDomainName(host, link.getHost())
-                    && !otherDomain.contains(link.toString())) {
-                otherDomain.add(link.toString());
+            } else if (!JOB_PORTAL_HOSTS.matcher(linkHost).find()
+                    && (careerHost(linkHost) && sameDomainName(host, linkHost)
+                        || careerWords && (RECRUITING_HOSTS.matcher(linkHost).find()
+                            || brand.length() >= MIN_BRAND && linkHost.contains(brand)))
+                    && !otherDomain.contains(address)) {
+                otherDomain.add(address);
             }
         }
         own.addAll(otherDomain);

@@ -28,7 +28,7 @@ import org.jsoup.nodes.Document;
  * ({@link #groupSite}) — кандидат, не находка. Правила — как в скрипте замера {@code survey/site-search.py}, на
  * котором измерен топ-500 (стенограмма §73; правило двух слов §51 снято).</p>
  */
-final class SiteBrand {
+public final class SiteBrand {
 
     /** Меньше слов в видимом тексте — заглушка или пустая страница. */
     static final int MIN_WORDS = 30;
@@ -227,7 +227,7 @@ final class SiteBrand {
      * @param host хост
      * @return домен в нижнем регистре
      */
-    static String registrable(String host) {
+    public static String registrable(String host) {
         String[] labels = host.toLowerCase(Locale.ROOT).split("\\.");
         int count = labels.length;
         if (count >= 3 && SECOND_LEVEL.contains(labels[count - 2]) && labels[count - 1].length() == 2) {

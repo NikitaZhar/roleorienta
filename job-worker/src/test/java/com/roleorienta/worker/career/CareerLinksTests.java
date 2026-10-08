@@ -100,6 +100,30 @@ class CareerLinksTests {
     }
 
     /**
+     * Кадровые слова и ссылки — как в скрипте замера (§76): «Spolupráca» — не кадровое слово; «Práca u nás» — кадровое
+     * (в тексте страницы); ссылка с кадровым словом на систему найма и на хост с брендом сайта принимается, на площадку
+     * вакансий ({@code teamio}) — нет; ссылка того же регистрируемого домена ({@code www.acme.com} с
+     * {@code sk.acme.com}) — своя.
+     */
+    @Test
+    void findsCareerPageLikeSurveyScript() {
+        Document cooperation = Jsoup.parse("<a href=\"/spolupraca\">Spolupráca</a>", "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(cooperation, "acme.sk")).isEmpty();
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<h1>Spolupráca s partnermi</h1>"))).isFalse();
+        assertThat(CareerLinks.isCareerPage(Jsoup.parse("<p>Práca u nás</p>"))).isTrue();
+
+        Document recruiting = Jsoup.parse("""
+                <a href="https://www.teamio.com/acme">Kariéra</a><a href="https://acme.teamtailor.com/">Kariéra</a>
+                """, "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(recruiting, "acme.sk")).contains("https://acme.teamtailor.com/");
+        Document group = Jsoup.parse("<a href=\"https://www.acme-group.com/careers\">Careers</a>", "https://acme.sk/");
+        assertThat(CareerLinks.careerPage(group, "acme.sk")).contains("https://www.acme-group.com/careers");
+        Document sameDomain = Jsoup.parse("<a href=\"https://www.acme.com/careers\">Careers</a>",
+                "https://sk.acme.com/");
+        assertThat(CareerLinks.careerPage(sameDomain, "sk.acme.com")).contains("https://www.acme.com/careers");
+    }
+
+    /**
      * SmartRecruiters: кадровая страница компании и вакансия — доска компании в нижнем регистре;
      * служебные пути — не доски.
      */

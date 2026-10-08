@@ -99,7 +99,7 @@ class CareerScanTests {
     @Test
     void connectsCareerPageWithJobPostingMarkup() {
         PAGES.put("/", "<a href=\"/kariera\">Kariéra</a>");
-        PAGES.put("/kariera", "<a href=\"/kariera/java\">Java Developer</a>");
+        PAGES.put("/kariera", "<h1>Kariéra</h1><a href=\"/kariera/java\">Java Developer</a>");
         PAGES.put("/kariera/java", "<script type=\"application/ld+json\">{\"@type\": \"JobPosting\"}</script>");
 
         runScan();
@@ -180,7 +180,7 @@ class CareerScanTests {
 
         jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
         PAGES.put("/", "<a href=\"/kariera\">Kariéra</a>");
-        PAGES.put("/kariera", "<p>Pošlite životopis na hr@alfa.sk</p>");
+        PAGES.put("/kariera", "<h1>Kariéra</h1><p>Pošlite životopis na hr@alfa.sk</p>");
         runScan();
         assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
         assertThat(companyResult()).isEqualTo("FORMAT_UNSUPPORTED");
@@ -252,6 +252,40 @@ class CareerScanTests {
         runScan();
         assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
         assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    /**
+     * Кадровая страница — как в скрипте замера (§76): ссылка «Spolupráca» — не кадровая (в словаре нет голого
+     * «práca»), страница по ссылке «Kariéra» без кадровых слов в тексте не засчитывается — пробуются пробные адреса
+     * ({@code /kariera-a-praca}); главная не открылась (404) — пробные адреса тоже пробуются; сайт сам кадровый — ссылка
+     * на раздел главной ({@code /#pozicie}) засчитывается, конечный адрес — главная.
+     */
+    @Test
+    void findsCareerPageLikeSurveyScript() {
+        PAGES.put("/", "<a href=\"/spolupraca\">Spolupráca</a><a href=\"/kariera-info\">Kariéra</a>");
+        PAGES.put("/spolupraca", "<h1>Spolupráca s partnermi</h1>");
+        PAGES.put("/kariera-info", "<p>Stránka sa pripravuje</p>");
+        PAGES.put("/kariera-a-praca", "<h1>Práca u nás</h1><p>Pošlite životopis</p>");
+
+        runScan();
+
+        assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
+                .isEqualTo("http://" + HOST + "/kariera-a-praca");
+
+        jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
+        PAGES.remove("/");
+        runScan();
+        assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(companyResult()).isEqualTo("FORMAT_UNSUPPORTED");
+
+        jdbcTemplate.update("UPDATE company_site SET checked_at = NULL");
+        PAGES.clear();
+        PAGES.put("/", "<h1>Kariéra v Alfe</h1><a href=\"/#pozicie\">Voľné pozície</a>");
+        runScan();
+        assertThat(checkResult()).isEqualTo("FORMAT_UNSUPPORTED");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
+                .isEqualTo("http://" + HOST + "/");
     }
 
     private void runScan() {
