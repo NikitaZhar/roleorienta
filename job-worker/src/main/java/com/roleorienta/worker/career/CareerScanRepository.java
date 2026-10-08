@@ -29,24 +29,32 @@ public class CareerScanRepository {
              LIMIT 1)""";
 
     /**
-     * Итог компании — итог её основного сайта (бизнес-описание §4.2); компания с любым подключённым источником
-     * (в том числе государственного портала, §45) — «подключена». Первая дата итога сохраняется.
+     * Проверяемые сайты компании (§80): основной сайт и прочие найденные сайты, кроме сайтов из Common Crawl — у
+     * кадровой страницы на втором сайте ({@code scania.com} рядом со {@code scania.sk}) больше шансов, а чужой сайт с
+     * IČO компании (интернет-магазин с IČO перевозчика) приходит почти только из Common Crawl (§52, §75).
+     */
+    private static final String CHECKED_SITE = """
+            s.status = 'FOUND' AND (s.source <> 'COMMON_CRAWL' OR s.id = %s)""".formatted(MAIN_SITE);
+
+    /**
+     * Итог компании — лучший итог её проверяемых сайтов ({@link #CHECKED_SITE}; бизнес-описание §4.2); компания с
+     * любым подключённым источником (в том числе государственного портала, §45) — «подключена». Первая дата итога
+     * сохраняется.
      */
     private static final String COMPANY_RESULT = """
             INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
             SELECT company_id,
-                   CASE WHEN EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = company_site.company_id)
+                   CASE WHEN EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = s.company_id)
                             THEN 'CONNECTED'
                        ELSE CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
                                               WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
                        WHEN 5 THEN 'CONNECTED' WHEN 4 THEN 'USE_FORBIDDEN' WHEN 3 THEN 'FORMAT_UNSUPPORTED'
                        WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END END,
                    now(), now()
-            FROM company_site WHERE id = (SELECT id FROM company_site s WHERE s.company_id = ? AND s.id = %s)
-                                    AND check_result IS NOT NULL
-            GROUP BY company_id
+            FROM company_site s WHERE s.company_id = ? AND %s AND s.check_result IS NOT NULL
+            GROUP BY s.company_id
             ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at
-            """.formatted(MAIN_SITE);
+            """.formatted(CHECKED_SITE);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -60,19 +68,26 @@ public class CareerScanRepository {
     /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
-     * @return основные сайты ({@link #MAIN_SITE}; кандидаты и прочие найденные сайты не проверяются) действующих
-     *         компаний активных стран сбора, ещё не проверенные или проверенные давнее срока; сайты приоритетных
+     * @return проверяемые сайты ({@link #CHECKED_SITE}; кандидаты не проверяются) действующих компаний активных стран
+     *         сбора, ещё не проверенные или проверенные давнее срока, — не больше одного сайта компании за задание:
+     *         сайты задания проверяются одновременно, а итог компании пересчитывается по всем её сайтам — два сайта
+     *         одной компании в одном задании записали бы итог, не видя друг друга (§80); сайты приоритетных
      *         компаний — первыми (§71)
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
-                SELECT s.id, s.company_id, s.host, s.start_url FROM company_site s JOIN company c ON c.id = s.company_id
-                JOIN collection_country cc ON cc.country = c.country AND cc.active
-                WHERE c.terminated_on IS NULL AND s.status = 'FOUND' AND s.id = %s
-                  AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))
-                ORDER BY c.priority DESC, s.checked_at NULLS FIRST, s.id LIMIT ?
-                """.formatted(MAIN_SITE), (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"), row.getString("host"),
-                        row.getString("start_url")),
+                SELECT id, company_id, host, start_url FROM (
+                    SELECT s.id, s.company_id, s.host, s.start_url, c.priority, s.checked_at,
+                           row_number() OVER (PARTITION BY s.company_id ORDER BY s.checked_at NULLS FIRST, s.id)
+                               AS company_order
+                    FROM company_site s JOIN company c ON c.id = s.company_id
+                    JOIN collection_country cc ON cc.country = c.country AND cc.active
+                    WHERE c.terminated_on IS NULL AND %s
+                      AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))) due
+                WHERE company_order = 1
+                ORDER BY priority DESC, checked_at NULLS FIRST, id LIMIT ?
+                """.formatted(CHECKED_SITE), (row, number) -> new Site(row.getLong("id"), row.getLong("company_id"),
+                        row.getString("host"), row.getString("start_url")),
                 (double) recheckAfter.toSeconds(), limit);
     }
 

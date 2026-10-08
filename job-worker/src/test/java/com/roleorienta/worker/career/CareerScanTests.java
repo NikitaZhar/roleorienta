@@ -146,22 +146,37 @@ class CareerScanTests {
     }
 
     /**
-     * Основной сайт — найденный сайт самого раннего шага: у компании сайт из Wikidata и сайт из Common Crawl —
-     * проверяется только сайт из Wikidata, итог компании — его итог.
+     * Проверяются основной сайт и прочие найденные сайты, кроме сайтов из Common Crawl (§80): у компании сайт из
+     * Wikidata (основной), сайт по названию ({@code localhost} — та же заглушка) и сайт из Common Crawl. Задание берёт
+     * не больше одного сайта компании; сайт из Common Crawl не проверяется; итог компании — лучший из её сайтов.
      */
     @Test
-    void scansOnlyMainSite() {
+    void scansMainAndOtherSitesExceptCommonCrawl() {
         jdbcTemplate.update("UPDATE company_site SET source = 'WIKIDATA', proof = 'WIKIDATA'");
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
                 + "SELECT id, 'other-site.invalid', 'http://other-site.invalid/kontakt', 'COMMON_CRAWL', "
                 + "'REGISTRATION_NUMBER' FROM company");
-        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+        String byName = "localhost:" + SITE.getAddress().getPort();
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "SELECT id, ?, 'http://' || ? || '/', 'NAME', 'BRAND' FROM company", byName, byName);
+        PAGES.put("/", "<p>Vitajte</p>");
 
         runScan();
 
-        assertThat(jdbcTemplate.queryForList("SELECT host || ':' || coalesce(check_result, 'null') FROM company_site "
-                + "ORDER BY id", String.class)).containsExactly(HOST + ":SOURCE_FOUND", "other-site.invalid:null");
+        assertThat(siteResults()).containsExactly(HOST + ":NO_CAREER_PAGE", "other-site.invalid:null", byName + ":null");
+        assertThat(companyResult()).isEqualTo("PAGE_NOT_FOUND");
+
+        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
+        runScan();
+
+        assertThat(siteResults()).containsExactly(HOST + ":NO_CAREER_PAGE", "other-site.invalid:null",
+                byName + ":SOURCE_FOUND");
         assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    private List<String> siteResults() {
+        return jdbcTemplate.queryForList("SELECT host || ':' || coalesce(check_result, 'null') FROM company_site "
+                + "ORDER BY id", String.class);
     }
 
     /**
