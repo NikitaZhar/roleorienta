@@ -4,6 +4,7 @@ import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -207,15 +208,88 @@ public class StatePortalRepository {
         jdbcTemplate.update("UPDATE portal_employer SET profesia_checked_at = now() WHERE registration_number = ?",
                 employer.registrationNumber());
         if (site != null) {
-            jdbcTemplate.update("""
-                    INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
-                    VALUES (?, ?, ?, ?, 'STATE_PORTAL', ?)
-                    ON CONFLICT (company_id, host) DO UPDATE
-                        SET status = 'FOUND', proof = EXCLUDED.proof,
-                            start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
-                        WHERE company_site.status = 'CANDIDATE'
-                    """, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
+            saveProfesiaSite(employer.companyId(), site, "STATE_PORTAL");
         }
+    }
+
+    /**
+     * Записывает работодателей карты сайта profesia.sk (шаг «список работодателей», §83) пакетом: объявление, время в
+     * карте сайта и компания реестра — однозначно по названию ({@code company.name_slug}; действующая, страна сбора
+     * Словакия активна), иначе {@code NULL}.
+     *
+     * @param employers работодатель (адрес без правовой формы) → его объявление
+     */
+    public void saveProfesiaList(Map<String, String> employers) {
+        if (employers.isEmpty()) {
+            return;
+        }
+        List<Map.Entry<String, String>> rows = List.copyOf(employers.entrySet());
+        jdbcTemplate.batchUpdate("""
+                INSERT INTO profesia_employer (slug, ad_url, company_id, listed_at)
+                VALUES (?, ?, (SELECT min(c.id) FROM company c
+                               JOIN collection_country cc ON cc.country = c.country AND cc.active
+                               WHERE c.name_slug = ? AND c.country = 'SK' AND c.terminated_on IS NULL
+                               HAVING count(*) = 1), now())
+                ON CONFLICT (slug) DO UPDATE
+                    SET ad_url = EXCLUDED.ad_url, company_id = EXCLUDED.company_id, listed_at = now()
+                """, rows, 1000, (statement, row) -> {
+                    statement.setString(1, row.getKey());
+                    statement.setString(2, row.getValue());
+                    statement.setString(3, row.getKey());
+                });
+    }
+
+    /**
+     * Работодатели карты сайта profesia.sk к шагу «список работодателей»: сопоставлены компании, были в карте сайта за
+     * последние двое суток, не смотрелись дольше {@code recheckAfter}; у компании ещё нет сайта со страницы profesia.sk
+     * (шаг 2 или этот). Сначала приоритетные компании и непросмотренные.
+     *
+     * @param limit        не больше
+     * @param recheckAfter срок до повторного просмотра
+     * @return работодатели с компанией и объявлением
+     */
+    public List<ListedEmployer> listedForProfesia(int limit, Duration recheckAfter) {
+        return jdbcTemplate.query("""
+                SELECT e.slug, e.company_id, e.ad_url FROM profesia_employer e
+                JOIN company c ON c.id = e.company_id
+                WHERE e.listed_at > now() - INTERVAL '2 days'
+                  AND (e.checked_at IS NULL OR e.checked_at < now() - make_interval(secs => ?))
+                  AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = e.company_id
+                                  AND s.proof = 'PROFESIA')
+                ORDER BY c.priority DESC, e.checked_at NULLS FIRST, e.slug
+                LIMIT ?
+                """, (row, number) -> new ListedEmployer(row.getString(1), row.getLong(2), row.getString(3)),
+                (double) recheckAfter.toSeconds(), limit);
+    }
+
+    /**
+     * Итог шага «список работодателей» одной транзакцией: отметка «смотрели»; ссылка найдена — сайт компании
+     * (источник {@code PROFESIA}), как в {@link #recordProfesia}.
+     *
+     * @param employer работодатель карты сайта
+     * @param site     сайт или кадровая страница; {@code null} — ссылки нет
+     */
+    @Transactional
+    public void recordListed(ListedEmployer employer, FoundSite site) {
+        jdbcTemplate.update("UPDATE profesia_employer SET checked_at = now() WHERE slug = ?", employer.slug());
+        if (site != null) {
+            saveProfesiaSite(employer.companyId(), site, "PROFESIA");
+        }
+    }
+
+    /**
+     * Сайт со страницы компании на profesia.sk: новый — найденный; тот же хост был кандидатом (сайт группы, ответ
+     * 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его).
+     */
+    private void saveProfesiaSite(long companyId, FoundSite site, String source) {
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (company_id, host) DO UPDATE
+                    SET status = 'FOUND', proof = EXCLUDED.proof,
+                        start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
+                    WHERE company_site.status = 'CANDIDATE'
+                """, companyId, site.host(), site.startUrl(), site.evidenceUrl(), source, site.proof());
     }
 
     /**
@@ -226,6 +300,16 @@ public class StatePortalRepository {
      * @param adUrl              адрес объявления на profesia.sk
      */
     public record ProfesiaEmployer(String registrationNumber, long companyId, String adUrl) {
+    }
+
+    /**
+     * Работодатель карты сайта profesia.sk, сопоставленный компании реестра (§83).
+     *
+     * @param slug      работодатель в адресе profesia.sk без правовой формы
+     * @param companyId компания реестра
+     * @param adUrl     адрес его объявления на profesia.sk
+     */
+    public record ListedEmployer(String slug, long companyId, String adUrl) {
     }
 
     /**

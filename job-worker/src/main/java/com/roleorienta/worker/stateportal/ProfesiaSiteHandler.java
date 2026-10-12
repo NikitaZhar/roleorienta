@@ -101,9 +101,12 @@ public class ProfesiaSiteHandler implements TaskHandler {
     }
 
     /**
-     * Объявление → страница компании и её разделы → выбранная ссылка компании.
+     * Объявление → страница компании и её разделы → выбранная ссылка компании (шаги 2 и 3, §82–§83).
+     *
+     * @param adUrl объявление на profesia.sk
+     * @return сайт или кадровая страница; пусто — страницы компании или ссылки нет
      */
-    private Optional<FoundSite> find(String adUrl) {
+    Optional<FoundSite> find(String adUrl) {
         Optional<Document> company = page(adUrl).flatMap(ProfesiaCompanyPage::companyPage).flatMap(this::page);
         if (company.isEmpty()) {
             return Optional.empty();
@@ -114,6 +117,16 @@ public class ProfesiaSiteHandler implements TaskHandler {
                     .filter(link -> !links.contains(link)).forEach(links::add));
         }
         return ProfesiaCompanyPage.choose(links).map(link -> site(link, company.get().location()));
+    }
+
+    /**
+     * Страница profesia.sk тем же HTTP-клиентом (карта сайта для шага «список работодателей», §83).
+     *
+     * @param uri адрес
+     * @return результат запроса
+     */
+    HttpResult get(URI uri) {
+        return http.get(uri);
     }
 
     /**

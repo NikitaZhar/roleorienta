@@ -14,15 +14,18 @@ import org.jsoup.nodes.Element;
 
 /**
  * Разбор страниц profesia.sk для шага «страница компании» (§82): объявление → страница компании
- * ({@code /praca/<компания>/C<номер>}) и её разделы ({@code ?page_num=}) → внешние ссылки компании. Ссылки самой
- * profesia.sk (подвал сети сайтов, шапка) и соцсетей не берутся.
+ * ({@code /praca/<компания>/C<номер>}) и её разделы ({@code ?page_num=}, {@code ?cd_page=}) → внешние ссылки
+ * компании. Ссылки самой profesia.sk (подвал сети сайтов, шапка) и соцсетей не берутся.
  */
 final class ProfesiaCompanyPage {
 
     /** Страница компании: путь {@code /praca/<компания>/C<номер>}. */
     private static final Pattern COMPANY_PATH = Pattern.compile("/praca/[^/]+/(C\\d+)");
-    /** Разделов страницы компании берётся не больше (страница «Open positions» у Henkel — раздел). */
-    private static final int MAX_SECTIONS = 3;
+    /**
+     * Разделов страницы компании берётся не больше (страница «Open positions» у Henkel — раздел {@code page_num};
+     * «Aké máme voľné miesta», «O nás» — разделы {@code cd_page}, §83).
+     */
+    private static final int MAX_SECTIONS = 5;
     /** Подвал и шапка profesia.sk — ссылки сети сайтов profesia, не компании. */
     private static final String PROFESIA_CHROME = "#profesia-footer a[href], header a[href]";
     private static final Pattern NOT_COMPANY_HOSTS = Pattern.compile(
@@ -50,7 +53,8 @@ final class ProfesiaCompanyPage {
 
     /**
      * @param company страница компании на profesia.sk
-     * @return адреса её разделов ({@code /praca/<…>/C<номер>?page_num=…}, тот же номер компании), не больше
+     * @return адреса её разделов ({@code /praca/<…>/C<номер>?page_num=…} или {@code ?cd_page=…}, тот же номер
+     *         компании), не больше
      *         {@value #MAX_SECTIONS}
      */
     static List<String> sections(Document company) {
@@ -63,7 +67,7 @@ final class ProfesiaCompanyPage {
         for (Element anchor : company.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
             if (link == null || link.getPath() == null || link.getQuery() == null
-                    || !link.getQuery().startsWith("page_num=")) {
+                    || !(link.getQuery().startsWith("page_num=") || link.getQuery().startsWith("cd_page="))) {
                 continue;
             }
             Matcher matcher = COMPANY_PATH.matcher(link.getPath());
