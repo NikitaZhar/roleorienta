@@ -16,6 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class StatePortalRepository {
 
+    /**
+     * Работодатель карты сайта profesia.sk берётся, если был в ней не раньше этого срока: карта читается раз в день,
+     * двое суток — запас на пропущенный день; давно пропавший из карты — без действующих объявлений.
+     */
+    private static final Duration LISTED_WITHIN = Duration.ofDays(2);
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -196,9 +202,10 @@ public class StatePortalRepository {
     }
 
     /**
-     * Итог шага «страница компании на profesia.sk» одной транзакцией: отметка «смотрели»; ссылка найдена — найденный
-     * сайт компании (источник {@code STATE_PORTAL}, подтверждение {@code PROFESIA}); тот же хост был кандидатом (сайт
-     * группы, ответ 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его).
+     * Итог шага «страница компании на profesia.sk» одной транзакцией: отметка «смотрели»; ссылка найдена — новый
+     * найденный сайт компании (источник {@code STATE_PORTAL}, подтверждение {@code PROFESIA}); тот же хост был
+     * кандидатом (сайт группы, ответ 403) — становится найденным с подтверждением {@code PROFESIA}, источник прежний,
+     * и перепроверяется (ссылка компании на profesia.sk подтверждает его).
      *
      * @param employer работодатель
      * @param site     сайт или кадровая страница; {@code null} — ссылки нет
@@ -252,14 +259,14 @@ public class StatePortalRepository {
         return jdbcTemplate.query("""
                 SELECT e.slug, e.company_id, e.ad_url FROM profesia_employer e
                 JOIN company c ON c.id = e.company_id
-                WHERE e.listed_at > now() - INTERVAL '2 days'
+                WHERE e.listed_at > now() - make_interval(secs => ?)
                   AND (e.checked_at IS NULL OR e.checked_at < now() - make_interval(secs => ?))
                   AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = e.company_id
                                   AND s.proof = 'PROFESIA')
                 ORDER BY c.priority DESC, e.checked_at NULLS FIRST, e.slug
                 LIMIT ?
                 """, (row, number) -> new ListedEmployer(row.getString(1), row.getLong(2), row.getString(3)),
-                (double) recheckAfter.toSeconds(), limit);
+                (double) LISTED_WITHIN.toSeconds(), (double) recheckAfter.toSeconds(), limit);
     }
 
     /**
@@ -279,10 +286,11 @@ public class StatePortalRepository {
 
     /**
      * Сайт со страницы компании на profesia.sk: новый — найденный; тот же хост был кандидатом (сайт группы, ответ
-     * 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его).
+     * 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его). Сайт записан или
+     * стал найденным — итог «сайт не найден» снимается, как в других шагах поиска сайта (аудит §84).
      */
     private void saveProfesiaSite(long companyId, FoundSite site, String source) {
-        jdbcTemplate.update("""
+        int saved = jdbcTemplate.update("""
                 INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (company_id, host) DO UPDATE
@@ -290,6 +298,10 @@ public class StatePortalRepository {
                         start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
                     WHERE company_site.status = 'CANDIDATE'
                 """, companyId, site.host(), site.startUrl(), site.evidenceUrl(), source, site.proof());
+        if (saved > 0) {
+            jdbcTemplate.update("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
+                    companyId);
+        }
     }
 
     /**

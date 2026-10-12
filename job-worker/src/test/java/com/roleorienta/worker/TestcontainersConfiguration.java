@@ -52,7 +52,7 @@ public class TestcontainersConfiguration {
     /**
      * Контейнер MinIO — хранилище снимков для интеграционных тестов. Образ тот же, что в
      * docker-compose (архивный Bitnami: образы MinIO убраны из реестров; замена — в
-     * {@code docs/next-step.md}, «Долг»). Готовность — по health-адресу MinIO.
+     * {@code docs/technical-design.md} §15, «Долг», п. 1). Готовность — по health-адресу MinIO.
      *
      * @return контейнер
      */

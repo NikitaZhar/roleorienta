@@ -15,7 +15,7 @@ import org.jsoup.nodes.Element;
 /**
  * Разбор страниц profesia.sk для шага «страница компании» (§82): объявление → страница компании
  * ({@code /praca/<компания>/C<номер>}) и её разделы ({@code ?page_num=}, {@code ?cd_page=}) → внешние ссылки
- * компании. Ссылки самой profesia.sk (подвал сети сайтов, шапка) и соцсетей не берутся.
+ * компании. Ссылки самой profesia.sk (подвал сети сайтов, шапка), соцсетей и площадок вакансий не берутся.
  */
 final class ProfesiaCompanyPage {
 
@@ -30,7 +30,7 @@ final class ProfesiaCompanyPage {
     private static final String PROFESIA_CHROME = "#profesia-footer a[href], header a[href]";
     private static final Pattern NOT_COMPANY_HOSTS = Pattern.compile(
             "profesia|facebook|instagram|linkedin|youtube|youtu\\.be|twitter|(^|\\.)x\\.com$|tiktok|whatsapp|viber"
-                    + "|google|apple\\.com|spotify|vimeo|pinterest");
+                    + "|google|apple\\.com|spotify|vimeo|pinterest|(^|\\.)kariera\\.sk$");
 
     private ProfesiaCompanyPage() {
     }
@@ -83,8 +83,8 @@ final class ProfesiaCompanyPage {
 
     /**
      * @param page страница компании или её раздел
-     * @return внешние ссылки компании по порядку на странице: другой хост, не profesia.sk и не соцсети, вне подвала
-     *         и шапки
+     * @return внешние ссылки компании по порядку на странице: другой хост, не profesia.sk, не соцсети и не площадки
+     *         вакансий ({@link CareerLinks#jobPortal}, kariera.sk — аудит §84), вне подвала и шапки
      */
     static List<String> companyLinks(Document page) {
         List<Element> chrome = page.select(PROFESIA_CHROME);
@@ -96,6 +96,7 @@ final class ProfesiaCompanyPage {
             if (link == null || chrome.contains(anchor) || !link.getScheme().startsWith("http")
                     || link.getHost().equalsIgnoreCase(ownHost)
                     || NOT_COMPANY_HOSTS.matcher(link.getHost().toLowerCase(Locale.ROOT)).find()
+                    || CareerLinks.jobPortal(link.getHost())
                     || links.contains(link.toString())) {
                 continue;
             }

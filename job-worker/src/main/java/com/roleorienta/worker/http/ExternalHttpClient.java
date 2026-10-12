@@ -130,6 +130,19 @@ public class ExternalHttpClient implements AutoCloseable {
     }
 
     /**
+     * GET-запрос со своим потолком тела ответа — для редких больших файлов (карта сайта profesia.sk ≈ 7 МБ, §83),
+     * чтобы не поднимать общий потолок {@code app.http.max-body-bytes} для всех запросов (аудит §84). Переадресации,
+     * robots.txt и бюджет хоста — как у {@link #get(URI)}.
+     *
+     * @param uri          адрес
+     * @param maxBodyBytes потолок тела ответа этого запроса; больше — постоянный отказ {@code TOO_LARGE}
+     * @return разобранный результат; исключений не бросает
+     */
+    public HttpResult get(URI uri, int maxBodyBytes) {
+        return follow(uri, new HttpGet(uri), true, maxBodyBytes);
+    }
+
+    /**
      * POST-запрос с JSON-телом (например, список вакансий Workday).
      *
      * @param uri  адрес
@@ -167,7 +180,7 @@ public class ExternalHttpClient implements AutoCloseable {
     }
 
     private HttpResult execute(URI uri, ClassicHttpRequest request) {
-        return follow(uri, request, true);
+        return follow(uri, request, true, maxBodyBytes);
     }
 
     /**
@@ -178,9 +191,10 @@ public class ExternalHttpClient implements AutoCloseable {
      * @param uri         адрес
      * @param request     запрос
      * @param checkRobots сверять ли шаги с robots.txt ({@code false} — запрос самого robots.txt)
+     * @param bodyLimit   потолок тела ответа
      * @return итог последнего шага; успех после переадресации несёт конечный адрес
      */
-    private HttpResult follow(URI uri, ClassicHttpRequest request, boolean checkRobots) {
+    private HttpResult follow(URI uri, ClassicHttpRequest request, boolean checkRobots, int bodyLimit) {
         URI current = uri;
         ClassicHttpRequest step = request;
         Set<URI> visited = new HashSet<>();
@@ -195,7 +209,7 @@ public class ExternalHttpClient implements AutoCloseable {
                     return refusal.get();
                 }
             }
-            Hop answer = send(current, step);
+            Hop answer = send(current, step, bodyLimit);
             if (answer instanceof Done done) {
                 return hop > 0 && done.result() instanceof HttpResult.Success success
                         ? new HttpResult.Success(success.status(), success.body(), current) : done.result();
@@ -223,7 +237,7 @@ public class ExternalHttpClient implements AutoCloseable {
         if (cached == null || cached.fetchedAt().plus(ROBOTS_TTL).isBefore(clock.instant())) {
             URI robotsUri = URI.create(origin + ROBOTS_PATH);
             RobotsRules rules;
-            switch (follow(robotsUri, new HttpGet(robotsUri), false)) {
+            switch (follow(robotsUri, new HttpGet(robotsUri), false, maxBodyBytes)) {
                 case HttpResult.Success success -> rules = RobotsRules.parse(success.body(), robotsToken);
                 case HttpResult.PermanentFailure failure -> {
                     if (failure.kind() == HttpResult.Kind.NO_SUCH_HOST) {
@@ -264,7 +278,7 @@ public class ExternalHttpClient implements AutoCloseable {
     private record Redirect(URI target, int status) implements Hop {
     }
 
-    private Hop send(URI uri, ClassicHttpRequest request) {
+    private Hop send(URI uri, ClassicHttpRequest request, int bodyLimit) {
         String host = uri.getHost().toLowerCase(Locale.ROOT);
         Optional<Duration> wait = hostBudget.reserve(host);
         if (wait.isEmpty()) {
@@ -279,7 +293,7 @@ public class ExternalHttpClient implements AutoCloseable {
         }
         Hop hop;
         try {
-            hop = httpClient.execute(request, response -> answer(uri, response));
+            hop = httpClient.execute(request, response -> answer(uri, response, bodyLimit));
         } catch (IOException exception) {
             hop = new Done(fromException(exception));
         }
@@ -295,7 +309,7 @@ public class ExternalHttpClient implements AutoCloseable {
      * от {@code /}: {@code URI.resolve} иначе склеивает хост и относительный путь); порт цели 0 или больше 65535 —
      * постоянный отказ (запрос с таким адресом Apache HttpClient не строит — исключение); прочее — итог.
      */
-    private Hop answer(URI uri, ClassicHttpResponse response) throws IOException {
+    private Hop answer(URI uri, ClassicHttpResponse response, int bodyLimit) throws IOException {
         int status = response.getCode();
         Header location = response.getFirstHeader(HttpHeaders.LOCATION);
         if (REDIRECT_STATUSES.contains(status) && location != null
@@ -313,7 +327,7 @@ public class ExternalHttpClient implements AutoCloseable {
                         "Malformed redirect location: " + location.getValue()));
             }
         }
-        return new Done(toResult(response));
+        return new Done(toResult(response, bodyLimit));
     }
 
     /**
@@ -323,10 +337,10 @@ public class ExternalHttpClient implements AutoCloseable {
     private record CachedRobots(RobotsRules rules, Instant fetchedAt) {
     }
 
-    private HttpResult toResult(ClassicHttpResponse response) throws IOException {
+    private HttpResult toResult(ClassicHttpResponse response, int bodyLimit) throws IOException {
         int status = response.getCode();
         if (status >= STATUS_OK_MIN && status <= STATUS_OK_MAX) {
-            return readBody(status, response.getEntity());
+            return readBody(status, response.getEntity(), bodyLimit);
         }
         if (status == STATUS_TOO_MANY_REQUESTS || status >= STATUS_SERVER_ERROR_MIN) {
             return new HttpResult.TemporaryFailure("HTTP " + status,
@@ -341,17 +355,17 @@ public class ExternalHttpClient implements AutoCloseable {
         return new HttpResult.PermanentFailure(HttpResult.Kind.CLIENT_ERROR, "HTTP " + status);
     }
 
-    private HttpResult readBody(int status, HttpEntity entity) throws IOException {
+    private HttpResult readBody(int status, HttpEntity entity, int bodyLimit) throws IOException {
         if (entity == null) {
             return new HttpResult.Success(status, "");
         }
         byte[] body;
         try (InputStream stream = entity.getContent()) {
-            body = stream.readNBytes(maxBodyBytes + 1);
+            body = stream.readNBytes(bodyLimit + 1);
         }
-        if (body.length > maxBodyBytes) {
+        if (body.length > bodyLimit) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.TOO_LARGE,
-                    "Response body exceeds " + maxBodyBytes + " bytes");
+                    "Response body exceeds " + bodyLimit + " bytes");
         }
         ContentType contentType = ContentType.parseLenient(entity.getContentType());
         Charset charset = contentType == null || contentType.getCharset() == null

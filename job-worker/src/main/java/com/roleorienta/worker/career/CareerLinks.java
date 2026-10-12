@@ -344,6 +344,14 @@ public final class CareerLinks {
     }
 
     /**
+     * @param host хост ссылки
+     * @return хост площадки вакансий или продавца доменов (Alma Career, jobs.cz, platy.sk …) — не сайт компании
+     */
+    public static boolean jobPortal(String host) {
+        return JOB_PORTAL_HOSTS.matcher(host).find();
+    }
+
+    /**
      * Адрес с не-ASCII символами в кодировке для запроса ({@code /kariéra} → {@code /kari%C3%A9ra}; §79: сервер не
      * принимает адрес с «é» как есть); неразбираемый — как есть.
      */

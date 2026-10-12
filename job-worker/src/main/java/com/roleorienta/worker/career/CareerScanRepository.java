@@ -39,7 +39,8 @@ public class CareerScanRepository {
     /**
      * Кандидат компании без найденного сайта (§81: сайт группы, ответ 403) — проверяется; найденные доски
      * подключаются с ролью «кадровый сайт группы» ({@link Role#GROUP}): принадлежность не подтверждена, поэтому итог
-     * компании не меняется, а вакансии доски — только страны сбора (отбор адаптера по стране).
+     * компании не меняется. Отбор вакансий доски по стране — как у любой доски: при чтении у адаптеров с фильтром
+     * страны (Workday, SmartRecruiters, SuccessFactors, Phenom, Taleo), иначе в выдаче.
      */
     private static final String CANDIDATE_SITE = """
             s.status = 'CANDIDATE' AND NOT EXISTS (SELECT 1 FROM company_site f
@@ -107,7 +108,9 @@ public class CareerScanRepository {
      * Итог проверки сайта одной транзакцией: найденные источники подключаются (уже подключённый —
      * не дублируется) и связываются с компанией, сайт отмечается проверенным, итог компании
      * ({@code company_check}) пересчитывается. У кандидата (§81) доски подключаются с ролью {@link Role#GROUP}
-     * (кадровое агентство — не подключаются), итог компании не меняется.
+     * (кадровое агентство — не подключаются), итог компании не меняется. Связь с ролью {@code GROUP} при проверке
+     * найденного сайта (кандидат стал найденным, §82–§83) получает роль найденного сайта (аудит §84): иначе доска
+     * компании осталась бы «доской группы» и не считалась бы её каналом.
      *
      * @param site      сайт
      * @param boards    найденные источники
@@ -133,7 +136,8 @@ public class CareerScanRepository {
             jdbcTemplate.update("""
                     INSERT INTO company_source (company_id, source_id, role)
                     SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (company_id, source_id) DO UPDATE SET role = EXCLUDED.role
+                        WHERE company_source.role = 'GROUP' AND EXCLUDED.role <> 'GROUP'
                     """, site.companyId(), linkRole.name(), board.provider(), board.board());
         }
         if (!site.candidate()) {

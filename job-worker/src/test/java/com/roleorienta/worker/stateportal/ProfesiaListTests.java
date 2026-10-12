@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * Шаг «список работодателей profesia.sk» (§83) на заглушке profesia.sk и настоящей PostgreSQL: карта сайта →
  * работодатели, сопоставленные компаниям реестра по названию (только однозначно) → объявление → страница компании и
  * раздел {@code cd_page} → ссылка на систему найма записана сайтом компании (источник и подтверждение
- * {@code PROFESIA}).
+ * {@code PROFESIA}); недоступная карта сайта — неудача задания без повторов (аудит §84).
  */
 @SpringBootTest(properties = "app.http.allow-private-addresses=true")
 @ActiveProfiles("test")
@@ -40,6 +41,8 @@ class ProfesiaListTests {
     private static final String DELTA_1 = "90500012";
     private static final String DELTA_2 = "90500013";
     private static final Map<String, String> PAGES = new ConcurrentHashMap<>();
+    /** Запрошенные у заглушки пути. */
+    private static final List<String> REQUESTS = new CopyOnWriteArrayList<>();
     private static final HttpServer PROFESIA = startProfesia();
     private static final String BASE = "http://127.0.0.1:" + PROFESIA.getAddress().getPort();
 
@@ -86,6 +89,7 @@ class ProfesiaListTests {
         jdbcTemplate.update("DELETE FROM company_site WHERE company_id IN (SELECT id FROM company WHERE "
                 + "registration_number IN (?, ?, ?))", GAMA, DELTA_1, DELTA_2);
         PAGES.clear();
+        REQUESTS.clear();
         PAGES.put("/sitemap.php", "<urlset><url><loc>" + BASE + "/praca/bratislava/</loc></url>"
                 + "<url><loc>" + BASE + "/praca/gama-slovakia-k-s/O7</loc></url>"
                 + "<url><loc>" + BASE + "/praca/gama-slovakia-k-s/O8</loc></url>"
@@ -114,6 +118,22 @@ class ProfesiaListTests {
         assertThat(sites(GAMA)).containsExactly(
                 "gama.wd3.myworkdayjobs.com:https://gama.wd3.myworkdayjobs.com/External:PROFESIA:PROFESIA:FOUND");
         assertThat(sites(DELTA_1)).isEmpty();
+        assertThat(REQUESTS).doesNotContain("/praca/delta/O9");
+    }
+
+    /**
+     * Карты сайта нет (404 — постоянный отказ) — задание неудачно сразу, без повторов (аудит §84: прежде — восемь
+     * повторов каждый день).
+     */
+    @Test
+    void refusedSitemapFailsWithoutRetries() {
+        PAGES.remove("/sitemap.php");
+
+        runChain();
+
+        assertThat(jdbcTemplate.queryForList("SELECT state FROM task WHERE type = ?", String.class,
+                ProfesiaListHandler.TYPE)).containsExactly("FAILED");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM profesia_employer", Integer.class)).isZero();
     }
 
     /**
@@ -143,6 +163,9 @@ class ProfesiaListTests {
                 Map.entry("gama-slovakia", BASE + "/praca/gama-slovakia-k-s/O7"),
                 Map.entry("delta", BASE + "/praca/delta/O9"));
         assertThat(ProfesiaListHandler.slug("hagard-hal-spol-s-r-o")).isEqualTo("hagard-hal");
+        assertThat(ProfesiaListHandler.employers("<loc>" + BASE + "/praca/omega-s-r-o/O1</loc>"
+                + "<loc>" + BASE + "/praca/omega-a-s/O2</loc><loc>" + BASE + "/praca/sigma-a-s/O3</loc>"))
+                .containsOnlyKeys("sigma");
         company("90500014", "Žilinská Teplárenská (SK), spol. s r. o.");
         assertThat(jdbcTemplate.queryForObject("SELECT name_slug FROM company WHERE registration_number = ?",
                 String.class, "90500014")).isEqualTo("zilinska-teplarenska-sk");
@@ -179,6 +202,7 @@ class ProfesiaListTests {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/", exchange -> {
+                REQUESTS.add(exchange.getRequestURI().getPath());
                 String query = exchange.getRequestURI().getRawQuery();
                 String page = PAGES.get(exchange.getRequestURI().getPath() + (query == null ? "" : "?" + query));
                 byte[] bytes = page == null ? new byte[0]

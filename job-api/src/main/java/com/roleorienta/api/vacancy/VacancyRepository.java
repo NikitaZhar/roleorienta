@@ -22,8 +22,8 @@ public class VacancyRepository {
 
     /**
      * Поля вакансии; работодатель и агентство — компании источников её публикаций с ролью (работодатель — и компания
-     * с кадровым сайтом группы, роль {@code GROUP}, §81; нет компании-работодателя —
-     * название работодателя у системы найма для источника без компании, аудит §65). Отметки «не подходит» здесь нет:
+     * с кадровым сайтом группы, роль {@code GROUP}, §81, — после компании с ролью {@code EMPLOYER}, аудит §84; нет
+     * компании-работодателя — название работодателя у системы найма для источника без компании, аудит §65). Отметки «не подходит» здесь нет:
      * в накопленном списке её не бывает, в списке отмеченных она есть всегда, строки списка её не показывают — она
      * считается только для сведений о вакансии ({@link #UNSUITABLE}, аудит §66).
      */
@@ -32,7 +32,8 @@ public class VacancyRepository {
             v.country_uncertain, v.work_format,
             coalesce((SELECT co.name FROM job_posting p
                       JOIN company_source cs ON cs.source_id = p.source_id AND cs.role IN ('EMPLOYER', 'GROUP')
-                      JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1),
+                      JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id
+                      ORDER BY cs.role = 'GROUP', co.id LIMIT 1),
                      (SELECT s.employer_name FROM job_posting p JOIN source s ON s.id = p.source_id
                       WHERE p.vacancy_id = v.id AND s.employer_name IS NOT NULL
                         AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)

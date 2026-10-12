@@ -5,18 +5,21 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
 import com.roleorienta.worker.http.HttpResult;
-import com.roleorienta.worker.stateportal.StatePortalRepository.FoundSite;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Found;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Lookup;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Unavailable;
 import com.roleorienta.worker.stateportal.StatePortalRepository.ListedEmployer;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
-import java.net.URI;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -29,10 +32,14 @@ import org.springframework.stereotype.Component;
  * если вакансии на портале и на profesia.sk различаются). Нулевой круг читает карту сайта profesia.sk
  * ({@code sitemap.php}, объявлена в robots.txt): объявления {@code /praca/<работодатель>/O<номер>} — по первому на
  * работодателя; работодатель сопоставляется компании реестра по названию ({@code company.name_slug}, только
- * однозначно). Следующие круги — по {@value #EMPLOYERS_PER_TASK} сопоставленных работодателей: объявление → страница
- * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaSiteHandler#find}), запись сайта компании (источник
+ * однозначно). Следующие круги — до {@value #EMPLOYERS_PER_TASK} сопоставленных работодателей: объявление → страница
+ * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaPages#find}), запись сайта компании (источник
  * и подтверждение {@code PROFESIA}). Компании, у которых сайт со страницы profesia.sk уже есть (шаг 2 или этот),
  * не берутся. profesia.sk — только путь к сайту: вакансии с неё не читаются.
+ *
+ * <p>Срок задания, временный отказ profesia.sk и отметка «смотрели» — как у {@link ProfesiaSiteHandler} (аудит §84).
+ * Карта сайта: временный отказ — повтор задания, постоянный (запрет robots.txt, 403, больше потолка) — неудача без
+ * повторов; на следующий день — снова.</p>
  */
 @Component
 public class ProfesiaListHandler implements TaskHandler {
@@ -41,36 +48,48 @@ public class ProfesiaListHandler implements TaskHandler {
     public static final String TYPE = "PROFESIA_LIST";
 
     private static final int EMPLOYERS_PER_TASK = 20;
+    /**
+     * С этой попытки задания работодатель, на котором profesia.sk отвечает временным отказом, отмечается проверенным
+     * без ссылки (аудит §84): постоянно «временно» сломанная страница одного работодателя не держит цепочку; при сбое
+     * всей profesia.sk так отмечаются не больше одного работодателя на попытку.
+     */
+    private static final int SKIP_EMPLOYER_AFTER_ATTEMPTS = 3;
+    /** Длины колонок {@code profesia_employer.slug} и {@code ad_url} (V43); длиннее — запись пропускается. */
+    private static final int MAX_SLUG = 200;
+    private static final int MAX_AD_URL = 1000;
     /** Объявление в карте сайта: {@code <loc>…/praca/<работодатель>/O<номер></loc>}. */
     private static final Pattern OFFER =
             Pattern.compile("<loc>\\s*(https?://[^<\\s]*/praca/([^/<\\s]+)/O\\d+)\\s*</loc>");
-    /** Правовая форма в конце названия — как в {@code company.name_slug} (V43). */
+    /**
+     * Правовая форма в конце названия — то же выражение, что в вычисляемом столбце {@code company.name_slug} (V43);
+     * меняются только вместе (применённая миграция не меняется — новой миграцией).
+     */
     private static final Pattern LEGAL_FORM = Pattern.compile("(-(spol-s-r-o|s-r-o|sro|a-s|as|k-s|v-o-s|s-e|se|j-s-a"
             + "|v-d|druzstvo|o-z|organizacna-zlozka|odstepny-zavod|gmbh|ag|ltd|inc|kft|sp-z-o-o))+$");
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(ProfesiaListHandler.class);
 
     private final StatePortalRepository repository;
-    private final ProfesiaSiteHandler profesia;
+    private final ProfesiaPages pages;
     private final TaskService taskService;
     private final StatePortalProperties properties;
-    private final URI sitemap;
+    private final Duration timeBudget;
 
     /**
      * @param repository  список работодателей и запись сайта
-     * @param profesia    чтение страниц profesia.sk, разбор объявления и страницы компании (шаг 2)
+     * @param pages       чтение profesia.sk: карта сайта, объявление → страница компании → ссылка
      * @param taskService постановка следующего задания цепочки
      * @param properties  срок повторной проверки
-     * @param sitemap     адрес карты сайта profesia.sk
+     * @param timeBudget  срок задания: после него новые работодатели не начинаются
      */
-    public ProfesiaListHandler(StatePortalRepository repository, ProfesiaSiteHandler profesia,
+    public ProfesiaListHandler(StatePortalRepository repository, ProfesiaPages pages,
             TaskService taskService, StatePortalProperties properties,
-            @Value("${app.state-portal.profesia-sitemap-url:https://www.profesia.sk/sitemap.php}") URI sitemap) {
+            @Value("${app.state-portal.profesia-task-time-budget:3m}") Duration timeBudget) {
         this.repository = repository;
-        this.profesia = profesia;
+        this.pages = pages;
         this.taskService = taskService;
         this.properties = properties;
-        this.sitemap = sitemap;
+        this.timeBudget = timeBudget;
     }
 
     /**
@@ -93,41 +112,83 @@ public class ProfesiaListHandler implements TaskHandler {
         JsonNode payload = parse(task.payload());
         String day = payload.path("day").asText();
         int round = payload.path("round").asInt(0);
-        if (round == 0) {
-            HttpResult result = profesia.get(sitemap);
-            if (!(result instanceof HttpResult.Success success)) {
-                return new TaskOutcome.Retry("profesia.sk sitemap not read: " + result, Duration.ZERO);
-            }
-            Map<String, String> employers = employers(success.body());
-            repository.saveProfesiaList(employers);
-            LOG.info("Profesia sitemap: {} employers listed", employers.size());
-            taskService.enqueue(TYPE, key(day, 1), payload(day, 1));
-            return new TaskOutcome.Done();
-        }
+        return round == 0 ? readSitemap(day) : findSites(day, round, task.attempts());
+    }
+
+    private TaskOutcome readSitemap(String day) {
+        return switch (pages.sitemap()) {
+            case HttpResult.Success success -> saveList(day, success.body());
+            case HttpResult.TemporaryFailure temporary ->
+                    new TaskOutcome.Retry("profesia.sk sitemap not read: " + temporary.reason(),
+                            temporary.retryAfter());
+            case HttpResult.PermanentFailure permanent ->
+                    new TaskOutcome.Failed("profesia.sk sitemap refused: " + permanent.kind() + " "
+                            + permanent.reason());
+        };
+    }
+
+    private TaskOutcome saveList(String day, String sitemap) {
+        Map<String, String> employers = employers(sitemap);
+        repository.saveProfesiaList(employers);
+        LOG.info("Profesia sitemap: {} employers listed", employers.size());
+        taskService.enqueue(TYPE, key(day, 1), payload(day, 1));
+        return new TaskOutcome.Done();
+    }
+
+    private TaskOutcome findSites(String day, int round, int attempts) {
+        long deadline = System.nanoTime() + timeBudget.toNanos();
         List<ListedEmployer> due = repository.listedForProfesia(EMPLOYERS_PER_TASK, properties.recheckAfter());
+        int done = 0;
         int found = 0;
         for (ListedEmployer employer : due) {
-            Optional<FoundSite> site = profesia.find(employer.adUrl());
-            repository.recordListed(employer, site.orElse(null));
-            found += site.isPresent() ? 1 : 0;
+            if (System.nanoTime() - deadline > 0) {
+                break;
+            }
+            Lookup lookup = pages.find(employer.adUrl());
+            if (lookup instanceof Unavailable unavailable) {
+                if (attempts >= SKIP_EMPLOYER_AFTER_ATTEMPTS) {
+                    repository.recordListed(employer, null);
+                }
+                LOG.warn("Profesia employer list: profesia.sk unavailable after {} employers (attempt {}): {}", done,
+                        attempts, unavailable.failure().reason());
+                return new TaskOutcome.Retry("profesia.sk unavailable: " + unavailable.failure().reason(),
+                        unavailable.failure().retryAfter());
+            }
+            repository.recordListed(employer, lookup instanceof Found site ? site.site() : null);
+            done++;
+            found += lookup instanceof Found ? 1 : 0;
         }
-        LOG.info("Profesia employer list: {} employers, {} sites or career pages found", due.size(), found);
-        if (due.size() == EMPLOYERS_PER_TASK) {
+        LOG.info("Profesia employer list: {} employers, {} sites or career pages found", done, found);
+        if (due.size() == EMPLOYERS_PER_TASK || done < due.size()) {
             taskService.enqueue(TYPE, key(day, round + 1), payload(day, round + 1));
         }
         return new TaskOutcome.Done();
     }
 
     /**
+     * Работодатели карты сайта. Разные работодатели, совпавшие без правовой формы ({@code delta-s-r-o} и
+     * {@code delta-a-s} → {@code delta}), не берутся: чьё это объявление — неизвестно (аудит §84). Адреса длиннее
+     * колонок таблицы не берутся.
+     *
      * @param sitemap карта сайта profesia.sk
      * @return работодатель (адрес без правовой формы в конце) → первое его объявление
      */
     static Map<String, String> employers(String sitemap) {
         Map<String, String> employers = new LinkedHashMap<>();
+        Map<String, String> fullNames = new HashMap<>();
+        Set<String> ambiguous = new HashSet<>();
         Matcher offer = OFFER.matcher(sitemap);
         while (offer.find()) {
-            employers.putIfAbsent(slug(offer.group(2)), offer.group(1));
+            String slug = slug(offer.group(2));
+            String previous = fullNames.putIfAbsent(slug, offer.group(2));
+            if (previous != null && !previous.equals(offer.group(2))) {
+                ambiguous.add(slug);
+            }
+            if (slug.length() <= MAX_SLUG && offer.group(1).length() <= MAX_AD_URL) {
+                employers.putIfAbsent(slug, offer.group(1));
+            }
         }
+        employers.keySet().removeAll(ambiguous);
         return employers;
     }
 

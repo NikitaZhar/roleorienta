@@ -59,7 +59,7 @@ app:
     connect-timeout: 5s      # установление соединения
     read-timeout: 20s        # ожидание ответа и данных
     max-redirects: 5
-    max-body-bytes: 16777216 # потолок тела ответа — 16 МБ (карта сайта profesia.sk ≈ 7 МБ, §83)
+    max-body-bytes: 5242880  # потолок тела ответа — 5 МБ (больше — постоянный отказ TOO_LARGE)
     allow-private-addresses: false  # true только для локальных заглушек; в эксплуатации — false
     politeness:
       user-agent: Roleorienta/0.1 (+https://github.com/NikitaZhar/roleorienta)  # единый, с контактом
@@ -134,6 +134,8 @@ app:
     checks-per-task: 150       # работодателей за задание проверки (≈ 1 с на запрос — в аренде 10m)
     recheck-after: 7d          # повторная проверка работодателя без источника
     profesia-sitemap-url: https://www.profesia.sk/sitemap.php  # список работодателей profesia.sk (§83)
+    profesia-sitemap-max-bytes: 16777216  # потолок только для карты сайта profesia.sk (≈ 7 МБ; аудит §84)
+    profesia-task-time-budget: 3m        # задание PROFESIA_SITE/LIST не дольше — укладывается в аренду (10m; аудит §84)
   match:                     # предрасчёт соответствия вакансий позициям (словарь positions.json)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки

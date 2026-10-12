@@ -70,9 +70,11 @@ JOIN public.company_site s ON s.company_id = b.company_id AND s.status = 'CANDID
 WHERE NOT EXISTS (SELECT 1 FROM public.company_site f WHERE f.company_id = b.company_id AND f.status = 'FOUND')
 GROUP BY 1, 2 ORDER BY 1, 2;
 
-\echo '7. Ядро сейчас: кадровые сайты групп (§81) — компании с доской группы и число её вакансий'
+\echo '7. Ядро сейчас: кадровые сайты групп (§81) — компании с доской группы и из них с вакансиями в Словакии (страна SK или «везде»; без страны и с неуверенной страной — не считаются, выдача их показывает)'
 SELECT count(DISTINCT b.company_id) AS companies,
        count(DISTINCT b.company_id) FILTER (WHERE EXISTS (SELECT 1 FROM public.job_posting p
-                                                          WHERE p.source_id = cs.source_id)) AS with_vacancies
+                                                          JOIN public.vacancy v ON v.id = p.vacancy_id
+                                                          WHERE p.source_id = cs.source_id
+                                                            AND v.work_countries && ARRAY['SK', '*'])) AS with_vacancies_sk
 FROM benchmark.company b
 JOIN public.company_source cs ON cs.company_id = b.company_id AND cs.role = 'GROUP';

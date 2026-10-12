@@ -40,7 +40,7 @@ services:
 
   # ВРЕМЕННО: MinIO убрал образы с Docker Hub и quay.io (сентябрь 2026). Архивный образ Bitnami
   # обновлений не получает и может исчезнуть — замена на поддерживаемое S3-совместимое хранилище
-  # записана в docs/next-step.md («Долг»). Тег закреплён; тот же образ — в тестах
+  # записана в docs/technical-design.md §15 («Долг», п. 1). Тег закреплён; тот же образ — в тестах
   # (job-worker TestcontainersConfiguration).
   minio:
     image: bitnamilegacy/minio:2025.2.28-debian-12-r1

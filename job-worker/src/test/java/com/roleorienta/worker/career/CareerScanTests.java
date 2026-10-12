@@ -181,7 +181,8 @@ class CareerScanTests {
 
     /**
      * Кандидат компании без найденного сайта (§81) проверяется: доска подключена с ролью «кадровый сайт группы», итог
-     * компании не меняется. Кандидат компании с найденным сайтом не проверяется.
+     * компании не меняется. Кандидат стал найденным (§82–§83) — при проверке связь получает роль работодателя (аудит
+     * §84). Кандидат компании с найденным сайтом не проверяется.
      */
     @Test
     void connectsCandidateBoardAsGroupSite() {
@@ -194,6 +195,13 @@ class CareerScanTests {
         assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
         assertThat(jdbcTemplate.queryForObject("SELECT role FROM company_source", String.class)).isEqualTo("GROUP");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check", Integer.class)).isZero();
+
+        jdbcTemplate.update("UPDATE company_site SET status = 'FOUND', proof = 'PROFESIA', checked_at = NULL");
+        runScan();
+        assertThat(jdbcTemplate.queryForObject("SELECT role FROM company_source", String.class)).isEqualTo("EMPLOYER");
+        jdbcTemplate.update("DELETE FROM company_check");
+        jdbcTemplate.update("UPDATE company_source SET role = 'GROUP'");
+        jdbcTemplate.update("UPDATE company_site SET status = 'CANDIDATE', proof = 'GROUP_SITE'");
 
         jdbcTemplate.update("UPDATE company_site SET checked_at = NULL, check_result = NULL");
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "

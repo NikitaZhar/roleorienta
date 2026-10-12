@@ -13,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -28,7 +29,8 @@ import org.springframework.test.context.ActiveProfiles;
 /**
  * Шаг «страница компании на profesia.sk» (§82) на заглушке profesia.sk и настоящей PostgreSQL: объявление profesia.sk
  * у источника портала → страница компании и её раздел → ссылка на систему найма записана сайтом компании со стартовой
- * страницей; без кадровой ссылки — первая ссылка (сайт компании); ссылки подвала profesia.sk и соцсетей не берутся.
+ * страницей; без кадровой ссылки — первая ссылка (сайт компании); ссылки подвала profesia.sk, соцсетей и площадок
+ * вакансий не берутся; временный отказ profesia.sk не отмечает работодателя проверенным (аудит §84).
  */
 @SpringBootTest(properties = "app.http.allow-private-addresses=true")
 @ActiveProfiles("test")
@@ -38,6 +40,8 @@ class ProfesiaSiteTests {
     private static final String ICO = "90500001";
     private static final String MARK = "profesia-site-test";
     private static final Map<String, String> PAGES = new ConcurrentHashMap<>();
+    /** Пути, на которые заглушка отвечает 503 (временный отказ). */
+    private static final Set<String> UNAVAILABLE = ConcurrentHashMap.newKeySet();
     private static final HttpServer PROFESIA = startProfesia();
     private static final String BASE = "http://127.0.0.1:" + PROFESIA.getAddress().getPort();
 
@@ -99,6 +103,7 @@ class ProfesiaSiteTests {
                 WHERE s.board = ? AND v.title = ?
                 """, MARK, BASE + "/O1", ICO, MARK);
         PAGES.clear();
+        UNAVAILABLE.clear();
         PAGES.put("/O1", "<a href=\"/praca/alfa/C11\">Alfa s.r.o.</a>"
                 + "<section id=\"profesia-footer\"><a href=\"https://www.jobs.cz/\">Jobs.cz</a></section>");
     }
@@ -142,8 +147,39 @@ class ProfesiaSiteTests {
     }
 
     /**
+     * Страница компании временно недоступна (503) — работодатель не отмечен проверенным, сайт не записан, задание
+     * ждёт повтора (аудит §84: прежде отметка «смотрели» ставилась при любом исходе — на 7 дней).
+     */
+    @Test
+    void temporaryFailureLeavesEmployerUnchecked() {
+        UNAVAILABLE.add("/praca/alfa/C11");
+
+        runTask();
+
+        assertThat(sites()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT profesia_checked_at IS NULL FROM portal_employer "
+                + "WHERE registration_number = ?", Boolean.class, ICO)).isTrue();
+        assertThat(jdbcTemplate.queryForList("SELECT state FROM task WHERE type = ?", String.class,
+                ProfesiaSiteHandler.TYPE)).containsExactly("WAITING");
+    }
+
+    /**
+     * Ссылка длиннее колонки {@code start_url} (2000) — сайт без стартовой страницы (аудит §84: прежде запись падала и
+     * останавливала цепочку дня).
+     */
+    @Test
+    void longLinkIsSiteWithoutStartPage() {
+        String longLink = "https://www.alfa-test.sk/kariera?q=" + "x".repeat(2000);
+
+        assertThat(ProfesiaPages.site(longLink, BASE + "/praca/alfa/C11").startUrl()).isNull();
+        assertThat(ProfesiaPages.site("https://www.alfa-test.sk/kariera", BASE).startUrl())
+                .isEqualTo("https://www.alfa-test.sk/kariera");
+    }
+
+    /**
      * Разбор: ссылка на страницу компании в объявлении; разделы — только той же компании; ссылки подвала profesia.sk и
-     * соцсетей не берутся; кадровая ссылка выбирается раньше сайта.
+     * соцсетей не берутся, площадки вакансий (Alma Career, kariera.sk) — тоже, даже вне подвала (аудит §84); кадровая
+     * ссылка выбирается раньше сайта.
      */
     @Test
     void parsesProfesiaPages() {
@@ -155,6 +191,7 @@ class ProfesiaSiteTests {
                 <a href="/praca/beta-sk/C22?page_num=2001">O nás</a><a href="/praca/gama/C33?page_num=2001">Iná</a>
                 <a href="https://www.beta.sk/">Web</a><a href="https://www.beta.sk/kariera">Kariéra</a>
                 <header><a href="https://www.cvonline.lt/">CV</a></header>
+                <a href="https://www.almacareer.com/">Alma Career</a><a href="https://www.kariera.sk/">Kariéra.sk</a>
                 """, "https://www.profesia.sk/praca/beta/C22");
         assertThat(ProfesiaCompanyPage.sections(company))
                 .containsExactly("https://www.profesia.sk/praca/beta-sk/C22?page_num=2001");
@@ -178,17 +215,19 @@ class ProfesiaSiteTests {
     }
 
     /**
-     * Заглушка profesia.sk: путь → страница из {@link #PAGES}; нет — 404.
+     * Заглушка profesia.sk: путь → страница из {@link #PAGES}; нет — 404; путь из {@link #UNAVAILABLE} — 503.
      */
     private static HttpServer startProfesia() {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/", exchange -> {
-                String page = PAGES.get(exchange.getRequestURI().getPath());
+                String path = exchange.getRequestURI().getPath();
+                String page = UNAVAILABLE.contains(path) ? null : PAGES.get(path);
                 byte[] bytes = page == null ? new byte[0]
                         : ("<html><body>" + page + "</body></html>").getBytes(StandardCharsets.UTF_8);
+                int status = UNAVAILABLE.contains(path) ? 503 : page == null ? 404 : 200;
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-                exchange.sendResponseHeaders(page == null ? 404 : 200, bytes.length == 0 ? -1 : bytes.length);
+                exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
                 try (OutputStream output = exchange.getResponseBody()) {
                     output.write(bytes);
                 }

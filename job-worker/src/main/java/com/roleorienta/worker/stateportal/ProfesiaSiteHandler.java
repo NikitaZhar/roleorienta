@@ -4,37 +4,35 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
-import com.roleorienta.worker.http.ExternalHttpClient;
-import com.roleorienta.worker.http.HttpResult;
-import com.roleorienta.worker.stateportal.StatePortalRepository.FoundSite;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Found;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Lookup;
+import com.roleorienta.worker.stateportal.ProfesiaPages.Unavailable;
 import com.roleorienta.worker.stateportal.StatePortalRepository.ProfesiaEmployer;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
-import java.net.URI;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
  * Задание {@code PROFESIA_SITE} — шаг «страница компании на profesia.sk» (§82; путь владельца: портал → объявление
  * profesia.sk → страница компании на profesia.sk → кадровая страница компании). У работодателя портала с объявлением
- * profesia.sk открывается объявление, с него — страница компании и её разделы (до трёх); первая ссылка на кадровую
- * страницу или систему найма записывается сайтом компании со стартовой страницей — этой ссылкой, иначе первая ссылка —
- * сайтом компании (подтверждение {@code PROFESIA}: объявление привязано к IČO порталом). Дальше их проверяет поиск
- * кадровой страницы. profesia.sk — только путь к сайту: вакансии с неё не читаются; robots.txt соблюдается HTTP-клиентом
- * (страницы компаний открыты, переадресация отклика {@code redirect.php} — запрещена и не используется).
+ * profesia.sk открывается объявление, с него — страница компании и её разделы (до пяти, {@link ProfesiaPages#find});
+ * первая ссылка на кадровую страницу или систему найма записывается сайтом компании со стартовой страницей — этой
+ * ссылкой, иначе первая ссылка — сайтом компании (подтверждение {@code PROFESIA}: объявление привязано к IČO порталом).
+ * Дальше их проверяет поиск кадровой страницы. profesia.sk — только путь к сайту: вакансии с неё не читаются.
  *
- * <p>За задание — {@value #EMPLOYERS_PER_TASK} работодателей (до пяти запросов к одному хосту с паузой — задание
- * укладывается в аренду); взято полное число — следующее задание. Работодатель отмечается проверенным при любом
- * исходе и берётся снова через {@link StatePortalProperties#recheckAfter()}.</p>
+ * <p>За задание — до {@value #EMPLOYERS_PER_TASK} работодателей (до семи запросов на работодателя с паузой 1 с на
+ * хост); после срока задания ({@code app.state-portal.profesia-task-time-budget}) новые работодатели не начинаются —
+ * задание укладывается в аренду (аудит §84). Взято полное число или срок вышел — следующее задание. Работодатель
+ * отмечается проверенным, когда ссылка найдена или её нет, и берётся снова через
+ * {@link StatePortalProperties#recheckAfter()}; временный отказ profesia.sk — работодатель не отмечается, задание
+ * повторяется позже; с третьего повтора такой работодатель отмечается без ссылки (аудит §84).</p>
  */
 @Component
 public class ProfesiaSiteHandler implements TaskHandler {
@@ -43,27 +41,36 @@ public class ProfesiaSiteHandler implements TaskHandler {
     public static final String TYPE = "PROFESIA_SITE";
 
     private static final int EMPLOYERS_PER_TASK = 20;
-    private static final String PROOF = "PROFESIA";
+    /**
+     * С этой попытки задания работодатель, на котором profesia.sk отвечает временным отказом, отмечается проверенным
+     * без ссылки (аудит §84): постоянно «временно» сломанная страница одного работодателя не держит цепочку; при сбое
+     * всей profesia.sk так отмечаются не больше одного работодателя на попытку.
+     */
+    private static final int SKIP_EMPLOYER_AFTER_ATTEMPTS = 3;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(ProfesiaSiteHandler.class);
 
-    private final ExternalHttpClient http;
+    private final ProfesiaPages pages;
     private final StatePortalRepository repository;
     private final TaskService taskService;
     private final StatePortalProperties properties;
+    private final Duration timeBudget;
 
     /**
-     * @param http        внешний HTTP-клиент (robots.txt, пауза на хост)
+     * @param pages       чтение profesia.sk: объявление → страница компании → ссылка
      * @param repository  работодатели портала и запись сайта
      * @param taskService постановка следующего задания цепочки
      * @param properties  срок повторной проверки
+     * @param timeBudget  срок задания: после него новые работодатели не начинаются
      */
-    public ProfesiaSiteHandler(ExternalHttpClient http, StatePortalRepository repository, TaskService taskService,
-            StatePortalProperties properties) {
-        this.http = http;
+    public ProfesiaSiteHandler(ProfesiaPages pages, StatePortalRepository repository, TaskService taskService,
+            StatePortalProperties properties,
+            @Value("${app.state-portal.profesia-task-time-budget:3m}") Duration timeBudget) {
+        this.pages = pages;
         this.repository = repository;
         this.taskService = taskService;
         this.properties = properties;
+        this.timeBudget = timeBudget;
     }
 
     /**
@@ -86,64 +93,34 @@ public class ProfesiaSiteHandler implements TaskHandler {
         JsonNode payload = parse(task.payload());
         String day = payload.path("day").asText();
         int round = payload.path("round").asInt(1);
+        int attempts = task.attempts();
+        long deadline = System.nanoTime() + timeBudget.toNanos();
         List<ProfesiaEmployer> due = repository.employersForProfesia(EMPLOYERS_PER_TASK, properties.recheckAfter());
+        int done = 0;
         int found = 0;
         for (ProfesiaEmployer employer : due) {
-            Optional<FoundSite> site = find(employer.adUrl());
-            repository.recordProfesia(employer, site.orElse(null));
-            found += site.isPresent() ? 1 : 0;
+            if (System.nanoTime() - deadline > 0) {
+                break;
+            }
+            Lookup lookup = pages.find(employer.adUrl());
+            if (lookup instanceof Unavailable unavailable) {
+                if (attempts >= SKIP_EMPLOYER_AFTER_ATTEMPTS) {
+                    repository.recordProfesia(employer, null);
+                }
+                LOG.warn("Profesia company pages: profesia.sk unavailable after {} employers (attempt {}): {}", done,
+                        attempts, unavailable.failure().reason());
+                return new TaskOutcome.Retry("profesia.sk unavailable: " + unavailable.failure().reason(),
+                        unavailable.failure().retryAfter());
+            }
+            repository.recordProfesia(employer, lookup instanceof Found site ? site.site() : null);
+            done++;
+            found += lookup instanceof Found ? 1 : 0;
         }
-        LOG.info("Profesia company pages: {} employers, {} sites or career pages found", due.size(), found);
-        if (due.size() == EMPLOYERS_PER_TASK) {
+        LOG.info("Profesia company pages: {} employers, {} sites or career pages found", done, found);
+        if (due.size() == EMPLOYERS_PER_TASK || done < due.size()) {
             taskService.enqueue(TYPE, key(day, round + 1), payload(day, round + 1));
         }
         return new TaskOutcome.Done();
-    }
-
-    /**
-     * Объявление → страница компании и её разделы → выбранная ссылка компании (шаги 2 и 3, §82–§83).
-     *
-     * @param adUrl объявление на profesia.sk
-     * @return сайт или кадровая страница; пусто — страницы компании или ссылки нет
-     */
-    Optional<FoundSite> find(String adUrl) {
-        Optional<Document> company = page(adUrl).flatMap(ProfesiaCompanyPage::companyPage).flatMap(this::page);
-        if (company.isEmpty()) {
-            return Optional.empty();
-        }
-        List<String> links = new ArrayList<>(ProfesiaCompanyPage.companyLinks(company.get()));
-        for (String section : ProfesiaCompanyPage.sections(company.get())) {
-            page(section).ifPresent(page -> ProfesiaCompanyPage.companyLinks(page).stream()
-                    .filter(link -> !links.contains(link)).forEach(links::add));
-        }
-        return ProfesiaCompanyPage.choose(links).map(link -> site(link, company.get().location()));
-    }
-
-    /**
-     * Страница profesia.sk тем же HTTP-клиентом (карта сайта для шага «список работодателей», §83).
-     *
-     * @param uri адрес
-     * @return результат запроса
-     */
-    HttpResult get(URI uri) {
-        return http.get(uri);
-    }
-
-    /**
-     * Ссылка → сайт: хост ссылки; путь ссылки (кадровая страница) — стартовая страница, главная — без неё.
-     */
-    private static FoundSite site(String link, String evidenceUrl) {
-        URI uri = URI.create(link);
-        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
-        boolean home = (path.isEmpty() || "/".equals(path)) && uri.getRawQuery() == null;
-        return new FoundSite(uri.getHost().toLowerCase(Locale.ROOT), home ? null : link, evidenceUrl, PROOF);
-    }
-
-    private Optional<Document> page(String url) {
-        URI uri = URI.create(url);
-        HttpResult result = http.get(uri);
-        return result instanceof HttpResult.Success success
-                ? Optional.of(Jsoup.parse(success.body(), success.locationOr(uri).toString())) : Optional.empty();
     }
 
     private static String key(String day, int round) {
