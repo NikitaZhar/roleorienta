@@ -6,7 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.messaging.RabbitTopology;
 import com.roleorienta.worker.outbox.OutboxPublisher;
+import com.roleorienta.worker.outbox.OutboxRepository;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,12 +20,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.CannotCreateTransactionException;
@@ -57,6 +62,15 @@ class TaskFlowTests {
 
     @Autowired
     private TaskRepository repository;
+
+    @Autowired
+    private OutboxRepository outboxRepository;
+
+    @Autowired
+    private TaskProperties properties;
+
+    @Autowired
+    private ObjectProvider<TaskHandler> handlers;
 
     @Autowired
     private OutboxPublisher publisher;
@@ -388,6 +402,31 @@ class TaskFlowTests {
 
         assertThatThrownBy(() -> executor.execute(taskId)).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(state(taskId)).isEqualTo("FAILED");
+    }
+
+    /**
+     * Ошибка захвата (не недоступность БД — например, ошибка SQL) — неудачная попытка: задание ждёт повтора, а не
+     * остаётся QUEUED без сообщения; исключение не уходит дальше — сообщение не в DLQ (аудит §95, §97).
+     */
+    @Test
+    void claimFailureIsRetried() {
+        TaskService failingClaims = new TaskService(repository, outboxRepository, properties) {
+            @Override
+            public Optional<ClaimedTask> claim(long taskId) {
+                throw new BadSqlGrammarException("claim", "UPDATE task", new SQLException("column missing"));
+            }
+        };
+        TaskExecutor failingExecutor = new TaskExecutor(repository, failingClaims, handlers, properties,
+                Duration.ofMinutes(1));
+        taskService.enqueue(TEST_TYPE, "k-claim-failure", PAYLOAD);
+        long taskId = taskId("k-claim-failure");
+
+        failingExecutor.execute(taskId);
+        failingExecutor.destroy();
+
+        assertThat(state(taskId)).isEqualTo("WAITING");
+        assertThat(attempts(taskId)).isEqualTo(1);
+        assertThat(handler.calls()).isZero();
     }
 
     /**

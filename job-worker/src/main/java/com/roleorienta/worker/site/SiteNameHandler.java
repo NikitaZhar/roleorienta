@@ -35,7 +35,8 @@ import org.springframework.stereotype.Component;
  * доказательство ({@code evidence_url}) — конечный адрес ответа.</p>
  *
  * <p>Компании — приоритетные (эталон, §71), с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
- * число — следующее задание цепочки. Задание идёт в свою очередь: проверка одной компании — до 36 адресов.
+ * число или вышел срок {@link SiteNameProperties#timeBudget()} — следующее задание цепочки (§97). Задание идёт в
+ * свою очередь: проверка одной компании — до 36 адресов.
  * Временный отказ адреса пропускается: компания перепроверяется через срок.</p>
  */
 @Component
@@ -94,14 +95,22 @@ public class SiteNameHandler implements TaskHandler {
         int round = payload.path("round").asInt(1);
         List<DueCompany> due = repository.dueCompanies(properties.companiesPerTask(), properties.recheckAfter(),
                 properties.minEmployees());
+        long deadline = System.nanoTime() + properties.timeBudget().toNanos();
+        boolean outOfTime = false;
+        int checked = 0;
         int found = 0;
         for (DueCompany company : due) {
+            if (System.nanoTime() - deadline > 0) {
+                outOfTime = true;
+                break;
+            }
             List<NameSite> sites = check(company);
             repository.record(company.id(), sites);
+            checked++;
             found += sites.stream().anyMatch(NameSite::found) ? 1 : 0;
         }
-        LOG.info("Sites by name: {} companies checked, {} sites found", due.size(), found);
-        if (due.size() == properties.companiesPerTask()) {
+        LOG.info("Sites by name: {} of {} companies checked, {} sites found", checked, due.size(), found);
+        if (outOfTime || due.size() == properties.companiesPerTask()) {
             taskService.enqueue(TYPE, key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();

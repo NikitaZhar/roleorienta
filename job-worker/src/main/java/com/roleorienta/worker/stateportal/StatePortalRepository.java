@@ -156,18 +156,23 @@ public class StatePortalRepository {
      *
      * @param employer работодатель с компанией
      * @param site     сайт; {@code null} — не найден. Тот же хост, не засчитанный правилом Common Crawl, снова
-     *                 засчитан ({@link SiteScanRepository#RESTORE_REJECTED})
+     *                 засчитан ({@link SiteScanRepository#RESTORE_REJECTED}). Записанный сайт снимает итог «сайт не
+     *                 найден» (как у других шагов; аудит §98)
      */
     @Transactional
     public void recordSite(SiteEmployer employer, FoundSite site) {
         jdbcTemplate.update("UPDATE portal_employer SET site_checked_at = now() WHERE registration_number = ?",
                 employer.registrationNumber());
         if (site != null) {
-            jdbcTemplate.update("""
+            int saved = jdbcTemplate.update("""
                     INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
                     VALUES (?, ?, ?, ?, 'STATE_PORTAL', ?)
                     ON CONFLICT (company_id, host)
                     """ + SiteScanRepository.RESTORE_REJECTED, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
+            if (saved > 0) {
+                jdbcTemplate.update("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
+                        employer.companyId());
+            }
         }
     }
 

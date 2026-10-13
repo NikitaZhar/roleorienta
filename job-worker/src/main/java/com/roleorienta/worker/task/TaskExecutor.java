@@ -42,7 +42,9 @@ import org.springframework.transaction.CannotCreateTransactionException;
  * задание, его цепочку и группу хоста бесконечно — после срока аренда истекает, задание перепоставляется как
  * неудачная попытка (аудит §95, стенограмма §96). Недоступность БД при
  * захвате не уводит сообщение в DLQ: оно возвращается в очередь ({@link ImmediateRequeueAmqpException}), задание
- * остаётся QUEUED и будет захвачено при следующей доставке.</p>
+ * остаётся QUEUED и будет захвачено при следующей доставке. Другая ошибка захвата (ошибка SQL, сбой фиксации) —
+ * неудачная попытка: QUEUED → WAITING с повтором, на последней допустимой — FAILED; задание не остаётся QUEUED без
+ * сообщения (аудит §95, стенограмма §97).</p>
  */
 @Service
 public class TaskExecutor implements DisposableBean {
@@ -87,6 +89,8 @@ public class TaskExecutor implements DisposableBean {
      *
      * @param taskId идентификатор задания из сообщения
      * @throws ImmediateRequeueAmqpException если БД недоступна при захвате — сообщение возвращается в очередь
+     * @throws RuntimeException              другая ошибка захвата, если и отметить задание не удалось (сообщение —
+     *                                       в DLQ)
      * @throws IllegalStateException         если для типа задания нет обработчика (задание — FAILED)
      * @throws RuntimeException              исключение обработчика (задание — FAILED)
      */
@@ -100,6 +104,11 @@ public class TaskExecutor implements DisposableBean {
                     databaseUnavailable);
             throw new ImmediateRequeueAmqpException("Database unavailable while claiming task " + taskId,
                     databaseUnavailable);
+        } catch (RuntimeException claimFailure) {
+            LOG.error("Task id={} not claimed, counted as a failed attempt", taskId, claimFailure);
+            repository.failClaim(taskId, properties.maxAttempts(), properties.backoff().initial(),
+                    claimFailure.toString());
+            return;
         }
         if (claimed.isEmpty()) {
             LOG.debug("Task id={} is not queued or its group is busy, skipped", taskId);

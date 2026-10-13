@@ -66,15 +66,18 @@ public class TaskRepository {
     }
 
     /**
-     * Ключи незавершённых заданий типа (QUEUED, RUNNING, WAITING).
+     * Ключи незавершённых заданий типа (QUEUED, RUNNING, WAITING), менявшихся за последние {@code staleAfter} —
+     * как {@link #hasActive}: задание без сообщения, не менявшееся дольше, работу не держит (аудит §98).
      *
-     * @param type тип задания
+     * @param type       тип задания
+     * @param staleAfter задания, не менявшиеся дольше (по часам БД), не учитываются
      * @return ключи
      */
-    public List<String> activeKeys(String type) {
+    public List<String> activeKeys(String type, Duration staleAfter) {
         return jdbcTemplate.queryForList("""
                 SELECT task_key FROM task WHERE type = ? AND state IN ('QUEUED', 'RUNNING', 'WAITING')
-                """, String.class, type);
+                                            AND updated_at > now() - make_interval(secs => ?)
+                """, String.class, type, (double) staleAfter.toSeconds());
     }
 
     /**
@@ -273,6 +276,25 @@ public class TaskRepository {
                 WHERE id = ?
                 RETURNING state = 'QUEUED'
                 """, Boolean.class, maxAttempts, taskId);
+    }
+
+    /**
+     * Захват не удался из-за ошибки (не недоступности БД): неудачная попытка — QUEUED → WAITING с повтором через
+     * {@code delay}, на последней допустимой попытке → FAILED. Без этого задание осталось бы QUEUED без сообщения
+     * (сообщение — в DLQ) и держало бы цепочку и чтение источника (аудит §95).
+     *
+     * @param taskId      идентификатор задания
+     * @param maxAttempts допустимое число неудачных попыток
+     * @param delay       интервал до повтора
+     * @param error       причина
+     */
+    void failClaim(long taskId, int maxAttempts, Duration delay, String error) {
+        jdbcTemplate.update("""
+                UPDATE task SET attempts = attempts + 1,
+                    state = CASE WHEN attempts + 1 >= ? THEN 'FAILED' ELSE 'WAITING' END,
+                    next_attempt_at = now() + make_interval(secs => ?), last_error = ?, updated_at = now()
+                WHERE id = ? AND state = 'QUEUED'
+                """, maxAttempts, delay.toSeconds(), truncate(error), taskId);
     }
 
     /**

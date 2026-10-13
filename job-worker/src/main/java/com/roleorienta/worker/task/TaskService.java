@@ -88,10 +88,10 @@ public class TaskService {
      * Ключи незавершённых заданий типа — чтобы не ставить второе задание на ту же работу (чтение источника).
      *
      * @param type тип задания
-     * @return ключи заданий в QUEUED, RUNNING, WAITING
+     * @return ключи заданий в QUEUED, RUNNING, WAITING, менявшихся за сутки (не менявшееся дольше — брошено)
      */
     public List<String> activeKeys(String type) {
-        return taskRepository.activeKeys(type);
+        return taskRepository.activeKeys(type, CHAIN_STALE_AFTER);
     }
 
     /**
