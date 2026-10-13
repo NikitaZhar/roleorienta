@@ -10,15 +10,16 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, три рабочие очереди и
+ * Топология RabbitMQ для фоновых заданий (технический документ §9): обменник, четыре рабочие очереди и
  * очередь «мёртвых писем» (DLQ), все durable — переживают перезапуск брокера.
  *
  * <p>Две рабочие очереди (стенограмма §46): <b>сбор</b> ({@link #WORK_QUEUE}) — чтение источников и всё,
  * что идёт к пользователю; <b>поиск</b> ({@link #DISCOVERY_QUEUE}) — реестр, сайты, кадровые страницы,
  * обратный путь, государственный портал. У каждой свои обработчики, поэтому многочасовые цепочки
  * поиска не задерживают чтение вакансий. Третья — <b>адрес по названию</b> ({@link #SITE_NAME_QUEUE},
- * стенограмма §51): до 36 адресов на компанию, цепочка на дни — не задерживает остальной поиск. Очередь
- * выбирается по типу задания ({@link #routingKey}).</p>
+ * стенограмма §51): до 36 адресов на компанию, цепочка на дни — не задерживает остальной поиск. Четвёртая —
+ * <b>внутренняя</b> ({@link #INTERNAL_QUEUE}, §95): проходы выдачи и соответствия, только БД — не ждут за чтениями.
+ * Очередь выбирается по типу задания ({@link #routingKey}).</p>
  *
  * <p>Бины {@link DirectExchange}, {@link Queue} и {@link Binding} Spring AMQP при старте
  * объявляет в брокере, если их там нет.
@@ -66,6 +67,18 @@ public class RabbitTopology {
     /** Тип задания «адрес по названию» ({@code SiteNameHandler.TYPE}; строкой — см. {@link #DISCOVERY_TYPES}). */
     static final String SITE_NAME_TYPE = "SITE_NAME";
 
+    /** Очередь внутренних заданий: выдача и предрасчёт соответствий — только БД, не ждут внешних хостов. */
+    public static final String INTERNAL_QUEUE = "roleorienta.jobs.internal";
+
+    /** Ключ маршрутизации внутренних заданий. */
+    public static final String INTERNAL_ROUTING_KEY = "internal";
+
+    /**
+     * Типы внутренних заданий ({@code RunPassHandler.TYPE}, {@code MatchVacanciesHandler.TYPE}; строками — см.
+     * {@link #DISCOVERY_TYPES}): выдача пользователям не стоит в очереди за чтениями источников (стенограмма §94, §95).
+     */
+    static final Set<String> INTERNAL_TYPES = Set.of("RUN_PASS", "MATCH_VACANCIES");
+
     /** Обменник «мёртвых писем». */
     public static final String DEAD_LETTER_EXCHANGE = "roleorienta.jobs.dlx";
 
@@ -76,15 +89,19 @@ public class RabbitTopology {
     public static final String TASK_ID_HEADER = "taskId";
 
     /**
-     * Ключ маршрутизации задания: адрес по названию — в свою очередь, поиск — в очередь поиска, остальное — в
-     * рабочую очередь сбора.
+     * Ключ маршрутизации задания: адрес по названию — в свою очередь, выдача и соответствия — во внутреннюю, поиск —
+     * в очередь поиска, остальное — в рабочую очередь сбора.
      *
      * @param taskType тип задания
-     * @return {@link #SITE_NAME_ROUTING_KEY}, {@link #DISCOVERY_ROUTING_KEY} или {@link #ROUTING_KEY}
+     * @return {@link #SITE_NAME_ROUTING_KEY}, {@link #INTERNAL_ROUTING_KEY}, {@link #DISCOVERY_ROUTING_KEY} или
+     *         {@link #ROUTING_KEY}
      */
     public static String routingKey(String taskType) {
         if (SITE_NAME_TYPE.equals(taskType)) {
             return SITE_NAME_ROUTING_KEY;
+        }
+        if (INTERNAL_TYPES.contains(taskType)) {
+            return INTERNAL_ROUTING_KEY;
         }
         return DISCOVERY_TYPES.contains(taskType) ? DISCOVERY_ROUTING_KEY : ROUTING_KEY;
     }
@@ -172,6 +189,31 @@ public class RabbitTopology {
     @Bean
     public Binding siteNameBinding(DirectExchange jobExchange, Queue siteNameQueue) {
         return BindingBuilder.bind(siteNameQueue).to(jobExchange).with(SITE_NAME_ROUTING_KEY);
+    }
+
+    /**
+     * Очередь внутренних заданий; отклонённые сообщения — в тот же dead-letter обменник и ту же DLQ.
+     *
+     * @return durable очередь с привязкой к dead-letter обменнику
+     */
+    @Bean
+    public Queue internalQueue() {
+        return QueueBuilder.durable(INTERNAL_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(ROUTING_KEY)
+                .build();
+    }
+
+    /**
+     * Привязка внутренней очереди к обменнику заданий.
+     *
+     * @param jobExchange   обменник заданий
+     * @param internalQueue внутренняя очередь
+     * @return привязка по ключу {@link #INTERNAL_ROUTING_KEY}
+     */
+    @Bean
+    public Binding internalBinding(DirectExchange jobExchange, Queue internalQueue) {
+        return BindingBuilder.bind(internalQueue).to(jobExchange).with(INTERNAL_ROUTING_KEY);
     }
 
     /**

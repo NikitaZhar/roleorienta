@@ -1,6 +1,8 @@
 package com.roleorienta.worker.task;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -13,13 +15,28 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param lease            аренда выполнения: не завершённое за этот срок задание снова ставится
  *                         в очередь (процесс мог упасть)
  * @param requeueBatchSize максимум заданий, перепоставленных за один тик
+ * @param groups           группы заданий одного внешнего хоста
  */
 @ConfigurationProperties("app.task")
 public record TaskProperties(
         @DefaultValue("8") int maxAttempts,
         @DefaultValue Backoff backoff,
         @DefaultValue("10m") Duration lease,
-        @DefaultValue("100") int requeueBatchSize) {
+        @DefaultValue("100") int requeueBatchSize,
+        @DefaultValue Groups groups) {
+
+    /**
+     * Группы заданий, которые ходят на один внешний хост (государственный портал, profesia.sk): из группы
+     * выполняется одно задание за раз — при бюджете хоста (1 запрос/с) параллельные задания только ждут друг друга и
+     * занимают обработчики очереди (стенограмма §94, §95).
+     *
+     * @param exclusive имя группы → типы заданий
+     * @param busyDelay через сколько снова пробовать задание, если его группа занята
+     */
+    public record Groups(
+            @DefaultValue Map<String, List<String>> exclusive,
+            @DefaultValue("1m") Duration busyDelay) {
+    }
 
     /**
      * Интервалы повторов: первый, удвоение на каждой попытке, потолок и случайная надбавка,

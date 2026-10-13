@@ -54,6 +54,8 @@ class StatePortalTests {
     private static final String EMPLOYER_HOST = "employer-test.sk";
     /** Сайт по домену почты {@link #EMPLOYER_HOST}: IČO работодателя — на странице «Kontakt». */
     private static final String MAIL_SITE = "www." + EMPLOYER_HOST;
+    /** Сайт {@link #EMPLOYER}, найденный ранее по названию (другой хост, чем {@link #MAIL_SITE}). */
+    private static final String NAME_SITE = "www.employer-name-test.sk";
     /** «Internetová adresa» в детали вакансии; {@code null} — поля нет (сайт берётся по почте). */
     private static volatile String website;
     /** Сайт по домену почты временно не отвечает (503). */
@@ -162,7 +164,7 @@ class StatePortalTests {
     /**
      * Сайт с портала по домену почты контакта: у подключённого работодателя без сайта открывается
      * {@code www.<домен>}, IČO работодателя — на странице «Kontakt» по ссылке с главной: сайт записан с
-     * подтверждением {@code PORTAL_MAIL}; работодателя с найденным сайтом второй раз не ищут.
+     * подтверждением {@code PORTAL_MAIL}.
      */
     @Test
     void takesEmployerSiteFromPortalMail() {
@@ -172,6 +174,25 @@ class StatePortalTests {
                 + "http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
         assertThat(jdbcTemplate.queryForObject("SELECT site_checked_at IS NOT NULL FROM portal_employer "
                 + "WHERE registration_number = ?", Boolean.class, EMPLOYER)).isTrue();
+    }
+
+    /**
+     * Сайт с портала ищется и у работодателя, у компании которого уже есть найденный сайт другим способом (здесь —
+     * адрес по названию): адрес работодателя записывается вторым найденным сайтом компании (стенограмма §93).
+     */
+    @Test
+    void searchesSiteOfEmployerWithFoundSite() {
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, proof)
+                SELECT id, ?, ?, 'NAME', 'BRAND' FROM company WHERE country = 'SK' AND registration_number = ?
+                """, NAME_SITE, "https://" + NAME_SITE + "/", EMPLOYER);
+
+        runSiteStep();
+
+        assertThat(employerSites()).containsExactlyInAnyOrder(
+                EMPLOYER + ":" + NAME_SITE + ":null:NAME:BRAND:https://" + NAME_SITE + "/",
+                EMPLOYER + ":" + MAIL_SITE + ":null:STATE_PORTAL:PORTAL_MAIL:"
+                        + "http://127.0.0.1:" + PORTAL.getAddress().getPort() + "/pracovne-ponuky/" + OFFER_UUID);
     }
 
     /**

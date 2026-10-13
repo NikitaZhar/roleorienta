@@ -63,7 +63,8 @@ class StatePortalAdapterTests {
                 employerPages.getOrDefault(param(exchange, "pageNr"), "<html><body><main></main></body></html>")));
         server.start();
         adapter = new StatePortalAdapter(httpClient, new StatePortalProperties(
-                "http://127.0.0.1:" + server.getAddress().getPort(), 2, 20, 150, Duration.ofDays(7)));
+                "http://127.0.0.1:" + server.getAddress().getPort(), 2, 20,
+                new StatePortalProperties.Task(150, Duration.ofMinutes(5)), Duration.ofDays(7)));
     }
 
     /**

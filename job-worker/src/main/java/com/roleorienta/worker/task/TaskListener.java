@@ -7,14 +7,15 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Потребитель рабочих очередей — сбора, поиска (стенограмма §46) и адреса по названию (§51): по заголовку
+ * Потребитель рабочих очередей — сбора, поиска (стенограмма §46), адреса по названию (§51) и внутренней (§95): по заголовку
  * {@link RabbitTopology#TASK_ID_HEADER} выполняет задание. У каждой очереди своё число обработчиков
  * (атрибут {@code concurrency} аннотации, значение из настроек {@code app.task.*-consumers}).
  *
  * <p>{@link RabbitListener} подписывает метод на очередь; сообщение подтверждается брокеру после
  * успешного возврата из метода. Исключение — сообщение отклоняется без возврата в очередь
  * ({@code default-requeue-rejected: false}) и уходит в DLQ; временные отказы сюда не доходят — их
- * повторяет таблица заданий. https://docs.spring.io/spring-amqp/reference/amqp/receiving-messages/async-annotation-driven.html</p>
+ * повторяет таблица заданий. Исключение: недоступность БД при захвате — сообщение возвращается в очередь
+ * ({@code ImmediateRequeueAmqpException}, {@link TaskExecutor}). https://docs.spring.io/spring-amqp/reference/amqp/receiving-messages/async-annotation-driven.html</p>
  */
 @Component
 public class TaskListener {
@@ -58,6 +59,17 @@ public class TaskListener {
      */
     @RabbitListener(queues = RabbitTopology.SITE_NAME_QUEUE, concurrency = "${app.task.site-name-consumers:2}")
     public void onSiteNameMessage(Message message) {
+        execute(message);
+    }
+
+    /**
+     * Принимает одно сообщение внутренней очереди (выдача, соответствия).
+     *
+     * @param message сообщение с заголовком id задания
+     * @throws AmqpRejectAndDontRequeueException если заголовка нет или он не число — сразу в DLQ
+     */
+    @RabbitListener(queues = RabbitTopology.INTERNAL_QUEUE, concurrency = "${app.task.internal-consumers:2}")
+    public void onInternalMessage(Message message) {
         execute(message);
     }
 

@@ -34,12 +34,12 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>{@code list} — список работодателей портала, по {@link #LIST_PAGES_PER_TASK} страниц
  *       (по 200 работодателей) за задание, записывается в {@code portal_employer}; раз в неделю.</li>
- *   <li>{@code check} — по {@link StatePortalProperties#checksPerTask()} работодателей, которые есть в
+ *   <li>{@code check} — по {@link StatePortalProperties.Task#checksPerTask()} работодателей, которые есть в
  *       реестре, не агентства и без своего источника: есть ли у них вакансии на портале (вместе с
  *       объявлениями площадок, привязанными к IČO). Есть — подключается источник портала. Каждый день,
  *       пока есть работодатели к проверке; повтор — через {@link StatePortalProperties#recheckAfter()}.</li>
- *   <li>{@code site} — у работодателей портала, которые есть в реестре, действуют, из активной страны сбора и без
- *       найденного сайта (§74: без условия о подключённом портале; шаг 2 алгоритма поиска
+ *   <li>{@code site} — у работодателей портала, которые есть в реестре, действуют, из активной страны сбора, в том
+ *       числе с уже найденным сайтом (§93; §74: без условия о подключённом портале; шаг 2 алгоритма поиска
  *       сайта версии 3): сайт из детали их вакансии на портале («Internetová adresa» полным адресом, иначе
  *       домен контактной почты с проверкой сайта) записывается сайтом компании; его проверяет поиск
  *       кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
@@ -62,6 +62,8 @@ public class StatePortalHandler implements TaskHandler {
     private static final String LIST = "list";
     private static final String CHECK = "check";
     private static final String SITE = "site";
+    /** Начало ключей заданий; шаг — следующая часть ключа (цепочка шага — ключи «state-portal:<шаг>:»). */
+    private static final String KEY_PREFIX = "state-portal:";
     private static final String STATE_PORTAL = "STATE_PORTAL";
     private static final String PORTAL_MAIL = "PORTAL_MAIL";
     private static final String PORTAL_MAIL_403 = "PORTAL_MAIL_403";
@@ -97,30 +99,38 @@ public class StatePortalHandler implements TaskHandler {
      * Ставит шаг «список» с первой страницы.
      *
      * @param period часть ключа: неделя (список читается раз в неделю)
-     * @return поставлено ли (повтор в ту же неделю ничего не добавляет)
+     * @return поставлено ли (цепочка шага идёт или повтор в ту же неделю — ничего не добавляется)
      */
     public boolean enqueueList(String period) {
-        return taskService.enqueue(TYPE, key(LIST, period, 1), payload(LIST, period, 1));
+        return startStep(LIST, period);
     }
 
     /**
      * Ставит шаг «проверка».
      *
      * @param period часть ключа: день (проверка идёт каждый день)
-     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     * @return поставлено ли (цепочка шага идёт или повтор в тот же день — ничего не добавляется)
      */
     public boolean enqueueCheck(String period) {
-        return taskService.enqueue(TYPE, key(CHECK, period, 1), payload(CHECK, period, 1));
+        return startStep(CHECK, period);
     }
 
     /**
      * Ставит шаг «сайт».
      *
      * @param period часть ключа: день
-     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     * @return поставлено ли (цепочка шага идёт или повтор в тот же день — ничего не добавляется)
      */
     public boolean enqueueSite(String period) {
-        return taskService.enqueue(TYPE, key(SITE, period, 1), payload(SITE, period, 1));
+        return startStep(SITE, period);
+    }
+
+    /**
+     * Первое задание шага — только если цепочка этого шага не идёт (стенограмма §95): иначе цепочки за разные дни
+     * шли параллельно по одним и тем же работодателям (§94).
+     */
+    private boolean startStep(String step, String period) {
+        return taskService.startChain(TYPE, KEY_PREFIX + step + ":", key(step, period, 1), payload(step, period, 1));
     }
 
     @Override
@@ -164,14 +174,22 @@ public class StatePortalHandler implements TaskHandler {
     }
 
     /**
-     * Проверка работодателей; взято полное число — следующее задание (номер в ключе растёт).
+     * Проверка работодателей; взято полное число или вышел срок задания — следующее задание (номер в ключе растёт).
+     * Не начатые из-за срока работодатели остаются к проверке.
      */
     private TaskOutcome check(String period, int round) {
-        List<DueEmployer> due = repository.employersToCheck(properties.checksPerTask(), properties.recheckAfter());
+        List<DueEmployer> due = repository.employersToCheck(properties.task().checksPerTask(),
+                properties.recheckAfter());
+        long deadline = System.nanoTime() + properties.task().timeBudget().toNanos();
+        boolean outOfTime = false;
         int checked = 0;
         int connected = 0;
         List<String> failed = new ArrayList<>();
         for (DueEmployer employer : due) {
+            if (System.nanoTime() - deadline > 0) {
+                outOfTime = true;
+                break;
+            }
             Optional<Boolean> hasOffers = adapter.hasPostingsIn(employer.registrationNumber(), SLOVAKIA);
             if (hasOffers.isEmpty()) {
                 LOG.warn("State portal employer {} not checked", employer.registrationNumber());
@@ -187,21 +205,28 @@ public class StatePortalHandler implements TaskHandler {
             return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
         }
         failed.forEach(repository::markChecked);
-        if (due.size() == properties.checksPerTask()) {
+        if (outOfTime || due.size() == properties.task().checksPerTask()) {
             next(CHECK, period, round + 1);
         }
         return new TaskOutcome.Done();
     }
 
     /**
-     * Поиск сайтов; взято полное число — следующее задание.
+     * Поиск сайтов; взято полное число или вышел срок задания — следующее задание.
      */
     private TaskOutcome site(String period, int round) {
-        List<SiteEmployer> due = repository.employersForSite(properties.checksPerTask(), properties.recheckAfter());
+        List<SiteEmployer> due = repository.employersForSite(properties.task().checksPerTask(),
+                properties.recheckAfter());
+        long deadline = System.nanoTime() + properties.task().timeBudget().toNanos();
+        boolean outOfTime = false;
         int read = 0;
         int found = 0;
         List<SiteEmployer> failed = new ArrayList<>();
         for (SiteEmployer employer : due) {
+            if (System.nanoTime() - deadline > 0) {
+                outOfTime = true;
+                break;
+            }
             Optional<PortalSite> site = adapter.employerSite(employer.registrationNumber());
             if (site.isEmpty()) {
                 LOG.warn("State portal employer {}: site not read", employer.registrationNumber());
@@ -216,7 +241,7 @@ public class StatePortalHandler implements TaskHandler {
             return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
         }
         failed.forEach(employer -> repository.recordSite(employer, null));
-        if (due.size() == properties.checksPerTask()) {
+        if (outOfTime || due.size() == properties.task().checksPerTask()) {
             next(SITE, period, round + 1);
         }
         return new TaskOutcome.Done();
@@ -267,7 +292,7 @@ public class StatePortalHandler implements TaskHandler {
     }
 
     private static String key(String step, String period, int position) {
-        return "state-portal:" + step + ":" + period + ":" + position;
+        return KEY_PREFIX + step + ":" + period + ":" + position;
     }
 
     private static String payload(String step, String period, int position) {

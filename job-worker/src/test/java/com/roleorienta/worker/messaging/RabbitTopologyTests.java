@@ -46,12 +46,23 @@ class RabbitTopologyTests {
     }
 
     /**
-     * Чтение источников, соответствия и проходы выдачи — в очередь сбора.
+     * Чтение источников — в очередь сбора.
      */
     @Test
     void collectionTasksGoToWorkQueue() {
-        for (String type : new String[] {ReadSourceHandler.TYPE, MatchVacanciesHandler.TYPE, RunPassHandler.TYPE}) {
-            assertThat(RabbitTopology.routingKey(type)).isEqualTo(RabbitTopology.ROUTING_KEY);
+        assertThat(RabbitTopology.routingKey(ReadSourceHandler.TYPE)).isEqualTo(RabbitTopology.ROUTING_KEY);
+    }
+
+    /**
+     * Проходы выдачи и соответствия — во внутреннюю очередь, не за чтениями (стенограмма §95); типы в топологии
+     * совпадают с константами обработчиков.
+     */
+    @Test
+    void internalTasksGoToInternalQueue() {
+        assertThat(RabbitTopology.INTERNAL_TYPES).containsExactlyInAnyOrder(RunPassHandler.TYPE,
+                MatchVacanciesHandler.TYPE);
+        for (String type : RabbitTopology.INTERNAL_TYPES) {
+            assertThat(RabbitTopology.routingKey(type)).isEqualTo(RabbitTopology.INTERNAL_ROUTING_KEY);
         }
     }
 }

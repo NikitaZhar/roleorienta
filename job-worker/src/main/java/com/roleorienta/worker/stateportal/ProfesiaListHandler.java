@@ -96,10 +96,10 @@ public class ProfesiaListHandler implements TaskHandler {
      * Ставит первое задание цепочки (чтение карты сайта).
      *
      * @param day часть ключа: день
-     * @return поставлено ли (повтор в тот же день ничего не добавляет)
+     * @return поставлено ли (цепочка идёт или повтор в тот же день — ничего не добавляется; стенограмма §95)
      */
     public boolean enqueue(String day) {
-        return taskService.enqueue(TYPE, key(day, 0), payload(day, 0));
+        return taskService.startChain(TYPE, key(day, 0), payload(day, 0));
     }
 
     @Override

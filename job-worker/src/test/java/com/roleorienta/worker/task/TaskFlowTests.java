@@ -7,6 +7,7 @@ import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.messaging.RabbitTopology;
 import com.roleorienta.worker.outbox.OutboxPublisher;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -28,9 +29,10 @@ import org.springframework.transaction.CannotCreateTransactionException;
 
 /**
  * Задания на реальных PostgreSQL и RabbitMQ: постановка, выполнение, идемпотентность, повтор через
- * БД, перепостановка, исчерпание попыток, ошибка кода → DLQ.
+ * БД, перепостановка, исчерпание попыток, ошибка кода → DLQ; продление аренды, номер захвата, группа заданий
+ * одного хоста (стенограмма §95). Аренда в тесте — 3 с, чтобы проверить продление за секунды.
  */
-@SpringBootTest
+@SpringBootTest(properties = {"app.task.lease=3s", "app.task.groups.exclusive.solo=SOLO_A,SOLO_B"})
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, TaskFlowTests.ScriptedHandlerConfig.class})
 class TaskFlowTests {
@@ -40,12 +42,17 @@ class TaskFlowTests {
     private static final Duration AWAIT_TIMEOUT = Duration.ofSeconds(10);
     private static final long POLL_MILLIS = 100;
     private static final long RECEIVE_TIMEOUT_MS = 5000;
+    /** Дольше аренды теста (3 с): без продления задание за это время было бы перепоставлено. */
+    private static final long LONGER_THAN_LEASE_MS = 4500;
 
     @Autowired
     private TaskService taskService;
 
     @Autowired
     private TaskExecutor executor;
+
+    @Autowired
+    private TaskRepository repository;
 
     @Autowired
     private OutboxPublisher publisher;
@@ -156,7 +163,7 @@ class TaskFlowTests {
     }
 
     /**
-     * Истёкшая аренда (процесс упал во время выполнения) — задание снова в очереди.
+     * Истёкшая аренда (процесс упал во время выполнения) — задание снова в очереди; это неудачная попытка.
      */
     @Test
     void expiredLeaseIsRequeued() {
@@ -168,14 +175,107 @@ class TaskFlowTests {
 
         assertThat(taskService.requeueDue()).isEqualTo(1);
         assertThat(state(taskId)).isEqualTo("QUEUED");
+        assertThat(attempts(taskId)).isEqualTo(1);
+    }
+
+    /**
+     * Аренда истекла на последней допустимой попытке — задание FAILED и в очередь не ставится: задание, которое
+     * каждый раз не укладывается в аренду, не перепоставляется без конца (стенограмма §94).
+     */
+    @Test
+    void expiredLeaseOnLastAttemptFailsTask() {
+        taskService.enqueue(TEST_TYPE, "k-lease-last", PAYLOAD);
+        long taskId = taskId("k-lease-last");
+        jdbcTemplate.update("UPDATE task SET state = 'RUNNING', attempts = 7, lease_until = now() - interval '1 second'"
+                + " WHERE id = ?", taskId);
+
+        assertThat(taskService.requeueDue()).isZero();
+        assertThat(state(taskId)).isEqualTo("FAILED");
+        assertThat(attempts(taskId)).isEqualTo(8);
+        assertThat(unpublishedEvents(taskId)).isEqualTo(1);
+    }
+
+    /**
+     * Пока обработчик работает, аренда продлевается: задание дольше срока аренды не перепоставляется и не
+     * выполняется второй копией.
+     */
+    @Test
+    void leaseOfRunningTaskIsRenewed() throws InterruptedException {
+        CountDownLatch release = new CountDownLatch(1);
+        handler.reset(() -> {
+            awaitQuietly(release);
+            return new TaskOutcome.Done();
+        });
+        taskService.enqueue(TEST_TYPE, "k-long", PAYLOAD);
+        long taskId = taskId("k-long");
+
+        Thread worker = Thread.ofPlatform().start(() -> executor.execute(taskId));
+        Thread.sleep(LONGER_THAN_LEASE_MS);
+
+        assertThat(taskService.requeueDue()).isZero();
+        assertThat(state(taskId)).isEqualTo("RUNNING");
+        release.countDown();
+        worker.join();
+        assertThat(state(taskId)).isEqualTo("DONE");
+        assertThat(handler.calls()).isEqualTo(1);
+    }
+
+    /**
+     * Исполнитель, у которого задание забрали (аренда истекла, задание перепоставлено и захвачено снова), итог не
+     * пишет: записывает только текущий захват.
+     */
+    @Test
+    void staleExecutorDoesNotOverwriteResult() {
+        taskService.enqueue(TEST_TYPE, "k-stale", PAYLOAD);
+        long taskId = taskId("k-stale");
+        ClaimedTask first = taskService.claim(taskId).orElseThrow();
+        jdbcTemplate.update("UPDATE task SET lease_until = now() - interval '1 second' WHERE id = ?", taskId);
+        taskService.requeueDue();
+        ClaimedTask second = taskService.claim(taskId).orElseThrow();
+
+        repository.markDone(taskId, first.claimSeq());
+        assertThat(repository.extendLease(taskId, first.claimSeq(), Duration.ofMinutes(1))).isFalse();
+        assertThat(state(taskId)).isEqualTo("RUNNING");
+
+        repository.markDone(taskId, second.claimSeq());
+        assertThat(state(taskId)).isEqualTo("DONE");
+    }
+
+    /**
+     * Задания одной группы (один внешний хост) выполняются по одному: пока задание группы выполняется, второе
+     * откладывается без попытки и ставится снова, когда группа свободна.
+     */
+    @Test
+    void groupRunsOneTaskAtATime() {
+        taskService.enqueue("SOLO_A", "k-solo-a", PAYLOAD);
+        taskService.enqueue("SOLO_B", "k-solo-b", PAYLOAD);
+        long first = taskId("k-solo-a");
+        long second = taskId("k-solo-b");
+
+        ClaimedTask running = taskService.claim(first).orElseThrow();
+        assertThat(taskService.claim(second)).isEmpty();
+        assertThat(state(second)).isEqualTo("WAITING");
+        assertThat(attempts(second)).isZero();
+
+        repository.markDone(first, running.claimSeq());
+        jdbcTemplate.update("UPDATE task SET next_attempt_at = now() - interval '1 second' WHERE id = ?", second);
+        assertThat(taskService.requeueDue()).isEqualTo(1);
+        assertThat(taskService.claim(second)).isPresent();
     }
 
     /**
      * Цепочка идёт (незавершённое задание её типа) — новая не ставится; завершилась — ставится; задание, не
-     * менявшееся больше суток (потерянное сообщение), цепочку не держит (стенограмма §70).
+     * менявшееся больше суток (потерянное сообщение), цепочку не держит (стенограмма §70). У типа с несколькими
+     * цепочками (шаги) цепочка — по началу ключа: идущий шаг не держит другой (§95).
      */
     @Test
     void newChainStartsOnlyWhenPreviousOneEnded() {
+        assertThat(taskService.startChain("CHAIN", "chain:step-a:", "chain:step-a:day-1:1", PAYLOAD)).isTrue();
+        assertThat(taskService.startChain("CHAIN", "chain:step-a:", "chain:step-a:day-2:1", PAYLOAD)).isFalse();
+        assertThat(taskService.startChain("CHAIN", "chain:step-b:", "chain:step-b:day-2:1", PAYLOAD)).isTrue();
+        jdbcTemplate.update("DELETE FROM outbox_event");
+        jdbcTemplate.update("DELETE FROM task");
+
         assertThat(taskService.startChain("CHAIN", "chain:day-1:1", PAYLOAD)).isTrue();
         assertThat(taskService.startChain("CHAIN", "chain:day-2:1", PAYLOAD)).isFalse();
 
@@ -248,6 +348,14 @@ class TaskFlowTests {
 
         assertThatThrownBy(() -> executor.execute(taskId)).isInstanceOf(IllegalStateException.class);
         assertThat(state(taskId)).isEqualTo("FAILED");
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private long taskId(String taskKey) {

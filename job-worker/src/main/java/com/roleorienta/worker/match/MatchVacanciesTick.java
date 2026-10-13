@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Раз в час ставит предрасчёт соответствий под leader-lock (ключ по часу): новые и изменившиеся за
- * час вакансии сопоставляются. Выключается свойством {@code app.match.enabled=false}.
+ * час вакансии сопоставляются; пока цепочка идёт, новая не ставится (стенограмма §95). Выключается свойством
+ * {@code app.match.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.match.enabled", havingValue = "true", matchIfMissing = true)
@@ -47,7 +48,7 @@ public class MatchVacanciesTick {
     public void tick() {
         String hour = LocalDateTime.now(clock).truncatedTo(ChronoUnit.HOURS).toString();
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(MatchVacanciesHandler.TYPE,
+            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.startChain(MatchVacanciesHandler.TYPE,
                     MatchVacanciesHandler.taskKey(hour), MatchVacanciesHandler.payload()));
         } catch (DataAccessException exception) {
             LOG.warn("Match tick failed, will retry on next tick", exception);

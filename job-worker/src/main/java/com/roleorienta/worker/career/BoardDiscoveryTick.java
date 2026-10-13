@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Раз в сутки ставит обратный путь под leader-lock: новый обход — доски из индекса, затем проверка
- * новых и просроченных досок. Выключается свойством {@code app.career.enabled=false}.
+ * новых и просроченных досок; пока цепочка идёт, новая не ставится (стенограмма §95). Выключается свойством
+ * {@code app.career.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.career.enabled", havingValue = "true", matchIfMissing = true)
@@ -45,7 +46,7 @@ public class BoardDiscoveryTick {
     @Scheduled(fixedDelayString = "${app.career.interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(BoardDiscoveryHandler.TYPE,
+            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.startChain(BoardDiscoveryHandler.TYPE,
                     BoardDiscoveryHandler.taskKey(LocalDate.now(clock).toString()), BoardDiscoveryHandler.payload()));
         } catch (DataAccessException exception) {
             LOG.warn("Board discovery tick failed, will retry on next tick", exception);

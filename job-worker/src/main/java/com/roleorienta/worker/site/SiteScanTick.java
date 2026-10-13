@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Раз в сутки ставит скан Common Crawl под leader-lock: новый обход (раз в месяц) сканируется, уже
- * просканированный — задание сразу завершается. Выключается свойством {@code app.site.enabled=false}.
+ * просканированный — задание сразу завершается; пока цепочка идёт, новая не ставится (стенограмма §95).
+ * Выключается свойством {@code app.site.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.site.enabled", havingValue = "true", matchIfMissing = true)
@@ -45,7 +46,7 @@ public class SiteScanTick {
     @Scheduled(fixedDelayString = "${app.site.interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.enqueue(SiteScanHandler.TYPE,
+            leaderLock.runIfLeader(LOCK_KEY, () -> taskService.startChain(SiteScanHandler.TYPE,
                     SiteScanHandler.taskKey(LocalDate.now(clock).toString()), SiteScanHandler.payload()));
         } catch (DataAccessException exception) {
             LOG.warn("Site scan tick failed, will retry on next tick", exception);

@@ -1,6 +1,7 @@
 package com.roleorienta.worker.task;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Repository;
 public class TaskRepository {
 
     private static final int ERROR_MAX_LENGTH = 1000;
+    /** Первое число ключа блокировки группы заданий ({@link #lockGroup(String)}). */
+    private static final int GROUP_LOCK_CLASS = 2001;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -43,84 +46,179 @@ public class TaskRepository {
     }
 
     /**
-     * Есть ли у типа незавершённое задание (QUEUED, RUNNING, WAITING), менявшееся за последние {@code staleAfter}:
-     * цепочка этого типа ещё идёт. Задание, не менявшееся дольше, цепочку не держит (потерянное сообщение не должно
-     * останавливать шаг навсегда).
+     * Есть ли у типа незавершённое задание (QUEUED, RUNNING, WAITING) с ключом, начинающимся на {@code keyPrefix},
+     * менявшееся за последние {@code staleAfter}: цепочка ещё идёт. Задание, не менявшееся дольше, цепочку не держит
+     * (потерянное сообщение не должно останавливать шаг навсегда); выполняющееся задание меняется продлением аренды.
      *
      * @param type       тип задания
+     * @param keyPrefix  начало ключа цепочки (у типа с несколькими цепочками — шаг); пустое — любое задание типа
      * @param staleAfter задания, не менявшиеся дольше (по часам БД), не учитываются
      * @return {@code true} — цепочка идёт
      */
-    public boolean hasActive(String type, Duration staleAfter) {
+    public boolean hasActive(String type, String keyPrefix, Duration staleAfter) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM task WHERE type = ? AND state IN ('QUEUED', 'RUNNING', 'WAITING')
+                SELECT EXISTS (SELECT 1 FROM task WHERE type = ? AND left(task_key, length(?)) = ?
+                                                    AND state IN ('QUEUED', 'RUNNING', 'WAITING')
                                                     AND updated_at > now() - make_interval(secs => ?))
-                """, Boolean.class, type, (double) staleAfter.toSeconds()));
+                """, Boolean.class, type, keyPrefix, keyPrefix, (double) staleAfter.toSeconds()));
     }
 
     /**
-     * Захватывает задание на выполнение: QUEUED → RUNNING с арендой. Условие на состояние делает
-     * захват единственным: повторно доставленное сообщение задание уже не захватит.
+     * Ключи незавершённых заданий типа (QUEUED, RUNNING, WAITING).
+     *
+     * @param type тип задания
+     * @return ключи
+     */
+    public List<String> activeKeys(String type) {
+        return jdbcTemplate.queryForList("""
+                SELECT task_key FROM task WHERE type = ? AND state IN ('QUEUED', 'RUNNING', 'WAITING')
+                """, String.class, type);
+    }
+
+    /**
+     * Тип задания.
+     *
+     * @param taskId идентификатор задания
+     * @return тип; пусто — задания нет
+     */
+    Optional<String> typeOf(long taskId) {
+        return jdbcTemplate.queryForList("SELECT type FROM task WHERE id = ?", String.class, taskId).stream()
+                .findFirst();
+    }
+
+    /**
+     * Захватывает задание на выполнение: QUEUED → RUNNING с арендой и следующим номером захвата. Условие на
+     * состояние делает захват единственным: повторно доставленное сообщение задание уже не захватит.
      *
      * @param taskId идентификатор задания
      * @param lease  срок аренды
-     * @return захваченное задание; пусто, если оно не в состоянии QUEUED
+     * @return захваченное задание с номером захвата; пусто, если оно не в состоянии QUEUED
      */
-    public Optional<TaskRecord> claim(long taskId, Duration lease) {
-        List<TaskRecord> claimed = jdbcTemplate.query("""
+    Optional<ClaimedTask> claim(long taskId, Duration lease) {
+        return claim(taskId, lease, "", List.of());
+    }
+
+    /**
+     * Захват, как {@link #claim(long, Duration)}, но только если ни одно задание из {@code groupTypes} не выполняется
+     * (RUNNING с живой арендой): задания одной группы ходят на один внешний хост и параллельно только ждут друг друга
+     * (стенограмма §95). Вызывается в транзакции после {@link #lockGroup(String)}, иначе два захвата одновременно
+     * увидят группу свободной.
+     *
+     * @param taskId     идентификатор задания
+     * @param lease      срок аренды
+     * @param groupTypes типы группы
+     * @return захваченное задание; пусто — задание не в QUEUED или группа занята
+     */
+    Optional<ClaimedTask> claimIfGroupFree(long taskId, Duration lease, List<String> groupTypes) {
+        return claim(taskId, lease, """
+                AND NOT EXISTS (SELECT 1 FROM task busy WHERE busy.type = ANY(string_to_array(?, ','))
+                                AND busy.state = 'RUNNING' AND busy.lease_until > now())""",
+                List.of(String.join(",", groupTypes)));
+    }
+
+    private Optional<ClaimedTask> claim(long taskId, Duration lease, String condition, List<Object> conditionArgs) {
+        List<Object> args = new ArrayList<>(List.of(lease.toSeconds(), taskId));
+        args.addAll(conditionArgs);
+        List<ClaimedTask> claimed = jdbcTemplate.query("""
                 UPDATE task
-                SET state = 'RUNNING', lease_until = now() + make_interval(secs => ?), updated_at = now()
+                SET state = 'RUNNING', lease_until = now() + make_interval(secs => ?), claim_seq = claim_seq + 1,
+                    updated_at = now()
                 WHERE id = ? AND state = 'QUEUED'
-                RETURNING id, type, payload::text AS payload, attempts
+                """ + condition + """
+
+                RETURNING id, type, payload::text AS payload, attempts, claim_seq
                 """,
-                (row, rowNum) -> new TaskRecord(row.getLong("id"), row.getString("type"),
-                        row.getString("payload"), row.getInt("attempts")),
-                lease.toSeconds(), taskId);
+                (row, rowNum) -> new ClaimedTask(new TaskRecord(row.getLong("id"), row.getString("type"),
+                        row.getString("payload"), row.getInt("attempts")), row.getInt("claim_seq")),
+                args.toArray());
         return claimed.stream().findFirst();
     }
 
     /**
-     * RUNNING → DONE.
+     * Блокировка группы до конца текущей транзакции ({@code pg_advisory_xact_lock}; ключ из двух чисел — это
+     * пространство ключей не пересекается с одночисловыми ключами leader-lock).
+     * https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
      *
-     * @param taskId идентификатор задания
+     * @param group имя группы
      */
-    public void markDone(long taskId) {
-        jdbcTemplate.update("""
-                UPDATE task SET state = 'DONE', lease_until = NULL, last_error = NULL, updated_at = now()
-                WHERE id = ? AND state = 'RUNNING'
-                """, taskId);
+    void lockGroup(String group) {
+        jdbcTemplate.queryForObject("SELECT 1 FROM pg_advisory_xact_lock(?, ?)", Integer.class, GROUP_LOCK_CLASS,
+                group.hashCode());
     }
 
     /**
-     * RUNNING → WAITING: повтор не раньше чем через {@code delay}.
+     * QUEUED → WAITING без попытки: группа занята, задание ждёт {@code delay} и снова ставится перепостановкой.
+     *
+     * @param taskId идентификатор задания
+     * @param delay  ожидание
+     */
+    void deferQueued(long taskId, Duration delay) {
+        jdbcTemplate.update("""
+                UPDATE task SET state = 'WAITING', next_attempt_at = now() + make_interval(secs => ?), updated_at = now()
+                WHERE id = ? AND state = 'QUEUED'
+                """, delay.toSeconds(), taskId);
+    }
+
+    /**
+     * Продлевает аренду выполняющегося задания, пока номер захвата прежний.
      *
      * @param taskId   идентификатор задания
+     * @param claimSeq номер захвата исполнителя
+     * @param lease    новый срок аренды от текущего момента
+     * @return {@code false} — задание уже не у этого исполнителя (перепоставлено, захвачено снова или завершено)
+     */
+    boolean extendLease(long taskId, int claimSeq, Duration lease) {
+        return jdbcTemplate.update("""
+                UPDATE task SET lease_until = now() + make_interval(secs => ?), updated_at = now()
+                WHERE id = ? AND state = 'RUNNING' AND claim_seq = ?
+                """, lease.toSeconds(), taskId, claimSeq) == 1;
+    }
+
+    /**
+     * RUNNING → DONE, если номер захвата прежний.
+     *
+     * @param taskId   идентификатор задания
+     * @param claimSeq номер захвата исполнителя
+     */
+    void markDone(long taskId, int claimSeq) {
+        jdbcTemplate.update("""
+                UPDATE task SET state = 'DONE', lease_until = NULL, last_error = NULL, updated_at = now()
+                WHERE id = ? AND state = 'RUNNING' AND claim_seq = ?
+                """, taskId, claimSeq);
+    }
+
+    /**
+     * RUNNING → WAITING: повтор не раньше чем через {@code delay}, если номер захвата прежний.
+     *
+     * @param taskId   идентификатор задания
+     * @param claimSeq номер захвата исполнителя
      * @param attempts новое число неудачных попыток
      * @param delay    интервал до повтора
      * @param error    причина неудачи
      */
-    public void markWaiting(long taskId, int attempts, Duration delay, String error) {
+    void markWaiting(long taskId, int claimSeq, int attempts, Duration delay, String error) {
         jdbcTemplate.update("""
                 UPDATE task
                 SET state = 'WAITING', attempts = ?, next_attempt_at = now() + make_interval(secs => ?),
                     lease_until = NULL, last_error = ?, updated_at = now()
-                WHERE id = ? AND state = 'RUNNING'
-                """, attempts, delay.toSeconds(), truncate(error), taskId);
+                WHERE id = ? AND state = 'RUNNING' AND claim_seq = ?
+                """, attempts, delay.toSeconds(), truncate(error), taskId, claimSeq);
     }
 
     /**
-     * RUNNING → FAILED.
+     * RUNNING → FAILED, если номер захвата прежний.
      *
      * @param taskId   идентификатор задания
+     * @param claimSeq номер захвата исполнителя
      * @param attempts итоговое число неудачных попыток
      * @param error    причина неудачи
      */
-    public void markFailed(long taskId, int attempts, String error) {
+    void markFailed(long taskId, int claimSeq, int attempts, String error) {
         jdbcTemplate.update("""
                 UPDATE task SET state = 'FAILED', attempts = ?, lease_until = NULL, last_error = ?,
                     updated_at = now()
-                WHERE id = ? AND state = 'RUNNING'
-                """, attempts, truncate(error), taskId);
+                WHERE id = ? AND state = 'RUNNING' AND claim_seq = ?
+                """, attempts, truncate(error), taskId, claimSeq);
     }
 
     /**
@@ -129,25 +227,44 @@ public class TaskRepository {
      * до конца транзакции. Вызывается внутри транзакции.
      *
      * @param limit максимум заданий
-     * @return идентификаторы заданий
+     * @return задания с признаком «истекла аренда»
      */
-    public List<Long> claimDue(int limit) {
-        return jdbcTemplate.queryForList("""
-                SELECT id FROM task
+    List<DueTask> claimDue(int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, state = 'RUNNING' AS lease_expired FROM task
                 WHERE (state = 'WAITING' AND next_attempt_at <= now())
                    OR (state = 'RUNNING' AND lease_until < now())
                 ORDER BY id
                 LIMIT ?
                 FOR UPDATE SKIP LOCKED
-                """, Long.class, limit);
+                """, (row, rowNum) -> new DueTask(row.getLong("id"), row.getBoolean("lease_expired")), limit);
     }
 
     /**
-     * → QUEUED.
+     * Истекла аренда (исполнитель пропал или завис): это неудачная попытка — RUNNING → QUEUED, а на последней
+     * допустимой попытке → FAILED. Без счёта попыток задание, которое каждый раз не укладывается в аренду,
+     * перепоставлялось бы без конца (стенограмма §94).
+     *
+     * @param taskId      идентификатор задания
+     * @param maxAttempts допустимое число неудачных попыток
+     * @return {@code true} — задание снова в очереди; {@code false} — попытки исчерпаны (FAILED)
+     */
+    boolean expireLease(long taskId, int maxAttempts) {
+        return jdbcTemplate.queryForObject("""
+                UPDATE task SET attempts = attempts + 1,
+                    state = CASE WHEN attempts + 1 >= ? THEN 'FAILED' ELSE 'QUEUED' END,
+                    lease_until = NULL, next_attempt_at = NULL, last_error = 'Lease expired', updated_at = now()
+                WHERE id = ?
+                RETURNING state = 'QUEUED'
+                """, Boolean.class, maxAttempts, taskId);
+    }
+
+    /**
+     * WAITING → QUEUED.
      *
      * @param taskId идентификатор задания
      */
-    public void markQueued(long taskId) {
+    void markQueued(long taskId) {
         jdbcTemplate.update("""
                 UPDATE task SET state = 'QUEUED', next_attempt_at = NULL, lease_until = NULL, updated_at = now()
                 WHERE id = ?

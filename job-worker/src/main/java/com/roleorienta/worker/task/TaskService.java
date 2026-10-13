@@ -3,6 +3,7 @@ package com.roleorienta.worker.task;
 import com.roleorienta.worker.outbox.OutboxRepository;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,21 +62,84 @@ public class TaskService {
      */
     @Transactional
     public boolean startChain(String type, String taskKey, String payload) {
-        return !taskRepository.hasActive(type, CHAIN_STALE_AFTER) && enqueue(type, taskKey, payload);
+        return startChain(type, "", taskKey, payload);
     }
 
     /**
-     * Снова ставит в очередь задания, у которых наступил срок повтора или истекла аренда.
+     * Как {@link #startChain(String, String, String)}, но цепочка — задания типа с ключом, начинающимся на
+     * {@code chainPrefix}: у типа несколько независимых цепочек (шаги портала «список», «проверка», «сайт»).
+     *
+     * @param type        тип задания
+     * @param chainPrefix начало ключей заданий цепочки
+     * @param taskKey     ключ первого задания (начинается с {@code chainPrefix})
+     * @param payload     параметры в JSON
+     * @return {@code true} — задание создано; {@code false} — цепочка идёт или ключ уже был
+     */
+    @Transactional
+    public boolean startChain(String type, String chainPrefix, String taskKey, String payload) {
+        return !taskRepository.hasActive(type, chainPrefix, CHAIN_STALE_AFTER) && enqueue(type, taskKey, payload);
+    }
+
+    /**
+     * Ключи незавершённых заданий типа — чтобы не ставить второе задание на ту же работу (чтение источника).
+     *
+     * @param type тип задания
+     * @return ключи заданий в QUEUED, RUNNING, WAITING
+     */
+    public List<String> activeKeys(String type) {
+        return taskRepository.activeKeys(type);
+    }
+
+    /**
+     * Захват задания исполнителем. Тип из группы заданий одного внешнего хоста ({@code app.task.groups.exclusive})
+     * захватывается, только если ни одно задание группы не выполняется; иначе задание откладывается без попытки на
+     * {@code app.task.groups.busy-delay} и потом снова ставится перепостановкой (стенограмма §95). Блокировка группы
+     * держится до конца транзакции — два исполнителя не захватят задания группы одновременно.
+     *
+     * @param taskId идентификатор задания
+     * @return захваченное задание; пусто — задание не в очереди (уже выполнено, повторная доставка) или отложено
+     */
+    @Transactional
+    public Optional<ClaimedTask> claim(long taskId) {
+        Optional<Map.Entry<String, List<String>>> group = taskRepository.typeOf(taskId).flatMap(this::groupOf);
+        if (group.isEmpty()) {
+            return taskRepository.claim(taskId, properties.lease());
+        }
+        taskRepository.lockGroup(group.get().getKey());
+        Optional<ClaimedTask> claimed = taskRepository.claimIfGroupFree(taskId, properties.lease(),
+                group.get().getValue());
+        if (claimed.isEmpty()) {
+            taskRepository.deferQueued(taskId, properties.groups().busyDelay());
+        }
+        return claimed;
+    }
+
+    private Optional<Map.Entry<String, List<String>>> groupOf(String type) {
+        return properties.groups().exclusive().entrySet().stream()
+                .filter(entry -> entry.getValue().contains(type)).findFirst();
+    }
+
+    /**
+     * Снова ставит в очередь задания, у которых наступил срок повтора или истекла аренда. Истекшая аренда — неудачная
+     * попытка: на последней допустимой задание завершается неудачей (FAILED) и в очередь не ставится.
      *
      * @return число перепоставленных заданий
      */
     @Transactional
     public int requeueDue() {
-        List<Long> taskIds = taskRepository.claimDue(properties.requeueBatchSize());
-        for (long taskId : taskIds) {
-            taskRepository.markQueued(taskId);
-            outboxRepository.insertTaskEvent(taskId);
+        int requeued = 0;
+        for (DueTask due : taskRepository.claimDue(properties.requeueBatchSize())) {
+            boolean queued = true;
+            if (due.leaseExpired()) {
+                queued = taskRepository.expireLease(due.id(), properties.maxAttempts());
+            } else {
+                taskRepository.markQueued(due.id());
+            }
+            if (queued) {
+                outboxRepository.insertTaskEvent(due.id());
+                requeued++;
+            }
         }
-        return taskIds.size();
+        return requeued;
     }
 }
