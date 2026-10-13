@@ -21,7 +21,11 @@ import org.jsoup.nodes.Document;
  *       {@code /sk/});</li>
  *   <li>бренд ({@link #keys}: первое слово, первые два слова слитно) совпадает с первым словом домена (или, от
  *       трёх букв, содержится в нём) и есть отдельным словом в видимом тексте (текст сравнивается без
- *       диакритики); бренд до трёх букв — ещё и в заголовке {@code title}.</li>
+ *       диакритики); бренд до трёх букв — ещё и в заголовке {@code title};</li>
+ *   <li>у названия из нескольких слов, подтверждённого только первым словом, второе слово названия (если оно не
+ *       общее) тоже есть отдельным словом в видимом тексте (решение владельца §75, стенограмма §87: чужой сайт по
+ *       первому слову — {@code continental-tires} у «Continental Tobacco», {@code ef.com} у «EF Parts»). Сайт с
+ *       IČO компании подтверждается раньше бренда ({@link SiteVerifier}).</li>
  * </ul>
  *
  * <p>Домен, зона и путь берутся из конечного адреса страницы после переадресаций. Сайт группы
@@ -87,10 +91,32 @@ public final class SiteBrand {
         if (inText.isEmpty()) {
             return false;
         }
+        if (!secondWordInText(companyName, inText, text)) {
+            return false;
+        }
         if (inText.stream().allMatch(brand -> brand.length() <= SHORT_BRAND_MAX)) {
             return inText.stream().anyMatch(brand -> word(brand).matcher(ascii(page.title())).find());
         }
         return true;
+    }
+
+    /**
+     * Второе слово названия для бренда по первому слову (§87): названия из одного слова, второе слово — общее или
+     * бренд из двух слов слитно найден — условие выполнено; иначе второе слово должно быть отдельным словом в тексте.
+     *
+     * @param companyName название компании
+     * @param inText      бренды, совпавшие с доменом и найденные в тексте
+     * @param text        видимый текст страницы без диакритики
+     * @return выполнено ли условие второго слова
+     */
+    static boolean secondWordInText(String companyName, List<String> inText, String text) {
+        List<String> words = nameWords(companyName);
+        if (words.size() < 2 || GENERIC.contains(words.get(1))) {
+            return true;
+        }
+        String first = words.get(0).replace("-", "");
+        String second = words.get(1);
+        return inText.stream().anyMatch(brand -> !brand.equals(first)) || word(second).matcher(text).find();
     }
 
     /**
@@ -118,13 +144,7 @@ public final class SiteBrand {
      * @return бренды по порядку, без повторов
      */
     static List<String> brands(String companyName) {
-        List<String> clean = new ArrayList<>();
-        for (String word : asciiWords(companyName)) {
-            String stripped = word.replaceAll("^\\.+|\\.+$", "");
-            if (!stripped.isEmpty() && !word.endsWith(".sk")) {
-                clean.add(stripped);
-            }
-        }
+        List<String> clean = nameWords(companyName);
         Set<String> brands = new LinkedHashSet<>();
         if (!clean.isEmpty()) {
             brands.add(clean.get(0));
@@ -202,6 +222,20 @@ public final class SiteBrand {
     static boolean brandHome(String host, String companyName) {
         return brands(companyName).stream().filter(brand -> !GENERIC.contains(brand))
                 .anyMatch(brand -> host.equals(WWW + brand + ".sk") || host.equals(WWW + brand + ".com"));
+    }
+
+    /**
+     * Слова названия для брендов: {@link #asciiWords} без точек по краям и без доменов {@code .sk}.
+     */
+    private static List<String> nameWords(String companyName) {
+        List<String> clean = new ArrayList<>();
+        for (String word : asciiWords(companyName)) {
+            String stripped = word.replaceAll("^\\.+|\\.+$", "");
+            if (!stripped.isEmpty() && !word.endsWith(".sk")) {
+                clean.add(stripped);
+            }
+        }
+        return clean;
     }
 
     /**

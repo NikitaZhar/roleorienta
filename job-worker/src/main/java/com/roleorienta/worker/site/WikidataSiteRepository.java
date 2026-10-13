@@ -81,8 +81,9 @@ public class WikidataSiteRepository {
     public void record(long companyId, Site site) {
         jdbcTemplate.update("""
                 INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
-                """, companyId, site.host(), site.startUrl(), site.item(), SOURCE, site.proof(),
+                VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host)
+                """ + SiteScanRepository.RESTORE_REJECTED, companyId, site.host(), site.startUrl(), site.item(), SOURCE,
+                site.proof(),
                 site.found() ? "FOUND" : "CANDIDATE");
         if (site.found()) {
             jdbcTemplate.update("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",

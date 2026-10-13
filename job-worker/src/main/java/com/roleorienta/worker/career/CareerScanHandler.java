@@ -52,7 +52,10 @@ import org.springframework.stereotype.Component;
  *       {@code kariera.|jobs.|careers.<домен>}, {@code jobs.|careers.<бренд>.com}, {@code www.<бренд>-jobs.sk}. На
  *       кадровой странице — те же ссылки на доски; нет и их — страница с разметкой {@code JobPosting} (она сама или
  *       одна из первых {@value #VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}; нет и
- *       её — один шаг вглубь по кадровой ссылке ({@code /kariera} → {@code /kariera/volne-pozicie}).</li>
+ *       её — один шаг вглубь по кадровой ссылке ({@code /kariera} → {@code /kariera/volne-pozicie}). Кадровая
+ *       страница сайта есть, но читаемого на ней нет — пробуются ещё кадровые хосты ({@code careers.<домен>} …, без
+ *       путей на том же хосте): у Swiss Re {@code swissre.com/careers.html} без ссылки на систему найма (поиск —
+ *       скриптом), а {@code careers.swissre.com} — SuccessFactors (§89).</li>
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>
@@ -239,6 +242,14 @@ public class CareerScanHandler implements TaskHandler {
                 careerPage = standardCareerPage(home, hostAnswers(homeResult));
             }
             boards = careerPage.map(page -> careerBoards(page, true)).orElse(Set.of());
+            if (boards.isEmpty() && careerPage.isPresent()) {
+                Optional<Document> careerHost = standardCareerPage(home, false);
+                Set<Board> hostBoards = careerHost.map(page -> careerBoards(page, true)).orElse(Set.of());
+                if (!hostBoards.isEmpty()) {
+                    careerPage = careerHost;
+                    boards = hostBoards;
+                }
+            }
         }
         if (homePage.isEmpty() && careerPage.isEmpty()) {
             LOG.info("Home page of site {} of company {} did not open ({}), no career address open", site.host(),

@@ -2,6 +2,7 @@ package com.roleorienta.worker.stateportal;
 
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
+import com.roleorienta.worker.site.SiteScanRepository;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -155,7 +156,8 @@ public class StatePortalRepository {
      * компании с источником {@code STATE_PORTAL} (дальше его проверяет поиск кадровой страницы).
      *
      * @param employer работодатель с компанией
-     * @param site     сайт; {@code null} — не найден
+     * @param site     сайт; {@code null} — не найден. Тот же хост, не засчитанный правилом Common Crawl, снова
+     *                 засчитан ({@link SiteScanRepository#RESTORE_REJECTED})
      */
     @Transactional
     public void recordSite(SiteEmployer employer, FoundSite site) {
@@ -165,8 +167,8 @@ public class StatePortalRepository {
             jdbcTemplate.update("""
                     INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof)
                     VALUES (?, ?, ?, ?, 'STATE_PORTAL', ?)
-                    ON CONFLICT (company_id, host) DO NOTHING
-                    """, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
+                    ON CONFLICT (company_id, host)
+                    """ + SiteScanRepository.RESTORE_REJECTED, employer.companyId(), site.host(), site.startUrl(), site.evidenceUrl(), site.proof());
         }
     }
 
@@ -286,7 +288,7 @@ public class StatePortalRepository {
 
     /**
      * Сайт со страницы компании на profesia.sk: новый — найденный; тот же хост был кандидатом (сайт группы, ответ
-     * 403) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его). Сайт записан или
+     * 403) или не засчитан правилом Common Crawl ({@code REJECTED}, §86) — становится найденным и перепроверяется (ссылка компании на profesia.sk подтверждает его). Сайт записан или
      * стал найденным — итог «сайт не найден» снимается, как в других шагах поиска сайта (аудит §84).
      */
     private void saveProfesiaSite(long companyId, FoundSite site, String source) {
@@ -296,7 +298,7 @@ public class StatePortalRepository {
                 ON CONFLICT (company_id, host) DO UPDATE
                     SET status = 'FOUND', proof = EXCLUDED.proof,
                         start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
-                    WHERE company_site.status = 'CANDIDATE'
+                    WHERE company_site.status IN ('CANDIDATE', 'REJECTED')
                 """, companyId, site.host(), site.startUrl(), site.evidenceUrl(), source, site.proof());
         if (saved > 0) {
             jdbcTemplate.update("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",

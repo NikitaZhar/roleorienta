@@ -24,6 +24,37 @@ public class SiteScanRepository {
     /** Назначение блоков скана сайтов (блоки обратного пути — {@code BOARD}). */
     private static final String PURPOSE = "SITE";
 
+    /**
+     * Сайт с тем же хостом, найденный другим способом (Wikidata, портал, адрес по названию), снимает отказ
+     * {@code REJECTED} правила Common Crawl (§86): подтверждение другим источником сильнее. Дописывается к
+     * {@code INSERT INTO company_site … ON CONFLICT (company_id, host)} вместо {@code DO NOTHING}.
+     */
+    public static final String RESTORE_REJECTED = """
+            DO UPDATE SET status = EXCLUDED.status, source = EXCLUDED.source, proof = EXCLUDED.proof,
+                start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
+            WHERE company_site.status = 'REJECTED'""";
+
+    /**
+     * Правило Common Crawl (решение владельца §75; стенограмма §86): сайт компании из Common Crawl засчитывается
+     * ({@code FOUND}), если это её единственный сайт из Common Crawl или в первой части его хоста (без {@code www.})
+     * есть бренд названия — первое слово {@code company.name_slug} от трёх букв; иначе — не засчитан
+     * ({@code REJECTED}: чужие интернет-магазины с IČO перевозчика в условиях доставки). Сайты из Common Crawl,
+     * подтверждённые потом другим способом (proof не {@code REGISTRATION_NUMBER}), правило не трогает. Параметр —
+     * компания; результат — сколько сайтов сменили состояние.
+     */
+    private static final String REVIEW_COMMON_CRAWL = """
+            UPDATE company_site s
+            SET status = CASE WHEN cc.sites = 1 OR cc.brand THEN 'FOUND' ELSE 'REJECTED' END
+            FROM (SELECT o.id, count(*) OVER () AS sites,
+                         length(split_part(c.name_slug, '-', 1)) >= 3
+                         AND split_part(regexp_replace(o.host, '^www\\.', ''), '.', 1)
+                             LIKE '%' || split_part(c.name_slug, '-', 1) || '%' AS brand
+                  FROM company_site o JOIN company c ON c.id = o.company_id
+                  WHERE o.company_id = ? AND o.source = 'COMMON_CRAWL' AND o.proof = 'REGISTRATION_NUMBER'
+                    AND o.status IN ('FOUND', 'REJECTED')) cc
+            WHERE s.id = cc.id AND s.status <> CASE WHEN cc.sites = 1 OR cc.brand THEN 'FOUND' ELSE 'REJECTED' END
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -114,8 +145,10 @@ public class SiteScanRepository {
 
     /**
      * Находки блока и отметка «просмотрен» — одной транзакцией: после остановки блок
-     * просматривается заново целиком, повторная находка не дублируется. У компании с найденным сайтом
-     * снимается итог «сайт не найден» — новый итог даст проверка сайта.
+     * просматривается заново целиком, повторная находка не дублируется. Затем у каждой компании блока — правило
+     * Common Crawl ({@link #REVIEW_COMMON_CRAWL}): сменился итог правила — её найденные сайты перепроверяются
+     * (итог компании пересчитает проверка кадровой страницы); есть найденный сайт — итог «сайт не найден» снимается,
+     * нет — ставится (кроме «подключена»).
      *
      * @param crawl   обход
      * @param seq     блок
@@ -134,10 +167,30 @@ public class SiteScanRepository {
                 statement.setString(5, crawl);
                 statement.setString(6, PROOF);
             });
-        jdbcTemplate.batchUpdate("DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'",
-                matches, matches.size(), (statement, match) -> statement.setLong(1, match.companyId()));
+        matches.stream().map(SiteMatch::companyId).distinct().sorted().forEach(this::reviewCommonCrawl);
         jdbcTemplate.update("UPDATE cc_index_block SET done = TRUE WHERE crawl = ? AND purpose = ? AND seq = ?", crawl,
                 PURPOSE, seq);
+    }
+
+    /**
+     * Правило Common Crawl для одной компании и следствия для её итога (см. {@link #completeBlock}).
+     */
+    private void reviewCommonCrawl(long companyId) {
+        if (jdbcTemplate.update(REVIEW_COMMON_CRAWL, companyId) > 0) {
+            jdbcTemplate.update("UPDATE company_site SET checked_at = NULL WHERE company_id = ? AND status = 'FOUND'",
+                    companyId);
+        }
+        jdbcTemplate.update("""
+                DELETE FROM company_check WHERE company_id = ? AND result = 'SITE_NOT_FOUND'
+                  AND EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = ? AND s.status = 'FOUND')
+                """, companyId, companyId);
+        jdbcTemplate.update("""
+                INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                SELECT ?, 'SITE_NOT_FOUND', now(), now()
+                WHERE NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = ? AND s.status = 'FOUND')
+                ON CONFLICT (company_id) DO UPDATE SET result = 'SITE_NOT_FOUND', checked_at = now()
+                WHERE company_check.result <> 'CONNECTED'
+                """, companyId, companyId);
     }
 
     /**

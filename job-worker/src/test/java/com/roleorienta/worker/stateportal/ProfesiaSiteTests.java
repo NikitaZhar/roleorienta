@@ -178,8 +178,9 @@ class ProfesiaSiteTests {
 
     /**
      * Разбор: ссылка на страницу компании в объявлении; разделы — только той же компании; ссылки подвала profesia.sk и
-     * соцсетей не берутся, площадки вакансий (Alma Career, kariera.sk) — тоже, даже вне подвала (аудит §84); кадровая
-     * ссылка выбирается раньше сайта.
+     * соцсетей не берутся, площадки вакансий (Alma Career, kariera.sk, pracazarohom.sk — §88) — тоже, даже вне подвала (аудит §84); ссылки
+     * подвала семьи Alma Career ({@code footer#almc-footer}: pracezarohem.cz, nelisa.com — §91) не берутся; кадровая ссылка выбирается
+     * раньше сайта.
      */
     @Test
     void parsesProfesiaPages() {
@@ -191,7 +192,9 @@ class ProfesiaSiteTests {
                 <a href="/praca/beta-sk/C22?page_num=2001">O nás</a><a href="/praca/gama/C33?page_num=2001">Iná</a>
                 <a href="https://www.beta.sk/">Web</a><a href="https://www.beta.sk/kariera">Kariéra</a>
                 <header><a href="https://www.cvonline.lt/">CV</a></header>
-                <a href="https://www.almacareer.com/">Alma Career</a><a href="https://www.kariera.sk/">Kariéra.sk</a>
+                <a href="https://www.almacareer.com/">Alma Career</a><a href="https://www.kariera.sk/">Kariéra.sk</a><a href="https://www.pracazarohom.sk/">Práca za rohom</a>
+                <footer class="almc-footer" id="almc-footer"><ul><li><a href="https://www.pracezarohem.cz/">Práce za rohem</a></li>
+                <li><a href="https://www.nelisa.com/">Nelisa.com</a></li><li><a href="https://www.jobly.fi/">Jobly</a></li></ul></footer>
                 """, "https://www.profesia.sk/praca/beta/C22");
         assertThat(ProfesiaCompanyPage.sections(company))
                 .containsExactly("https://www.profesia.sk/praca/beta-sk/C22?page_num=2001");

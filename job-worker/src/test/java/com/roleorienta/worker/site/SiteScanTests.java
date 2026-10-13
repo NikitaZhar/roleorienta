@@ -3,6 +3,7 @@ package com.roleorienta.worker.site;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.stateportal.StatePortalRepository;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpServer;
@@ -57,6 +58,12 @@ class SiteScanTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SiteScanRepository repository;
+
+    @Autowired
+    private StatePortalRepository statePortal;
 
     /**
      * Адреса Common Crawl — заглушка.
@@ -156,6 +163,49 @@ class SiteScanTests {
 
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site WHERE status = 'FOUND'",
                 Integer.class)).isEqualTo(2);
+    }
+
+    /**
+     * Правило Common Crawl (§86): у компании несколько сайтов из Common Crawl — засчитан только сайт с брендом названия
+     * в хосте ({@code kofola.sk}), чужой магазин — нет ({@code REJECTED}); без бренда ни у одного — не засчитан ни один,
+     * итог «сайт не найден»; тот же хост, указанный работодателем на портале, снова засчитан. Единственный сайт из
+     * Common Crawl засчитан и без бренда ({@code aaa.sk} у «Mesto» в {@link #findsSitesByIcoOnContactPages}).
+     */
+    @Test
+    void countsCommonCrawlSiteWithBrandOrOnlyOne() {
+        jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', '77777777', 'Kofola a.s.', 'RPO'), ('SK', '88888888', 'Doprava s.r.o.', 'RPO')");
+        long kofola = companyId("77777777");
+        long doprava = companyId("88888888");
+
+        repository.completeBlock(CRAWL, 1, List.of(match(kofola, "www.kofola.sk"), match(kofola, "eshop-one.sk"),
+                match(doprava, "eshop-one.sk"), match(doprava, "eshop-two.sk")));
+
+        assertThat(statuses()).containsExactly("77777777:eshop-one.sk:REJECTED", "77777777:www.kofola.sk:FOUND",
+                "88888888:eshop-one.sk:REJECTED", "88888888:eshop-two.sk:REJECTED");
+        assertThat(jdbcTemplate.queryForList("SELECT c.registration_number || ':' || k.result FROM company_check k "
+                + "JOIN company c ON c.id = k.company_id ORDER BY 1", String.class))
+                .containsExactly("88888888:SITE_NOT_FOUND");
+
+        statePortal.recordSite(new StatePortalRepository.SiteEmployer("88888888", doprava, "Doprava s.r.o."),
+                new StatePortalRepository.FoundSite("eshop-two.sk", null, "http://portal/", "STATE_PORTAL"));
+
+        assertThat(statuses()).contains("88888888:eshop-two.sk:FOUND");
+    }
+
+    private static SiteScanRepository.SiteMatch match(long companyId, String host) {
+        return new SiteScanRepository.SiteMatch(companyId, host, "http://" + host + "/kontakt");
+    }
+
+    private long companyId(String ico) {
+        return jdbcTemplate.queryForObject("SELECT id FROM company WHERE registration_number = ?", Long.class, ico);
+    }
+
+    private List<String> statuses() {
+        return jdbcTemplate.queryForList("""
+                SELECT c.registration_number || ':' || s.host || ':' || s.status
+                FROM company_site s JOIN company c ON c.id = s.company_id ORDER BY 1
+                """, String.class);
     }
 
     private void runScan(String key) {

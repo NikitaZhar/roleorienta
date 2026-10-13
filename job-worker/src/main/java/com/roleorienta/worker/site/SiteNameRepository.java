@@ -74,8 +74,9 @@ public class SiteNameRepository {
         for (NameSite site : sites) {
             jdbcTemplate.update("""
                     INSERT INTO company_site (company_id, host, start_url, evidence_url, source, proof, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host) DO NOTHING
-                    """, companyId, site.host(), site.startUrl(), site.evidenceUrl(), SOURCE, site.proof(),
+                    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, host)
+                    """ + SiteScanRepository.RESTORE_REJECTED, companyId, site.host(), site.startUrl(),
+                    site.evidenceUrl(), SOURCE, site.proof(),
                     site.found() ? "FOUND" : "CANDIDATE");
         }
         if (sites.stream().anyMatch(NameSite::found)) {

@@ -126,6 +126,25 @@ class SiteVerifierTests {
     }
 
     /**
+     * Название из нескольких слов, подтверждённое только первым словом (§87): второе слово названия должно быть в
+     * тексте — сайт шин Continental без слова «Tobacco» у «Continental Tobacco» не подтверждён, с ним — подтверждён;
+     * второе слово общее («Kofola Group» — group) — условия нет.
+     */
+    @Test
+    void firstWordNeedsSecondWordInText() {
+        pages.put("/", html("Continental", "<p>Continental tires. " + FILLER + "</p>"));
+        assertThat(verifier.verify("www.continental.sk", "", NUMBER, "Continental Tobacco Slovakia s.r.o."))
+                .isEqualTo(Verdict.OPENED);
+
+        pages.put("/", html("Continental", "<p>Continental Tobacco. " + FILLER + "</p>"));
+        assertThat(verifier.verify("www.continental.sk", "", NUMBER, "Continental Tobacco Slovakia s.r.o."))
+                .isEqualTo(Verdict.BRAND);
+
+        pages.put("/", html("Kofola", "<p>Kofola. " + FILLER + "</p>"));
+        assertThat(verifier.verify("www.kofola.sk", "", NUMBER, "Kofola Group a.s.")).isEqualTo(Verdict.BRAND);
+    }
+
+    /**
      * Правила бренда — по конечному адресу после переадресации: тот же текст, что подтверждает
      * {@code www.alfaplast.sk} без переадресации, после переадресации на чужой хост (заглушка, {@code 127.0.0.1})
      * сайт не подтверждает; адрес ответа — конечный.
