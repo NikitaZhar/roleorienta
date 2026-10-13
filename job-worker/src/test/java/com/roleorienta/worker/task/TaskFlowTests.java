@@ -30,9 +30,11 @@ import org.springframework.transaction.CannotCreateTransactionException;
 /**
  * Задания на реальных PostgreSQL и RabbitMQ: постановка, выполнение, идемпотентность, повтор через
  * БД, перепостановка, исчерпание попыток, ошибка кода → DLQ; продление аренды, номер захвата, группа заданий
- * одного хоста (стенограмма §95). Аренда в тесте — 3 с, чтобы проверить продление за секунды.
+ * одного хоста и очередь в ней (стенограмма §95, §96). Аренда в тесте — 3 с, предел продления — 6 с, чтобы проверить
+ * продление и его предел за секунды.
  */
-@SpringBootTest(properties = {"app.task.lease=3s", "app.task.groups.exclusive.solo=SOLO_A,SOLO_B"})
+@SpringBootTest(properties = {"app.task.lease=3s", "app.task.max-run=6s",
+        "app.task.groups.exclusive.solo=SOLO_A,SOLO_B"})
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, TaskFlowTests.ScriptedHandlerConfig.class})
 class TaskFlowTests {
@@ -44,6 +46,8 @@ class TaskFlowTests {
     private static final long RECEIVE_TIMEOUT_MS = 5000;
     /** Дольше аренды теста (3 с): без продления задание за это время было бы перепоставлено. */
     private static final long LONGER_THAN_LEASE_MS = 4500;
+    /** Дольше предела продления (6 с) и ещё одной аренды (3 с): аренда должна истечь. */
+    private static final long BEYOND_MAX_RUN_MS = 10_500;
 
     @Autowired
     private TaskService taskService;
@@ -218,6 +222,54 @@ class TaskFlowTests {
         worker.join();
         assertThat(state(taskId)).isEqualTo("DONE");
         assertThat(handler.calls()).isEqualTo(1);
+    }
+
+    /**
+     * Продление ограничено пределом {@code app.task.max-run}: зависший обработчик не держит задание бесконечно —
+     * аренда истекает, задание перепоставляется как попытка; итог прежнего исполнителя уже не записывается (§96).
+     */
+    @Test
+    void leaseIsNotRenewedBeyondMaxRun() throws InterruptedException {
+        CountDownLatch release = new CountDownLatch(1);
+        handler.reset(() -> {
+            awaitQuietly(release);
+            return new TaskOutcome.Done();
+        });
+        taskService.enqueue(TEST_TYPE, "k-hung", PAYLOAD);
+        long taskId = taskId("k-hung");
+
+        Thread worker = Thread.ofPlatform().start(() -> executor.execute(taskId));
+        Thread.sleep(BEYOND_MAX_RUN_MS);
+
+        assertThat(taskService.requeueDue()).isEqualTo(1);
+        assertThat(state(taskId)).isEqualTo("QUEUED");
+        assertThat(attempts(taskId)).isEqualTo(1);
+        release.countDown();
+        worker.join();
+        assertThat(state(taskId)).isEqualTo("QUEUED");
+    }
+
+    /**
+     * Группа достаётся по очереди: продолжение цепочки, поставленное, пока группа была занята, не обгоняет более
+     * старое отложенное задание другой цепочки (§96).
+     */
+    @Test
+    void groupIsGivenToOlderWaitingTaskFirst() {
+        taskService.enqueue("SOLO_A", "k-order-a1", PAYLOAD);
+        taskService.enqueue("SOLO_B", "k-order-b", PAYLOAD);
+        long first = taskId("k-order-a1");
+        long waiting = taskId("k-order-b");
+        ClaimedTask running = taskService.claim(first).orElseThrow();
+        assertThat(taskService.claim(waiting)).isEmpty();
+        taskService.enqueue("SOLO_A", "k-order-a2", PAYLOAD);
+        long continuation = taskId("k-order-a2");
+        repository.markDone(first, running.claimSeq());
+
+        assertThat(taskService.claim(continuation)).isEmpty();
+        assertThat(state(continuation)).isEqualTo("WAITING");
+        jdbcTemplate.update("UPDATE task SET next_attempt_at = now() - interval '1 second' WHERE id = ?", waiting);
+        assertThat(taskService.requeueDue()).isEqualTo(1);
+        assertThat(taskService.claim(waiting)).isPresent();
     }
 
     /**

@@ -17,6 +17,10 @@ public class TaskService {
 
     /** Незавершённое задание цепочки, не менявшееся дольше, новую цепочку не держит (потерянное сообщение). */
     private static final Duration CHAIN_STALE_AFTER = Duration.ofDays(1);
+    /** Отложенное задание группы держит место в очереди, пока менялось за столько сроков отсрочки … */
+    private static final int WAITING_ALIVE_DELAYS = 4;
+    /** … плюс запас на тик перепостановки и доставку сообщения. */
+    private static final Duration REQUEUE_SLACK = Duration.ofMinutes(1);
 
     private final TaskRepository taskRepository;
     private final OutboxRepository outboxRepository;
@@ -92,7 +96,8 @@ public class TaskService {
 
     /**
      * Захват задания исполнителем. Тип из группы заданий одного внешнего хоста ({@code app.task.groups.exclusive})
-     * захватывается, только если ни одно задание группы не выполняется; иначе задание откладывается без попытки на
+     * захватывается, только если ни одно задание группы не выполняется и первым не ждёт более старое отложенное задание
+     * группы (очередь; аудит §95, стенограмма §96); иначе задание откладывается без попытки на
      * {@code app.task.groups.busy-delay} и потом снова ставится перепостановкой (стенограмма §95). Блокировка группы
      * держится до конца транзакции — два исполнителя не захватят задания группы одновременно.
      *
@@ -106,10 +111,11 @@ public class TaskService {
             return taskRepository.claim(taskId, properties.lease());
         }
         taskRepository.lockGroup(group.get().getKey());
+        Duration busyDelay = properties.groups().busyDelay();
         Optional<ClaimedTask> claimed = taskRepository.claimIfGroupFree(taskId, properties.lease(),
-                group.get().getValue());
+                group.get().getValue(), busyDelay.multipliedBy(WAITING_ALIVE_DELAYS).plus(REQUEUE_SLACK));
         if (claimed.isEmpty()) {
-            taskRepository.deferQueued(taskId, properties.groups().busyDelay());
+            taskRepository.deferQueued(taskId, busyDelay);
         }
         return claimed;
     }

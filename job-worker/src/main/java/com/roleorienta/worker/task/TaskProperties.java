@@ -35,7 +35,7 @@ public record TaskProperties(
      */
     public record Groups(
             @DefaultValue Map<String, List<String>> exclusive,
-            @DefaultValue("1m") Duration busyDelay) {
+            @DefaultValue("15s") Duration busyDelay) {
     }
 
     /**

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Repository;
 public class TaskRepository {
 
     private static final int ERROR_MAX_LENGTH = 1000;
+    /** Причина ожидания задания, отложенного из-за занятой группы ({@link #deferQueued}). */
+    static final String GROUP_BUSY = "Group busy";
     /** Первое число ключа блокировки группы заданий ({@link #lockGroup(String)}). */
     private static final int GROUP_LOCK_CLASS = 2001;
 
@@ -101,19 +103,30 @@ public class TaskRepository {
     /**
      * Захват, как {@link #claim(long, Duration)}, но только если ни одно задание из {@code groupTypes} не выполняется
      * (RUNNING с живой арендой): задания одной группы ходят на один внешний хост и параллельно только ждут друг друга
-     * (стенограмма §95). Вызывается в транзакции после {@link #lockGroup(String)}, иначе два захвата одновременно
+     * (стенограмма §95). И только если нет более старого задания группы, отложенного из-за занятости
+     * ({@link #GROUP_BUSY}) и ещё живого (менялось за {@code waitingAlive}): группа достаётся по очереди — продолжение
+     * цепочки, поставленное раньше, чем освободилась группа, не обгоняет отложенные задания других цепочек (аудит
+     * §95, стенограмма §96). Отложенное задание, не менявшееся дольше {@code waitingAlive} (потерянное сообщение),
+     * очередь не держит. Вызывается в транзакции после {@link #lockGroup(String)}, иначе два захвата одновременно
      * увидят группу свободной.
      *
-     * @param taskId     идентификатор задания
-     * @param lease      срок аренды
-     * @param groupTypes типы группы
-     * @return захваченное задание; пусто — задание не в QUEUED или группа занята
+     * @param taskId       идентификатор задания
+     * @param lease        срок аренды
+     * @param groupTypes   типы группы
+     * @param waitingAlive отложенное задание, менявшееся за этот срок, считается ждущим
+     * @return захваченное задание; пусто — задание не в QUEUED, группа занята или первым ждёт более старое задание
      */
-    Optional<ClaimedTask> claimIfGroupFree(long taskId, Duration lease, List<String> groupTypes) {
+    Optional<ClaimedTask> claimIfGroupFree(long taskId, Duration lease, List<String> groupTypes,
+            Duration waitingAlive) {
+        String types = String.join(",", groupTypes);
         return claim(taskId, lease, """
                 AND NOT EXISTS (SELECT 1 FROM task busy WHERE busy.type = ANY(string_to_array(?, ','))
-                                AND busy.state = 'RUNNING' AND busy.lease_until > now())""",
-                List.of(String.join(",", groupTypes)));
+                                AND busy.state = 'RUNNING' AND busy.lease_until > now())
+                AND NOT EXISTS (SELECT 1 FROM task older WHERE older.type = ANY(string_to_array(?, ','))
+                                AND older.id < task.id AND older.state IN ('QUEUED', 'WAITING')
+                                AND older.last_error = ?
+                                AND older.updated_at > now() - make_interval(secs => ?))""",
+                List.of(types, types, GROUP_BUSY, waitingAlive.toSeconds()));
     }
 
     private Optional<ClaimedTask> claim(long taskId, Duration lease, String condition, List<Object> conditionArgs) {
@@ -147,16 +160,19 @@ public class TaskRepository {
     }
 
     /**
-     * QUEUED → WAITING без попытки: группа занята, задание ждёт {@code delay} и снова ставится перепостановкой.
+     * QUEUED → WAITING без попытки с причиной {@link #GROUP_BUSY}: группа занята или первым ждёт более старое задание;
+     * задание ждёт {@code delay} и снова ставится перепостановкой. Причина сохраняется до захвата — по ней задание
+     * держит своё место в очереди группы.
      *
      * @param taskId идентификатор задания
      * @param delay  ожидание
      */
     void deferQueued(long taskId, Duration delay) {
         jdbcTemplate.update("""
-                UPDATE task SET state = 'WAITING', next_attempt_at = now() + make_interval(secs => ?), updated_at = now()
+                UPDATE task SET state = 'WAITING', next_attempt_at = now() + make_interval(secs => ?), last_error = ?,
+                    updated_at = now()
                 WHERE id = ? AND state = 'QUEUED'
-                """, delay.toSeconds(), taskId);
+                """, delay.toSeconds(), GROUP_BUSY, taskId);
     }
 
     /**
