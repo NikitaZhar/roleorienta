@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskRecord;
+import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -62,6 +65,18 @@ class SiteNameTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SiteNameRepository repository;
+
+    @Autowired
+    private SiteVerifier verifier;
+
+    @Autowired
+    private TaskService taskService;
+
+    @Autowired
+    private SiteNameProperties properties;
 
     /**
      * Сайты — заглушка: главная хоста — {@code /site/<хост>/}.
@@ -116,6 +131,28 @@ class SiteNameTests {
         jdbcTemplate.update("UPDATE company SET employees_min = 50 WHERE registration_number = ?", DELTA);
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE registration_number = ?", ALFA);
+    }
+
+    /**
+     * Срок задания вышел (в тесте — ноль): задание всё равно проверяет первую компанию и ставит следующее — цепочка
+     * продвигается, не начатые компании остаются к проверке (§97, §100).
+     */
+    @Test
+    void outOfTimeTaskChecksOneCompanyAndContinues() {
+        SiteNameHandler noTime = new SiteNameHandler(repository, verifier, taskService, new SiteNameProperties(
+                properties.companiesPerTask(), properties.recheckAfter(), properties.minEmployees(), Duration.ZERO));
+        int checkedBefore = checkedCompanies();
+
+        noTime.handle(new TaskRecord(0, SiteNameHandler.TYPE, "{\"period\": \"budget\", \"round\": 1}", 0));
+
+        assertThat(checkedCompanies()).isEqualTo(checkedBefore + 1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
+                SiteNameHandler.TYPE)).isEqualTo(1);
+    }
+
+    private int checkedCompanies() {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM company WHERE site_name_checked_at IS NOT NULL",
+                Integer.class);
     }
 
     /**

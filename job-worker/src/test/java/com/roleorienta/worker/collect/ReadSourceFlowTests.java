@@ -108,6 +108,21 @@ class ReadSourceFlowTests {
     }
 
     /**
+     * Незавершённое чтение, не менявшееся больше суток (сообщение потеряно), новое не держит (аудит §98, §100).
+     */
+    @Test
+    void staleReadDoesNotBlockNewRead() {
+        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state, updated_at) "
+                + "VALUES (?, ?, ?::jsonb, 'QUEUED', now() - interval '2 days')",
+                ReadSourceHandler.TYPE, "read:" + source.getId() + ":2000-01-01",
+                ReadSourceHandler.payload(source.getId()));
+
+        planner.enqueueToday();
+
+        assertThat(count("task")).isEqualTo(2);
+    }
+
+    /**
      * Первое чтение создаёт по вакансии на публикацию, полный обход и снимок ответа (объект в
      * MinIO, ссылка с хешем в БД); повторная постановка в тот же день ничего не добавляет. Источник без компании
      * получает название работодателя от системы найма (аудит §65).

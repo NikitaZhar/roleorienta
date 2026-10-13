@@ -177,6 +177,29 @@ class StatePortalTests {
     }
 
     /**
+     * Сайт с портала снимает итог компании «сайт не найден», как сайты других шагов (аудит §98, §100).
+     */
+    @Test
+    void portalSiteClearsSiteNotFound() {
+        handler.enqueueList("test");
+        runQueuedTasks();
+        handler.enqueueCheck("test");
+        runQueuedTasks();
+        jdbcTemplate.update("""
+                INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                SELECT id, 'SITE_NOT_FOUND', now(), now() FROM company WHERE country = 'SK' AND registration_number = ?
+                ON CONFLICT (company_id) DO UPDATE SET result = 'SITE_NOT_FOUND'
+                """, EMPLOYER);
+
+        handler.enqueueSite("test");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_check k JOIN company c ON c.id = "
+                + "k.company_id WHERE c.registration_number = ? AND k.result = 'SITE_NOT_FOUND'", Integer.class,
+                EMPLOYER)).isZero();
+    }
+
+    /**
      * Сайт с портала ищется и у работодателя, у компании которого уже есть найденный сайт другим способом (здесь —
      * адрес по названию): адрес работодателя записывается вторым найденным сайтом компании (стенограмма §93).
      */

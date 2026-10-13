@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.ImmediateRequeueAmqpException;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
@@ -410,23 +411,74 @@ class TaskFlowTests {
      */
     @Test
     void claimFailureIsRetried() {
-        TaskService failingClaims = new TaskService(repository, outboxRepository, properties) {
-            @Override
-            public Optional<ClaimedTask> claim(long taskId) {
-                throw new BadSqlGrammarException("claim", "UPDATE task", new SQLException("column missing"));
-            }
-        };
-        TaskExecutor failingExecutor = new TaskExecutor(repository, failingClaims, handlers, properties,
-                Duration.ofMinutes(1));
         taskService.enqueue(TEST_TYPE, "k-claim-failure", PAYLOAD);
         long taskId = taskId("k-claim-failure");
 
-        failingExecutor.execute(taskId);
-        failingExecutor.destroy();
+        executorWithClaim(() -> {
+            throw new BadSqlGrammarException("claim", "UPDATE task", new SQLException("column missing"));
+        }).execute(taskId);
 
         assertThat(state(taskId)).isEqualTo("WAITING");
         assertThat(attempts(taskId)).isEqualTo(1);
         assertThat(handler.calls()).isZero();
+    }
+
+    /**
+     * Ошибка захвата на последней допустимой попытке — задание FAILED (§97, §100).
+     */
+    @Test
+    void claimFailureOnLastAttemptFailsTask() {
+        taskService.enqueue(TEST_TYPE, "k-claim-last", PAYLOAD);
+        long taskId = taskId("k-claim-last");
+        jdbcTemplate.update("UPDATE task SET attempts = 7 WHERE id = ?", taskId);
+
+        executorWithClaim(() -> {
+            throw new BadSqlGrammarException("claim", "UPDATE task", new SQLException("column missing"));
+        }).execute(taskId);
+
+        assertThat(state(taskId)).isEqualTo("FAILED");
+        assertThat(attempts(taskId)).isEqualTo(8);
+    }
+
+    /**
+     * БД недоступна при захвате — сообщение возвращается в очередь ({@link ImmediateRequeueAmqpException}), задание
+     * остаётся QUEUED без попытки (§95, §100).
+     */
+    @Test
+    void unavailableDatabaseOnClaimReturnsMessageToQueue() {
+        taskService.enqueue(TEST_TYPE, "k-claim-db-down", PAYLOAD);
+        long taskId = taskId("k-claim-db-down");
+        TaskExecutor failing = executorWithClaim(() -> {
+            throw new CannotCreateTransactionException("Could not open JDBC Connection for transaction");
+        });
+
+        assertThatThrownBy(() -> failing.execute(taskId)).isInstanceOf(ImmediateRequeueAmqpException.class);
+        assertThat(state(taskId)).isEqualTo("QUEUED");
+        assertThat(attempts(taskId)).isZero();
+    }
+
+    /**
+     * Отложенное задание группы, не менявшееся дольше срока ожидания (потерянное сообщение), очередь группы не держит
+     * (§96, §100).
+     */
+    @Test
+    void staleWaitingTaskDoesNotHoldGroupQueue() {
+        taskService.enqueue("SOLO_A", "k-stale-a", PAYLOAD);
+        taskService.enqueue("SOLO_B", "k-stale-b", PAYLOAD);
+        long older = taskId("k-stale-a");
+        long newer = taskId("k-stale-b");
+        jdbcTemplate.update("UPDATE task SET last_error = ?, updated_at = now() - interval '1 hour' WHERE id = ?",
+                TaskRepository.GROUP_BUSY, older);
+
+        assertThat(taskService.claim(newer)).isPresent();
+    }
+
+    /**
+     * Внутренняя очередь (выдача, соответствия) объявлена в брокере (§95, §100).
+     */
+    @Test
+    void internalQueueIsDeclared() {
+        assertThat(rabbitAdmin.getQueueProperties(RabbitTopology.INTERNAL_QUEUE)).isNotNull();
     }
 
     /**
@@ -439,6 +491,19 @@ class TaskFlowTests {
 
         assertThatThrownBy(() -> executor.execute(taskId)).isInstanceOf(IllegalStateException.class);
         assertThat(state(taskId)).isEqualTo("FAILED");
+    }
+
+    /**
+     * Исполнитель с подменённым захватом — для ошибок захвата, которые на настоящей БД не воспроизвести.
+     */
+    private TaskExecutor executorWithClaim(Supplier<Optional<ClaimedTask>> claim) {
+        TaskService claims = new TaskService(repository, outboxRepository, properties) {
+            @Override
+            public Optional<ClaimedTask> claim(long taskId) {
+                return claim.get();
+            }
+        };
+        return new TaskExecutor(repository, claims, handlers, properties, Duration.ofMinutes(1));
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

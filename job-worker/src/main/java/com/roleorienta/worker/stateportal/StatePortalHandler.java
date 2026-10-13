@@ -175,7 +175,8 @@ public class StatePortalHandler implements TaskHandler {
 
     /**
      * Проверка работодателей; взято полное число или вышел срок задания — следующее задание (номер в ключе растёт).
-     * Не начатые из-за срока работодатели остаются к проверке.
+     * Не начатые из-за срока работодатели остаются к проверке; первый работодатель проверяется всегда — цепочка
+     * продвигается и при сроке меньше одного запроса (§100).
      */
     private TaskOutcome check(String period, int round) {
         List<DueEmployer> due = repository.employersToCheck(properties.task().checksPerTask(),
@@ -186,7 +187,7 @@ public class StatePortalHandler implements TaskHandler {
         int connected = 0;
         List<String> failed = new ArrayList<>();
         for (DueEmployer employer : due) {
-            if (System.nanoTime() - deadline > 0) {
+            if (checked + failed.size() > 0 && System.nanoTime() - deadline > 0) {
                 outOfTime = true;
                 break;
             }
@@ -212,7 +213,7 @@ public class StatePortalHandler implements TaskHandler {
     }
 
     /**
-     * Поиск сайтов; взято полное число или вышел срок задания — следующее задание.
+     * Поиск сайтов; взято полное число или вышел срок задания — следующее задание. Первый работодатель — всегда.
      */
     private TaskOutcome site(String period, int round) {
         List<SiteEmployer> due = repository.employersForSite(properties.task().checksPerTask(),
@@ -223,7 +224,7 @@ public class StatePortalHandler implements TaskHandler {
         int found = 0;
         List<SiteEmployer> failed = new ArrayList<>();
         for (SiteEmployer employer : due) {
-            if (System.nanoTime() - deadline > 0) {
+            if (read + failed.size() > 0 && System.nanoTime() - deadline > 0) {
                 outOfTime = true;
                 break;
             }
