@@ -245,7 +245,7 @@ public class StatePortalAdapter implements SourceAdapter {
     /**
      * Значение поля детали вакансии: {@code dt.vpm-data-panel__key} с подписью → следующий {@code dd}.
      */
-    private static Element value(Document document, String key) {
+    static Element value(Document document, String key) {
         for (Element term : document.select("dt.vpm-data-panel__key")) {
             if (key.equals(term.text().trim())) {
                 return term.nextElementSibling();
@@ -348,7 +348,7 @@ public class StatePortalAdapter implements SourceAdapter {
      * uuid вакансии портала; {@code profesia:<номер>}; адрес объявления другой площадки; {@code null} —
      * адрес не годится (длиннее поля внешнего id).
      */
-    private static String externalId(String url) {
+    static String externalId(String url) {
         Matcher portal = PORTAL_OFFER.matcher(url);
         if (portal.find()) {
             return portal.group(1);

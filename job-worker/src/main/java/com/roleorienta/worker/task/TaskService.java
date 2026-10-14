@@ -100,6 +100,19 @@ public class TaskService {
     }
 
     /**
+     * Идёт ли цепочка: есть незавершённое задание типа с ключом, начинающимся на {@code chainPrefix}, менявшееся за
+     * сутки (как в {@link #startChain(String, String, String, String)}). Нужно, когда перед первым заданием цепочки
+     * надо что-то записать (номер обхода, стенограмма §105).
+     *
+     * @param type        тип задания
+     * @param chainPrefix начало ключей заданий цепочки
+     * @return идёт ли цепочка
+     */
+    public boolean hasActiveChain(String type, String chainPrefix) {
+        return taskRepository.hasActive(type, chainPrefix, CHAIN_STALE_AFTER);
+    }
+
+    /**
      * Ключи незавершённых заданий типа — чтобы не ставить второе задание на ту же работу (чтение источника).
      *
      * @param type тип задания

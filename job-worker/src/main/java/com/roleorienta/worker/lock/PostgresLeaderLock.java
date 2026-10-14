@@ -24,7 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
  * 1008 — постановка загрузки справочника GeoNames ({@code GeoImportTick}); 1009 — планирование
  * прохода выдачи ({@code PassTick}); 1010 — постановка работы с государственным порталом ({@code StatePortalTick}); 1011 — постановка шага
  * «Wikidata» поиска сайта ({@code WikidataSiteTick}); 1012 — постановка шага «адрес по названию»
- * ({@code SiteNameTick}); 1013 — постановка шага «число сотрудников из RÚZ» ({@code CompanySizeTick}).</p>
+ * ({@code SiteNameTick}); 1013 — постановка шага «число сотрудников из RÚZ» ({@code CompanySizeTick}); 1014 —
+ * лента и полный обход общего списка портала ({@code PortalListTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {
