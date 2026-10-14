@@ -133,6 +133,9 @@ class BoardDiscoveryTests {
         taskService.enqueue(BoardDiscoveryHandler.TYPE, BoardDiscoveryHandler.taskKey("test"),
                 BoardDiscoveryHandler.payload());
         for (int round = 0; round < MAX_TASK_ROUNDS; round++) {
+            // продолжение цепочки ждёт начала следующего часа (квота, §101) — в тесте ставится сразу
+            jdbcTemplate.update("UPDATE task SET state = 'QUEUED', next_attempt_at = NULL "
+                    + "WHERE state = 'WAITING' AND last_error IS NULL");
             List<Long> queued = jdbcTemplate.queryForList("SELECT id FROM task WHERE state = 'QUEUED' ORDER BY id",
                     Long.class);
             if (queued.isEmpty()) {

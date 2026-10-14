@@ -36,13 +36,13 @@ import org.springframework.stereotype.Component;
  *       (по 200 работодателей) за задание, записывается в {@code portal_employer}; раз в неделю.</li>
  *   <li>{@code check} — по {@link StatePortalProperties.Task#checksPerTask()} работодателей, которые есть в
  *       реестре, не агентства и без своего источника: есть ли у них вакансии на портале (вместе с
- *       объявлениями площадок, привязанными к IČO). Есть — подключается источник портала. Каждый день,
- *       пока есть работодатели к проверке; повтор — через {@link StatePortalProperties#recheckAfter()}.</li>
+ *       объявлениями площадок, привязанными к IČO). Есть — подключается источник портала. Одно задание в час
+ *       (квота, §101), пока есть работодатели к проверке; повтор — через {@link StatePortalProperties#recheckAfter()}.</li>
  *   <li>{@code site} — у работодателей портала, которые есть в реестре, действуют, из активной страны сбора, в том
  *       числе с уже найденным сайтом (§93; §74: без условия о подключённом портале; шаг 2 алгоритма поиска
  *       сайта версии 3): сайт из детали их вакансии на портале («Internetová adresa» полным адресом, иначе
  *       домен контактной почты с проверкой сайта) записывается сайтом компании; его проверяет поиск
- *       кадровой страницы (своя кадровая страница важнее портала). Каждый день.</li>
+ *       кадровой страницы (своя кадровая страница важнее портала). Одно задание в час (квота, §101).</li>
  * </ol>
  *
  * <p>Отказ страницы списка — повтор задания с того же места; отказ по одному работодателю, когда остальные
@@ -207,7 +207,7 @@ public class StatePortalHandler implements TaskHandler {
         }
         failed.forEach(repository::markChecked);
         if (outOfTime || due.size() == properties.task().checksPerTask()) {
-            next(CHECK, period, round + 1);
+            nextHour(CHECK, period, round + 1);
         }
         return new TaskOutcome.Done();
     }
@@ -243,7 +243,7 @@ public class StatePortalHandler implements TaskHandler {
         }
         failed.forEach(employer -> repository.recordSite(employer, null));
         if (outOfTime || due.size() == properties.task().checksPerTask()) {
-            next(SITE, period, round + 1);
+            nextHour(SITE, period, round + 1);
         }
         return new TaskOutcome.Done();
     }
@@ -290,6 +290,11 @@ public class StatePortalHandler implements TaskHandler {
 
     private void next(String step, String period, int position) {
         taskService.enqueue(TYPE, key(step, period, position), payload(step, period, position));
+    }
+
+    /** Продолжение проверки и поиска сайта — в следующем часу: квота в час — размер задания (§101). */
+    private void nextHour(String step, String period, int position) {
+        taskService.enqueueNextHour(TYPE, key(step, period, position), payload(step, period, position));
     }
 
     private static String key(String step, String period, int position) {

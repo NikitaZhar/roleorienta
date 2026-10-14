@@ -21,12 +21,12 @@ import org.springframework.stereotype.Component;
 /**
  * Задание {@code COMPANY_SIZE} — число сотрудников компаний Словакии из RÚZ ({@link RuzClient}; технический
  * документ §5.1): по {@link CompanySizeProperties#companiesPerTask()} компаний за задание записывается нижняя граница
- * категории размера; взято полное число — следующее задание цепочки. Первый проход по всем компаниям — дни (два
- * запроса на компанию, пауза на хост), дальше — только компании, спрошенные давнее срока.
+ * категории размера; взято полное число — следующее задание цепочки в следующем часу (квота в час — размер задания,
+ * §101). Дальше — только компании, спрошенные давнее срока.
  *
  * <p>RÚZ не ответил по компании — она остаётся к запросу следующим заданием; не ответил ни разу за задание —
  * повтор задания позже. Нет разрешения в {@code source_permission} — задание ничего не делает. Задание не дольше
- * {@link CompanySizeProperties#taskTimeBudget()}: дальше — следующее задание цепочки (иначе при медленном RÚZ
+ * {@link CompanySizeProperties#taskTimeBudget()}: дальше — следующее задание цепочки в следующем часу (иначе при медленном RÚZ
  * задание выходило за аренду и перезапускалось без конца; стенограмма §70).</p>
  */
 @Component
@@ -104,7 +104,7 @@ public class CompanySizeHandler implements TaskHandler {
             return new TaskOutcome.Retry("RÚZ not answering", Duration.ZERO);
         }
         if (due.size() == properties.companiesPerTask() || asked < due.size()) {
-            taskService.enqueue(TYPE, key(period, round + 1), payload(period, round + 1));
+            taskService.enqueueNextHour(TYPE, key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();
     }

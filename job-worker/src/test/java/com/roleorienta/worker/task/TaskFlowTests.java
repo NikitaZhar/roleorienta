@@ -354,6 +354,31 @@ class TaskFlowTests {
     }
 
     /**
+     * Продолжение цепочки поиска ждёт начала следующего часа (квота в час, §101): без события outbox, перепостановка
+     * до срока его не ставит; ожидающее продолжение держит цепочку — вторая не запускается.
+     */
+    @Test
+    void continuationWaitsForNextHourAndHoldsChain() {
+        assertThat(taskService.enqueueNextHour("CHAIN", "chain:day-1:2", PAYLOAD)).isTrue();
+        assertThat(taskService.enqueueNextHour("CHAIN", "chain:day-1:2", PAYLOAD)).isFalse();
+        long taskId = taskId("chain:day-1:2");
+
+        assertThat(state(taskId)).isEqualTo("WAITING");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT next_attempt_at > now() AND next_attempt_at <= now() + interval '1 hour'
+                       AND next_attempt_at = date_trunc('hour', next_attempt_at)
+                FROM task WHERE id = ?""", Boolean.class, taskId)).isTrue();
+        assertThat(unpublishedEvents(taskId)).isZero();
+        assertThat(taskService.requeueDue()).isZero();
+        assertThat(taskService.startChain("CHAIN", "chain:day-2:1", PAYLOAD)).isFalse();
+
+        jdbcTemplate.update("UPDATE task SET next_attempt_at = now() - interval '1 second' WHERE id = ?", taskId);
+        assertThat(taskService.requeueDue()).isEqualTo(1);
+        assertThat(state(taskId)).isEqualTo("QUEUED");
+        assertThat(unpublishedEvents(taskId)).isEqualTo(1);
+    }
+
+    /**
      * Исключение обработчика: задание FAILED, исключение пробрасывается; через брокер сообщение
      * уходит в DLQ.
      */

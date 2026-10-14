@@ -29,7 +29,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>За задание — до {@value #EMPLOYERS_PER_TASK} работодателей (до семи запросов на работодателя с паузой 1 с на
  * хост); после срока задания ({@code app.state-portal.profesia-task-time-budget}) новые работодатели не начинаются —
- * задание укладывается в аренду (аудит §84). Взято полное число или срок вышел — следующее задание. Работодатель
+ * задание укладывается в аренду (аудит §84). Взято полное число или срок вышел — следующее задание в следующем часу
+ * (квота в час — размер задания, §101). Работодатель
  * отмечается проверенным, когда ссылка найдена или её нет, и берётся снова через
  * {@link StatePortalProperties#recheckAfter()}; временный отказ profesia.sk — работодатель не отмечается, задание
  * повторяется позже; с третьего повтора такой работодатель отмечается без ссылки (аудит §84).</p>
@@ -118,7 +119,7 @@ public class ProfesiaSiteHandler implements TaskHandler {
         }
         LOG.info("Profesia company pages: {} employers, {} sites or career pages found", done, found);
         if (due.size() == EMPLOYERS_PER_TASK || done < due.size()) {
-            taskService.enqueue(TYPE, key(day, round + 1), payload(day, round + 1));
+            taskService.enqueueNextHour(TYPE, key(day, round + 1), payload(day, round + 1));
         }
         return new TaskOutcome.Done();
     }

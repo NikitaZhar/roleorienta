@@ -32,7 +32,8 @@ import org.springframework.stereotype.Component;
  * если вакансии на портале и на profesia.sk различаются). Нулевой круг читает карту сайта profesia.sk
  * ({@code sitemap.php}, объявлена в robots.txt): объявления {@code /praca/<работодатель>/O<номер>} — по первому на
  * работодателя; работодатель сопоставляется компании реестра по названию ({@code company.name_slug}, только
- * однозначно). Следующие круги — до {@value #EMPLOYERS_PER_TASK} сопоставленных работодателей: объявление → страница
+ * однозначно). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
+ * работодателей: объявление → страница
  * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaPages#find}), запись сайта компании (источник
  * и подтверждение {@code PROFESIA}). Компании, у которых сайт со страницы profesia.sk уже есть (шаг 2 или этот),
  * не берутся. profesia.sk — только путь к сайту: вакансии с неё не читаются.
@@ -160,7 +161,7 @@ public class ProfesiaListHandler implements TaskHandler {
         }
         LOG.info("Profesia employer list: {} employers, {} sites or career pages found", done, found);
         if (due.size() == EMPLOYERS_PER_TASK || done < due.size()) {
-            taskService.enqueue(TYPE, key(day, round + 1), payload(day, round + 1));
+            taskService.enqueueNextHour(TYPE, key(day, round + 1), payload(day, round + 1));
         }
         return new TaskOutcome.Done();
     }

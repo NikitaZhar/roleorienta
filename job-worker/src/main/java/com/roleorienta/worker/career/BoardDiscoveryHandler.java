@@ -50,7 +50,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>За задание — {@link CareerProperties#boardsPerTask()} блоков или досок, но проверка досок — не
  * дольше {@link CareerProperties#checkTimeBudget()} (задание укладывается в аренду), дальше — следующее
- * задание. Common Crawl временно не отвечает — проверка найденных досок продолжается по последнему
+ * задание в следующем часу (квота в час — размер задания, §101). Common Crawl временно не отвечает — проверка найденных досок продолжается по последнему
  * записанному обходу; чтение блоков индекса — повтор задания.</p>
  */
 @Component
@@ -178,8 +178,9 @@ public class BoardDiscoveryHandler implements TaskHandler {
         }
     }
 
+    /** Продолжение — в следующем часу: квота в час — размер задания (§101). */
     private void enqueue(String suffix) {
-        taskService.enqueue(TYPE, taskKey(suffix), PAYLOAD);
+        taskService.enqueueNextHour(TYPE, taskKey(suffix), PAYLOAD);
     }
 
     /**

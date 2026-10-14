@@ -35,7 +35,8 @@ import org.springframework.stereotype.Component;
  * доказательство ({@code evidence_url}) — конечный адрес ответа.</p>
  *
  * <p>Компании — приоритетные (эталон, §71), с признаком найма или с 10+ сотрудниками (RÚZ), по {@link SiteNameProperties#companiesPerTask()} за задание; взято полное
- * число или вышел срок {@link SiteNameProperties#timeBudget()} — следующее задание цепочки (§97; первая компания
+ * число или вышел срок {@link SiteNameProperties#timeBudget()} — следующее задание цепочки в следующем часу (квота в
+ * час — размер задания, §101; §97; первая компания
  * проверяется всегда — цепочка продвигается при любом сроке, §100). Задание идёт в
  * свою очередь: проверка одной компании — до 36 адресов.
  * Временный отказ адреса пропускается: компания перепроверяется через срок.</p>
@@ -112,7 +113,7 @@ public class SiteNameHandler implements TaskHandler {
         }
         LOG.info("Sites by name: {} of {} companies checked, {} sites found", checked, due.size(), found);
         if (outOfTime || due.size() == properties.companiesPerTask()) {
-            taskService.enqueue(TYPE, key(period, round + 1), payload(period, round + 1));
+            taskService.enqueueNextHour(TYPE, key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();
     }

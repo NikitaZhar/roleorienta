@@ -42,7 +42,8 @@ import org.springframework.stereotype.Component;
  *       компании из реестра — подтверждённый сайт этой компании. Больше трёх разных IČO на
  *       странице — каталог чужих организаций, страница ничего не подтверждает.</li>
  *   <li>Находки блока и отметка «просмотрен» — одна транзакция; за задание не больше
- *       {@link CommonCrawlProperties#blocksPerTask()} блоков, дальше — следующее задание.</li>
+ *       {@link CommonCrawlProperties#blocksPerTask()} блоков, дальше — следующее задание в следующем часу (квота в
+ *       час — размер задания, §101).</li>
  * </ol>
  *
  * <p>Список обходов не получен — скан продолжается по последнему записанному обходу. Common Crawl
@@ -130,7 +131,7 @@ public class SiteScanHandler implements TaskHandler {
                 scan(crawl, block);
             }
             if (blocks.size() == properties.blocksPerTask()) {
-                taskService.enqueue(TYPE, taskKey(crawl + ":" + blocks.get(blocks.size() - 1).seq()), PAYLOAD);
+                taskService.enqueueNextHour(TYPE, taskKey(crawl + ":" + blocks.get(blocks.size() - 1).seq()), PAYLOAD);
             } else {
                 LOG.info("Common Crawl {}: site scan finished, {} companies without site", crawl,
                         repository.recordSitesNotFound());

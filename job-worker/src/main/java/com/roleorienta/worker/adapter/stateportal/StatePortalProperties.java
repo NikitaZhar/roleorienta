@@ -30,7 +30,7 @@ public record StatePortalProperties(
      * @param timeBudget    после этого срока новые работодатели не начинаются — следующее задание цепочки
      */
     public record Task(
-            @DefaultValue("150") int checksPerTask,
+            @DefaultValue("20") int checksPerTask,
             @DefaultValue("5m") Duration timeBudget) {
     }
 }

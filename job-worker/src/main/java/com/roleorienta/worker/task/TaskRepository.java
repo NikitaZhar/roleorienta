@@ -30,6 +30,23 @@ public class TaskRepository {
     }
 
     /**
+     * Создаёт задание в состоянии WAITING со сроком — начало следующего часа по часам БД, если задания с таким ключом
+     * ещё нет. В очередь его ставит перепостановка ({@link #claimDue(int)}), когда срок наступит.
+     *
+     * @param type    тип задания
+     * @param taskKey ключ идемпотентности (уникален)
+     * @param payload параметры в JSON
+     * @return {@code true} — задание создано; {@code false} — задание с этим ключом уже есть
+     */
+    public boolean insertNextHourIfAbsent(String type, String taskKey, String payload) {
+        return jdbcTemplate.update("""
+                INSERT INTO task (type, task_key, payload, state, next_attempt_at)
+                VALUES (?, ?, ?::jsonb, 'WAITING', date_trunc('hour', now()) + interval '1 hour')
+                ON CONFLICT (task_key) DO NOTHING
+                """, type, taskKey, payload) > 0;
+    }
+
+    /**
      * Создаёт задание в состоянии QUEUED, если задания с таким ключом ещё нет.
      *
      * @param type    тип задания

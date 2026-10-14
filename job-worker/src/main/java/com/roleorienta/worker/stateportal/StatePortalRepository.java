@@ -56,7 +56,7 @@ public class StatePortalRepository {
      * действуют, не кадровое
      * агентство, у компании ещё нет ни одного источника (своя кадровая страница или уже подключённый
      * портал — один канал на компанию; кадровый сайт группы, роль {@code GROUP}, §81, не в счёт), не проверялись дольше {@code recheckAfter}. Сначала
-     * непроверенные.
+     * приоритетные компании (§71), затем непроверенные.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторной проверки
@@ -71,7 +71,7 @@ public class StatePortalRepository {
                 WHERE c.terminated_on IS NULL AND NOT c.agency
                   AND (p.checked_at IS NULL OR p.checked_at < now() - make_interval(secs => ?))
                   AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id AND cs.role <> 'GROUP')
-                ORDER BY p.checked_at NULLS FIRST, p.registration_number
+                ORDER BY c.priority DESC, p.checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
                 """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
                 (double) recheckAfter.toSeconds(), limit);
@@ -130,7 +130,7 @@ public class StatePortalRepository {
      * (у компании может быть своя кадровая страница или она — агентство; как в скрипте замера, §74) и независимо
      * от того, есть ли у компании уже найденный сайт: адрес, указанный самим работодателем, — основной сайт
      * компании раньше сайтов по названию и из Common Crawl (стенограмма §93); сайт не искали дольше
-     * {@code recheckAfter}. Сначала те, где не искали.
+     * {@code recheckAfter}. Сначала приоритетные компании (§71), затем те, где не искали.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторного поиска
@@ -144,7 +144,7 @@ public class StatePortalRepository {
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
                 WHERE c.terminated_on IS NULL
                   AND (p.site_checked_at IS NULL OR p.site_checked_at < now() - make_interval(secs => ?))
-                ORDER BY p.site_checked_at NULLS FIRST, p.registration_number
+                ORDER BY c.priority DESC, p.site_checked_at NULLS FIRST, p.registration_number
                 LIMIT ?
                 """, (row, number) -> new SiteEmployer(row.getString(1), row.getLong(2), row.getString(3)),
                 (double) recheckAfter.toSeconds(), limit);

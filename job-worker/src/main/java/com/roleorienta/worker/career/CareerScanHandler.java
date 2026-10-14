@@ -69,7 +69,8 @@ import org.springframework.stereotype.Component;
  * </ol>
  *
  * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, проверяемых одновременно (не больше
- * {@code app.career.parallel-sites}, §77), дальше — следующее задание.
+ * {@code app.career.parallel-sites}, §77), дальше — следующее задание в следующем часу (квота в час — размер задания,
+ * §101).
  * Подключённые источники читает общий сбор (раз в сутки).</p>
  */
 @Component
@@ -164,7 +165,7 @@ public class CareerScanHandler implements TaskHandler {
         }
         if (sites.size() == properties.sitesPerTask() || checked.size() < sites.size()) {
             long last = checked.stream().mapToLong(Site::id).max().orElse(sites.get(sites.size() - 1).id());
-            taskService.enqueue(TYPE, continuationKey(day, last), payload(day));
+            taskService.enqueueNextHour(TYPE, continuationKey(day, last), payload(day));
         }
         return new TaskOutcome.Done();
     }

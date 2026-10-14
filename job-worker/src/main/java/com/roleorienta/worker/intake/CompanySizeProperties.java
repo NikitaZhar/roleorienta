@@ -18,7 +18,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("app.company-size")
 public record CompanySizeProperties(
         @DefaultValue("https://www.registeruz.sk/cruz-public/api") URI baseUrl,
-        @DefaultValue("200") int companiesPerTask,
+        @DefaultValue("100") int companiesPerTask,
         @DefaultValue("365d") Duration recheckAfter,
         @DefaultValue("5m") Duration taskTimeBudget) {
 }
