@@ -80,7 +80,14 @@ app:
       robots-exempt-hosts:   # API, к которым robots.txt не применяется — только решением владельца (§10)
         - query.wikidata.org # SPARQL Wikidata: программный доступ по правилам Wikidata (Data access), §49
   collect:
-    read-interval-ms: 3600000  # тик постановки чтений; каждый источник читается раз в сутки
+    read-interval-ms: 3600000  # тик постановки чтений; источник читается, когда с начала его чтения прошло read-after
+    read-after: 23h            # чтение не реже раза в сутки по времени, а не по дате (§103)
+    shared-host-interval-ms: 5000  # тик следующего чтения провайдеров с общим хостом (§103)
+    shared-host-providers:     # один хост на все источники — читаются по одному, держат не больше одного обработчика
+      - sluzbyzamestnanosti    # государственный портал (www.sluzbyzamestnanosti.gov.sk)
+      - greenhouse             # boards-api.greenhouse.io
+      - smartrecruiters        # careers.smartrecruiters.com, jobs.smartrecruiters.com
+      - nalgoo                 # ats.nalgoo.com
     read-enabled: true         # false — постановка чтений выключена (тесты)
     max-content-requests-per-read: 200  # потолок запросов текста за чтение; Workday ~0,5 с на запрос
     max-checks-per-read: 200   # потолок проверок пропавших из списка с фильтром по стране за чтение

@@ -319,7 +319,7 @@ class StatePortalTests {
                     """, number, StatePortalAdapter.PROVIDER, number);
         }
 
-        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER).stream()
+        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
                 .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
 
         assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + EMPLOYER, "greenhouse:own-page-test")

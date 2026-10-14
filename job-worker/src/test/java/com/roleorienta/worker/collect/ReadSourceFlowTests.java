@@ -93,7 +93,7 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * У источника есть незавершённое чтение за прошлый день — сегодняшнее не ставится (стенограмма §95): чтения
+     * У источника есть незавершённое чтение за прошлый день — новое не ставится (стенограмма §95): чтения
      * одного источника не копятся и не идут параллельно.
      */
     @Test
@@ -102,7 +102,7 @@ class ReadSourceFlowTests {
                 ReadSourceHandler.TYPE, "read:" + source.getId() + ":2000-01-01",
                 ReadSourceHandler.payload(source.getId()));
 
-        planner.enqueueToday();
+        planner.continueSharedHosts();
 
         assertThat(count("task")).isEqualTo(1);
     }
@@ -117,22 +117,22 @@ class ReadSourceFlowTests {
                 ReadSourceHandler.TYPE, "read:" + source.getId() + ":2000-01-01",
                 ReadSourceHandler.payload(source.getId()));
 
-        planner.enqueueToday();
+        planner.continueSharedHosts();
 
         assertThat(count("task")).isEqualTo(2);
     }
 
     /**
      * Первое чтение создаёт по вакансии на публикацию, полный обход и снимок ответа (объект в
-     * MinIO, ссылка с хешем в БД); повторная постановка в тот же день ничего не добавляет. Источник без компании
+     * MinIO, ссылка с хешем в БД); повторная постановка, пока чтение в очереди, ничего не добавляет. Источник без компании
      * получает название работодателя от системы найма (аудит §65).
      */
     @Test
     void firstReadCreatesVacancies() {
         STUB.respondWithJobs("101", "Java Developer", "102", "QA Engineer");
 
-        planner.enqueueToday();
-        planner.enqueueToday();
+        planner.continueSharedHosts();
+        planner.continueSharedHosts();
         executor.execute(onlyTaskId());
 
         assertThat(taskState()).isEqualTo("DONE");
@@ -149,6 +149,53 @@ class ReadSourceFlowTests {
                 .asUtf8String()).contains("Java Developer");
         assertThat(jdbcTemplate.queryForObject("SELECT employer_name FROM source", String.class))
                 .isEqualTo("Acme Corp");
+    }
+
+    /**
+     * Общий хост (Greenhouse): в очереди одно чтение за раз; следующий источник ставится, когда предыдущее чтение
+     * завершилось или ждёт повтора; прочитанный меньше {@code read-after} назад не ставится (§103).
+     */
+    @Test
+    void sharedHostReadsOneSourceAtATime() {
+        Source second = sources.save(new Source(GreenhouseAdapter.PROVIDER, "second-board"));
+
+        planner.continueSharedHosts();
+        planner.continueSharedHosts();
+        assertThat(count("task")).isEqualTo(1);
+
+        jdbcTemplate.update("UPDATE task SET state = 'WAITING', next_attempt_at = now() + interval '1 hour', "
+                + "last_error = 'timeout'");
+        planner.continueSharedHosts();
+        assertThat(jdbcTemplate.queryForList("SELECT task_key FROM task WHERE state = 'QUEUED'", String.class))
+                .singleElement().asString().startsWith("read:" + second.getId() + ":");
+
+        jdbcTemplate.update("UPDATE task SET state = 'DONE'");
+        insertRun(source, "now() - interval '1 hour'");
+        insertRun(second, "now() - interval '1 hour'");
+        planner.continueSharedHosts();
+        assertThat(count("task")).isEqualTo(2);
+    }
+
+    /**
+     * Источник без общего хоста ставится раз в час, если его последнее чтение началось {@code read-after} (23 ч) назад
+     * или раньше; прочитанный позже не ставится. Источники общего хоста этот тик не ставит (§103).
+     */
+    @Test
+    void sourceIsReadWhenLastReadIsOlderThanReadAfter() {
+        Source recent = sources.save(new Source("workday", "recent.wd3.myworkdayjobs.com/en-US/careers"));
+        Source old = sources.save(new Source("workday", "old.wd3.myworkdayjobs.com/en-US/careers"));
+        insertRun(recent, "now() - interval '22 hours'");
+        insertRun(old, "now() - interval '23 hours 1 minute'");
+
+        planner.enqueueDue();
+
+        assertThat(jdbcTemplate.queryForList("SELECT task_key FROM task", String.class))
+                .singleElement().asString().startsWith("read:" + old.getId() + ":");
+    }
+
+    private void insertRun(Source read, String startedAt) {
+        jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, postings_count) "
+                + "VALUES (?, " + startedAt + ", " + startedAt + ", 'COMPLETE', 0)", read.getId());
     }
 
     /**

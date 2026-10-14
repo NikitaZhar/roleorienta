@@ -9,7 +9,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Периодический запуск {@link ReadSourcePlanner#enqueueToday()} под leader-lock. Выключается
+ * Периодический запуск постановки чтений под leader-lock: {@link ReadSourcePlanner#enqueueDue()} — раз в час,
+ * {@link ReadSourcePlanner#continueSharedHosts()} — часто (следующее чтение общего хоста, §103). Выключается
  * свойством {@code app.collect.read-enabled=false}.
  */
 @Component
@@ -39,9 +40,21 @@ public class ReadSourceTick {
     @Scheduled(fixedDelayString = "${app.collect.read-interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, planner::enqueueToday);
+            leaderLock.runIfLeader(LOCK_KEY, planner::enqueueDue);
         } catch (DataAccessException exception) {
             LOG.warn("Read source tick failed, will retry on next tick", exception);
+        }
+    }
+
+    /**
+     * Тик чтений провайдеров с общим хостом. Ошибка БД не прерывает расписание.
+     */
+    @Scheduled(fixedDelayString = "${app.collect.shared-host-interval-ms:5000}")
+    public void sharedHostTick() {
+        try {
+            leaderLock.runIfLeader(LOCK_KEY, planner::continueSharedHosts);
+        } catch (DataAccessException exception) {
+            LOG.warn("Shared host read tick failed, will retry on next tick", exception);
         }
     }
 }

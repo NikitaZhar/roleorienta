@@ -17,6 +17,7 @@ import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -93,7 +94,7 @@ class ReadSourceHandlerTests {
         when(sources.findById(1L)).thenReturn(Optional.of(source));
         CrawlRun run = CrawlRun.start(source, 1, Instant.EPOCH);
         when(recorder.startRun(source, 1)).thenReturn(run);
-        return new ReadSourceHandler(sources, adapters, recorder, new CollectProperties(1, 2),
+        return new ReadSourceHandler(sources, adapters, recorder, new CollectProperties(1, 2, Duration.ofHours(23), List.of()),
                 mock(SnapshotStore.class));
     }
 
