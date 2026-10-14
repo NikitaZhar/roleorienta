@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Под leader-lock ставит работу с государственным порталом: список работодателей — раз в неделю
- * (ключ — неделя ISO, например {@code 2026-W40}), проверку работодателей, поиск сайта и шаг «страница компании на
+ * (ключ — неделя ISO, например {@code 2026-W40}), поиск сайта и шаг «страница компании на
  * profesia.sk» (§82) и «список работодателей profesia.sk» (§83) — раз в день. Повторный тик в
  * той же неделе или дне ничего не добавляет. Выключается свойством {@code app.state-portal.enabled=false}.
  */
@@ -58,7 +58,6 @@ public class StatePortalTick {
         try {
             leaderLock.runIfLeader(LOCK_KEY, () -> {
                 handler.enqueueList(week);
-                handler.enqueueCheck(today.toString());
                 handler.enqueueSite(today.toString());
                 profesia.enqueue(today.toString());
                 profesiaList.enqueue(today.toString());

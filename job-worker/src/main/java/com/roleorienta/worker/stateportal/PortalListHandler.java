@@ -5,16 +5,21 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.PortalOffer;
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch.OfferPage;
+import com.roleorienta.worker.source.Source;
+import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import java.time.Duration;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -37,7 +42,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Срок задания ({@link PortalListProperties#timeBudget()}) ограничивает и поиск IČO: вышел — найденное записывается,
  * страница дочитывается в следующем часу. Отказ первой страницы задания — повтор задания; отказ следующей — продолжение
- * с неё в следующем часу. В источники вакансии пока не пишутся (срез 4б).</p>
+ * с неё в следующем часу.</p>
+ *
+ * <p>В источники портала (§107): завершённый обход — подключение новых работодателей и полное чтение каждого источника
+ * портала; лента — неполное чтение работодателей с новыми вакансиями ({@link PortalRecordHandler}).</p>
  */
 @Component
 public class PortalListHandler implements TaskHandler {
@@ -54,19 +62,22 @@ public class PortalListHandler implements TaskHandler {
 
     private final StatePortalSearch search;
     private final PortalListRepository repository;
+    private final SourceRepository sources;
     private final TaskService taskService;
     private final PortalListProperties properties;
 
     /**
      * @param search      общий список портала и поиск работодателей
-     * @param repository  вакансии, обходы, IČO по названию
+     * @param repository  вакансии, обходы, IČO по названию, подключение работодателей
+     * @param sources     источники портала к записи (правило «один канал на компанию»)
      * @param taskService постановка заданий
      * @param properties  размер страницы и задания, срок между обходами
      */
-    public PortalListHandler(StatePortalSearch search, PortalListRepository repository, TaskService taskService,
-            PortalListProperties properties) {
+    public PortalListHandler(StatePortalSearch search, PortalListRepository repository, SourceRepository sources,
+            TaskService taskService, PortalListProperties properties) {
         this.search = search;
         this.repository = repository;
+        this.sources = sources;
         this.taskService = taskService;
         this.properties = properties;
     }
@@ -92,7 +103,7 @@ public class PortalListHandler implements TaskHandler {
      */
     public boolean enqueueFeed(String hour) {
         return taskService.enqueue(TYPE, "portal-list:feed:" + hour,
-                JSON.createObjectNode().put("mode", FEED).toString());
+                JSON.createObjectNode().put("mode", FEED).put("hour", hour).toString());
     }
 
     @Override
@@ -109,7 +120,10 @@ public class PortalListHandler implements TaskHandler {
             if (page.isEmpty()) {
                 return new TaskOutcome.Retry("State portal list not read", Duration.ZERO);
             }
-            save(page.get().offers(), null, deadline, 0);
+            List<PortalOffer> offers = page.get().offers();
+            Set<String> fresh = repository.newExternalIds(offers.stream().map(PortalOffer::externalId).toList());
+            save(offers, null, deadline, 0);
+            recordNewOffers(fresh, payload.path("hour").asText());
             return new TaskOutcome.Done();
         }
         return cycle(payload.path("cycle").asLong(), payload.path("page").asInt(1), payload.path("from").asInt(0),
@@ -142,12 +156,66 @@ public class PortalListHandler implements TaskHandler {
                 return next(cycle, page, stopped);
             }
             if (found.get().records() < properties.pageSize()) {
+                recordCycle(cycle);
                 repository.completeCycle(cycle);
                 LOG.info("State portal list cycle {} completed: {} pages", cycle, page);
                 return new TaskOutcome.Done();
             }
         }
         return next(cycle, firstPage + properties.pagesPerTask(), 0);
+    }
+
+    /**
+     * Завершённый обход: работодателям с вакансиями без источника подключается источник портала, затем каждому
+     * источнику портала к чтению (один канал на компанию) — полное чтение из общего списка ({@link PortalRecordHandler}).
+     * Вызывается до отметки «обход завершён»: сбой здесь оставляет обход незавершённым, и следующий тик начинает новый,
+     * а не теряет полное чтение завершённого (ключи заданий не дают повтора).
+     */
+    private void recordCycle(long cycle) {
+        List<PortalListRepository.NewEmployer> employers = repository.employersToConnect(cycle);
+        employers.forEach(repository::connect);
+        int recorded = 0;
+        for (Source source : portalSources()) {
+            recorded += taskService.enqueue(PortalRecordHandler.TYPE, recordKeyPrefix(source) + "c" + cycle,
+                    PortalRecordHandler.payload(source.getId(), cycle, true)) ? 1 : 0;
+        }
+        LOG.info("State portal list cycle {}: {} employers connected, {} sources to record", cycle, employers.size(),
+                recorded);
+    }
+
+    /**
+     * Лента: работодателям с новыми вакансиями (с IČO, источник портала к чтению есть) — неполное чтение из общего
+     * списка: новые вакансии видны в течение часа. Источник, у которого запись ещё в очереди или выполняется (полное
+     * чтение после обхода), пропускается: записи одного источника не идут параллельно (§94, §95), а новые вакансии
+     * войдут в его запись — она берёт всё, что видели с начала обхода.
+     */
+    private void recordNewOffers(Set<String> fresh, String hour) {
+        Optional<Long> cycle = repository.lastCycle();
+        Set<String> boards = new HashSet<>(repository.knownNumbers(List.copyOf(fresh)).values());
+        if (cycle.isEmpty() || boards.isEmpty()) {
+            return;
+        }
+        Set<String> pending = new HashSet<>(taskService.activeKeys(PortalRecordHandler.TYPE).stream()
+                .map(key -> key.substring(0, key.lastIndexOf(':') + 1)).toList());
+        for (Source source : portalSources()) {
+            if (boards.contains(source.getBoard()) && !pending.contains(recordKeyPrefix(source))) {
+                taskService.enqueue(PortalRecordHandler.TYPE, recordKeyPrefix(source) + "f" + hour,
+                        PortalRecordHandler.payload(source.getId(), cycle.get(), false));
+            }
+        }
+    }
+
+    /**
+     * Источники портала к чтению: правило «один канал на компанию» — как у чтения источников
+     * ({@link SourceRepository#findToRead}, срок с прошлого чтения не учитывается).
+     */
+    private List<Source> portalSources() {
+        return sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+                .filter(source -> StatePortalAdapter.PROVIDER.equals(source.getProvider())).toList();
+    }
+
+    private static String recordKeyPrefix(Source source) {
+        return "portal-record:" + source.getId() + ":";
     }
 
     private TaskOutcome next(long cycle, int page, int from) {

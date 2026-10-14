@@ -15,12 +15,12 @@ import org.springframework.stereotype.Service;
 /**
  * Ставит чтения источников (технический документ §17; стенограмма §103). Источник читается, когда его последнее
  * чтение началось раньше {@link CollectProperties#readAfter()} назад (или его ещё не читали) — не реже раза в сутки
- * по времени, а не раз в календарную дату. Источник государственного портала не ставится, если у компании есть своя
- * кадровая страница (один канал на компанию, бизнес-описание §4.1). Источник с незавершённым чтением (в очереди,
+ * по времени, а не раз в календарную дату. Источники государственного портала не ставятся: их вакансии записываются из
+ * общего списка портала (стенограмма §107). Источник с незавершённым чтением (в очереди,
  * выполняется, ждёт повтора) не ставится снова: чтения одного источника не копятся и не идут параллельно (§94, §95).
  * Ключ задания — {@code read:<источник>:<дата и час>}.
  *
- * <p>Провайдеры с общим хостом ({@link CollectProperties#sharedHostProviders()}: портал, Greenhouse …) читаются по
+ * <p>Провайдеры с общим хостом ({@link CollectProperties#sharedHostProviders()}: Greenhouse, SmartRecruiters …) читаются по
  * одному источнику за раз: следующий ставится, когда у провайдера нет чтения в очереди и в работе. Поэтому общий хост
  * с вежливостью 1 запрос/с держит не больше одного обработчика очереди сбора, остальные источники его не ждут.
  * Чтение, ждущее повтора, очередь провайдера не держит.</p>
@@ -54,13 +54,15 @@ public class ReadSourcePlanner {
 
     /**
      * Ставит чтение каждого источника, которому пора читаться, кроме источников провайдеров с общим хостом (их ставит
-     * {@link #continueSharedHosts()}). Вызывается тиком раз в час.
+     * {@link #continueSharedHosts()}) и источников портала (их вакансии записываются из общего списка —
+     * {@code PortalRecordHandler}, стенограмма §107). Вызывается тиком раз в час.
      */
     public void enqueueDue() {
         Set<String> pending = taskService.activeKeys(ReadSourceHandler.TYPE).stream()
                 .map(ReadSourcePlanner::sourcePrefix).collect(Collectors.toSet());
         for (Source source : sources.findToRead(StatePortalAdapter.PROVIDER, readAfterSeconds())) {
-            if (!properties.sharedHostProviders().contains(source.getProvider())
+            if (!StatePortalAdapter.PROVIDER.equals(source.getProvider())
+                    && !properties.sharedHostProviders().contains(source.getProvider())
                     && !pending.contains(KEY_PREFIX + source.getId() + ":")) {
                 enqueue(source);
             }

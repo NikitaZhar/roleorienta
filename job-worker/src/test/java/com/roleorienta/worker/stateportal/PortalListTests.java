@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
+import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
@@ -20,6 +21,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +48,14 @@ class PortalListTests {
     private static final String SEARCHED = "Searched a. s.";
     private static final String DETAIL = "Detail spol.";
     private static final String NOBODY = "Nobody";
+    /** Работодатель {@link #SEARCHED} — кадровое агентство: источник портала не подключается. */
+    private static final String AGENCY_NUMBER = "90000012";
+    /** Работодатель {@link #DETAIL} — со своей кадровой страницей: источник портала не подключается. */
+    private static final String OWN_PAGE_NUMBER = "00000123";
+    private static final String OWN_PAGE_BOARD = "own-page-list-test";
+    private static final String PORTAL_SOURCES = "SELECT id FROM source WHERE provider = 'sluzbyzamestnanosti'";
+    /** {@link #UUID_E} пропала из списка портала. */
+    private static volatile boolean withoutE;
     private static final String UUID_A = "0a0a0a0a-1111-4111-8111-000000000001";
     private static final String UUID_C = "0a0a0a0a-1111-4111-8111-000000000003";
     private static final String UUID_E = "0a0a0a0a-1111-4111-8111-000000000005";
@@ -80,6 +90,9 @@ class PortalListTests {
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private SourceRepository sources;
 
     @Autowired
     private TaskExecutor executor;
@@ -120,6 +133,42 @@ class PortalListTests {
                 LISTED);
         NAME_SEARCHES.set(0);
         DETAILS.set(0);
+        withoutE = false;
+        cleanUpSources();
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
+        for (String number : List.of(LISTED_NUMBER, AGENCY_NUMBER, OWN_PAGE_NUMBER)) {
+            jdbcTemplate.update("""
+                    INSERT INTO company (country, registration_number, name, registry, agency)
+                    VALUES ('SK', ?, ?, 'RPO', ?)
+                    ON CONFLICT (country, registration_number) DO UPDATE SET agency = EXCLUDED.agency,
+                                                                             terminated_on = NULL
+                    """, number, "Company " + number, AGENCY_NUMBER.equals(number));
+        }
+        jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES ('greenhouse', ?, 'SK')",
+                OWN_PAGE_BOARD);
+        jdbcTemplate.update("""
+                INSERT INTO company_source (company_id, source_id, role)
+                SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
+                WHERE c.registration_number = ? AND s.board = ?
+                """, OWN_PAGE_NUMBER, OWN_PAGE_BOARD);
+    }
+
+    /**
+     * Источники портала и их вакансии, связи компаний теста — не остаются другим тестам (внешние ключи источника).
+     */
+    @AfterEach
+    void cleanUpSources() {
+        jdbcTemplate.update("DELETE FROM vacancy_revision WHERE job_posting_id IN (SELECT id FROM job_posting "
+                + "WHERE source_id IN (" + PORTAL_SOURCES + "))");
+        jdbcTemplate.update("DELETE FROM crawl_run WHERE source_id IN (" + PORTAL_SOURCES + ")");
+        jdbcTemplate.update("WITH gone AS (DELETE FROM job_posting WHERE source_id IN (" + PORTAL_SOURCES
+                + ") RETURNING vacancy_id) DELETE FROM vacancy WHERE id IN (SELECT vacancy_id FROM gone)");
+        String companies = "SELECT id FROM company WHERE registration_number IN ('" + LISTED_NUMBER + "', '"
+                + AGENCY_NUMBER + "', '" + OWN_PAGE_NUMBER + "')";
+        jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (" + companies + ")");
+        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (" + companies + ")");
+        jdbcTemplate.update("DELETE FROM source WHERE provider = 'sluzbyzamestnanosti' OR board = ?", OWN_PAGE_BOARD);
     }
 
     /**
@@ -146,12 +195,72 @@ class PortalListTests {
     }
 
     /**
+     * Завершённый обход: источник портала подключён работодателю из реестра ({@link #LISTED}), но не агентству и не
+     * компании со своей кадровой страницей; его вакансии записаны полным чтением (§107).
+     */
+    @Test
+    void completedCycleConnectsEmployersAndRecordsFullRead() {
+        handler.startCycleIfDue();
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("SELECT s.board || ':' || c.registration_number FROM company_source cs "
+                + "JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id "
+                + "WHERE s.provider = 'sluzbyzamestnanosti'", String.class))
+                .containsExactly(LISTED_NUMBER + ":" + LISTED_NUMBER);
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":ACTIVE");
+        assertThat(jdbcTemplate.queryForList("SELECT state FROM crawl_run WHERE source_id IN (" + PORTAL_SOURCES + ")",
+                String.class)).containsExactly("COMPLETE");
+    }
+
+    /**
+     * Вакансия, которой нет в трёх полных обходах подряд, закрыта; остальные — актуальны (§107).
+     */
+    @Test
+    void offerMissingFromThreeCyclesIsClosed() {
+        handler.startCycleIfDue();
+        runQueuedTasks();
+        withoutE = true;
+
+        for (int cycle = 0; cycle < 3; cycle++) {
+            jdbcTemplate.update("UPDATE portal_cycle SET started_at = started_at - interval '1 day'");
+            assertThat(handler.startCycleIfDue()).isTrue();
+            runQueuedTasks();
+        }
+
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":CLOSED");
+    }
+
+    /**
+     * Лента после обхода: новая вакансия работодателя с источником портала записана сразу неполным чтением
+     * ({@code NEW_OFFERS}) — отсутствие других не засчитывается (§107).
+     */
+    @Test
+    void feedRecordsNewOffersAsPartialRead() {
+        handler.startCycleIfDue();
+        runQueuedTasks();
+
+        handler.enqueueFeed("2026-10-14T12");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("SELECT external_id FROM job_posting WHERE source_id IN ("
+                + PORTAL_SOURCES + ")", String.class)).containsExactlyInAnyOrder(UUID_A, UUID_E, UUID_F);
+        assertThat(jdbcTemplate.queryForList("SELECT state || ':' || coalesce(partial_reason, '-') FROM crawl_run "
+                + "WHERE source_id IN (" + PORTAL_SOURCES + ") ORDER BY id", String.class))
+                .containsExactly("COMPLETE:-", "PARTIAL:NEW_OFFERS");
+    }
+
+    private List<String> postings() {
+        return jdbcTemplate.queryForList("SELECT p.external_id || ':' || v.state FROM job_posting p "
+                + "JOIN vacancy v ON v.id = p.vacancy_id WHERE p.source_id IN (" + PORTAL_SOURCES + ")", String.class);
+    }
+
+    /**
      * Срок задания вышел (0 с): определяется IČO одной вакансии, найденное записано, та же страница — продолжением в
      * следующем часу с другим ключом; поиска работодателей по названию в этом задании нет (§106).
      */
     @Test
     void outOfTimeTaskStopsSearchingAndContinuesSamePage() {
-        PortalListHandler noTime = new PortalListHandler(search, repository, taskService,
+        PortalListHandler noTime = new PortalListHandler(search, repository, sources, taskService,
                 new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
         long cycle = repository.startCycle();
 
@@ -172,7 +281,7 @@ class PortalListTests {
      */
     @Test
     void continuationStartsWhereThePreviousPartStopped() {
-        PortalListHandler noTime = new PortalListHandler(search, repository, taskService,
+        PortalListHandler noTime = new PortalListHandler(search, repository, sources, taskService,
                 new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
         long cycle = repository.startCycle();
 
@@ -266,8 +375,9 @@ class PortalListTests {
                 } else {
                     int size = Integer.parseInt(query.replaceAll(".*pageSize=(\\d+).*", "$1"));
                     int page = Integer.parseInt(query.replaceAll(".*pageNr=(\\d+).*", "$1"));
-                    int from = Math.min((page - 1) * size, OLDEST.size());
-                    records = OLDEST.subList(from, Math.min(from + size, OLDEST.size()));
+                    List<String> oldest = withoutE ? OLDEST.subList(0, OLDEST.size() - 1) : OLDEST;
+                    int from = Math.min((page - 1) * size, oldest.size());
+                    records = oldest.subList(from, Math.min(from + size, oldest.size()));
                 }
                 respond(exchange, "{\"countVPM\":" + OLDEST.size() + ",\"pracovnePonuky\":["
                         + String.join(",", records) + "]}");

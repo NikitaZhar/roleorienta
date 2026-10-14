@@ -83,7 +83,7 @@ public class StatePortalSearch {
         List<PortalOffer> offers = new ArrayList<>();
         for (JsonNode record : body.get().path("pracovnePonuky")) {
             boolean external = record.path("priznakZdroj").asInt() == EXTERNAL_SOURCE;
-            String url = external ? text(record, "urlExternyPortal")
+            String url = external ? withProtocol(text(record, "urlExternyPortal"))
                     : properties.baseUrl() + "/pracovne-ponuky/" + text(record, "uuid");
             String externalId = url == null ? null : StatePortalAdapter.externalId(url);
             String title = text(record, "nazovPracovnehoMiesta");
@@ -166,6 +166,14 @@ public class StatePortalSearch {
      */
     private static String eightDigits(String number) {
         return "0".repeat(NUMBER_LENGTH - number.length()) + number;
+    }
+
+    /**
+     * Адрес объявления площадки со схемой, как в ссылке карточки портала (скрипт страницы, {@code formatUrlWithProtocol}):
+     * без схемы — {@code https://}; так id объявления совпадает с прочитанным прежде со страницы работодателя.
+     */
+    private static String withProtocol(String url) {
+        return url == null || url.matches("(?i)https?://.*") ? url : "https://" + url;
     }
 
     private static String text(JsonNode node, String field) {

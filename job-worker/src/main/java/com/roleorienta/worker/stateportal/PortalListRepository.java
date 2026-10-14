@@ -1,18 +1,24 @@
 package com.roleorienta.worker.stateportal;
 
 import com.roleorienta.worker.adapter.stateportal.PortalOffer;
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
+import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.sql.Array;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Общий список вакансий портала в БД (стенограмма §105): полные обходы ({@code portal_cycle}), вакансии
@@ -168,6 +174,110 @@ public class PortalListRepository {
                         return offers.size();
                     }
                 });
+    }
+
+    /**
+     * Вакансии страницы, которых ещё нет в {@code portal_offer}, — новые для ленты «новые сверху».
+     *
+     * @param externalIds id вакансий страницы
+     * @return id новых вакансий
+     */
+    public Set<String> newExternalIds(List<String> externalIds) {
+        Set<String> known = new HashSet<>();
+        jdbcTemplate.query("SELECT external_id FROM portal_offer WHERE external_id = ANY(?)",
+                (PreparedStatement statement) -> statement.setArray(1, textArray(statement, externalIds)),
+                row -> {
+                    known.add(row.getString(1));
+                });
+        Set<String> fresh = new HashSet<>(externalIds);
+        fresh.removeAll(known);
+        return fresh;
+    }
+
+    /**
+     * Номер последнего обхода, завершённого или идущего.
+     *
+     * @return номер; пусто — обходов не было
+     */
+    public Optional<Long> lastCycle() {
+        return jdbcTemplate.queryForList("SELECT max(id) FROM portal_cycle", Long.class).stream()
+                .filter(Objects::nonNull).findFirst();
+    }
+
+    /**
+     * Работодатели с вакансиями обхода, которым подключается источник портала (бизнес-описание §4.1, «один канал на
+     * компанию»): IČO вакансии, которую видели с начала обхода, есть в реестре (страна — активная страна сбора),
+     * компания действует, не кадровое агентство и не имеет своего источника (кадровый сайт группы, роль
+     * {@code GROUP}, §81, не в счёт). Прежде то же решал шаг «проверка работодателей» (§45, удалён §107).
+     *
+     * @param cycle номер обхода
+     * @return работодатели с компанией
+     */
+    public List<NewEmployer> employersToConnect(long cycle) {
+        return jdbcTemplate.query("""
+                SELECT DISTINCT o.registration_number, c.id FROM portal_offer o
+                JOIN company c ON c.country = 'SK'
+                     AND c.registration_number IN (o.registration_number, ltrim(o.registration_number, '0'))
+                JOIN collection_country cc ON cc.country = c.country AND cc.active
+                WHERE o.last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
+                  AND c.terminated_on IS NULL AND NOT c.agency
+                  AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id AND cs.role <> 'GROUP')
+                """, (row, number) -> new NewEmployer(row.getString(1), row.getLong(2)), cycle);
+    }
+
+    /**
+     * Подключает работодателю источник портала (доска — IČO) при записанном основании использования
+     * ({@code source_permission}), связывает компанию с ним как работодателя, итог компании — «подключена»
+     * ({@code company_check}). Одна транзакция; повторный вызов дублей не создаёт.
+     *
+     * @param employer работодатель с компанией
+     */
+    @Transactional
+    public void connect(NewEmployer employer) {
+        jdbcTemplate.update("""
+                INSERT INTO source (provider, board, country) SELECT ?, ?, 'SK'
+                WHERE EXISTS (SELECT 1 FROM source_permission WHERE scope = 'PROVIDER' AND provider = ?
+                              AND decision = 'ALLOW')
+                ON CONFLICT (provider, board) DO NOTHING
+                """, StatePortalAdapter.PROVIDER, employer.registrationNumber(), StatePortalAdapter.PROVIDER);
+        int linked = jdbcTemplate.update("""
+                INSERT INTO company_source (company_id, source_id, role)
+                SELECT ?, id, 'EMPLOYER' FROM source WHERE provider = ? AND board = ?
+                ON CONFLICT DO NOTHING
+                """, employer.companyId(), StatePortalAdapter.PROVIDER, employer.registrationNumber());
+        if (linked > 0) {
+            jdbcTemplate.update("""
+                    INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                    VALUES (?, 'CONNECTED', now(), now())
+                    ON CONFLICT (company_id) DO UPDATE SET result = 'CONNECTED', checked_at = now()
+                    """, employer.companyId());
+        }
+    }
+
+    /**
+     * Публикации источника портала из общего списка: вакансии работодателя, которые видели с начала обхода (полным
+     * обходом или лентой).
+     *
+     * @param registrationNumber IČO работодателя (доска источника)
+     * @param cycle              номер обхода
+     * @return публикации без текста (деталь не читается — отбор по названию, как прежде)
+     */
+    public List<FetchedPosting> postingsOf(String registrationNumber, long cycle) {
+        return jdbcTemplate.query("""
+                SELECT external_id, title, url, place FROM portal_offer
+                WHERE registration_number = ? AND last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
+                ORDER BY external_id
+                """, (row, number) -> new FetchedPosting(row.getString(1), row.getString(2), row.getString(3),
+                        row.getString(4), null), registrationNumber, cycle);
+    }
+
+    /**
+     * Работодатель общего списка, найденный в реестре.
+     *
+     * @param registrationNumber IČO
+     * @param companyId          компания реестра
+     */
+    public record NewEmployer(String registrationNumber, long companyId) {
     }
 
     private static Array textArray(PreparedStatement statement, List<String> values) throws SQLException {

@@ -52,79 +52,6 @@ public class StatePortalRepository {
     }
 
     /**
-     * Работодатели портала к проверке: есть в реестре (Словакия, по IČO; страна — активная страна сбора),
-     * действуют, не кадровое
-     * агентство, у компании ещё нет ни одного источника (своя кадровая страница или уже подключённый
-     * портал — один канал на компанию; кадровый сайт группы, роль {@code GROUP}, §81, не в счёт), не проверялись дольше {@code recheckAfter}. Сначала
-     * приоритетные компании (§71), затем непроверенные.
-     *
-     * @param limit        не больше
-     * @param recheckAfter срок до повторной проверки
-     * @return работодатели с компанией
-     */
-    public List<DueEmployer> employersToCheck(int limit, Duration recheckAfter) {
-        return jdbcTemplate.query("""
-                SELECT p.registration_number, c.id FROM portal_employer p
-                JOIN company c ON c.country = 'SK'
-                     AND c.registration_number IN (p.registration_number, ltrim(p.registration_number, '0'))
-                JOIN collection_country cc ON cc.country = c.country AND cc.active
-                WHERE c.terminated_on IS NULL AND NOT c.agency
-                  AND (p.checked_at IS NULL OR p.checked_at < now() - make_interval(secs => ?))
-                  AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id AND cs.role <> 'GROUP')
-                ORDER BY c.priority DESC, p.checked_at NULLS FIRST, p.registration_number
-                LIMIT ?
-                """, (row, number) -> new DueEmployer(row.getString(1), row.getLong(2)),
-                (double) recheckAfter.toSeconds(), limit);
-    }
-
-    /**
-     * Отметка «проверяли» без итога: работодатель, по которому портал не ответил, берётся снова через срок
-     * перепроверки.
-     *
-     * @param registrationNumber IČO, как на портале
-     */
-    public void markChecked(String registrationNumber) {
-        jdbcTemplate.update("UPDATE portal_employer SET checked_at = now() WHERE registration_number = ?",
-                registrationNumber);
-    }
-
-    /**
-     * Итог проверки работодателя одной транзакцией. Вакансии есть — источник портала (доска — IČO)
-     * подключается при записанном основании использования ({@code source_permission}), компания
-     * связывается с ним как работодатель и получает итог «подключена» ({@code company_check}).
-     * Повторный вызов дублей не создаёт.
-     *
-     * @param employer  работодатель с компанией
-     * @param hasOffers есть ли вакансии на портале
-     */
-    @Transactional
-    public void recordCheck(DueEmployer employer, boolean hasOffers) {
-        jdbcTemplate.update("UPDATE portal_employer SET checked_at = now(), has_offers = ? WHERE registration_number = ?",
-                hasOffers, employer.registrationNumber());
-        if (!hasOffers) {
-            return;
-        }
-        jdbcTemplate.update("""
-                INSERT INTO source (provider, board, country) SELECT ?, ?, 'SK'
-                WHERE EXISTS (SELECT 1 FROM source_permission WHERE scope = 'PROVIDER' AND provider = ?
-                              AND decision = 'ALLOW')
-                ON CONFLICT (provider, board) DO NOTHING
-                """, StatePortalAdapter.PROVIDER, employer.registrationNumber(), StatePortalAdapter.PROVIDER);
-        int linked = jdbcTemplate.update("""
-                INSERT INTO company_source (company_id, source_id, role)
-                SELECT ?, id, 'EMPLOYER' FROM source WHERE provider = ? AND board = ?
-                ON CONFLICT DO NOTHING
-                """, employer.companyId(), StatePortalAdapter.PROVIDER, employer.registrationNumber());
-        if (linked > 0) {
-            jdbcTemplate.update("""
-                    INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
-                    VALUES (?, 'CONNECTED', now(), now())
-                    ON CONFLICT (company_id) DO UPDATE SET result = 'CONNECTED', checked_at = now()
-                    """, employer.companyId());
-        }
-    }
-
-    /**
      * Работодатели портала к поиску сайта (§47): работодатель из списка портала есть в реестре (по IČO;
      * страна — активная страна сбора) и действует — независимо от того, подключён ли к компании источник портала
      * (у компании может быть своя кадровая страница или она — агентство; как в скрипте замера, §74) и независимо
@@ -349,14 +276,5 @@ public class StatePortalRepository {
      * @param proof       способ подтверждения ({@code company_site.proof})
      */
     public record FoundSite(String host, String startUrl, String evidenceUrl, String proof) {
-    }
-
-    /**
-     * Работодатель портала, найденный в реестре.
-     *
-     * @param registrationNumber IČO, как на портале
-     * @param companyId          компания реестра
-     */
-    public record DueEmployer(String registrationNumber, long companyId) {
     }
 }

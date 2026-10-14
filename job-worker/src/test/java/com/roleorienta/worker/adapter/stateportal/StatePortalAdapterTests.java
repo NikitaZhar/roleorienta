@@ -1,12 +1,10 @@
 package com.roleorienta.worker.adapter.stateportal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.roleorienta.worker.adapter.SourceReadResult;
-import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.TestHttpClients;
-import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -24,9 +22,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Адаптер государственного портала на заглушке (разметка — как у портала на 2026-10-02): вакансии
- * работодателя — свои и объявления profesia.sk, страницами до объявленного числа; неполный список;
- * наличие вакансий; список работодателей.
+ * Адаптер государственного портала на заглушке (разметка — как у портала на 2026-10-02): список работодателей, сайт
+ * работодателя из детали его вакансии; чтение по работодателю не применяется (§107).
  */
 class StatePortalAdapterTests {
 
@@ -63,7 +60,7 @@ class StatePortalAdapterTests {
                 employerPages.getOrDefault(param(exchange, "pageNr"), "<html><body><main></main></body></html>")));
         server.start();
         adapter = new StatePortalAdapter(httpClient, new StatePortalProperties(
-                "http://127.0.0.1:" + server.getAddress().getPort(), 2, 20,
+                "http://127.0.0.1:" + server.getAddress().getPort(), 2,
                 new StatePortalProperties.Task(150, Duration.ofMinutes(5)), Duration.ofDays(7)));
     }
 
@@ -79,55 +76,11 @@ class StatePortalAdapterTests {
     }
 
     /**
-     * Три вакансии на двух страницах: своя вакансия портала (uuid, адрес без параметров поиска, место) и
-     * объявления profesia.sk ({@code profesia:<номер>}); прочитано столько, сколько объявлено, — полное
-     * чтение.
+     * Чтение источника портала по работодателю не применяется (вакансии — из общего списка, §107): вызов — ошибка кода.
      */
     @Test
-    void readsPortalAndPlatformOffersUpToDeclaredCount() {
-        offerPages.put(KIA + ":1", offers(3, portalOffer("4f4762a0-b1ff-4955-91e1-a89792eddd81",
-                "Riadiaci pracovník (manažér) v oblasti obchodu"), profesiaOffer("5354969", "Nákupca dielov")));
-        offerPages.put(KIA + ":2", offers(3, profesiaOffer("5354970", "Technológ lisovne")));
-
-        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(KIA);
-
-        assertThat(read.complete()).isTrue();
-        assertThat(read.postings()).extracting(FetchedPosting::externalId)
-                .containsExactly("4f4762a0-b1ff-4955-91e1-a89792eddd81", "profesia:5354969", "profesia:5354970");
-        assertThat(read.postings().get(0)).isEqualTo(new FetchedPosting("4f4762a0-b1ff-4955-91e1-a89792eddd81",
-                "Riadiaci pracovník (manažér) v oblasti obchodu (muž/žena)",
-                "http://127.0.0.1:" + server.getAddress().getPort()
-                        + "/pracovne-ponuky/4f4762a0-b1ff-4955-91e1-a89792eddd81",
-                "Teplička nad Váhom - Žilina", null));
-        assertThat(read.postings().get(1).url()).isEqualTo("https://www.profesia.sk/O5354969");
-    }
-
-    /**
-     * Список кончился раньше объявленного числа — неполное чтение: закрывать по нему нельзя.
-     */
-    @Test
-    void shortListIsPartial() {
-        offerPages.put(KIA + ":1", offers(5, profesiaOffer("1", "A"), profesiaOffer("2", "B")));
-
-        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(KIA);
-
-        assertThat(read.complete()).isFalse();
-        assertThat(read.partialReason()).isEqualTo(PartialReason.LIST_ENDED_EARLY);
-        assertThat(read.postings()).hasSize(2);
-    }
-
-    /**
-     * Нет вакансий — пустое полное чтение; наличие вакансий — по объявленному числу; не IČO — запроса нет.
-     */
-    @Test
-    void answersWhetherEmployerHasOffers() {
-        offerPages.put(KIA + ":1", offers(1, profesiaOffer("1", "A")));
-
-        assertThat(((SourceReadResult.Read) adapter.read("12345678")).postings()).isEmpty();
-        assertThat(adapter.hasPostingsIn(KIA, "SK")).contains(true);
-        assertThat(adapter.hasPostingsIn("12345678", "SK")).contains(false);
-        assertThat(adapter.hasPostingsIn("Kia", "SK")).isEmpty();
-        assertThat(adapter.read("Kia")).isInstanceOf(SourceReadResult.Unavailable.class);
+    void readByEmployerIsNotUsed() {
+        assertThatThrownBy(() -> adapter.read(KIA)).isInstanceOf(UnsupportedOperationException.class);
     }
 
     /**

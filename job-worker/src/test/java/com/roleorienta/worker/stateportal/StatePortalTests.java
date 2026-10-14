@@ -15,7 +15,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,15 +36,15 @@ import org.springframework.test.context.DynamicPropertySource;
 @Import(TestcontainersConfiguration.class)
 class StatePortalTests {
 
-    /** С вакансиями, в реестре — подключается. */
+    /** В реестре, со своей вакансией портала — её деталь даёт сайт. */
     private static final String EMPLOYER = "90000001";
-    /** С вакансиями, кадровое агентство — не подключается. */
+    /** Кадровое агентство. */
     private static final String AGENCY = "90000002";
-    /** С вакансиями, есть своя кадровая страница — не проверяется. */
+    /** Есть своя кадровая страница. */
     private static final String OWN_PAGE = "90000003";
-    /** Без вакансий — проверен, не подключается. */
+    /** В реестре, без вакансий. */
     private static final String NO_OFFERS = "90000004";
-    /** С вакансиями, нет в реестре — не проверяется. */
+    /** Нет в реестре. */
     private static final String NOT_REGISTERED = "90000005";
     private static final List<String> NUMBERS = List.of(EMPLOYER, AGENCY, OWN_PAGE, NO_OFFERS, NOT_REGISTERED);
     private static final int MAX_TASK_ROUNDS = 10;
@@ -60,10 +59,6 @@ class StatePortalTests {
     private static volatile String website;
     /** Сайт по домену почты временно не отвечает (503). */
     private static volatile boolean mailSiteDown;
-    /** Есть в реестре и в списке портала, но портал на его список вакансий отвечает 500. */
-    private static final String FAILING = "90000006";
-    private static final Map<String, Integer> OFFERS = Map.of(EMPLOYER, 2, AGENCY, 1, OWN_PAGE, 3,
-            NOT_REGISTERED, 1);
     private static final HttpServer PORTAL = startPortal();
 
     @Autowired
@@ -136,29 +131,15 @@ class StatePortalTests {
     }
 
     /**
-     * Список работодателей записан целиком; источник портала (доска — IČO) подключён только работодателю
-     * из реестра с вакансиями, не агентству и без своей кадровой страницы; итог компании — «подключена».
+     * Список работодателей портала записан целиком (подключение источников — общим списком, §107).
      */
     @Test
-    void connectsRegisteredEmployersWithOffers() {
+    void writesEmployerList() {
         handler.enqueueList("test");
-        runQueuedTasks();
-        handler.enqueueCheck("test");
         runQueuedTasks();
 
         assertThat(jdbcTemplate.queryForList("SELECT registration_number FROM portal_employer ORDER BY 1", String.class))
                 .containsExactlyElementsOf(NUMBERS);
-        assertThat(jdbcTemplate.queryForList("""
-                SELECT registration_number || ':' || has_offers FROM portal_employer
-                WHERE checked_at IS NOT NULL ORDER BY 1
-                """, String.class)).containsExactly(EMPLOYER + ":true", NO_OFFERS + ":false");
-        assertThat(jdbcTemplate.queryForList("""
-                SELECT c.registration_number || ':' || s.board || ':' || cs.role || ':' || ch.result
-                FROM company_source cs JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id
-                JOIN company_check ch ON ch.company_id = c.id
-                WHERE s.provider = ?
-                """, String.class, StatePortalAdapter.PROVIDER)).containsExactly(
-                EMPLOYER + ":" + EMPLOYER + ":EMPLOYER:CONNECTED");
     }
 
     /**
@@ -182,8 +163,6 @@ class StatePortalTests {
     @Test
     void portalSiteClearsSiteNotFound() {
         handler.enqueueList("test");
-        runQueuedTasks();
-        handler.enqueueCheck("test");
         runQueuedTasks();
         jdbcTemplate.update("""
                 INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
@@ -234,31 +213,6 @@ class StatePortalTests {
     }
 
     /**
-     * Портал не ответил по одному работодателю, остальные проверены: он отмечается проверенным без итога и
-     * берётся снова через срок перепроверки — не застревает в начале очереди (аудит §54).
-     */
-    @Test
-    void marksEmployerCheckedWhenPortalFailsForIt() {
-        jdbcTemplate.update("""
-                INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, 'Failing', 'RPO')
-                ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL
-                """, FAILING);
-        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company "
-                + "WHERE registration_number = ?)", FAILING);
-        handler.enqueueList("test");
-        runQueuedTasks();
-        jdbcTemplate.update("INSERT INTO portal_employer (registration_number, name, listed_at) VALUES (?, 'Failing', now())",
-                FAILING);
-        handler.enqueueCheck("test");
-        runQueuedTasks();
-
-        assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NOT NULL AND has_offers IS NULL "
-                + "FROM portal_employer WHERE registration_number = ?", Boolean.class, FAILING)).isTrue();
-        assertThat(jdbcTemplate.queryForObject("SELECT has_offers FROM portal_employer WHERE registration_number = ?",
-                Boolean.class, EMPLOYER)).isTrue();
-    }
-
-    /**
      * Сайт по домену почты временно не отвечает: сайт не записан, работодатель отмечен «искали» — повтор через
      * срок перепроверки, а не следующим заданием (аудит §54).
      */
@@ -287,8 +241,6 @@ class StatePortalTests {
 
     private void runSiteStep() {
         handler.enqueueList("test");
-        runQueuedTasks();
-        handler.enqueueCheck("test");
         runQueuedTasks();
         handler.enqueueSite("test");
         runQueuedTasks();
@@ -341,8 +293,8 @@ class StatePortalTests {
     }
 
     /**
-     * Заглушка портала: список работодателей — одна страница со всеми IČO; вакансии работодателя —
-     * объявленное число из {@link #OFFERS} (нет — ноль); сайт по домену почты — {@code /site/<хост>/}.
+     * Заглушка портала: список работодателей — одна страница со всеми IČO; у {@link #EMPLOYER} в списке вакансий —
+     * своя вакансия портала {@link #OFFER_UUID}; сайт по домену почты — {@code /site/<хост>/}.
      */
     private static HttpServer startPortal() {
         try {
@@ -371,15 +323,9 @@ class StatePortalTests {
                 }
                 String query = exchange.getRequestURI().getQuery();
                 String number = query.replaceAll(".*firma=(\\d{8}).*", "$1");
-                if (FAILING.equals(number)) {
-                    exchange.sendResponseHeaders(500, -1);
-                    exchange.close();
-                    return;
-                }
                 String offer = EMPLOYER.equals(number) ? "<a href=\"/pracovne-ponuky/" + OFFER_UUID + "\">"
                         + "<h3 class=\"govuk-signpost__title\">Účtovník</h3></a>" : "";
-                respond(exchange, "<html><body><main><span>" + OFFERS.getOrDefault(number, 0)
-                        + " pracovných ponúk,</span>" + offer + "</main></body></html>");
+                respond(exchange, "<html><body><main>" + offer + "</main></body></html>");
             });
             server.createContext("/site/" + MAIL_SITE + "/", exchange -> {
                 if (mailSiteDown) {

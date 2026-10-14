@@ -21,6 +21,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record CollectProperties(@DefaultValue("200") int maxContentRequestsPerRead,
         @DefaultValue("200") int maxChecksPerRead,
         @DefaultValue("23h") Duration readAfter,
-        @DefaultValue({"sluzbyzamestnanosti", "greenhouse", "smartrecruiters", "nalgoo"})
+        @DefaultValue({"greenhouse", "smartrecruiters", "nalgoo"})
         List<String> sharedHostProviders) {
 }
