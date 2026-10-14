@@ -12,9 +12,11 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,8 +28,13 @@ import org.springframework.stereotype.Component;
  *   <li>после завершённого полного обхода — полное чтение: вакансии, которой нет, засчитывается отсутствие (закрытие
  *       — после N полных чтений подряд, то есть N обходов);</li>
  *   <li>после ленты «новые сверху» с новыми вакансиями работодателя — неполное ({@link PartialReason#NEW_OFFERS}):
- *       новые вакансии появляются сразу, отсутствие не засчитывается.</li>
+ *       новые вакансии появляются сразу, отсутствие не засчитывается;</li>
+ *   <li>после обхода с пропущенной страницей — неполное ({@link PartialReason#PAGE_FAILED}, §109).</li>
  * </ul>
+ *
+ * <p>Две записи одного источника одновременно (полная после обхода и неполная ленты) могут добавить одну и ту же
+ * публикацию; вторая упирается в уникальность {@code (source_id, external_id)}, её транзакция откатывается — задание
+ * повторяется позже, а не теряется (§109).</p>
  */
 @Component
 public class PortalRecordHandler implements TaskHandler {
@@ -57,12 +64,12 @@ public class PortalRecordHandler implements TaskHandler {
      *
      * @param sourceId источник портала
      * @param cycle    номер обхода: вакансии, которые видели с его начала
-     * @param complete полное чтение (завершённый обход) или неполное (лента)
+     * @param partial  причина неполного чтения; {@code null} — полное (завершённый обход без пропущенных страниц)
      * @return JSON параметров
      */
-    public static String payload(long sourceId, long cycle, boolean complete) {
-        return JSON.createObjectNode().put("sourceId", sourceId).put("cycle", cycle).put("complete", complete)
-                .toString();
+    public static String payload(long sourceId, long cycle, PartialReason partial) {
+        return JSON.createObjectNode().put("sourceId", sourceId).put("cycle", cycle)
+                .put("partial", partial == null ? null : partial.name()).toString();
     }
 
     @Override
@@ -79,9 +86,14 @@ public class PortalRecordHandler implements TaskHandler {
         }
         Source source = found.get();
         List<FetchedPosting> postings = repository.postingsOf(source.getBoard(), payload.path("cycle").asLong());
+        String partial = payload.path("partial").asText(null);
         CrawlRun run = recorder.startRun(source, task.id());
-        run.read(postings.size(), payload.path("complete").asBoolean() ? null : PartialReason.NEW_OFFERS);
-        recorder.record(run, postings, Set.of());
+        run.read(postings.size(), partial == null ? null : PartialReason.valueOf(partial));
+        try {
+            recorder.record(run, postings, Set.of());
+        } catch (DataIntegrityViolationException concurrent) {
+            return new TaskOutcome.Retry("Concurrent record of source " + source.getId(), Duration.ZERO);
+        }
         return new TaskOutcome.Done();
     }
 

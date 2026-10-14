@@ -9,6 +9,8 @@ import com.roleorienta.worker.outbox.OutboxPublisher;
 import com.roleorienta.worker.outbox.OutboxRepository;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,6 +50,9 @@ class TaskFlowTests {
     private static final String TEST_TYPE = "TEST";
     private static final String PAYLOAD = "{}";
     private static final Duration AWAIT_TIMEOUT = Duration.ofSeconds(10);
+
+    /** Исполнители с подменённым захватом — закрываются после теста. */
+    private final List<TaskExecutor> claimExecutors = new ArrayList<>();
     private static final long POLL_MILLIS = 100;
     private static final long RECEIVE_TIMEOUT_MS = 5000;
     /** Дольше аренды теста (3 с): без продления задание за это время было бы перепоставлено. */
@@ -104,11 +109,14 @@ class TaskFlowTests {
     }
 
     /**
-     * Потребитель остановлен после каждого теста (в профиле test он не стартует сам).
+     * Потребитель остановлен после каждого теста (в профиле test он не стартует сам); исполнители с подменённым
+     * захватом закрыты — их пул продления аренды не остаётся (аудит §109).
      */
     @AfterEach
     void stopListener() {
         listenerRegistry.stop();
+        claimExecutors.forEach(TaskExecutor::destroy);
+        claimExecutors.clear();
     }
 
     /**
@@ -528,7 +536,9 @@ class TaskFlowTests {
                 return claim.get();
             }
         };
-        return new TaskExecutor(repository, claims, handlers, properties, Duration.ofMinutes(1));
+        TaskExecutor claimExecutor = new TaskExecutor(repository, claims, handlers, properties, Duration.ofMinutes(1));
+        claimExecutors.add(claimExecutor);
+        return claimExecutor;
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

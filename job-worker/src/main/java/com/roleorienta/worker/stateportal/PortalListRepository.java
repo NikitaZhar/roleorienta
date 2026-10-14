@@ -6,7 +6,6 @@ import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.sql.Array;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -140,18 +139,15 @@ public class PortalListRepository {
      *
      * @param offers  вакансии страницы
      * @param numbers id вакансии → IČO (нет — не определён)
-     * @param cycle   номер полного обхода; {@code null} — лента «новые сверху» (номер обхода у вакансии не меняется)
      */
-    public void saveOffers(List<PortalOffer> offers, Map<String, String> numbers, Long cycle) {
+    public void saveOffers(List<PortalOffer> offers, Map<String, String> numbers) {
         jdbcTemplate.batchUpdate("""
-                INSERT INTO portal_offer (external_id, employer_name, registration_number, title, place, url,
-                                          last_seen_cycle)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO portal_offer (external_id, employer_name, registration_number, title, place, url)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (external_id) DO UPDATE SET
                     employer_name = EXCLUDED.employer_name,
                     registration_number = coalesce(EXCLUDED.registration_number, portal_offer.registration_number),
-                    title = EXCLUDED.title, place = EXCLUDED.place, url = EXCLUDED.url, last_seen_at = now(),
-                    last_seen_cycle = coalesce(EXCLUDED.last_seen_cycle, portal_offer.last_seen_cycle)
+                    title = EXCLUDED.title, place = EXCLUDED.place, url = EXCLUDED.url, last_seen_at = now()
                 """, new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement statement, int index) throws SQLException {
@@ -162,11 +158,6 @@ public class PortalListRepository {
                         statement.setString(4, offer.title());
                         statement.setString(5, offer.place());
                         statement.setString(6, offer.url());
-                        if (cycle == null) {
-                            statement.setNull(7, Types.BIGINT);
-                        } else {
-                            statement.setLong(7, cycle);
-                        }
                     }
 
                     @Override
@@ -177,21 +168,43 @@ public class PortalListRepository {
     }
 
     /**
-     * Вакансии страницы, которых ещё нет в {@code portal_offer}, — новые для ленты «новые сверху».
+     * Отмечает в обходе пропущенную страницу (портал её стабильно не отдаёт): обход станет неполным.
+     *
+     * @param cycle номер обхода
+     */
+    public void skipPage(long cycle) {
+        jdbcTemplate.update("UPDATE portal_cycle SET skipped_pages = skipped_pages + 1 WHERE id = ?", cycle);
+    }
+
+    /**
+     * @param cycle номер обхода
+     * @return пропущены ли в обходе страницы (обход неполный)
+     */
+    public boolean hasSkippedPages(long cycle) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT skipped_pages > 0 FROM portal_cycle WHERE id = ?", Boolean.class, cycle));
+    }
+
+    /**
+     * IČO работодателей, у которых вакансия из {@code externalIds} определена, но ещё не записана в их источник портала
+     * (провайдер портала, доска — IČO): для ленты «новые сверху». Вакансия, IČO которой определился не в тот час,
+     * когда она появилась, записывается с ближайшей лентой, пока она на первой странице. Вакансия со ссылкой не
+     * http(s) не берётся: запись публикаций её пропускает, и лента писала бы работодателю каждый час (§109).
      *
      * @param externalIds id вакансий страницы
-     * @return id новых вакансий
+     * @return IČO работодателей
      */
-    public Set<String> newExternalIds(List<String> externalIds) {
-        Set<String> known = new HashSet<>();
-        jdbcTemplate.query("SELECT external_id FROM portal_offer WHERE external_id = ANY(?)",
-                (PreparedStatement statement) -> statement.setArray(1, textArray(statement, externalIds)),
-                row -> {
-                    known.add(row.getString(1));
-                });
-        Set<String> fresh = new HashSet<>(externalIds);
-        fresh.removeAll(known);
-        return fresh;
+    public Set<String> unrecordedNumbers(List<String> externalIds) {
+        return new HashSet<>(jdbcTemplate.query("""
+                SELECT DISTINCT o.registration_number FROM portal_offer o
+                WHERE o.external_id = ANY(?) AND o.registration_number IS NOT NULL AND o.url ~* '^https?://'
+                  AND NOT EXISTS (SELECT 1 FROM job_posting p JOIN source s ON s.id = p.source_id
+                                  WHERE s.provider = ? AND s.board = o.registration_number
+                                    AND p.external_id = o.external_id)
+                """, (PreparedStatement statement) -> {
+                    statement.setArray(1, textArray(statement, externalIds));
+                    statement.setString(2, StatePortalAdapter.PROVIDER);
+                }, (row, number) -> row.getString(1)));
     }
 
     /**

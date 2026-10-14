@@ -8,6 +8,7 @@ import com.roleorienta.worker.adapter.stateportal.PortalOffer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch.OfferPage;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskHandler;
@@ -34,7 +35,7 @@ import org.springframework.stereotype.Component;
  *       закрытия защищают N полных обходов подряд, §108; что эта сортировка — по последнему изменению, проба §104 не
  *       проверяла), по {@link PortalListProperties#pagesPerTask()} за задание — квота в час, продолжение в следующем
  *       часу. В ответе портала записей меньше полной страницы — обход завершён ({@code portal_cycle.completed_at}).</li>
- *   <li>{@code feed} — лента «новые сверху»: первая страница раз в час; номер обхода у вакансий не меняет.</li>
+ *   <li>{@code feed} — лента «новые сверху»: первая страница раз в час.</li>
  * </ol>
  *
  * <p>IČO вакансии (в списке его нет) определяется один раз и хранится у вакансии: по названию работодателя из списка
@@ -59,6 +60,12 @@ public class PortalListHandler implements TaskHandler {
     private static final String FEED = "feed";
     /** Начало ключей цепочки полного обхода. */
     private static final String CYCLE_PREFIX = "portal-list:cycle:";
+    /**
+     * После стольких неудачных попыток задания страница обхода, которую портал не отдаёт, пропускается (§109): при
+     * повторах через 5, 10 и 20 мин — примерно через 35 мин. Долгий отказ всего портала пропускает так страницу за
+     * страницей: обход доходит до конца неполным — закрытий по нему нет (принято).
+     */
+    static final int SKIP_PAGE_AFTER_ATTEMPTS = 3;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(PortalListHandler.class);
 
@@ -123,13 +130,13 @@ public class PortalListHandler implements TaskHandler {
                 return new TaskOutcome.Retry("State portal list not read", Duration.ZERO);
             }
             List<PortalOffer> offers = page.get().offers();
-            Set<String> fresh = repository.newExternalIds(offers.stream().map(PortalOffer::externalId).toList());
-            save(offers, null, deadline, 0);
-            recordNewOffers(fresh, payload.path("hour").asText());
+            save(offers, deadline, 0);
+            recordNewOffers(repository.unrecordedNumbers(offers.stream().map(PortalOffer::externalId).toList()),
+                    payload.path("hour").asText());
             return new TaskOutcome.Done();
         }
         return cycle(payload.path("cycle").asLong(), payload.path("page").asInt(1), payload.path("from").asInt(0),
-                deadline);
+                deadline, task.attempts());
     }
 
     /**
@@ -138,22 +145,29 @@ public class PortalListHandler implements TaskHandler {
      * определить IČO всех вакансий страницы — та же страница дочитывается в следующем часу с вакансии, на которой
      * остановились ({@code from}; и часть ключа — продолжение той же страницы не совпадает с ключом текущего задания,
      * а каждое продолжение начинает дальше прошлого — страница продвигается). Обход завершён, когда в ответе портала
-     * записей меньше полной страницы — по числу записей ответа, а не годных вакансий (§106).
+     * записей меньше полной страницы — по числу записей ответа, а не годных вакансий (§106). Первая страница задания не
+     * отдаётся — повтор задания; после {@link #SKIP_PAGE_AFTER_ATTEMPTS} неудачных попыток страница пропускается, обход становится
+     * неполным (§109): иначе одна стабильно не отдаваемая страница останавливала бы обходы навсегда.
      */
-    private TaskOutcome cycle(long cycle, int firstPage, int from, long deadline) {
+    private TaskOutcome cycle(long cycle, int firstPage, int from, long deadline, int attempts) {
         for (int page = firstPage; page < firstPage + properties.pagesPerTask(); page++) {
             if (page > firstPage && System.nanoTime() - deadline > 0) {
                 return next(cycle, page, 0);
             }
             Optional<OfferPage> found = search.offers(page, properties.pageSize(), false);
             if (found.isEmpty()) {
-                if (page == firstPage) {
+                if (page > firstPage) {
+                    return next(cycle, page, 0);
+                }
+                if (attempts < SKIP_PAGE_AFTER_ATTEMPTS) {
                     return new TaskOutcome.Retry("State portal list page " + page + " not read", Duration.ZERO);
                 }
-                return next(cycle, page, 0);
+                LOG.warn("State portal list cycle {}: page {} skipped after {} attempts", cycle, page, attempts);
+                repository.skipPage(cycle);
+                return next(cycle, page + 1, 0);
             }
             List<PortalOffer> offers = found.get().offers();
-            int stopped = save(offers, cycle, deadline, page == firstPage ? from : 0);
+            int stopped = save(offers, deadline, page == firstPage ? from : 0);
             if (stopped < offers.size()) {
                 return next(cycle, page, stopped);
             }
@@ -169,31 +183,35 @@ public class PortalListHandler implements TaskHandler {
 
     /**
      * Завершённый обход: работодателям с вакансиями без источника подключается источник портала, затем каждому
-     * источнику портала к чтению (один канал на компанию) — полное чтение из общего списка ({@link PortalRecordHandler}).
-     * Вызывается до отметки «обход завершён»: сбой здесь оставляет обход незавершённым, и следующий тик начинает новый,
-     * а не теряет полное чтение завершённого (ключи заданий не дают повтора).
+     * источнику портала к чтению (один канал на компанию) — запись из общего списка ({@link PortalRecordHandler}):
+     * полное чтение, а если в обходе пропущены страницы — неполное ({@link PartialReason#PAGE_FAILED}, отсутствие не
+     * засчитывается). Вызывается до отметки «обход завершён»: сбой здесь оставляет обход незавершённым, и следующий
+     * тик начинает новый с первой страницы (прогресс обхода теряется; любая ошибка БД в задании обхода — тоже),
+     * а не теряет запись завершённого (ключи заданий не дают повтора).
      */
     private void recordCycle(long cycle) {
         List<PortalListRepository.NewEmployer> employers = repository.employersToConnect(cycle);
         employers.forEach(repository::connect);
+        PartialReason reason = repository.hasSkippedPages(cycle) ? PartialReason.PAGE_FAILED : null;
         int recorded = 0;
         for (Source source : portalSources()) {
             recorded += taskService.enqueue(PortalRecordHandler.TYPE, recordKeyPrefix(source) + "c" + cycle,
-                    PortalRecordHandler.payload(source.getId(), cycle, true)) ? 1 : 0;
+                    PortalRecordHandler.payload(source.getId(), cycle, reason)) ? 1 : 0;
         }
         LOG.info("State portal list cycle {}: {} employers connected, {} sources to record", cycle, employers.size(),
                 recorded);
     }
 
     /**
-     * Лента: работодателям с новыми вакансиями (с IČO, источник портала к чтению есть) — неполное чтение из общего
-     * списка: новые вакансии видны в течение часа. Источник, у которого запись ещё в очереди или выполняется (полное
-     * чтение после обхода), пропускается: записи одного источника не идут параллельно (§94, §95), а новые вакансии
-     * войдут в его запись — она берёт всё, что видели с начала обхода.
+     * Лента: работодателям, у которых вакансия первой страницы определена (IČO), но ещё не записана в их источник
+     * портала, — неполное чтение из общего списка ({@link PartialReason#NEW_OFFERS}): новая вакансия видна в течение
+     * часа после того, как определился её IČO (не успели в этом часу — в следующем, пока она на первой странице; §109).
+     * Окно записи — с начала последнего обхода, в том числе идущего. Источник, у которого запись ещё в очереди или
+     * выполняется (полное чтение после обхода), пропускается: записи одного источника не идут параллельно (§94, §95),
+     * а новые вакансии войдут в его запись — она берёт всё, что видели с начала обхода.
      */
-    private void recordNewOffers(Set<String> fresh, String hour) {
+    private void recordNewOffers(Set<String> boards, String hour) {
         Optional<Long> cycle = repository.lastCycle();
-        Set<String> boards = new HashSet<>(repository.knownNumbers(List.copyOf(fresh)).values());
         if (cycle.isEmpty() || boards.isEmpty()) {
             return;
         }
@@ -202,7 +220,7 @@ public class PortalListHandler implements TaskHandler {
         for (Source source : portalSources()) {
             if (boards.contains(source.getBoard()) && !pending.contains(recordKeyPrefix(source))) {
                 taskService.enqueue(PortalRecordHandler.TYPE, recordKeyPrefix(source) + "f" + hour,
-                        PortalRecordHandler.payload(source.getId(), cycle.get(), false));
+                        PortalRecordHandler.payload(source.getId(), cycle.get(), PartialReason.NEW_OFFERS));
             }
         }
     }
@@ -232,7 +250,7 @@ public class PortalListHandler implements TaskHandler {
      *
      * @return позиция первой вакансии, IČO которой не искали из-за срока; размер страницы — искали у всех
      */
-    private int save(List<PortalOffer> offers, Long cycle, long deadline, int from) {
+    private int save(List<PortalOffer> offers, long deadline, int from) {
         Map<String, String> numbers = repository.knownNumbers(offers.stream().map(PortalOffer::externalId).toList());
         boolean searched = false;
         int stopped = offers.size();
@@ -251,7 +269,7 @@ public class PortalListHandler implements TaskHandler {
             number.ifPresent(found -> numbers.put(offer.externalId(), found));
             unresolved += number.isEmpty() ? 1 : 0;
         }
-        repository.saveOffers(offers, numbers, cycle);
+        repository.saveOffers(offers, numbers);
         if (unresolved > 0) {
             LOG.info("State portal list: {} of {} offers without registration number", unresolved, offers.size());
         }

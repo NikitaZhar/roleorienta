@@ -11,8 +11,8 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Работодатели государственного портала ({@code portal_employer}) и подключение их вакансий как
- * источника (технический документ §5.1; бизнес-описание §4.1).
+ * Работодатели государственного портала ({@code portal_employer}), их сайты и страницы компаний на profesia.sk
+ * (технический документ §5.1). Подключение источников портала — {@link PortalListRepository#connect} (§107).
  */
 @Repository
 public class StatePortalRepository {

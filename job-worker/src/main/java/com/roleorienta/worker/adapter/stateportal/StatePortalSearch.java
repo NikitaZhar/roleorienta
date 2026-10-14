@@ -85,8 +85,9 @@ public class StatePortalSearch {
         List<PortalOffer> offers = new ArrayList<>();
         for (JsonNode record : body.get().path("pracovnePonuky")) {
             boolean external = record.path("priznakZdroj").asInt() == EXTERNAL_SOURCE;
+            String uuid = text(record, "uuid");
             String url = external ? withProtocol(text(record, "urlExternyPortal"))
-                    : properties.baseUrl() + "/pracovne-ponuky/" + text(record, "uuid");
+                    : uuid == null ? null : properties.baseUrl() + "/pracovne-ponuky/" + uuid;
             String externalId = url == null ? null : StatePortalAdapter.externalId(url);
             String title = text(record, "nazovPracovnehoMiesta");
             String employer = text(record, "zamestnavatelObchodneMeno");

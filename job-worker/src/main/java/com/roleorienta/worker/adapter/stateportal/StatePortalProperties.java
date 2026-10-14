@@ -20,15 +20,15 @@ public record StatePortalProperties(
         @DefaultValue("7d") Duration recheckAfter) {
 
     /**
-     * Размер задания шага «сайт»: работодателей не больше {@code checksPerTask} и не дольше
+     * Размер задания шага «сайт»: работодателей не больше {@code employersPerTask} и не дольше
      * {@code timeBudget} — портал делят с чтением его общего списка, и время запроса зависит от очереди к хосту, поэтому
      * число работодателей само по себе срок задания не задаёт (стенограмма §94, §95).
      *
-     * @param checksPerTask работодателей за задание
+     * @param employersPerTask работодателей за задание
      * @param timeBudget    после этого срока новые работодатели не начинаются — следующее задание цепочки
      */
     public record Task(
-            @DefaultValue("20") int checksPerTask,
+            @DefaultValue("20") int employersPerTask,
             @DefaultValue("5m") Duration timeBudget) {
     }
 }

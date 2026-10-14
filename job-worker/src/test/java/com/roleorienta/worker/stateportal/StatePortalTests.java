@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -104,14 +105,7 @@ class StatePortalTests {
         jdbcTemplate.update("DELETE FROM portal_employer");
         website = null;
         mailSiteDown = false;
-        String numbers = "'" + String.join("','", NUMBERS) + "'";
-        jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
-                + "registration_number IN (" + numbers + "))");
-        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company WHERE "
-                + "registration_number IN (" + numbers + "))");
-        jdbcTemplate.update("DELETE FROM company_site WHERE company_id IN (SELECT id FROM company WHERE "
-                + "registration_number IN (" + numbers + "))");
-        jdbcTemplate.update("DELETE FROM source WHERE provider = ? OR board = 'own-page-test'", StatePortalAdapter.PROVIDER);
+        cleanUpCompanies();
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
                 + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         for (String number : List.of(EMPLOYER, AGENCY, OWN_PAGE, NO_OFFERS)) {
@@ -128,6 +122,21 @@ class StatePortalTests {
                 SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
                 WHERE c.registration_number = ? AND s.board = 'own-page-test'
                 """, OWN_PAGE);
+    }
+
+    /**
+     * Связи, сайты и источники компаний теста — не остаются другим тестам (внешние ключи источника, §109).
+     */
+    @AfterEach
+    void cleanUpCompanies() {
+        String numbers = "'" + String.join("','", NUMBERS) + "'";
+        jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM company_site WHERE company_id IN (SELECT id FROM company WHERE "
+                + "registration_number IN (" + numbers + "))");
+        jdbcTemplate.update("DELETE FROM source WHERE provider = ? OR board = 'own-page-test'", StatePortalAdapter.PROVIDER);
     }
 
     /**

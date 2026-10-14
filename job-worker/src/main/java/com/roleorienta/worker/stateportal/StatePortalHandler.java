@@ -159,7 +159,7 @@ public class StatePortalHandler implements TaskHandler {
      * Поиск сайтов; взято полное число или вышел срок задания — следующее задание. Первый работодатель — всегда.
      */
     private TaskOutcome site(String period, int round) {
-        List<SiteEmployer> due = repository.employersForSite(properties.task().checksPerTask(),
+        List<SiteEmployer> due = repository.employersForSite(properties.task().employersPerTask(),
                 properties.recheckAfter());
         long deadline = System.nanoTime() + properties.task().timeBudget().toNanos();
         boolean outOfTime = false;
@@ -185,7 +185,7 @@ public class StatePortalHandler implements TaskHandler {
             return new TaskOutcome.Retry("State portal not answering", Duration.ZERO);
         }
         failed.forEach(employer -> repository.recordSite(employer, null));
-        if (outOfTime || due.size() == properties.task().checksPerTask()) {
+        if (outOfTime || due.size() == properties.task().employersPerTask()) {
             nextHour(SITE, period, round + 1);
         }
         return new TaskOutcome.Done();

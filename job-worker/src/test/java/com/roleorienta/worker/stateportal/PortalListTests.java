@@ -35,7 +35,8 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Общий список вакансий портала (стенограмма §105) на заглушке: полный обход страницами по две записи, по две
  * страницы за задание; IČO — по списку работодателей портала, поиском работодателей по названию, со страницы своей
- * вакансии; объявление площадки без IČO записывается без него; лента «новые сверху» номер обхода не меняет.
+ * вакансии; объявление площадки без IČO записывается без него; по итогу обхода — подключение работодателей и записи в
+ * источники; лента «новые сверху» — неполные записи новых вакансий.
  */
 @SpringBootTest(properties = {"app.http.allow-private-addresses=true", "app.state-portal.list.page-size=2",
         "app.state-portal.list.pages-per-task=2"})
@@ -56,6 +57,8 @@ class PortalListTests {
     private static final String PORTAL_SOURCES = "SELECT id FROM source WHERE provider = 'sluzbyzamestnanosti'";
     /** {@link #UUID_E} пропала из списка портала. */
     private static volatile boolean withoutE;
+    /** Страница полного обхода, на которую портал отвечает 500; 0 — нет такой. */
+    private static volatile int failingPage;
     private static final String UUID_A = "0a0a0a0a-1111-4111-8111-000000000001";
     private static final String UUID_C = "0a0a0a0a-1111-4111-8111-000000000003";
     private static final String UUID_E = "0a0a0a0a-1111-4111-8111-000000000005";
@@ -72,8 +75,6 @@ class PortalListTests {
             own(UUID_C, "Vodič", DETAIL),
             external("https://www.worki.sk/ponuka/1", "Kuchár", NOBODY),
             own(UUID_E, "Predavač (muž/žena)", LISTED));
-    /** Годных вакансий в {@link #OLDEST}. */
-    private static final int VALID_OFFERS = 5;
     private static final int MAX_TASK_ROUNDS = 10;
     private static final AtomicInteger NAME_SEARCHES = new AtomicInteger();
     private static final AtomicInteger DETAILS = new AtomicInteger();
@@ -134,6 +135,7 @@ class PortalListTests {
         NAME_SEARCHES.set(0);
         DETAILS.set(0);
         withoutE = false;
+        failingPage = 0;
         cleanUpSources();
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
                 + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
@@ -186,9 +188,8 @@ class PortalListTests {
                 UUID_C + "|00000123|Vodič (muž/žena)",
                 "https://www.worki.sk/ponuka/1|-|Kuchár (muž/žena)",
                 UUID_E + "|" + LISTED_NUMBER + "|Predavač (muž/žena)");
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM portal_offer "
-                + "WHERE last_seen_cycle = (SELECT id FROM portal_cycle WHERE completed_at IS NOT NULL)",
-                Integer.class)).isEqualTo(VALID_OFFERS);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM portal_cycle WHERE completed_at IS NOT NULL",
+                Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key LIKE 'portal-list:cycle:%'",
                 Integer.class)).isEqualTo(2);
         assertThat(handler.startCycleIfDue()).isFalse();
@@ -222,6 +223,8 @@ class PortalListTests {
         withoutE = true;
 
         for (int cycle = 0; cycle < 3; cycle++) {
+            assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE",
+                    UUID_E + (cycle == 0 ? ":ACTIVE" : ":NEEDS_RECHECK"));
             jdbcTemplate.update("UPDATE portal_cycle SET started_at = started_at - interval '1 day'");
             assertThat(handler.startCycleIfDue()).isTrue();
             runQueuedTasks();
@@ -232,7 +235,8 @@ class PortalListTests {
 
     /**
      * Лента после обхода: новая вакансия работодателя с источником портала записана сразу неполным чтением
-     * ({@code NEW_OFFERS}) — отсутствие других не засчитывается (§107).
+     * ({@code NEW_OFFERS}) — отсутствие других не засчитывается (счётчик пропусков 0); следующая лента ту же, уже
+     * записанную вакансию не пишет снова (§107, §109).
      */
     @Test
     void feedRecordsNewOffersAsPartialRead() {
@@ -241,12 +245,55 @@ class PortalListTests {
 
         handler.enqueueFeed("2026-10-14T12");
         runQueuedTasks();
+        handler.enqueueFeed("2026-10-14T13");
+        runQueuedTasks();
 
-        assertThat(jdbcTemplate.queryForList("SELECT external_id FROM job_posting WHERE source_id IN ("
-                + PORTAL_SOURCES + ")", String.class)).containsExactlyInAnyOrder(UUID_A, UUID_E, UUID_F);
+        assertThat(jdbcTemplate.queryForList("SELECT external_id || ':' || missing_complete_reads FROM job_posting "
+                + "WHERE source_id IN (" + PORTAL_SOURCES + ")", String.class))
+                .containsExactlyInAnyOrder(UUID_A + ":0", UUID_E + ":0", UUID_F + ":0");
         assertThat(jdbcTemplate.queryForList("SELECT state || ':' || coalesce(partial_reason, '-') FROM crawl_run "
                 + "WHERE source_id IN (" + PORTAL_SOURCES + ") ORDER BY id", String.class))
                 .containsExactly("COMPLETE:-", "PARTIAL:NEW_OFFERS");
+    }
+
+    /**
+     * Лента не ставит запись источнику, у которого запись ещё в очереди: записи одного источника не идут
+     * параллельно, новая вакансия войдёт в идущую запись (§107).
+     */
+    @Test
+    void feedSkipsSourceWithPendingRecord() {
+        handler.startCycleIfDue();
+        runQueuedTasks();
+        long sourceId = jdbcTemplate.queryForObject(PORTAL_SOURCES, Long.class);
+        taskService.enqueue(PortalRecordHandler.TYPE, "portal-record:" + sourceId + ":c999",
+                PortalRecordHandler.payload(sourceId, 1, null));
+        handler.enqueueFeed("2026-10-14T12");
+
+        executor.execute(jdbcTemplate.queryForObject("SELECT id FROM task WHERE task_key = ?", Long.class,
+                "portal-list:feed:2026-10-14T12"));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key LIKE 'portal-record:%:f%'",
+                Integer.class)).isZero();
+    }
+
+    /**
+     * Страницу обхода портал стабильно не отдаёт: после трёх неудачных попыток задания она пропускается, обход идёт дальше и
+     * завершается неполным — запись источника неполная ({@code PAGE_FAILED}), отсутствие не засчитывается (§109).
+     */
+    @Test
+    void stablyFailingPageIsSkippedAndCycleIsPartial() {
+        failingPage = 2;
+        long cycle = repository.startCycle();
+
+        handler.handle(new TaskRecord(0, PortalListHandler.TYPE,
+                "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 2}",
+                PortalListHandler.SKIP_PAGE_AFTER_ATTEMPTS));
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT skipped_pages || ':' || (completed_at IS NOT NULL) "
+                + "FROM portal_cycle", String.class)).isEqualTo("1:true");
+        assertThat(jdbcTemplate.queryForList("SELECT state || ':' || coalesce(partial_reason, '-') FROM crawl_run "
+                + "WHERE source_id IN (" + PORTAL_SOURCES + ")", String.class)).containsExactly("PARTIAL:PAGE_FAILED");
     }
 
     private List<String> postings() {
@@ -317,7 +364,9 @@ class PortalListTests {
     }
 
     /**
-     * Лента «новые сверху» добавляет вакансию без номера обхода; повтор в тот же час ничего не ставит.
+     * Лента «новые сверху» до первого обхода записывает вакансию в общий список (в источники — нечего: обходов не
+     * было); повтор в тот же час ничего не ставит. Название с пометкой «žena/muž» — без второй пометки (Unicode-границы
+     * слов, §108).
      */
     @Test
     void feedAddsNewestOffersWithoutCycle() {
@@ -325,9 +374,9 @@ class PortalListTests {
         assertThat(handler.enqueueFeed("2026-10-14T10")).isFalse();
         runQueuedTasks();
 
-        assertThat(jdbcTemplate.queryForList("SELECT external_id || '|' || registration_number || '|' "
-                + "|| coalesce(last_seen_cycle::text, '-') FROM portal_offer", String.class))
-                .containsExactly(UUID_F + "|" + LISTED_NUMBER + "|-");
+        assertThat(offers()).containsExactly(UUID_F + "|" + LISTED_NUMBER + "|Pokladník žena/muž");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
+                PortalRecordHandler.TYPE)).isZero();
     }
 
     private List<String> offers() {
@@ -371,10 +420,15 @@ class PortalListTests {
                 String query = exchange.getRequestURI().getQuery();
                 List<String> records;
                 if (query.contains("sort=OD_NAJNOVSICH")) {
-                    records = List.of(own(UUID_F, "Pokladník", LISTED));
+                    records = List.of(own(UUID_F, "Pokladník žena/muž", LISTED));
                 } else {
                     int size = Integer.parseInt(query.replaceAll(".*pageSize=(\\d+).*", "$1"));
                     int page = Integer.parseInt(query.replaceAll(".*pageNr=(\\d+).*", "$1"));
+                    if (page == failingPage) {
+                        exchange.sendResponseHeaders(500, -1);
+                        exchange.close();
+                        return;
+                    }
                     List<String> oldest = withoutE ? OLDEST.subList(0, OLDEST.size() - 1) : OLDEST;
                     int from = Math.min((page - 1) * size, oldest.size());
                     records = oldest.subList(from, Math.min(from + size, oldest.size()));
