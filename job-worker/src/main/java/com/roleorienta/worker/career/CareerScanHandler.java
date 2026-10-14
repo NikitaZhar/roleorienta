@@ -71,7 +71,7 @@ import org.springframework.stereotype.Component;
  * <p>За задание — {@link CareerProperties#sitesPerTask()} сайтов, проверяемых одновременно (не больше
  * {@code app.career.parallel-sites}, §77), дальше — следующее задание в следующем часу (квота в час — размер задания,
  * §101).
- * Подключённые источники читает общий сбор (раз в сутки).</p>
+ * Подключённые источники читает общий сбор (через 23 ч после начала прошлого чтения, §103).</p>
  */
 @Component
 public class CareerScanHandler implements TaskHandler {

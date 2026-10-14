@@ -93,16 +93,18 @@ class ReadSourceFlowTests {
     }
 
     /**
-     * У источника есть незавершённое чтение за прошлый день — новое не ставится (стенограмма §95): чтения
-     * одного источника не копятся и не идут параллельно.
+     * У источника без общего хоста (Workday) незавершённое чтение — оно ждёт повтора; часовой тик нового не ставит
+     * (стенограмма §95, §108): чтения одного источника не копятся и не идут параллельно.
      */
     @Test
     void sourceWithPendingReadIsNotEnqueuedAgain() {
-        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state) VALUES (?, ?, ?::jsonb, 'QUEUED')",
-                ReadSourceHandler.TYPE, "read:" + source.getId() + ":2000-01-01",
-                ReadSourceHandler.payload(source.getId()));
+        Source workday = sources.save(new Source("workday", "pending.wd3.myworkdayjobs.com/en-US/careers"));
+        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state, next_attempt_at, last_error) "
+                + "VALUES (?, ?, ?::jsonb, 'WAITING', now() + interval '1 hour', 'timeout')",
+                ReadSourceHandler.TYPE, "read:" + workday.getId() + ":2000-01-01T00",
+                ReadSourceHandler.payload(workday.getId()));
 
-        planner.continueSharedHosts();
+        planner.enqueueDue();
 
         assertThat(count("task")).isEqualTo(1);
     }

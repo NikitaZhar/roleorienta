@@ -20,6 +20,12 @@ public class ReadSourceTick {
     /** Ключ leader-lock (реестр — {@link PostgresLeaderLock}). */
     static final long LOCK_KEY = 1002;
 
+    /**
+     * Свой ключ leader-lock тика общих хостов: под общим ключом частый тик одной реплики мог совпасть с часовым тиком
+     * другой, и та пропускала бы постановку чтений на час (§108).
+     */
+    static final long SHARED_HOST_LOCK_KEY = 1015;
+
     private static final Logger LOG = LoggerFactory.getLogger(ReadSourceTick.class);
 
     private final PostgresLeaderLock leaderLock;
@@ -52,7 +58,7 @@ public class ReadSourceTick {
     @Scheduled(fixedDelayString = "${app.collect.shared-host-interval-ms:5000}")
     public void sharedHostTick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, planner::continueSharedHosts);
+            leaderLock.runIfLeader(SHARED_HOST_LOCK_KEY, planner::continueSharedHosts);
         } catch (DataAccessException exception) {
             LOG.warn("Shared host read tick failed, will retry on next tick", exception);
         }

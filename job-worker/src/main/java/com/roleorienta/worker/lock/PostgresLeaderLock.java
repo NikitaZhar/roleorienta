@@ -25,7 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
  * прохода выдачи ({@code PassTick}); 1010 — постановка работы с государственным порталом ({@code StatePortalTick}); 1011 — постановка шага
  * «Wikidata» поиска сайта ({@code WikidataSiteTick}); 1012 — постановка шага «адрес по названию»
  * ({@code SiteNameTick}); 1013 — постановка шага «число сотрудников из RÚZ» ({@code CompanySizeTick}); 1014 —
- * лента и полный обход общего списка портала ({@code PortalListTick}).</p>
+ * лента и полный обход общего списка портала ({@code PortalListTick}); 1015 — следующее чтение провайдеров с общим
+ * хостом ({@code ReadSourceTick#sharedHostTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

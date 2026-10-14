@@ -33,7 +33,9 @@ import org.springframework.stereotype.Component;
  * </ul>
  *
  * <p>Название — как в карточке портала: без пометки «muž/žena» к нему добавляется « (muž/žena)» (скрипт страницы,
- * {@code pp_applyRodovaRovnost}), поэтому оно совпадает с названием публикаций, прочитанных со страниц работодателя.</p>
+ * {@code pp_applyRodovaRovnost}), поэтому оно совпадает с названием публикаций, прочитанных со страниц работодателя.
+ * Границы слов ({@code \b}) — по Unicode ({@code UNICODE_CHARACTER_CLASS}): иначе Java считает буквой только латиницу
+ * ASCII, и «žena/muž» не распознаётся (§108).</p>
  */
 @Component
 public class StatePortalSearch {
@@ -45,7 +47,7 @@ public class StatePortalSearch {
     private static final String GENDER_SUFFIX = " (muž/žena)";
     private static final Pattern GENDER_MARKER = Pattern.compile(
             "\\(\\s*(muž|žena)\\s*/\\s*(muž|žena)\\s*\\)|\\(\\s*[mfž]\\s*/\\s*[mfž]\\s*\\)|\\bmuž\\s*/\\s*žena\\b"
-                    + "|\\bžena\\s*/\\s*muž\\b", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+                    + "|\\bžena\\s*/\\s*muž\\b", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern REGISTRATION_NUMBER = Pattern.compile("\\d{1,8}");
     private static final int NUMBER_LENGTH = 8;
     private static final ObjectMapper JSON = new ObjectMapper();

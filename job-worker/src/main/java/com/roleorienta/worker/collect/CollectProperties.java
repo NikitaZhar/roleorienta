@@ -15,7 +15,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param readAfter                 через сколько после начала последнего чтения источник читается снова (чтение не
  *                                  реже раза в сутки при тике раз в час, §103)
  * @param sharedHostProviders       провайдеры, у которых один хост на все источники: их источники читаются по одному
- *                                  — медленный общий хост держит не больше одного обработчика (§103)
+ *                                  — в обычной работе общий хост держит один обработчик (повтор после отказа — сверх, §108)
  */
 @ConfigurationProperties("app.collect")
 public record CollectProperties(@DefaultValue("200") int maxContentRequestsPerRead,
