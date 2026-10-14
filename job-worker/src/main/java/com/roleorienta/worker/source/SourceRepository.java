@@ -14,13 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 public interface SourceRepository extends JpaRepository<Source, Long> {
 
     /**
-     * Источники к чтению (общая часть запросов {@link #findToRead} и {@link #findNextToRead}): все, кроме источника
-     * канала ниже кадровой страницы (государственный портал, {@code ?1}), если у его компании есть другой источник —
-     * у компании читается один канал (бизнес-описание §4.1); кадровый сайт группы (роль {@code GROUP}, §81) портал
-     * не отключает. И только те, чьё последнее чтение (обход {@code crawl_run}) началось раньше, чем {@code ?2}
-     * секунд назад, или которых ещё не читали — чтение не реже раза в сутки по времени, а не по дате (§103).
+     * Один канал на компанию (общая часть запросов): все источники, кроме источника канала ниже кадровой страницы
+     * (государственный портал, {@code ?1}), если у его компании есть другой источник — у компании читается один канал
+     * (бизнес-описание §4.1); кадровый сайт группы (роль {@code GROUP}, §81) портал не отключает.
      */
-    String TO_READ = """
+    String ONE_CHANNEL = """
             SELECT s.* FROM source s
             WHERE (s.provider <> ?1
                    OR NOT EXISTS (SELECT 1 FROM company_source own
@@ -28,6 +26,14 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
                                                                AND other.role <> 'GROUP'
                                   JOIN source o ON o.id = other.source_id
                                   WHERE own.source_id = s.id AND o.provider <> ?1))
+            """;
+
+    /**
+     * Источники к чтению (общая часть запросов {@link #findToRead} и {@link #findNextToRead}): {@link #ONE_CHANNEL} и
+     * только те, чьё последнее чтение (обход {@code crawl_run}) началось раньше, чем {@code ?2} секунд назад, или
+     * которых ещё не читали — чтение не реже раза в сутки по времени, а не по дате (§103).
+     */
+    String TO_READ = ONE_CHANNEL + """
               AND NOT EXISTS (SELECT 1 FROM crawl_run r
                               WHERE r.source_id = s.id AND r.started_at > now() - make_interval(secs => ?2))
             """;
@@ -48,6 +54,17 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
      */
     @Query(nativeQuery = true, value = TO_READ + BY_LAST_READ)
     List<Source> findToRead(String channelProvider, double readAfterSeconds);
+
+    /**
+     * Источники канала ниже кадровой страницы (государственный портал) с правилом «один канал на компанию»
+     * ({@link #ONE_CHANNEL}), без учёта времени прошлого чтения — им записываются вакансии из общего списка портала
+     * (§107, §111).
+     *
+     * @param channelProvider провайдер канала ниже кадровой страницы
+     * @return источники этого провайдера к записи
+     */
+    @Query(nativeQuery = true, value = ONE_CHANNEL + " AND s.provider = ?1 ORDER BY s.id")
+    List<Source> findChannelSources(String channelProvider);
 
     /**
      * Следующий источник провайдера с общим хостом, которому пора читаться ({@link #TO_READ}) и по которому нет

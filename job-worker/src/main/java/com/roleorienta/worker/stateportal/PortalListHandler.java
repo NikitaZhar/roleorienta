@@ -226,12 +226,11 @@ public class PortalListHandler implements TaskHandler {
     }
 
     /**
-     * Источники портала к чтению: правило «один канал на компанию» — как у чтения источников
-     * ({@link SourceRepository#findToRead}, срок с прошлого чтения не учитывается).
+     * Источники портала к записи: правило «один канал на компанию» — как у чтения источников, без учёта времени
+     * прошлого чтения ({@link SourceRepository#findChannelSources}; §111).
      */
     private List<Source> portalSources() {
-        return sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
-                .filter(source -> StatePortalAdapter.PROVIDER.equals(source.getProvider())).toList();
+        return sources.findChannelSources(StatePortalAdapter.PROVIDER);
     }
 
     private static String recordKeyPrefix(Source source) {

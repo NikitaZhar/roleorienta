@@ -14,5 +14,5 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record WorkdayProperties(
         @DefaultValue("https://{host}") String baseUrlTemplate,
         @DefaultValue("20") int pageSize,
-        @DefaultValue("100") int maxPages) {
+        @DefaultValue("300") int maxPages) {
 }

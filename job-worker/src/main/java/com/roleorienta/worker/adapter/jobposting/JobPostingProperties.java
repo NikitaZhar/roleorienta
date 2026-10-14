@@ -10,5 +10,5 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                 неполное чтение
  */
 @ConfigurationProperties("app.adapter.jobposting")
-public record JobPostingProperties(@DefaultValue("200") int maxPages) {
+public record JobPostingProperties(@DefaultValue("400") int maxPages) {
 }
