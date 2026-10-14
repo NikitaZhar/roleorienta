@@ -3,7 +3,10 @@ package com.roleorienta.worker.stateportal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskRecord;
+import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -13,6 +16,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
@@ -46,13 +50,20 @@ class PortalListTests {
     private static final String UUID_C = "0a0a0a0a-1111-4111-8111-000000000003";
     private static final String UUID_E = "0a0a0a0a-1111-4111-8111-000000000005";
     private static final String UUID_F = "0a0a0a0a-1111-4111-8111-000000000006";
-    /** Полный обход «старые сверху»: страницы по две записи — 2, 2, 1. */
+    /**
+     * Полный обход «старые сверху»: страницы по две записи — 2, 2, 2, 0; на второй странице запись без работодателя
+     * пропускается — страница с одной годной вакансией обход не завершает.
+     */
     private static final List<String> OLDEST = List.of(
             own(UUID_A, "Účtovník", LISTED),
             external("https://www.profesia.sk/praca/searched/O123456", "Skladník", SEARCHED),
+            "{\"uuid\":\"0a0a0a0a-1111-4111-8111-000000000009\",\"nazovPracovnehoMiesta\":\"Bez firmy\","
+                    + "\"priznakZdroj\":1}",
             own(UUID_C, "Vodič", DETAIL),
             external("https://www.worki.sk/ponuka/1", "Kuchár", NOBODY),
             own(UUID_E, "Predavač (muž/žena)", LISTED));
+    /** Годных вакансий в {@link #OLDEST}. */
+    private static final int VALID_OFFERS = 5;
     private static final int MAX_TASK_ROUNDS = 10;
     private static final AtomicInteger NAME_SEARCHES = new AtomicInteger();
     private static final AtomicInteger DETAILS = new AtomicInteger();
@@ -60,6 +71,15 @@ class PortalListTests {
 
     @Autowired
     private PortalListHandler handler;
+
+    @Autowired
+    private StatePortalSearch search;
+
+    @Autowired
+    private PortalListRepository repository;
+
+    @Autowired
+    private TaskService taskService;
 
     @Autowired
     private TaskExecutor executor;
@@ -119,10 +139,52 @@ class PortalListTests {
                 UUID_E + "|" + LISTED_NUMBER + "|Predavač (muž/žena)");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM portal_offer "
                 + "WHERE last_seen_cycle = (SELECT id FROM portal_cycle WHERE completed_at IS NOT NULL)",
-                Integer.class)).isEqualTo(OLDEST.size());
+                Integer.class)).isEqualTo(VALID_OFFERS);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key LIKE 'portal-list:cycle:%'",
                 Integer.class)).isEqualTo(2);
         assertThat(handler.startCycleIfDue()).isFalse();
+    }
+
+    /**
+     * Срок задания вышел (0 с): определяется IČO одной вакансии, найденное записано, та же страница — продолжением в
+     * следующем часу с другим ключом; поиска работодателей по названию в этом задании нет (§106).
+     */
+    @Test
+    void outOfTimeTaskStopsSearchingAndContinuesSamePage() {
+        PortalListHandler noTime = new PortalListHandler(search, repository, taskService,
+                new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
+        long cycle = repository.startCycle();
+
+        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+                "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 1}", 0));
+
+        assertThat(NAME_SEARCHES.get()).isZero();
+        assertThat(offers()).containsExactlyInAnyOrder(UUID_A + "|" + LISTED_NUMBER + "|Účtovník (muž/žena)",
+                "profesia:123456|-|Skladník (muž/žena)");
+        assertThat(jdbcTemplate.queryForList("SELECT task_key || ':' || state FROM task", String.class))
+                .containsExactly("portal-list:cycle:" + cycle + ":1.1:WAITING");
+    }
+
+    /**
+     * Продолжение страницы начинает с вакансии, на которой остановилось прошлое задание: вакансия без IČO в начале
+     * страницы не держит страницу — третья страница (объявление площадки без IČO, затем вакансия {@link #LISTED})
+     * проходит за два задания со сроком 0, дальше — четвёртая страница (§106).
+     */
+    @Test
+    void continuationStartsWhereThePreviousPartStopped() {
+        PortalListHandler noTime = new PortalListHandler(search, repository, taskService,
+                new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
+        long cycle = repository.startCycle();
+
+        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+                "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 3}", 0));
+        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+                "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 3, \"from\": 1}", 0));
+
+        assertThat(offers()).containsExactlyInAnyOrder("https://www.worki.sk/ponuka/1|-|Kuchár (muž/žena)",
+                UUID_E + "|" + LISTED_NUMBER + "|Predavač (muž/žena)");
+        assertThat(jdbcTemplate.queryForList("SELECT task_key FROM task ORDER BY id", String.class))
+                .containsExactly("portal-list:cycle:" + cycle + ":3.1", "portal-list:cycle:" + cycle + ":4");
     }
 
     /**

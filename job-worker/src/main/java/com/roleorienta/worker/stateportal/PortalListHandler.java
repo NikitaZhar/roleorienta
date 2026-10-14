@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.PortalOffer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
+import com.roleorienta.worker.adapter.stateportal.StatePortalSearch.OfferPage;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>{@code cycle} — полный обход: страницы списка «старые сверху» (изменённая вакансия уходит в конец списка и не
  *       пропускается), по {@link PortalListProperties#pagesPerTask()} за задание — квота в час, продолжение в следующем
- *       часу. Страница короче полной — обход завершён ({@code portal_cycle.completed_at}).</li>
+ *       часу. В ответе портала записей меньше полной страницы — обход завершён ({@code portal_cycle.completed_at}).</li>
  *   <li>{@code feed} — лента «новые сверху»: первая страница раз в час; номер обхода у вакансий не меняет.</li>
  * </ol>
  *
@@ -34,8 +35,9 @@ import org.springframework.stereotype.Component;
  * названию; без результата — снова через {@link PortalListProperties#nameRecheckAfter()}), иначе — у своей вакансии
  * портала — со страницы вакансии. Не определён — вакансия записывается без IČO, следующий обход пробует снова.</p>
  *
- * <p>Отказ первой страницы задания — повтор задания; отказ следующей — продолжение с неё в следующем часу. В
- * источники вакансии пока не пишутся (срез 4б).</p>
+ * <p>Срок задания ({@link PortalListProperties#timeBudget()}) ограничивает и поиск IČO: вышел — найденное записывается,
+ * страница дочитывается в следующем часу. Отказ первой страницы задания — повтор задания; отказ следующей — продолжение
+ * с неё в следующем часу. В источники вакансии пока не пишутся (срез 4б).</p>
  */
 @Component
 public class PortalListHandler implements TaskHandler {
@@ -79,7 +81,7 @@ public class PortalListHandler implements TaskHandler {
             return false;
         }
         long cycle = repository.startCycle();
-        return taskService.enqueue(TYPE, cycleKey(cycle, 1), cyclePayload(cycle, 1));
+        return taskService.enqueue(TYPE, cycleKey(cycle, 1, 0), cyclePayload(cycle, 1, 0));
     }
 
     /**
@@ -101,66 +103,89 @@ public class PortalListHandler implements TaskHandler {
     @Override
     public TaskOutcome handle(TaskRecord task) {
         JsonNode payload = parse(task.payload());
+        long deadline = System.nanoTime() + properties.timeBudget().toNanos();
         if (FEED.equals(payload.path("mode").asText())) {
-            Optional<List<PortalOffer>> offers = search.offers(1, properties.pageSize(), true);
-            if (offers.isEmpty()) {
+            Optional<OfferPage> page = search.offers(1, properties.pageSize(), true);
+            if (page.isEmpty()) {
                 return new TaskOutcome.Retry("State portal list not read", Duration.ZERO);
             }
-            save(offers.get(), null);
+            save(page.get().offers(), null, deadline, 0);
             return new TaskOutcome.Done();
         }
-        return cycle(payload.path("cycle").asLong(), payload.path("page").asInt(1));
+        return cycle(payload.path("cycle").asLong(), payload.path("page").asInt(1), payload.path("from").asInt(0),
+                deadline);
     }
 
     /**
      * Страницы полного обхода с {@code firstPage}: не больше {@link PortalListProperties#pagesPerTask()} и не дольше
-     * {@link PortalListProperties#timeBudget()}; первая страница задания — всегда.
+     * {@link PortalListProperties#timeBudget()} — срок проверяется и перед каждым поиском IČO (§106): не успели
+     * определить IČO всех вакансий страницы — та же страница дочитывается в следующем часу с вакансии, на которой
+     * остановились ({@code from}; и часть ключа — продолжение той же страницы не совпадает с ключом текущего задания,
+     * а каждое продолжение начинает дальше прошлого — страница продвигается). Обход завершён, когда в ответе портала
+     * записей меньше полной страницы — по числу записей ответа, а не годных вакансий (§106).
      */
-    private TaskOutcome cycle(long cycle, int firstPage) {
-        long deadline = System.nanoTime() + properties.timeBudget().toNanos();
+    private TaskOutcome cycle(long cycle, int firstPage, int from, long deadline) {
         for (int page = firstPage; page < firstPage + properties.pagesPerTask(); page++) {
             if (page > firstPage && System.nanoTime() - deadline > 0) {
-                return next(cycle, page);
+                return next(cycle, page, 0);
             }
-            Optional<List<PortalOffer>> offers = search.offers(page, properties.pageSize(), false);
-            if (offers.isEmpty()) {
+            Optional<OfferPage> found = search.offers(page, properties.pageSize(), false);
+            if (found.isEmpty()) {
                 if (page == firstPage) {
                     return new TaskOutcome.Retry("State portal list page " + page + " not read", Duration.ZERO);
                 }
-                return next(cycle, page);
+                return next(cycle, page, 0);
             }
-            save(offers.get(), cycle);
-            if (offers.get().size() < properties.pageSize()) {
+            List<PortalOffer> offers = found.get().offers();
+            int stopped = save(offers, cycle, deadline, page == firstPage ? from : 0);
+            if (stopped < offers.size()) {
+                return next(cycle, page, stopped);
+            }
+            if (found.get().records() < properties.pageSize()) {
                 repository.completeCycle(cycle);
                 LOG.info("State portal list cycle {} completed: {} pages", cycle, page);
                 return new TaskOutcome.Done();
             }
         }
-        return next(cycle, firstPage + properties.pagesPerTask());
+        return next(cycle, firstPage + properties.pagesPerTask(), 0);
     }
 
-    private TaskOutcome next(long cycle, int page) {
-        taskService.enqueueNextHour(TYPE, cycleKey(cycle, page), cyclePayload(cycle, page));
+    private TaskOutcome next(long cycle, int page, int from) {
+        taskService.enqueueNextHour(TYPE, cycleKey(cycle, page, from), cyclePayload(cycle, page, from));
         return new TaskOutcome.Done();
     }
 
     /**
-     * Вакансии страницы с IČO: известные — из БД, остальные — {@link #number(PortalOffer)}.
+     * Вакансии страницы с IČO: известные — из БД, у остальных с позиции {@code from} — {@link #number(PortalOffer)},
+     * пока не вышел срок задания (первый поиск — всегда: каждое продолжение страницы начинает дальше прошлого).
+     * Записываются все вакансии страницы; IČO не затирается пустым.
+     *
+     * @return позиция первой вакансии, IČO которой не искали из-за срока; размер страницы — искали у всех
      */
-    private void save(List<PortalOffer> offers, Long cycle) {
+    private int save(List<PortalOffer> offers, Long cycle, long deadline, int from) {
         Map<String, String> numbers = repository.knownNumbers(offers.stream().map(PortalOffer::externalId).toList());
+        boolean searched = false;
+        int stopped = offers.size();
         int unresolved = 0;
-        for (PortalOffer offer : offers) {
-            if (!numbers.containsKey(offer.externalId())) {
-                Optional<String> number = number(offer);
-                number.ifPresent(found -> numbers.put(offer.externalId(), found));
-                unresolved += number.isEmpty() ? 1 : 0;
+        for (int index = from; index < offers.size(); index++) {
+            PortalOffer offer = offers.get(index);
+            if (numbers.containsKey(offer.externalId())) {
+                continue;
             }
+            if (searched && System.nanoTime() - deadline > 0) {
+                stopped = index;
+                break;
+            }
+            searched = true;
+            Optional<String> number = number(offer);
+            number.ifPresent(found -> numbers.put(offer.externalId(), found));
+            unresolved += number.isEmpty() ? 1 : 0;
         }
         repository.saveOffers(offers, numbers, cycle);
         if (unresolved > 0) {
             LOG.info("State portal list: {} of {} offers without registration number", unresolved, offers.size());
         }
+        return stopped;
     }
 
     /**
@@ -187,12 +212,13 @@ public class PortalListHandler implements TaskHandler {
         return offer.own() ? search.offerNumber(offer.externalId()) : Optional.empty();
     }
 
-    private static String cycleKey(long cycle, int page) {
-        return CYCLE_PREFIX + cycle + ":" + page;
+    private static String cycleKey(long cycle, int page, int from) {
+        return CYCLE_PREFIX + cycle + ":" + page + (from == 0 ? "" : "." + from);
     }
 
-    private static String cyclePayload(long cycle, int page) {
-        return JSON.createObjectNode().put("mode", CYCLE).put("cycle", cycle).put("page", page).toString();
+    private static String cyclePayload(long cycle, int page, int from) {
+        return JSON.createObjectNode().put("mode", CYCLE).put("cycle", cycle).put("page", page).put("from", from)
+                .toString();
     }
 
     private static JsonNode parse(String payload) {

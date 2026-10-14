@@ -69,10 +69,11 @@ public class StatePortalSearch {
      * @param page        номер страницы с 1
      * @param pageSize    записей на страницу
      * @param newestFirst {@code true} — «новые сверху» (по последнему изменению), иначе — старые сверху
-     * @return вакансии страницы (меньше {@code pageSize} — последняя страница); запись без годного id пропускается;
-     *         пусто — запрос не удался или ответ не JSON списка
+     * @return страница: число записей в ответе портала (меньше {@code pageSize} — последняя страница) и вакансии —
+     *         запись без годного id, названия или работодателя пропускается; пусто — запрос не удался или ответ не JSON
+     *         списка
      */
-    public Optional<List<PortalOffer>> offers(int page, int pageSize, boolean newestFirst) {
+    public Optional<OfferPage> offers(int page, int pageSize, boolean newestFirst) {
         URI uri = URI.create(properties.baseUrl() + "/search/ponuky?sort=" + (newestFirst ? "OD_NAJNOVSICH"
                 : "OD_NAJSTARSICH") + "&pageSize=" + pageSize + "&pageNr=" + page);
         Optional<JsonNode> body = json(uri);
@@ -95,7 +96,17 @@ public class StatePortalSearch {
                     GENDER_MARKER.matcher(title).find() ? title : title + GENDER_SUFFIX,
                     text(record, "miestoVykonuPrace"), url));
         }
-        return Optional.of(offers);
+        return Optional.of(new OfferPage(body.get().path("pracovnePonuky").size(), offers));
+    }
+
+    /**
+     * Страница общего списка.
+     *
+     * @param records число записей в ответе портала — по нему, а не по числу годных вакансий, видно последнюю страницу
+     *                (пропущенная запись не должна завершать обход раньше времени)
+     * @param offers  вакансии страницы
+     */
+    public record OfferPage(int records, List<PortalOffer> offers) {
     }
 
     /**
