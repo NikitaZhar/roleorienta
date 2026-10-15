@@ -26,9 +26,12 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.cookie.BasicCookieStore;
+import org.apache.hc.client5.http.cookie.CookieStore;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
@@ -64,6 +67,12 @@ import org.springframework.stereotype.Component;
  * <p>Таймауты, потолок редиректов и тела ответа — из {@link ExternalHttpProperties}. Встроенные
  * повторы библиотеки выключены: она повторяла бы 429/503 и спала бы, держа поток; повторы —
  * забота таблицы заданий. Ответ сразу разобран в {@link HttpResult}.</p>
+ *
+ * <p>Cookie (аудит §121): общего хранилища нет — cookie живут в пределах одного запроса с его переадресациями.
+ * Сайту, которому нужна сессия между запросами (новый поиск SAP SuccessFactors, §115), адаптер открывает
+ * {@link CookieSession} на одно чтение; после чтения её cookie выбрасываются вместе с ней. Хранилище запроса
+ * передаётся библиотеке через {@link HttpClientContext}: если в контексте есть своё хранилище, общее хранилище
+ * клиента не используется. https://hc.apache.org/httpcomponents-client-5.4.x/ (HttpClientContext, CookieStore)</p>
  */
 @Component
 public class ExternalHttpClient implements AutoCloseable {
@@ -126,7 +135,7 @@ public class ExternalHttpClient implements AutoCloseable {
      * @return разобранный результат; исключений не бросает
      */
     public HttpResult get(URI uri) {
-        return execute(uri, new HttpGet(uri));
+        return follow(uri, new HttpGet(uri), true, maxBodyBytes, new BasicCookieStore());
     }
 
     /**
@@ -139,7 +148,7 @@ public class ExternalHttpClient implements AutoCloseable {
      * @return разобранный результат; исключений не бросает
      */
     public HttpResult get(URI uri, int maxBodyBytes) {
-        return follow(uri, new HttpGet(uri), true, maxBodyBytes);
+        return follow(uri, new HttpGet(uri), true, maxBodyBytes, new BasicCookieStore());
     }
 
     /**
@@ -162,11 +171,49 @@ public class ExternalHttpClient implements AutoCloseable {
      * @return разобранный результат; исключений не бросает
      */
     public HttpResult postJson(URI uri, String json, Map<String, String> headers) {
-        HttpPost request = new HttpPost(uri);
-        request.setHeader(HttpHeaders.ACCEPT, ContentType.APPLICATION_JSON.getMimeType());
-        headers.forEach(request::setHeader);
-        request.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
-        return execute(uri, request);
+        return follow(uri, jsonPost(uri, json, headers), true, maxBodyBytes, new BasicCookieStore());
+    }
+
+    /**
+     * @return новая сессия cookie на одно чтение источника; не разделяется между потоками
+     */
+    public CookieSession cookieSession() {
+        return new CookieSession();
+    }
+
+    /**
+     * Cookie одного чтения источника: запросы сессии отправляют cookie, полученные предыдущими запросами этой же
+     * сессии. Объект не потокобезопасен — одно чтение, один поток. Переадресации, robots.txt и бюджет хоста — как у
+     * обычных запросов.
+     */
+    public final class CookieSession {
+
+        private final CookieStore cookies = new BasicCookieStore();
+
+        private CookieSession() {
+        }
+
+        /**
+         * GET-запрос в сессии.
+         *
+         * @param uri адрес
+         * @return разобранный результат; исключений не бросает
+         */
+        public HttpResult get(URI uri) {
+            return follow(uri, new HttpGet(uri), true, maxBodyBytes, cookies);
+        }
+
+        /**
+         * POST-запрос с JSON-телом и дополнительными заголовками в сессии.
+         *
+         * @param uri     адрес
+         * @param json    тело запроса
+         * @param headers дополнительные заголовки
+         * @return разобранный результат; исключений не бросает
+         */
+        public HttpResult postJson(URI uri, String json, Map<String, String> headers) {
+            return follow(uri, jsonPost(uri, json, headers), true, maxBodyBytes, cookies);
+        }
     }
 
     /**
@@ -179,8 +226,12 @@ public class ExternalHttpClient implements AutoCloseable {
         httpClient.close();
     }
 
-    private HttpResult execute(URI uri, ClassicHttpRequest request) {
-        return follow(uri, request, true, maxBodyBytes);
+    private static HttpPost jsonPost(URI uri, String json, Map<String, String> headers) {
+        HttpPost request = new HttpPost(uri);
+        request.setHeader(HttpHeaders.ACCEPT, ContentType.APPLICATION_JSON.getMimeType());
+        headers.forEach(request::setHeader);
+        request.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
+        return request;
     }
 
     /**
@@ -192,9 +243,11 @@ public class ExternalHttpClient implements AutoCloseable {
      * @param request     запрос
      * @param checkRobots сверять ли шаги с robots.txt ({@code false} — запрос самого robots.txt)
      * @param bodyLimit   потолок тела ответа
+     * @param cookies     хранилище cookie запроса (новое) или сессии чтения
      * @return итог последнего шага; успех после переадресации несёт конечный адрес
      */
-    private HttpResult follow(URI uri, ClassicHttpRequest request, boolean checkRobots, int bodyLimit) {
+    private HttpResult follow(URI uri, ClassicHttpRequest request, boolean checkRobots, int bodyLimit,
+            CookieStore cookies) {
         URI current = uri;
         ClassicHttpRequest step = request;
         Set<URI> visited = new HashSet<>();
@@ -209,7 +262,7 @@ public class ExternalHttpClient implements AutoCloseable {
                     return refusal.get();
                 }
             }
-            Hop answer = send(current, step, bodyLimit);
+            Hop answer = send(current, step, bodyLimit, cookies);
             if (answer instanceof Done done) {
                 return hop > 0 && done.result() instanceof HttpResult.Success success
                         ? new HttpResult.Success(success.status(), success.body(), current) : done.result();
@@ -237,7 +290,7 @@ public class ExternalHttpClient implements AutoCloseable {
         if (cached == null || cached.fetchedAt().plus(ROBOTS_TTL).isBefore(clock.instant())) {
             URI robotsUri = URI.create(origin + ROBOTS_PATH);
             RobotsRules rules;
-            switch (follow(robotsUri, new HttpGet(robotsUri), false, maxBodyBytes)) {
+            switch (follow(robotsUri, new HttpGet(robotsUri), false, maxBodyBytes, new BasicCookieStore())) {
                 case HttpResult.Success success -> rules = RobotsRules.parse(success.body(), robotsToken);
                 case HttpResult.PermanentFailure failure -> {
                     if (failure.kind() == HttpResult.Kind.NO_SUCH_HOST) {
@@ -278,7 +331,7 @@ public class ExternalHttpClient implements AutoCloseable {
     private record Redirect(URI target, int status) implements Hop {
     }
 
-    private Hop send(URI uri, ClassicHttpRequest request, int bodyLimit) {
+    private Hop send(URI uri, ClassicHttpRequest request, int bodyLimit, CookieStore cookies) {
         String host = uri.getHost().toLowerCase(Locale.ROOT);
         Optional<Duration> wait = hostBudget.reserve(host);
         if (wait.isEmpty()) {
@@ -293,7 +346,9 @@ public class ExternalHttpClient implements AutoCloseable {
         }
         Hop hop;
         try {
-            hop = httpClient.execute(request, response -> answer(uri, response, bodyLimit));
+            HttpClientContext context = HttpClientContext.create();
+            context.setCookieStore(cookies);
+            hop = httpClient.execute(request, context, response -> answer(uri, response, bodyLimit));
         } catch (IOException exception) {
             hop = new Done(fromException(exception));
         }

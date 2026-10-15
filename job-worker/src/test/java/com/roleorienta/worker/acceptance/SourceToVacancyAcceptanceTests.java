@@ -16,6 +16,10 @@ import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterAll;
@@ -40,7 +44,11 @@ import org.springframework.test.context.DynamicPropertySource;
  *   <li>7 — временный отказ и неполное чтение не закрывают вакансии, переводят их в «нуждается в
  *       повторной проверке»; после восстановления — без потерь и повторов.</li>
  *   <li>9 (сбор) — остановка приложения во время чтения не теряет задание и не даёт повторов.</li>
+ *   <li>Окно по кругу (аудит §121): ссылок больше потолка — прочитанные подтверждаются, непрочитанные известные
+ *       не меняются, пропавшая с кадровой страницы закрывается по общим правилам.</li>
  * </ul>
+ *
+ * <p>Потолок страниц {@code JobPosting} в этом тесте — {@value #WINDOW}: сценарии 6, 7, 9 укладываются в него.</p>
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -56,6 +64,8 @@ class SourceToVacancyAcceptanceTests {
 
     /** Страницы тестового сайта: путь → тело; пути из {@link #STATUSES} отвечают своим кодом. */
     private static final Map<String, String> PAGES = new ConcurrentHashMap<>();
+    /** Потолок страниц {@code JobPosting} за чтение в этом тесте. */
+    private static final int WINDOW = 3;
     private static final Map<String, Integer> STATUSES = new ConcurrentHashMap<>();
     private static final HttpServer SITE = startSite();
 
@@ -81,6 +91,7 @@ class SourceToVacancyAcceptanceTests {
     @DynamicPropertySource
     static void siteProperties(DynamicPropertyRegistry registry) {
         registry.add("app.http.allow-private-addresses", () -> "true");
+        registry.add("app.adapter.jobposting.max-pages", () -> String.valueOf(WINDOW));
     }
 
     /**
@@ -224,6 +235,82 @@ class SourceToVacancyAcceptanceTests {
         assertThat(jdbcTemplate.queryForList("SELECT title || ':' || state FROM vacancy", String.class))
                 .containsExactly("Java Developer:ACTIVE");
         assertThat(count("SELECT count(*) FROM job_posting")).isEqualTo(1);
+    }
+
+    /**
+     * Окно по кругу (аудит §121), потолок {@value #WINDOW}. Три вакансии прочитаны полностью; добавлены ещё две —
+     * ссылок 5: читаются 3 ссылки окна сегодняшних суток (как у адаптера), чтение полное. Известные вакансии окна
+     * подтверждены, известные вне окна не изменились (состояние, дата подтверждения, счётчик отсутствия), новые
+     * вне окна ещё не созданы. Временный отказ страницы окна — чтение неполное, известные вне окна
+     * подтверждение не теряют. Затем ссылка вакансии 1 убрана с кадровой страницы: после трёх чтений она закрыта,
+     * остальные — нет и отсутствие им не засчитано.
+     */
+    @Test
+    void windowReadConfirmsReadPagesAndKeepsTheRest() {
+        for (int id = 1; id <= WINDOW; id++) {
+            publish(String.valueOf(id), "Job " + id);
+        }
+        readOnce("w1");
+        assertThat(count("SELECT count(*) FROM vacancy WHERE state = 'ACTIVE'")).isEqualTo(WINDOW);
+        jdbcTemplate.update("UPDATE vacancy SET last_confirmed_at = last_confirmed_at - interval '2 days'");
+        publish("4", "Job 4");
+        publish("5", "Job 5");
+        List<String> window = todaysWindow(List.of("1", "2", "3", "4", "5"));
+
+        readOnce("w2");
+
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM crawl_run ORDER BY id DESC LIMIT 1",
+                String.class)).isEqualTo("COMPLETE");
+        for (String id : List.of("1", "2", "3", "4", "5")) {
+            String title = "Job " + id;
+            int created = count("SELECT count(*) FROM vacancy WHERE title = '" + title + "'");
+            if (window.contains(id)) {
+                assertThat(vacancyState(title)).isEqualTo("ACTIVE");
+                assertThat(count("SELECT count(*) FROM vacancy WHERE title = '" + title
+                        + "' AND last_confirmed_at > now() - interval '1 day'")).isEqualTo(1);
+            } else if (Integer.parseInt(id) <= WINDOW) {
+                assertThat(vacancyState(title)).isEqualTo("ACTIVE");
+                assertThat(count("SELECT count(*) FROM vacancy WHERE title = '" + title
+                        + "' AND last_confirmed_at < now() - interval '1 day'")).isEqualTo(1);
+            } else {
+                assertThat(created).isZero();
+            }
+        }
+        assertThat(count("SELECT max(missing_complete_reads) FROM job_posting")).isZero();
+
+        STATUSES.put("/jobs/" + window.get(0), 503);
+        readOnce("w2-failed");
+        STATUSES.clear();
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM crawl_run ORDER BY id DESC LIMIT 1",
+                String.class)).isEqualTo("PARTIAL");
+        for (int id = 1; id <= WINDOW; id++) {
+            if (!window.contains(String.valueOf(id))) {
+                assertThat(vacancyState("Job " + id)).isEqualTo("ACTIVE");
+            }
+        }
+
+        withdraw("1");
+        readOnce("w3");
+        readOnce("w4");
+        readOnce("w5");
+
+        assertThat(vacancyState("Job 1")).isEqualTo("CLOSED");
+        assertThat(count("SELECT count(*) FROM vacancy WHERE state = 'CLOSED'")).isEqualTo(1);
+        assertThat(count("SELECT max(missing_complete_reads) FROM job_posting WHERE closed_at IS NULL")).isZero();
+    }
+
+    /**
+     * Номера вакансий окна сегодняшних суток — та же формула, что у адаптера: {@value #WINDOW} подряд по кругу
+     * с номера {@code (сутки UTC × потолок) mod число ссылок}; ссылки кадровой страницы идут по возрастанию пути.
+     */
+    private static List<String> todaysWindow(List<String> ids) {
+        long day = LocalDate.now(ZoneOffset.UTC).toEpochDay();
+        int start = (int) Math.floorMod(day * WINDOW, (long) ids.size());
+        List<String> window = new ArrayList<>();
+        for (int index = 0; index < WINDOW; index++) {
+            window.add(ids.get((start + index) % ids.size()));
+        }
+        return window;
     }
 
     private static HttpServer startSite() {

@@ -14,8 +14,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Приёмочный сценарий 10 (бизнес-описание §7.4-А) на размеченном корпусе {@code selection-corpus.json}:
- * смысловое совпадение позиции включается, другая специализация — нет; явное несоответствие страны
- * или формата исключает; неоднозначные сведения — включение с пометкой. Словарь позиций и регионы —
+ * смысловое совпадение позиции включается, другая специализация — нет; страна не определена или другая —
+ * исключается (§120), «*» — соответствует; явное несоответствие формата исключает, неясный формат — включение с
+ * пометкой. Словарь позиций и регионы —
  * настоящие; города — небольшой набор вместо GeoNames. Каждое расхождение с разметкой перечисляется.
  */
 class SelectionScenarioTests {
@@ -43,7 +44,7 @@ class SelectionScenarioTests {
                     .anyMatch(match -> match.code().equals(search.path("position").asText()));
             LocationResolver.LocationFacts facts = resolver.resolve(List.of(example.path("location").asText()), title,
                     text);
-            Fit country = Fit.country(facts.countries(), facts.uncertain(), SEARCH_COUNTRIES);
+            Fit country = Fit.country(facts.countries(), SEARCH_COUNTRIES);
             Fit format = Fit.format(facts.format(),
                     search.path("format").isNull() ? null : WorkFormat.valueOf(search.path("format").asText()));
             String actual = position + "/" + country + "/" + format;

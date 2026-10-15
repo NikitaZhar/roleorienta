@@ -4,35 +4,33 @@ import java.util.Set;
 
 /**
  * Оценка соответствия вакансии условию поиска по стране или формату (бизнес-описание §4.4,
- * технический документ §7): подтверждённое соответствие включает вакансию, явное несоответствие
- * исключает, неоднозначные или неполные сведения — включение с пометкой.
+ * технический документ §7) — та же, что в SQL выдачи ({@code DeliveryRepository.PORTION}); выдача считает её
+ * запросом, здесь она для приёмочного сценария 10 на размеченном корпусе. Соответствие включает вакансию, явное
+ * несоответствие исключает; неясный формат — включение с пометкой.
  */
 public enum Fit {
     /** Соответствует. */
     MATCH,
     /** Явно указано иное — вакансия исключается. */
     MISMATCH,
-    /** Неясно — включается с пометкой. */
+    /** Неясно (только формат) — включается с пометкой. */
     UNCERTAIN;
 
     /** Территория без ограничения (worldwide). */
     static final String ANY_COUNTRY = "*";
 
     /**
-     * Страна: хоть одна страна работы среди стран пользователя (или территория без ограничения) —
-     * соответствие; иначе есть место без ясной страны или стран нет вовсе — неясно; иначе все места
-     * явно в других странах — несоответствие.
+     * Страна: хоть одна страна работы среди стран пользователя или территория без ограничения («*») —
+     * соответствие; иначе — несоответствие, в том числе когда страна не определена (стран нет или только места без
+     * ясной страны; решение владельца 2026-10-15, стенограмма §120, аудит §121).
      *
      * @param workCountries   страны выполнения работы
-     * @param uncertain       есть место без ясной страны
      * @param searchCountries страны пользователя
      * @return оценка
      */
-    public static Fit country(Set<String> workCountries, boolean uncertain, Set<String> searchCountries) {
-        if (workCountries.contains(ANY_COUNTRY) || workCountries.stream().anyMatch(searchCountries::contains)) {
-            return MATCH;
-        }
-        return uncertain || workCountries.isEmpty() ? UNCERTAIN : MISMATCH;
+    public static Fit country(Set<String> workCountries, Set<String> searchCountries) {
+        return workCountries.contains(ANY_COUNTRY) || workCountries.stream().anyMatch(searchCountries::contains)
+                ? MATCH : MISMATCH;
     }
 
     /**

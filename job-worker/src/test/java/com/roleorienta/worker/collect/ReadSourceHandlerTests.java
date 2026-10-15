@@ -57,7 +57,7 @@ class ReadSourceHandlerTests {
         verify(adapter, never()).detail(BOARD, "c");
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", null),
                 new FetchedPosting("b", "Title", "https://example.com/b", "IND.Pune", "text b"),
-                posting("c", null))), eq(Set.of()));
+                posting("c", null))), eq(Set.of()), eq(Set.of()));
     }
 
     /**
@@ -83,7 +83,32 @@ class ReadSourceHandlerTests {
         verify(adapter, never()).check(BOARD, "a");
         verify(adapter, never()).check(BOARD, "d");
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"), posting("b", "moved"))),
-                eq(Set.of("d")));
+                eq(Set.of("d")), eq(Set.of()));
+    }
+
+    /**
+     * Окно по кругу (аудит §121), источник со страной: {@code b} есть в списке, но не прочитана в это чтение — не
+     * проверяется (проверка по умолчанию ответила бы «нет» и закрыла бы её) и передаётся записи как непрочитанная;
+     * {@code c} в списке нет — проверяется как обычно.
+     */
+    @Test
+    void doesNotCheckPostingsListedButNotReadNow() {
+        Source source = mock(Source.class);
+        when(source.getId()).thenReturn(1L);
+        when(source.getProvider()).thenReturn("workday");
+        when(source.getBoard()).thenReturn(BOARD);
+        when(source.getCountry()).thenReturn("SK");
+        when(adapter.read(BOARD, "SK")).thenReturn(new SourceReadResult.Read(List.of(posting("a", "t")), null,
+                List.of(), Set.of("b")));
+        when(recorder.openExternalIds(source)).thenReturn(List.of("a", "b", "c"));
+        when(recorder.externalIdsWithContent(source)).thenReturn(Set.of());
+        when(adapter.check(BOARD, "c")).thenReturn(new PostingCheck.Absent());
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(adapter, never()).check(BOARD, "b");
+        verify(adapter).check(BOARD, "c");
+        verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"))), eq(Set.of()), eq(Set.of("b")));
     }
 
     @SuppressWarnings("unchecked")

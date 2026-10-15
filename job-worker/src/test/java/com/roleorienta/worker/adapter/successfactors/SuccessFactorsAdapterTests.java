@@ -55,6 +55,8 @@ class SuccessFactorsAdapterTests {
     private final Map<String, String> pages = new HashMap<>();
     /** Запросы POST нового поиска: заголовок {@code X-CSRF-Token} и тело. */
     private final List<String> searches = new ArrayList<>();
+    /** Заголовок {@code Cookie} запросов POST нового поиска; страницы GET выдают cookie сессии (аудит §121). */
+    private final List<String> searchCookies = new ArrayList<>();
 
     private HttpServer server;
     private SuccessFactorsAdapter adapter;
@@ -72,7 +74,9 @@ class SuccessFactorsAdapterTests {
                 Matcher number = PAGE_NUMBER.matcher(request);
                 key = exchange.getRequestURI().getPath() + "|p" + (number.find() ? number.group(1) : "");
                 searches.add(exchange.getRequestHeaders().getFirst("X-CSRF-Token") + " " + request);
+                searchCookies.add(exchange.getRequestHeaders().getFirst("Cookie"));
             } else {
+                exchange.getResponseHeaders().set("Set-Cookie", "session=sf; Path=/");
                 String query = exchange.getRequestURI().getRawQuery();
                 Matcher row = START_ROW.matcher(query == null ? "" : query);
                 key = exchange.getRequestURI().getPath() + "|" + (row.find() ? row.group(1) : "");
@@ -196,7 +200,7 @@ class SuccessFactorsAdapterTests {
     /**
      * Новый поиск SAP Danfoss: запрос JSON с токеном и языком страницы и названием страны, две страницы по 10 до
      * {@code totalJobs} 17; в списке Словакии — 10 вакансий с местом «…, SVK», вакансии Польши и Румынии — нет; путь
-     * вакансии — с языком (§115).
+     * вакансии — с языком (§115); запросы списка несут cookie, выданную страницей поиска в том же чтении (аудит §121).
      */
     @Test
     void jobSearchReadsJsonPages() {
@@ -210,6 +214,7 @@ class SuccessFactorsAdapterTests {
                 base() + "/" + DANFOSS + path, "Vrbove, SVK", null));
         assertThat(searches).hasSize(2).allMatch(search -> search.startsWith(DANFOSS_TOKEN + " ")
                 && search.contains("\"locale\":\"en_GB\"") && search.contains("\"location\":\"Slovakia\""));
+        assertThat(searchCookies).containsExactly("session=sf", "session=sf");
     }
 
     /**

@@ -123,12 +123,12 @@ public class ReadSourceHandler implements TaskHandler {
                 List<FetchedPosting> postings = new ArrayList<>(read.postings());
                 Set<String> unverified = new HashSet<>();
                 if (read.complete() && source.getCountry() != null) {
-                    checkMissing(adapter, source, postings, unverified);
+                    checkMissing(adapter, source, postings, read.notRead(), unverified);
                 }
                 postings = withDetail(adapter, source, postings);
                 nameEmployer(adapter, source, postings);
                 run.read(postings.size(), read.partialReason());
-                recorder.record(run, postings, unverified);
+                recorder.record(run, postings, unverified, read.notRead());
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
@@ -151,11 +151,13 @@ public class ReadSourceHandler implements TaskHandler {
 
     /**
      * Проверяет известные незакрытые публикации, которых нет в отфильтрованном списке: найденные
-     * добавляются в {@code postings}, непроверенные — в {@code unverified}.
+     * добавляются в {@code postings}, непроверенные — в {@code unverified}. Публикации из списка, не прочитанные в
+     * это чтение ({@code notRead}, окно по кругу), не проверяются: они в списке есть (аудит §121; проверка
+     * по умолчанию отвечает «нет» и закрыла бы их).
      */
     private void checkMissing(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
-            Set<String> unverified) {
-        Set<String> listed = new HashSet<>();
+            Set<String> notRead, Set<String> unverified) {
+        Set<String> listed = new HashSet<>(notRead);
         postings.forEach(posting -> listed.add(posting.externalId()));
         int budget = properties.maxChecksPerRead();
         for (String externalId : recorder.openExternalIds(source)) {

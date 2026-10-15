@@ -17,7 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * §7.4; технический документ §8). Выдачу (job-worker) заменяют строки {@code delivered_vacancy}.
  *
  * <ul>
- *   <li>Список: новые сверху, страницы по курсору; закрытая и давно не подтверждённая вакансия не видна.</li>
+ *   <li>Список: новые сверху, страницы по курсору; закрытая и давно не подтверждённая вакансия не видна; видна
+ *       только вакансия со страной условий или «*» среди определённых стран (§120, аудит §121).</li>
  *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, даты, состояние.</li>
  *   <li>13 — отметка «не подходит» скрывает вакансию у этого пользователя, сохраняется при смене условий, после
  *       снятия вакансия возвращается; повтор отметки и снятия — без ошибки.</li>
@@ -137,6 +138,31 @@ class VacancyAcceptanceTests {
         assertThat(other.send("GET", "/api/v1/me/vacancies?cursor=" + ownerCursor, null).status()).isEqualTo(400);
         assertThat(other.send("GET", "/api/v1/me/unsuitable?cursor=" + ownerCursor, null).status()).isEqualTo(400);
         assertThat(new ApiTestClient(port()).send("GET", "/api/v1/me/vacancies", null).status()).isEqualTo(401);
+    }
+
+    /**
+     * Видимость по стране (§120, аудит §121): выданная вакансия видна, только если среди её определённых стран есть
+     * страна условий или «*» (удалённо без ограничения страны); другая страна, пустой список и не рассчитанные страны
+     * ({@code NULL}) — не видны.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void listShowsOnlyCountryOfConditions() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        delivered(condition, "Slovakia", "ACTIVE", 0, 5);
+        countries(delivered(condition, "Czechia", "ACTIVE", 0, 4), "{CZ}");
+        countries(delivered(condition, "Worldwide", "ACTIVE", 0, 3), "{*}");
+        countries(delivered(condition, "NoCountry", "ACTIVE", 0, 2), "{}");
+        countries(delivered(condition, "NotResolved", "ACTIVE", 0, 1), null);
+
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Worldwide,Slovakia");
+    }
+
+    private void countries(long vacancy, String countries) {
+        jdbcTemplate.update("UPDATE vacancy SET work_countries = ?::text[] WHERE id = ?", countries, vacancy);
     }
 
     /**

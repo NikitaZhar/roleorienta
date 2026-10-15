@@ -7,7 +7,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Настройки адаптера SAP SuccessFactors Career Site Builder ({@code app.adapter.successfactors.*}).
  *
  * @param siteUrl  адрес кадрового сайта по доске; {@code {host}} — хост сайта (доска); в тестах — заглушка
- * @param maxPages потолок страниц списка за чтение (по 20–25 вакансий); упор — неполное чтение
+ * @param maxPages потолок страниц списка за чтение (строки и плитки — по 15–25 вакансий, новый поиск SAP — по 10);
+ *                 упор — неполное чтение
  */
 @ConfigurationProperties("app.adapter.successfactors")
 public record SuccessFactorsProperties(

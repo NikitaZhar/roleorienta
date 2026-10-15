@@ -14,17 +14,22 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * Адаптер {@code JobPosting} на заглушке сайта: ссылки кадровой страницы, разбор JSON-LD,
- * страницы без разметки, потолок страниц, отказы страниц и кадровой страницы, не-адрес доски;
+ * страницы без разметки, потолок страниц (со сдвигом по суткам), отказы страниц и кадровой страницы, не-адрес доски;
  * тела прочитанных страниц отдаются для снимков.
  */
 class JobPostingAdapterTests {
@@ -121,13 +126,31 @@ class JobPostingAdapterTests {
     }
 
     /**
-     * Ссылок больше потолка — читаются первые, чтение неполное.
+     * Ссылок больше потолка (аудит §121) — в сутки 0 читается первая, чтение полное, остальные ссылки отдаются как
+     * непрочитанные.
      */
     @Test
-    void readsPartiallyOverCeiling() {
-        assertThat(adapter(1).read(url("/careers"))).isEqualTo(SourceReadResult.Read.partial(List.of(
+    void readsWindowOverCeiling() {
+        assertThat(adapter(1).read(url("/careers"))).isEqualTo(new SourceReadResult.Read(List.of(
                 new FetchedPosting(url("/jobs/1"), "Java Developer", url("/jobs/1"), "Bratislava, SK", "<p>Java</p>")),
-                PartialReason.PAGE_LIMIT, List.of(CAREERS, JOB_1)));
+                null, List.of(CAREERS, JOB_1), Set.of(url("/jobs/2"), url("/about"))));
+    }
+
+    /**
+     * Ссылок больше потолка — каждые сутки читаются следующие по кругу (аудит §121): потолок 1, ссылки
+     * {@code /jobs/1}, {@code /jobs/2}, {@code /about} — в сутки 1 читается {@code /jobs/2}, в сутки 3 — снова
+     * {@code /jobs/1}; временный отказ страницы окна — чтение неполное, как без окна, непрочитанные ссылки
+     * по-прежнему отдаются.
+     */
+    @Test
+    void readsNextPagesOnNextDays() {
+        assertThat(adapter(1, 1).read(url("/careers"))).isEqualTo(new SourceReadResult.Read(List.of(
+                new FetchedPosting(url("/jobs/2"), "QA Engineer", url("/jobs/2"), "Vienna, AT; Remote, EU", null)),
+                null, List.of(CAREERS, JOB_2), Set.of(url("/jobs/1"), url("/about"))));
+        assertThat(adapter(1, 3).read(url("/careers"))).isEqualTo(adapter(1, 0).read(url("/careers")));
+        statuses.put("/jobs/2", 503);
+        assertThat(adapter(1, 1).read(url("/careers"))).isEqualTo(new SourceReadResult.Read(List.of(),
+                PartialReason.PAGE_FAILED, List.of(CAREERS), Set.of(url("/jobs/1"), url("/about"))));
     }
 
     /**
@@ -179,7 +202,15 @@ class JobPostingAdapterTests {
     }
 
     private JobPostingAdapter adapter(int maxPages) {
-        return new JobPostingAdapter(httpClient, new JobPostingProperties(maxPages));
+        return adapter(maxPages, 0);
+    }
+
+    /**
+     * @param day сутки от 1970-01-01 (UTC) на часах адаптера
+     */
+    private JobPostingAdapter adapter(int maxPages, int day) {
+        return new JobPostingAdapter(httpClient, new JobPostingProperties(maxPages),
+                Clock.fixed(Instant.EPOCH.plus(day, ChronoUnit.DAYS), ZoneOffset.UTC));
     }
 
     private String url(String path) {

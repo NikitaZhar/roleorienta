@@ -20,6 +20,7 @@ export function App() {
   const [opened, setOpened] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searches, setSearches] = useState(0);
+  const [fresh, setFresh] = useState(false);
 
   useEffect(() => {
     currentAccount().then(setAccount, (failure: Error) => setError(failure.message));
@@ -38,11 +39,18 @@ export function App() {
   function show(next: View) {
     setNotice(null);
     setOpened(null);
+    setFresh(false);
     setView(next);
   }
 
   function marked() {
     setOpened(null);
+    setFresh(false);
+    setSearches((count) => count + 1);
+  }
+
+  function searched() {
+    setFresh(true);
     setSearches((count) => count + 1);
   }
 
@@ -71,12 +79,14 @@ export function App() {
         {opened !== null && <VacancyPage id={opened} onBack={() => setOpened(null)} onMarked={marked} />}
         {opened === null && view === 'list' && (
           <>
-            <ConditionsPage onSaved={() => setSearches((count) => count + 1)} />
-            <VacancyList key={searches} title="Vacancies" load={vacancies} marked={false} onOpen={setOpened} />
+            <ConditionsPage onSaved={searched} />
+            <VacancyList key={searches} title="Vacancies" load={vacancies} marked={false} poll={fresh}
+              onOpen={setOpened} />
           </>
         )}
         {opened === null && view === 'marked' && (
-          <VacancyList key={searches} title="Not suitable" load={unsuitableVacancies} marked onOpen={setOpened} />
+          <VacancyList key={searches} title="Not suitable" load={unsuitableVacancies} marked poll={false}
+            onOpen={setOpened} />
         )}
       </main>
     </>

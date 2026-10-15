@@ -11,7 +11,11 @@ import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -36,9 +40,19 @@ import org.springframework.stereotype.Component;
  * ({@code addressLocality}, {@code addressRegion}, {@code addressCountry}). Внешний id и ссылка —
  * адрес страницы без фрагмента.</p>
  *
- * <p>Полнота: отказ кадровой страницы — источник недоступен; временный отказ страницы вакансии или
- * ссылок больше потолка {@code maxPages} — неполное чтение (вакансии не закрываются). Постоянный
- * отказ страницы (404, запрет robots.txt и т.п.) — страница пропускается: повтор не поможет.</p>
+ * <p>Полнота: отказ кадровой страницы — источник недоступен; временный отказ страницы вакансии — неполное
+ * чтение (вакансии не закрываются). Постоянный отказ страницы (404, запрет robots.txt и т.п.) — страница
+ * пропускается: повтор не поможет.</p>
+ *
+ * <p>Окно по кругу (решение владельца 2026-10-15, аудит §121). Ссылок больше потолка {@code maxPages} — за одно
+ * чтение читаются {@code maxPages} ссылок подряд по кругу, начиная с номера, который сдвигается на
+ * {@code maxPages} каждые сутки (UTC); источник читается раз в сутки, поэтому за {@code ⌈ссылок / maxPages⌉} суток
+ * прочитаны все. Список ссылок кадровой страницы при этом получен целиком, поэтому чтение полное, а ссылки вне
+ * окна отдаются как «не прочитанные в этот раз» ({@link SourceReadResult.Read#notRead()}): их известные
+ * вакансии не меняются (не подтверждаются, не теряют подтверждение, отсутствие не засчитывается) — и при
+ * временном отказе страницы окна (чтение тогда неполное, как без окна); вакансия, чья ссылка пропала с кадровой
+ * страницы, засчитывается отсутствующей, как при обычном полном чтении. Чтение одного источника укладывается в срок
+ * задания (100 страниц — минуты, а не полчаса).</p>
  */
 @Component
 public class JobPostingAdapter implements SourceAdapter {
@@ -56,14 +70,17 @@ public class JobPostingAdapter implements SourceAdapter {
 
     private final ExternalHttpClient httpClient;
     private final JobPostingProperties properties;
+    private final Clock clock;
 
     /**
      * @param httpClient внешний HTTP-клиент
      * @param properties потолок страниц
+     * @param clock      часы: сутки задают, с какой ссылки начинается чтение сверх потолка
      */
-    public JobPostingAdapter(ExternalHttpClient httpClient, JobPostingProperties properties) {
+    public JobPostingAdapter(ExternalHttpClient httpClient, JobPostingProperties properties, Clock clock) {
         this.httpClient = httpClient;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Override
@@ -83,14 +100,18 @@ public class JobPostingAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         List<URI> links = sameHostLinks(success.body(), careersPage);
-        PartialReason partialReason = links.size() > properties.maxPages() ? PartialReason.PAGE_LIMIT : null;
-        if (partialReason != null) {
-            LOG.warn("Careers page {} links {} pages, over the ceiling of {}; read partially",
-                    board, links.size(), properties.maxPages());
+        List<URI> pages = todaysPages(links);
+        Set<String> notRead = new HashSet<>();
+        links.forEach(link -> notRead.add(link.toString()));
+        pages.forEach(page -> notRead.remove(page.toString()));
+        if (!notRead.isEmpty()) {
+            LOG.info("Careers page {} links {} pages, over the ceiling of {}; {} read today, the rest on next days",
+                    board, links.size(), properties.maxPages(), pages.size());
         }
+        PartialReason partialReason = null;
         List<FetchedPosting> postings = new ArrayList<>();
         List<String> responses = new ArrayList<>(List.of(success.body()));
-        for (URI page : links.subList(0, Math.min(links.size(), properties.maxPages()))) {
+        for (URI page : pages) {
             HttpResult pageResult = httpClient.get(page);
             if (pageResult instanceof HttpResult.Success pageSuccess) {
                 responses.add(pageSuccess.body());
@@ -105,7 +126,25 @@ public class JobPostingAdapter implements SourceAdapter {
                 }
             }
         }
-        return new SourceReadResult.Read(postings, partialReason, responses);
+        return new SourceReadResult.Read(postings, partialReason, responses, Set.copyOf(notRead));
+    }
+
+    /**
+     * Ссылки этого чтения: все, если их не больше потолка; иначе {@code maxPages} подряд по кругу с номера
+     * {@code (сутки UTC × maxPages) mod число ссылок}.
+     */
+    private List<URI> todaysPages(List<URI> links) {
+        int max = properties.maxPages();
+        if (links.size() <= max) {
+            return links;
+        }
+        long day = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC).toEpochDay();
+        int start = (int) Math.floorMod(day * max, (long) links.size());
+        List<URI> pages = new ArrayList<>(max);
+        for (int index = 0; index < max; index++) {
+            pages.add(links.get((start + index) % links.size()));
+        }
+        return pages;
     }
 
     /**

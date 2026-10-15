@@ -54,7 +54,8 @@ import org.springframework.stereotype.Component;
  *           запрос, что делает виджет, {@code POST /services/recruiting/v1/jobs} с языком страницы
  *           ({@code appParams.locale}), страной ({@code location}) и номером страницы ({@code pageNumber}, по 10).
  *           Сайт требует токен страницы ({@code var CSRFToken}) в заголовке {@code X-CSRF-Token} и cookie её сессии
- *           — cookie хранит сам HTTP-клиент (встроенное хранилище Apache HttpClient, включено по умолчанию). В ответе
+ *           — всё чтение идёт в одной сессии cookie HTTP-клиента ({@code ExternalHttpClient.CookieSession}, аудит
+ *           §121), после чтения она выбрасывается. В ответе
  *           {@code totalJobs} и {@code jobSearchResult[].response}: {@code id}, {@code urlTitle},
  *           {@code unifiedStandardTitle}, место {@code jobLocationShort} — «Vrbove, SVK». Путь вакансии —
  *           {@code /job/<urlTitle>/<id>-<язык>/}. Ответ без {@code totalJobs} или с {@code error} — отказ.</li>
@@ -147,8 +148,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(new HttpResult.PermanentFailure(
                     HttpResult.Kind.BLOCKED, "Not a SuccessFactors career site: " + board));
         }
-        String place = country == null ? "" : Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
-        HttpResult first = httpClient.get(searchUri(board, place, 0));
+        ExternalHttpClient.CookieSession session = httpClient.cookieSession();
+        HttpResult first = session.get(searchUri(board, place(country), 0));
         if (!(first instanceof HttpResult.Success success)) {
             return new SourceReadResult.Unavailable(first);
         }
@@ -158,21 +159,28 @@ public class SuccessFactorsAdapter implements SourceAdapter {
             return SourceReadResult.Read.full(List.of(), responses);
         }
         if (success.body().contains(JOBS_SEARCH_WIDGET)) {
-            return readJobsSearch(board, place, country, success.body(), responses);
+            return readJobsSearch(session, board, country, success.body(), responses);
         }
         ListPage page = listPage(document, board);
         if (page.total() < 0 && page.rows().isEmpty()) {
             return new SourceReadResult.Unavailable(new HttpResult.TemporaryFailure(
                     "SuccessFactors page is not a result list: " + board, Duration.ZERO));
         }
-        return readListPages(board, place, country, page, responses);
+        return readListPages(session, board, country, page, responses);
+    }
+
+    /**
+     * @return название страны сбора по-английски для поиска сайта; страна не задана — пустая строка (без фильтра)
+     */
+    private static String place(String country) {
+        return country == null ? "" : Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
     }
 
     /**
      * Строки или плитки: первая страница уже прочитана, следующие — сдвигом {@code startrow}.
      */
-    private SourceReadResult readListPages(String board, String place, String country, ListPage first,
-            List<String> responses) {
+    private SourceReadResult readListPages(ExternalHttpClient.CookieSession session, String board, String country,
+            ListPage first, List<String> responses) {
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         Set<String> unplaced = new HashSet<>();
         int total = first.total();
@@ -180,7 +188,7 @@ public class SuccessFactorsAdapter implements SourceAdapter {
         ListPage page = first;
         for (int index = 0; index < properties.maxPages(); index++) {
             if (index > 0) {
-                HttpResult result = httpClient.get(searchUri(board, place, offset));
+                HttpResult result = session.get(searchUri(board, place(country), offset));
                 if (!(result instanceof HttpResult.Success success)) {
                     LOG.warn("SuccessFactors {} read partially at row {}: {}", board, offset, result);
                     return SourceReadResult.Read.partial(filter(postings, unplaced, country),
@@ -208,8 +216,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
      * Новый поиск SAP: страницы ответа JSON с номера 0, пока не набрано {@code totalJobs}. Нет токена или языка на
      * странице — источник временно недоступен (смена разметки), вакансии не закрываются.
      */
-    private SourceReadResult readJobsSearch(String board, String place, String country, String pageBody,
-            List<String> responses) {
+    private SourceReadResult readJobsSearch(ExternalHttpClient.CookieSession session, String board, String country,
+            String pageBody, List<String> responses) {
         Matcher token = CSRF_TOKEN.matcher(pageBody);
         Matcher locale = PAGE_LOCALE.matcher(pageBody);
         if (!token.find() || !locale.find()) {
@@ -219,8 +227,8 @@ public class SuccessFactorsAdapter implements SourceAdapter {
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         int offset = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
-            HttpResult result = httpClient.postJson(URI.create(site(board) + JOBS_SEARCH_PATH),
-                    searchBody(locale.group(1), place, page), Map.of(CSRF_HEADER, token.group(1)));
+            HttpResult result = session.postJson(URI.create(site(board) + JOBS_SEARCH_PATH),
+                    searchBody(locale.group(1), place(country), page), Map.of(CSRF_HEADER, token.group(1)));
             JsonNode answer = result instanceof HttpResult.Success success ? answer(success.body()) : null;
             if (answer == null) {
                 HttpResult failure = result instanceof HttpResult.Success ? new HttpResult.TemporaryFailure(

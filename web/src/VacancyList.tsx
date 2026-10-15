@@ -7,6 +7,8 @@ interface Props {
   load: (cursor: string | null) => Promise<VacancyPage>;
   /** Список отмеченных «не подходит»: пустой объясняется иначе, условия не спрашиваются. */
   marked: boolean;
+  /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
+  poll: boolean;
   onOpen: (id: number) => void;
 }
 
@@ -17,11 +19,12 @@ const REFRESH_TIMES = 24;
 /**
  * Список вакансий страницами по курсору («Load more»), новые сверху: накопленный список или отмеченные «не
  * подходит». Пустой накопленный список объясняется: что искать не задано — задать выше; задано — подходящих вакансий
- * пока нет (проходы выдачи раз в час). Пустой накопленный список при заданных условиях перечитывается каждые 5 с
- * в течение 2 минут: после новых условий первая порция выдаётся сразу, не в следующем часу (§120). Точная причина
+ * пока нет (проходы выдачи раз в час). Сразу после новых условий ({@code poll}) пустой список перечитывается каждые
+ * 5 с в течение 2 минут — первая порция выдаётся в течение ~30 с (§120); следующий запрос — только после ответа на
+ * предыдущий (аудит §121). При обычном открытии раздела опроса нет. Точная причина
  * пустого списка (обход стран не завершён и т. п.) — шаг 1.11б.
  */
-export function VacancyList({ title, load, marked, onOpen }: Props) {
+export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
   const [items, setItems] = useState<VacancyItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -52,7 +55,7 @@ export function VacancyList({ title, load, marked, onOpen }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!loaded || marked || !hasConditions || items.length > 0 || refreshes >= REFRESH_TIMES) {
+    if (!poll || !loaded || loading || !hasConditions || items.length > 0 || refreshes >= REFRESH_TIMES) {
       return;
     }
     const timer = setTimeout(() => {
@@ -60,7 +63,7 @@ export function VacancyList({ title, load, marked, onOpen }: Props) {
       more(null);
     }, REFRESH_MS);
     return () => clearTimeout(timer);
-  }, [loaded, marked, hasConditions, items, refreshes]);
+  }, [poll, loaded, loading, hasConditions, items, refreshes]);
 
   if (message !== null) {
     return <p className="error">{message}</p>;
@@ -74,7 +77,7 @@ export function VacancyList({ title, load, marked, onOpen }: Props) {
       {items.length === 0 && marked && <p>No vacancies marked as not suitable.</p>}
       {items.length === 0 && !marked && !hasConditions && <p>Choose a country and a vacancy above and press Search.</p>}
       {items.length === 0 && !marked && hasConditions && (
-        <p>{refreshes < REFRESH_TIMES ? 'Searching…'
+        <p>{poll && refreshes < REFRESH_TIMES ? 'Searching…'
           : 'No matching vacancies yet. New vacancies are added to the list every hour.'}</p>
       )}
       <ul className="vacancies">

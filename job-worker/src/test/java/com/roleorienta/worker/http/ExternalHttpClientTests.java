@@ -91,6 +91,31 @@ class ExternalHttpClientTests {
     }
 
     /**
+     * Cookie (аудит §121): обычные запросы их не хранят; запросы одной сессии чтения отправляют cookie, полученные
+     * этой сессией; другая сессия их не видит.
+     */
+    @Test
+    void keepsCookiesOnlyWithinOneSession() {
+        server.createContext("/set", exchange -> {
+            exchange.getResponseHeaders().set("Set-Cookie", "session=one; Path=/");
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+        server.createContext("/cookie", exchange -> {
+            String cookie = exchange.getRequestHeaders().getFirst("Cookie");
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+            send(exchange, STATUS_OK, (cookie == null ? "none" : cookie).getBytes(StandardCharsets.UTF_8));
+        });
+
+        client.get(uri("/set"));
+        assertThat(client.get(uri("/cookie"))).isEqualTo(new HttpResult.Success(STATUS_OK, "none"));
+        ExternalHttpClient.CookieSession session = client.cookieSession();
+        session.get(uri("/set"));
+        assertThat(session.get(uri("/cookie"))).isEqualTo(new HttpResult.Success(STATUS_OK, "session=one"));
+        assertThat(client.cookieSession().get(uri("/cookie"))).isEqualTo(new HttpResult.Success(STATUS_OK, "none"));
+        assertThat(client.get(uri("/cookie"))).isEqualTo(new HttpResult.Success(STATUS_OK, "none"));
+    }
+
+    /**
      * 503 и 429 — временный отказ; {@code Retry-After} в секундах и в форме даты.
      */
     @Test

@@ -90,7 +90,7 @@ public class PortalRecordHandler implements TaskHandler {
         CrawlRun run = recorder.startRun(source, task.id());
         run.read(postings.size(), partial == null ? null : PartialReason.valueOf(partial));
         try {
-            recorder.record(run, postings, Set.of());
+            recorder.record(run, postings, Set.of(), Set.of());
         } catch (DataIntegrityViolationException concurrent) {
             return new TaskOutcome.Retry("Concurrent record of source " + source.getId(), Duration.ZERO);
         }

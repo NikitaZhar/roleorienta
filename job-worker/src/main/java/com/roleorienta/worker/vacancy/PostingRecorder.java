@@ -91,9 +91,14 @@ public class PostingRecorder {
      * @param fetched    публикации из источника
      * @param unverified внешние id пропавших публикаций, отсутствие которых проверить не удалось:
      *                   теряют подтверждение, но отсутствие не засчитывается
+     * @param notRead    внешние id публикаций, которые есть в списке, но в это чтение не прочитаны (окно по кругу,
+     *                   аудит §121): известные из них — при полном и при неполном чтении — не меняются: не
+     *                   подтверждаются, не теряют подтверждение, отсутствие не засчитывается и счётчик отсутствия
+     *                   не сбрасывается (вакансия, закрытая по серии отсутствий, открывается снова, когда её
+     *                   страница прочитана с вакансией)
      */
     @Transactional
-    public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified) {
+    public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified, Set<String> notRead) {
         Instant now = clock.instant();
         crawlLog.finish(run, now);
         Source source = run.getSource();
@@ -123,6 +128,9 @@ public class PostingRecorder {
             }
         }
         for (JobPosting missing : known.values()) {
+            if (notRead.contains(missing.getExternalId())) {
+                continue;
+            }
             if (complete && !notVerified.contains(missing.getExternalId())) {
                 missing.markMissing(properties.closeAfterMissingReads(), now);
             } else {
