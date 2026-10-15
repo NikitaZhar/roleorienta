@@ -7,30 +7,26 @@ interface Props {
   onSaved: () => void;
 }
 
-/**
- * Страны, формат и лимит порции текущих условий: экран показывает одну страну, формат и лимит не показывает. Пока
- * выбрана первая из сохранённых стран, сохраняются все прежние страны — условия с несколькими странами (экран §63) не
- * теряют стран и не получают новую версию без изменения (аудит §78).
- */
-interface Kept {
-  countries: string[];
-  format: WorkFormat | null;
-  portionLimit: number | null;
-}
+const FORMATS: { value: WorkFormat | ''; label: string }[] = [
+  { value: '', label: 'Any' },
+  { value: 'OFFICE', label: 'Office' },
+  { value: 'HYBRID', label: 'Hybrid' },
+  { value: 'REMOTE', label: 'Remote' },
+];
 
 /**
- * Что искать: страна и позиция словаря (бизнес-описание §7.2; формат работы и лимит порции на этом этапе не
- * показываются — сохраняются прежними, у новых условий — значения сервера). Версия условий — ETag; сохранение
- * передаёт её в If-Match. Смена страны или позиции создаёт новую версию условий — накопленный список начинается
- * заново.
+ * Условия поиска (бизнес-описание §7.2): страны, позиция словаря, формат работы (Any — все форматы). Нет условий —
+ * отмечена первая страна из поддерживаемых. Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран,
+ * позиции или формата создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
+ * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [country, setCountry] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
   const [position, setPosition] = useState<CatalogItem | null>(null);
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<CatalogItem[]>([]);
-  const [kept, setKept] = useState<Kept>({ countries: [], format: null, portionLimit: null });
+  const [format, setFormat] = useState<WorkFormat | ''>('');
   const [etag, setEtag] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -40,11 +36,11 @@ export function ConditionsPage({ onSaved }: Props) {
     setCatalog(all);
     setEtag(current?.etag ?? null);
     if (current === null) {
-      setCountry(all.length > 0 ? all[0].code : '');
+      setSelected(all.length > 0 ? [all[0].code] : []);
     } else {
       const condition = current.data;
-      setCountry(condition.countries[0] ?? '');
-      setKept({ countries: condition.countries, format: condition.format, portionLimit: condition.portionLimit });
+      setSelected(condition.countries);
+      setFormat(condition.format ?? '');
       const matches = await positions(condition.position);
       setPosition(matches.find((item) => item.code === condition.position)
         ?? { code: condition.position, name: condition.position });
@@ -79,21 +75,25 @@ export function ConditionsPage({ onSaved }: Props) {
     };
   }, [query]);
 
+  function toggle(code: string) {
+    setSelected((current) => current.includes(code)
+      ? current.filter((item) => item !== code) : [...current, code]);
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (country === '' || position === null) {
-      setMessage('Choose a country and a position');
+    if (selected.length === 0 || position === null) {
+      setMessage('Choose at least one country and a position');
       return;
     }
     try {
       const saved = await saveSearchCondition({
-        countries: country === kept.countries[0] ? kept.countries : [country],
+        countries: selected,
         position: position.code,
-        format: kept.format,
-        portionLimit: kept.portionLimit,
+        format: format === '' ? null : format,
+        portionLimit: null,
       }, etag);
       setEtag(saved.etag);
-      setKept({ countries: saved.data.countries, format: saved.data.format, portionLimit: saved.data.portionLimit });
       setMessage(null);
       onSaved();
     } catch (failure) {
@@ -113,12 +113,16 @@ export function ConditionsPage({ onSaved }: Props) {
   }
   return (
     <form className="narrow-form" onSubmit={save}>
-      <label>
-        Country
-        <select value={country} onChange={(event) => setCountry(event.target.value)}>
-          {catalog.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
-        </select>
-      </label>
+      <fieldset>
+        <legend>Countries</legend>
+        {catalog.map((country) => (
+          <label key={country.code} className="inline">
+            <input type="checkbox" checked={selected.includes(country.code)}
+              onChange={() => toggle(country.code)} />
+            {country.name}
+          </label>
+        ))}
+      </fieldset>
       <label>
         Vacancy to look for {position !== null && <strong>— {position.name}</strong>}
         <input type="search" placeholder="Type at least 2 letters" value={query}
@@ -136,6 +140,12 @@ export function ConditionsPage({ onSaved }: Props) {
           ))}
         </ul>
       )}
+      <label>
+        Work format
+        <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
+          {FORMATS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </label>
       {message !== null && <p className="error" role="status">{message}</p>}
       <div className="actions">
         <button type="submit">Search</button>

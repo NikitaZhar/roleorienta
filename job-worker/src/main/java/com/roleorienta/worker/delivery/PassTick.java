@@ -12,8 +12,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Раз в час планирует проход текущего окна (начало часа) под leader-lock (технический документ §7,
- * §17). Выключается свойством {@code app.delivery.enabled=false}.
+ * Планирует проход текущего окна (начало часа) под leader-lock (технический документ §7, §17) — каждые 30 с
+ * ({@code app.delivery.interval-ms}): у версии условий одно задание на окно (ключ «проход + версия»), поэтому новая
+ * версия условий получает порцию сразу, а остальные — по-прежнему раз в час (§120). Выключается свойством
+ * {@code app.delivery.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.delivery.enabled", havingValue = "true", matchIfMissing = true)
@@ -42,7 +44,7 @@ public class PassTick {
     /**
      * Тик планирования. Ошибка БД не прерывает расписание.
      */
-    @Scheduled(fixedDelayString = "${app.delivery.interval-ms:3600000}")
+    @Scheduled(fixedDelayString = "${app.delivery.interval-ms:30000}")
     public void tick() {
         Instant window = Instant.now(clock).truncatedTo(ChronoUnit.HOURS);
         try {

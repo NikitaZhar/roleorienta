@@ -16,12 +16,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeliveryRepository {
 
     /**
-     * Порция: следующие подходящие вакансии, которых ещё нет в накопленном списке версии условий, в
-     * порядке потока (дата первого обнаружения, затем id), не больше лимита. Страна и формат — правила
-     * {@code Fit} (пакет {@code match}): исключает только явное несоответствие. Страна не подходит,
-     * если у вакансии есть страны, среди них нет стран пользователя и территории без ограничения
-     * («*»), и нет места с неясной страной. Формат не подходит, если он задан в условиях, указан у
-     * вакансии без противоречия и отличается.
+     * Порция: все подходящие вакансии, которых ещё нет в накопленном списке версии условий, в порядке потока (дата
+     * первого обнаружения, затем id). Лимита нет (решение владельца 2026-10-15, стенограмма §120): после новых
+     * условий видны сразу все подходящие вакансии, новые добавляются следующими проходами. Страна: среди определённых стран
+     * вакансии есть страна пользователя; страна не определена или только «*» (без ограничения страны) — вакансия не
+     * выдаётся (решение владельца 2026-10-15, стенограмма §120: в список Словакии попадали вакансии Бангалора с
+     * нераспознанным местом). Формат не подходит, если он задан в условиях, указан у вакансии без противоречия и
+     * отличается.
      */
     private static final String PORTION = """
             INSERT INTO delivered_vacancy (search_condition_id, vacancy_id, pass_run_id, delivered_at)
@@ -32,14 +33,12 @@ public class DeliveryRepository {
             WHERE c.id = ?
               AND v.state <> 'CLOSED'
               AND v.last_confirmed_at >= ?
-              AND ('*' = ANY (v.work_countries) OR v.work_countries && c.countries
-                   OR coalesce(v.country_uncertain, TRUE) OR coalesce(cardinality(v.work_countries), 0) = 0)
+              AND v.work_countries && c.countries
               AND (c.work_format IS NULL OR v.work_format IS NULL OR v.work_format IN ('CONFLICT', c.work_format))
               AND NOT EXISTS (SELECT 1 FROM unsuitable_mark u WHERE u.user_id = c.user_id AND u.vacancy_id = v.id)
               AND NOT EXISTS (SELECT 1 FROM delivered_vacancy d
                               WHERE d.search_condition_id = c.id AND d.vacancy_id = v.id)
             ORDER BY v.first_seen_at, v.id
-            LIMIT ?
             ON CONFLICT DO NOTHING
             """;
 
@@ -86,7 +85,7 @@ public class DeliveryRepository {
     @Transactional
     public int deliverPortion(long conditionId, long passRunId, Instant now, Instant visibleSince) {
         List<Map<String, Object>> condition = jdbcTemplate.queryForList(
-                "SELECT portion_limit, active FROM search_condition WHERE id = ? FOR UPDATE", conditionId);
+                "SELECT active FROM search_condition WHERE id = ? FOR UPDATE", conditionId);
         if (condition.isEmpty() || !Boolean.TRUE.equals(condition.get(0).get("active"))) {
             return 0;
         }
@@ -96,8 +95,7 @@ public class DeliveryRepository {
         if (Boolean.TRUE.equals(delivered)) {
             return 0;
         }
-        return jdbcTemplate.update(PORTION, passRunId, utc(now), conditionId, utc(visibleSince),
-                condition.get(0).get("portion_limit"));
+        return jdbcTemplate.update(PORTION, passRunId, utc(now), conditionId, utc(visibleSince));
     }
 
     private static OffsetDateTime utc(Instant instant) {

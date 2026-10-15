@@ -92,25 +92,21 @@ class DeliveryAcceptanceTests {
     }
 
     /**
-     * Сценарий 1: 30 вакансий компании acme, затем 15 — beta; порции 20, 20, 5, четвёртая пуста.
+     * Сценарий 1 (решение владельца 2026-10-15, §120): лимита порции нет — 30 вакансий компании acme и 15 — beta
+     * выдаются первым же проходом все 45 (лимит условий 20 не действует), следующий проход пуст.
      */
     @Test
-    void scenario1PortionLimit() {
+    void scenario1AllMatchingAtOnce() {
         for (int order = 1; order <= 45; order++) {
             vacancy("Java Developer " + order, order, order <= 30 ? "acme" : "beta");
         }
 
-        List<Integer> portions = List.of(runPass(), runPass(), runPass(), runPass());
+        List<Integer> portions = List.of(runPass(), runPass());
 
-        assertThat(portions).containsExactly(20, 20, 5, 0);
+        assertThat(portions).containsExactly(45, 0);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(DISTINCT vacancy_id) FROM delivered_vacancy WHERE search_condition_id = ?",
                 Integer.class, conditionId)).isEqualTo(45);
-        assertThat(jdbcTemplate.queryForList("""
-                SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id
-                JOIN pass_run r ON r.id = d.pass_run_id ORDER BY r.window_start, v.first_seen_at LIMIT 2 OFFSET 19
-                """, String.class)).containsExactly("Java Developer 20", "Java Developer 21");
-        assertThat(company("Java Developer 20")).isEqualTo(company("Java Developer 21")).isEqualTo("acme");
     }
 
     /**
@@ -166,7 +162,7 @@ class DeliveryAcceptanceTests {
         handler.handle(task);
         handler.handle(task);
 
-        assertThat(delivered()).isEqualTo(20);
+        assertThat(delivered()).isEqualTo(25);
         assertThat(planner.plan(FIRST_WINDOW)).isEqualTo(passRunId);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
                 RunPassHandler.TYPE)).isEqualTo(1);
@@ -174,15 +170,17 @@ class DeliveryAcceptanceTests {
         jdbcTemplate.update("UPDATE search_condition SET active = FALSE");
         handler.handle(new TaskRecord(0, RunPassHandler.TYPE,
                 RunPassHandler.payload(planner.plan(FIRST_WINDOW.plus(1, ChronoUnit.HOURS)), conditionId), 0));
-        assertThat(delivered()).isEqualTo(20);
+        assertThat(delivered()).isEqualTo(25);
     }
 
     /**
-     * Отбор в порции (условия: Словакия, удалённо): явные несоответствия страны и формата, закрытая
-     * и отмеченная «не подходит» вакансии и вакансия без позиции не выдаются; неясные — выдаются.
+     * Отбор в порции (условия: Словакия, удалённо): выдаются только вакансии, среди определённых стран которых есть
+     * Словакия (§120): другая страна, страна не определена и «*» без ограничения страны — нет; явное несоответствие
+     * формата, закрытая и отмеченная «не подходит» вакансии и вакансия без позиции не выдаются; противоречивый формат
+     * — выдаётся.
      */
     @Test
-    void portionExcludesOnlyExplicitMismatches() {
+    void portionKeepsOnlyCountryOfConditions() {
         jdbcTemplate.update("UPDATE search_condition SET work_format = 'REMOTE'");
         facts(vacancy("Slovakia remote", 1, "acme"), "{SK}", false, "REMOTE");
         facts(vacancy("Czechia", 2, "acme"), "{CZ}", false, "REMOTE");
@@ -201,8 +199,7 @@ class DeliveryAcceptanceTests {
 
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
-                """, String.class)).containsExactly("Slovakia remote", "Czechia and unclear place", "Worldwide",
-                "No country", "Conflicting format", "Recheck");
+                """, String.class)).containsExactly("Slovakia remote", "Conflicting format", "Recheck");
     }
 
     /**
@@ -250,12 +247,6 @@ class DeliveryAcceptanceTests {
     private void confirmedDaysAgo(long vacancyId, int days) {
         jdbcTemplate.update("UPDATE vacancy SET last_confirmed_at = now() - ? * interval '1 day' WHERE id = ?", days,
                 vacancyId);
-    }
-
-    private String company(String title) {
-        return jdbcTemplate.queryForObject("""
-                SELECT s.board FROM job_posting p JOIN source s ON s.id = p.source_id WHERE p.title = ?
-                """, String.class, title);
     }
 
     private int delivered() {
