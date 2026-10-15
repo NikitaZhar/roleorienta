@@ -178,6 +178,7 @@ public class TaskExecutor implements DisposableBean {
         int attempts = task.attempts() + 1;
         switch (outcome) {
             case TaskOutcome.Done done -> repository.markDone(task.id(), claim.claimSeq());
+            case TaskOutcome.Continue next -> taskService.completeAndContinue(claim, next);
             case TaskOutcome.Failed failed -> repository.markFailed(task.id(), claim.claimSeq(), attempts,
                     failed.reason());
             case TaskOutcome.Retry retry when attempts >= properties.maxAttempts() ->

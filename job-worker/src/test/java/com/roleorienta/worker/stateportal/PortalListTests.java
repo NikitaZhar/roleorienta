@@ -6,6 +6,7 @@ import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
@@ -285,9 +286,11 @@ class PortalListTests {
         failingPage = 2;
         long cycle = repository.startCycle();
 
-        handler.handle(new TaskRecord(0, PortalListHandler.TYPE,
+        TaskOutcome outcome = handler.handle(new TaskRecord(0, PortalListHandler.TYPE,
                 "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 2}",
                 PortalListHandler.SKIP_PAGE_AFTER_ATTEMPTS));
+        TaskOutcome.Continue next = (TaskOutcome.Continue) outcome;
+        taskService.enqueue(PortalListHandler.TYPE, next.taskKey(), next.payload());
         runQueuedTasks();
 
         assertThat(jdbcTemplate.queryForObject("SELECT skipped_pages || ':' || (completed_at IS NOT NULL) "
@@ -311,14 +314,14 @@ class PortalListTests {
                 new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
         long cycle = repository.startCycle();
 
-        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+        TaskOutcome outcome = noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
                 "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 1}", 0));
 
         assertThat(NAME_SEARCHES.get()).isZero();
         assertThat(offers()).containsExactlyInAnyOrder(UUID_A + "|" + LISTED_NUMBER + "|Účtovník (muž/žena)",
                 "profesia:123456|-|Skladník (muž/žena)");
-        assertThat(jdbcTemplate.queryForList("SELECT task_key || ':' || state FROM task", String.class))
-                .containsExactly("portal-list:cycle:" + cycle + ":1.1:WAITING");
+        assertThat(outcome).isInstanceOfSatisfying(TaskOutcome.Continue.class,
+                next -> assertThat(next.taskKey()).isEqualTo("portal-list:cycle:" + cycle + ":1.1"));
     }
 
     /**
@@ -332,14 +335,14 @@ class PortalListTests {
                 new PortalListProperties(2, 2, Duration.ofHours(20), Duration.ZERO, Duration.ofDays(7)));
         long cycle = repository.startCycle();
 
-        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+        TaskOutcome first = noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
                 "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 3}", 0));
-        noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
+        TaskOutcome second = noTime.handle(new TaskRecord(0, PortalListHandler.TYPE,
                 "{\"mode\": \"cycle\", \"cycle\": " + cycle + ", \"page\": 3, \"from\": 1}", 0));
 
         assertThat(offers()).containsExactlyInAnyOrder("https://www.worki.sk/ponuka/1|-|Kuchár (muž/žena)",
                 UUID_E + "|" + LISTED_NUMBER + "|Predavač (muž/žena)");
-        assertThat(jdbcTemplate.queryForList("SELECT task_key FROM task ORDER BY id", String.class))
+        assertThat(List.of(first, second)).extracting(outcome -> ((TaskOutcome.Continue) outcome).taskKey())
                 .containsExactly("portal-list:cycle:" + cycle + ":3.1", "portal-list:cycle:" + cycle + ":4");
     }
 

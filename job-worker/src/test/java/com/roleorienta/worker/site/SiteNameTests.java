@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
@@ -143,11 +144,12 @@ class SiteNameTests {
                 properties.companiesPerTask(), properties.recheckAfter(), properties.minEmployees(), Duration.ZERO));
         int checkedBefore = checkedCompanies();
 
-        noTime.handle(new TaskRecord(0, SiteNameHandler.TYPE, "{\"period\": \"budget\", \"round\": 1}", 0));
+        TaskOutcome outcome = noTime.handle(new TaskRecord(0, SiteNameHandler.TYPE,
+                "{\"period\": \"budget\", \"round\": 1}", 0));
 
         assertThat(checkedCompanies()).isEqualTo(checkedBefore + 1);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
-                SiteNameHandler.TYPE)).isEqualTo(1);
+        assertThat(outcome).isInstanceOfSatisfying(TaskOutcome.Continue.class,
+                next -> assertThat(next.taskKey()).isEqualTo("site-name:budget:2"));
     }
 
     private int checkedCompanies() {

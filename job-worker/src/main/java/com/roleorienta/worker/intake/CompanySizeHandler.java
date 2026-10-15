@@ -104,7 +104,7 @@ public class CompanySizeHandler implements TaskHandler {
             return new TaskOutcome.Retry("RÚZ not answering", Duration.ZERO);
         }
         if (due.size() == properties.companiesPerTask() || asked < due.size()) {
-            taskService.enqueueNextHour(TYPE, key(period, round + 1), payload(period, round + 1));
+            return new TaskOutcome.Continue(key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();
     }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpServer;
@@ -404,14 +405,15 @@ class CareerScanTests {
      */
     @Test
     void stopsStartingSitesAfterTimeBudget() {
-        CareerScanHandler noTime = new CareerScanHandler(http, repository, taskService, new CareerProperties("http", 25,
+        CareerScanHandler noTime = new CareerScanHandler(http, repository, new CareerProperties("http", 25,
                 Duration.ofDays(30), 20, Duration.ZERO), 6);
 
-        noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("budget"), 0));
+        TaskOutcome outcome = noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE,
+                CareerScanHandler.payload("budget"), 0));
 
         assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site", Boolean.class)).isTrue();
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key LIKE 'career-scan:budget:%'",
-                Integer.class)).isEqualTo(1);
+        assertThat(outcome).isInstanceOfSatisfying(TaskOutcome.Continue.class,
+                next -> assertThat(next.taskKey()).startsWith("career-scan:budget:"));
     }
 
     private void runScan() {

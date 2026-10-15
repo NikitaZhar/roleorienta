@@ -113,7 +113,7 @@ public class SiteNameHandler implements TaskHandler {
         }
         LOG.info("Sites by name: {} of {} companies checked, {} sites found", checked, due.size(), found);
         if (outOfTime || due.size() == properties.companiesPerTask()) {
-            taskService.enqueueNextHour(TYPE, key(period, round + 1), payload(period, round + 1));
+            return new TaskOutcome.Continue(key(period, round + 1), payload(period, round + 1));
         }
         return new TaskOutcome.Done();
     }

@@ -186,7 +186,7 @@ public class StatePortalHandler implements TaskHandler {
         }
         failed.forEach(employer -> repository.recordSite(employer, null));
         if (outOfTime || due.size() == properties.task().employersPerTask()) {
-            nextHour(SITE, period, round + 1);
+            return new TaskOutcome.Continue(key(SITE, period, round + 1), payload(SITE, period, round + 1));
         }
         return new TaskOutcome.Done();
     }
@@ -233,11 +233,6 @@ public class StatePortalHandler implements TaskHandler {
 
     private void next(String step, String period, int position) {
         taskService.enqueue(TYPE, key(step, period, position), payload(step, period, position));
-    }
-
-    /** Продолжение поиска сайта — в следующем часу: квота в час — размер задания (§101). */
-    private void nextHour(String step, String period, int position) {
-        taskService.enqueueNextHour(TYPE, key(step, period, position), payload(step, period, position));
     }
 
     private static String key(String step, String period, int position) {

@@ -215,12 +215,13 @@ public class TaskRepository {
      *
      * @param taskId   идентификатор задания
      * @param claimSeq номер захвата исполнителя
+     * @return {@code false} — задание уже не у этого исполнителя, итог не записан
      */
-    void markDone(long taskId, int claimSeq) {
-        jdbcTemplate.update("""
+    boolean markDone(long taskId, int claimSeq) {
+        return jdbcTemplate.update("""
                 UPDATE task SET state = 'DONE', lease_until = NULL, last_error = NULL, updated_at = now()
                 WHERE id = ? AND state = 'RUNNING' AND claim_seq = ?
-                """, taskId, claimSeq);
+                """, taskId, claimSeq) == 1;
     }
 
     /**

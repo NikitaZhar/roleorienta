@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpExchange;
@@ -141,11 +142,12 @@ class CompanySizeTests {
                 properties.baseUrl(), properties.companiesPerTask(), properties.recheckAfter(), Duration.ZERO),
                 Clock.systemUTC());
 
-        noTime.handle(new TaskRecord(0, CompanySizeHandler.TYPE, "{\"period\": \"budget\", \"round\": 1}", 0));
+        TaskOutcome outcome = noTime.handle(new TaskRecord(0, CompanySizeHandler.TYPE,
+                "{\"period\": \"budget\", \"round\": 1}", 0));
 
         assertThat(sizes()).hasSize(1);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE task_key = 'company-size:budget:2'",
-                Integer.class)).isEqualTo(1);
+        assertThat(outcome).isInstanceOfSatisfying(TaskOutcome.Continue.class,
+                next -> assertThat(next.taskKey()).isEqualTo("company-size:budget:2"));
     }
 
     private List<String> sizes() {

@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
-import com.roleorienta.worker.task.TaskService;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,20 +71,17 @@ public class SiteScanHandler implements TaskHandler {
 
     private final CommonCrawlClient client;
     private final SiteScanRepository repository;
-    private final TaskService taskService;
     private final CommonCrawlProperties properties;
 
     /**
      * @param client      Common Crawl
      * @param repository  блоки и сайты
-     * @param taskService постановка следующего задания
      * @param properties  блоков за задание
      */
-    public SiteScanHandler(CommonCrawlClient client, SiteScanRepository repository, TaskService taskService,
+    public SiteScanHandler(CommonCrawlClient client, SiteScanRepository repository,
             CommonCrawlProperties properties) {
         this.client = client;
         this.repository = repository;
-        this.taskService = taskService;
         this.properties = properties;
     }
 
@@ -131,11 +127,10 @@ public class SiteScanHandler implements TaskHandler {
                 scan(crawl, block);
             }
             if (blocks.size() == properties.blocksPerTask()) {
-                taskService.enqueueNextHour(TYPE, taskKey(crawl + ":" + blocks.get(blocks.size() - 1).seq()), PAYLOAD);
-            } else {
-                LOG.info("Common Crawl {}: site scan finished, {} companies without site", crawl,
-                        repository.recordSitesNotFound());
+                return new TaskOutcome.Continue(taskKey(crawl + ":" + blocks.get(blocks.size() - 1).seq()), PAYLOAD);
             }
+            LOG.info("Common Crawl {}: site scan finished, {} companies without site", crawl,
+                    repository.recordSitesNotFound());
             return new TaskOutcome.Done();
         } catch (IOException exception) {
             return new TaskOutcome.Retry("Common Crawl not read: " + exception.getMessage(), Duration.ZERO);

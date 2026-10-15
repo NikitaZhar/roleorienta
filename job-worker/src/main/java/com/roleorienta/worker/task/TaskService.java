@@ -54,18 +54,23 @@ public class TaskService {
     }
 
     /**
-     * Ставит продолжение цепочки поиска на внешних хостах не раньше начала следующего часа: за час цепочка делает одно
-     * задание, поэтому квота в час — размер задания (решение владельца, стенограмма §101). Задание ждёт в WAITING,
-     * событие outbox пишет перепостановка, когда срок наступит; ожидающее задание держит цепочку
-     * ({@link #startChain(String, String, String, String)} второй цепочки не запустит).
+     * Отмечает задание выполненным и ставит продолжение его цепочки не раньше начала следующего часа (квота в час —
+     * размер задания, стенограмма §101) — одной транзакцией и только если номер захвата прежний. Исполнитель, у
+     * которого задание забрали (аренда истекла, задание захвачено снова), продолжения не ставит: иначе оба исполнения
+     * ставили бы продолжение, ключи у них разные (каждое остановилось на своём месте), и цепочка раздваивалась (§114).
+     * Продолжение ждёт в WAITING, событие outbox пишет перепостановка, когда срок наступит; ожидающее задание держит
+     * цепочку ({@link #startChain(String, String, String, String)} второй цепочки не запустит).
      *
-     * @param type    тип задания
-     * @param taskKey ключ идемпотентности: повторная постановка с тем же ключом ничего не делает
-     * @param payload параметры в JSON
-     * @return {@code true} — задание создано; {@code false} — уже было
+     * @param claim захват исполнителя
+     * @param next  продолжение цепочки (тип — как у задания)
+     * @return {@code true} — продолжение создано; {@code false} — задание уже не у этого исполнителя или продолжение
+     *         с этим ключом уже было
      */
-    public boolean enqueueNextHour(String type, String taskKey, String payload) {
-        return taskRepository.insertNextHourIfAbsent(type, taskKey, payload);
+    @Transactional
+    public boolean completeAndContinue(ClaimedTask claim, TaskOutcome.Continue next) {
+        TaskRecord task = claim.task();
+        return taskRepository.markDone(task.id(), claim.claimSeq())
+                && taskRepository.insertNextHourIfAbsent(task.type(), next.taskKey(), next.payload());
     }
 
     /**

@@ -237,9 +237,8 @@ public class PortalListHandler implements TaskHandler {
         return "portal-record:" + source.getId() + ":";
     }
 
-    private TaskOutcome next(long cycle, int page, int from) {
-        taskService.enqueueNextHour(TYPE, cycleKey(cycle, page, from), cyclePayload(cycle, page, from));
-        return new TaskOutcome.Done();
+    private static TaskOutcome next(long cycle, int page, int from) {
+        return new TaskOutcome.Continue(cycleKey(cycle, page, from), cyclePayload(cycle, page, from));
     }
 
     /**

@@ -12,7 +12,6 @@ import com.roleorienta.worker.site.SiteBrand;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
-import com.roleorienta.worker.task.TaskService;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -97,22 +96,19 @@ public class CareerScanHandler implements TaskHandler {
 
     private final ExternalHttpClient http;
     private final CareerScanRepository repository;
-    private final TaskService taskService;
     private final CareerProperties properties;
     private final int parallelSites;
 
     /**
      * @param http          внешний HTTP-клиент
      * @param repository    сайты и источники
-     * @param taskService   постановка следующего задания
      * @param properties    схема, сайтов за задание, срок перепроверки
      * @param parallelSites сколько сайтов задания проверяется одновременно ({@code app.career.parallel-sites})
      */
-    public CareerScanHandler(ExternalHttpClient http, CareerScanRepository repository, TaskService taskService,
+    public CareerScanHandler(ExternalHttpClient http, CareerScanRepository repository,
             CareerProperties properties, @Value("${app.career.parallel-sites:6}") int parallelSites) {
         this.http = http;
         this.repository = repository;
-        this.taskService = taskService;
         this.properties = properties;
         this.parallelSites = parallelSites;
     }
@@ -165,7 +161,7 @@ public class CareerScanHandler implements TaskHandler {
         }
         if (sites.size() == properties.sitesPerTask() || checked.size() < sites.size()) {
             long last = checked.stream().mapToLong(Site::id).max().orElse(sites.get(sites.size() - 1).id());
-            taskService.enqueueNextHour(TYPE, continuationKey(day, last), payload(day));
+            return new TaskOutcome.Continue(continuationKey(day, last), payload(day));
         }
         return new TaskOutcome.Done();
     }

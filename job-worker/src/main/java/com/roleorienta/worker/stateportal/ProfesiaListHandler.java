@@ -161,7 +161,7 @@ public class ProfesiaListHandler implements TaskHandler {
         }
         LOG.info("Profesia employer list: {} employers, {} sites or career pages found", done, found);
         if (due.size() == EMPLOYERS_PER_TASK || done < due.size()) {
-            taskService.enqueueNextHour(TYPE, key(day, round + 1), payload(day, round + 1));
+            return new TaskOutcome.Continue(key(day, round + 1), payload(day, round + 1));
         }
         return new TaskOutcome.Done();
     }

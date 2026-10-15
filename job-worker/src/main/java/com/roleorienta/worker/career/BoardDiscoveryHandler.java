@@ -10,7 +10,6 @@ import com.roleorienta.worker.site.IndexBlock;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
-import com.roleorienta.worker.task.TaskService;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.io.IOException;
 import java.time.Duration;
@@ -77,23 +76,20 @@ public class BoardDiscoveryHandler implements TaskHandler {
     private final CommonCrawlClient client;
     private final BoardDiscoveryRepository repository;
     private final Map<String, SourceAdapter> adaptersByProvider;
-    private final TaskService taskService;
     private final CareerProperties properties;
 
     /**
      * @param client      Common Crawl
      * @param repository  блоки и доски
      * @param adapters    адаптеры провайдеров
-     * @param taskService постановка следующего задания
      * @param properties  досок за задание, срок перепроверки
      */
     public BoardDiscoveryHandler(CommonCrawlClient client, BoardDiscoveryRepository repository,
-            ObjectProvider<SourceAdapter> adapters, TaskService taskService, CareerProperties properties) {
+            ObjectProvider<SourceAdapter> adapters, CareerProperties properties) {
         this.client = client;
         this.repository = repository;
         this.adaptersByProvider = adapters.orderedStream()
                 .collect(Collectors.toMap(SourceAdapter::provider, Function.identity()));
-        this.taskService = taskService;
         this.properties = properties;
     }
 
@@ -137,8 +133,7 @@ public class BoardDiscoveryHandler implements TaskHandler {
                     repository.completeBlock(crawl, pass.purpose(), block.seq(), boards(client.block(crawl, block)));
                 }
                 if (!blocks.isEmpty()) {
-                    enqueue(crawl + ":" + pass.purpose() + ":" + blocks.get(blocks.size() - 1).seq());
-                    return new TaskOutcome.Done();
+                    return next(crawl + ":" + pass.purpose() + ":" + blocks.get(blocks.size() - 1).seq());
                 }
             }
             List<String> countries = repository.activeCountries();
@@ -157,7 +152,7 @@ public class BoardDiscoveryHandler implements TaskHandler {
             }
             if (toCheck.size() == budget || checked < toCheck.size()) {
                 Board last = toCheck.get(Math.max(checked - 1, 0));
-                enqueue(crawl + ":check:" + last.provider() + ":" + last.board() + ":" + checked);
+                return next(crawl + ":check:" + last.provider() + ":" + last.board() + ":" + checked);
             }
             return new TaskOutcome.Done();
         } catch (IOException exception) {
@@ -179,8 +174,8 @@ public class BoardDiscoveryHandler implements TaskHandler {
     }
 
     /** Продолжение — в следующем часу: квота в час — размер задания (§101). */
-    private void enqueue(String suffix) {
-        taskService.enqueueNextHour(TYPE, taskKey(suffix), PAYLOAD);
+    private static TaskOutcome next(String suffix) {
+        return new TaskOutcome.Continue(taskKey(suffix), PAYLOAD);
     }
 
     /**

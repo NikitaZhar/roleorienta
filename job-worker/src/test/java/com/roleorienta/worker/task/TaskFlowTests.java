@@ -363,12 +363,17 @@ class TaskFlowTests {
 
     /**
      * Продолжение цепочки поиска ждёт начала следующего часа (квота в час, §101): без события outbox, перепостановка
-     * до срока его не ставит; ожидающее продолжение держит цепочку — вторая не запускается.
+     * до срока его не ставит; ожидающее продолжение держит цепочку — вторая не запускается. Задание с продолжением —
+     * DONE.
      */
     @Test
     void continuationWaitsForNextHourAndHoldsChain() {
-        assertThat(taskService.enqueueNextHour("CHAIN", "chain:day-1:2", PAYLOAD)).isTrue();
-        assertThat(taskService.enqueueNextHour("CHAIN", "chain:day-1:2", PAYLOAD)).isFalse();
+        taskService.enqueue("CHAIN", "chain:day-1:1", PAYLOAD);
+        long firstId = taskId("chain:day-1:1");
+        ClaimedTask first = taskService.claim(firstId).orElseThrow();
+        assertThat(taskService.completeAndContinue(first, new TaskOutcome.Continue("chain:day-1:2", PAYLOAD)))
+                .isTrue();
+        assertThat(state(firstId)).isEqualTo("DONE");
         long taskId = taskId("chain:day-1:2");
 
         assertThat(state(taskId)).isEqualTo("WAITING");
@@ -384,6 +389,29 @@ class TaskFlowTests {
         assertThat(taskService.requeueDue()).isEqualTo(1);
         assertThat(state(taskId)).isEqualTo("QUEUED");
         assertThat(unpublishedEvents(taskId)).isEqualTo(1);
+    }
+
+    /**
+     * Задание исполнено дважды (аренда истекла — сон машины, перезапуск — задание захвачено снова, прежний исполнитель
+     * доработал): продолжение ставит только текущий захват, цепочка не раздваивается (§114).
+     */
+    @Test
+    void staleExecutorDoesNotContinueChain() {
+        taskService.enqueue("CHAIN", "chain:fork:1", PAYLOAD);
+        long taskId = taskId("chain:fork:1");
+        ClaimedTask first = taskService.claim(taskId).orElseThrow();
+        jdbcTemplate.update("UPDATE task SET lease_until = now() - interval '1 second' WHERE id = ?", taskId);
+        taskService.requeueDue();
+        ClaimedTask second = taskService.claim(taskId).orElseThrow();
+
+        assertThat(taskService.completeAndContinue(first, new TaskOutcome.Continue("chain:fork:2.5", PAYLOAD)))
+                .isFalse();
+        assertThat(taskService.completeAndContinue(second, new TaskOutcome.Continue("chain:fork:2.7", PAYLOAD)))
+                .isTrue();
+
+        assertThat(state(taskId)).isEqualTo("DONE");
+        assertThat(jdbcTemplate.queryForList("SELECT task_key FROM task WHERE task_key LIKE 'chain:fork:2%'",
+                String.class)).containsExactly("chain:fork:2.7");
     }
 
     /**
