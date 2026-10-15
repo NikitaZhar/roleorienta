@@ -1,0 +1,416 @@
+{
+  "items" : [ {
+    "SearchId" : 1,
+    "Keyword" : null,
+    "CorrectedKeyword" : null,
+    "UseExactKeywordFlag" : false,
+    "SuggestedKeyword" : null,
+    "ExecuteSpellCheckFlag" : true,
+    "Location" : "Slovakia",
+    "LocationId" : null,
+    "Radius" : 0,
+    "RadiusUnit" : "MI",
+    "SelectedTitlesFacet" : null,
+    "SelectedCategoriesFacet" : null,
+    "SelectedPostingDatesFacet" : null,
+    "SelectedLocationsFacet" : null,
+    "LastSelectedFacet" : null,
+    "Facets" : "TITLES;LOCATIONS;LOCATION_LEVEL1;LOCATION_LEVEL2;LOCATION_LEVEL3;CATEGORIES;POSTING_DATES;WORK_LOCATIONS;FLEX_FIELDS;ORGANIZATIONS;WORKPLACE_TYPES",
+    "Offset" : 0,
+    "Limit" : 25,
+    "SortBy" : "POSTING_DATES_DESC",
+    "TotalJobsCount" : 4,
+    "Latitude" : null,
+    "Longitude" : null,
+    "SiteNumber" : "CX_1",
+    "JobFamilyId" : null,
+    "PostingStartDate" : null,
+    "PostingEndDate" : null,
+    "SelectedWorkLocationsFacet" : null,
+    "RequisitionId" : null,
+    "CandidateNumber" : null,
+    "WorkLocationZipCode" : null,
+    "WorkLocationCountryCode" : null,
+    "SelectedFlexFieldsFacets" : null,
+    "OrganizationId" : null,
+    "SelectedOrganizationsFacet" : null,
+    "UserTargetFacetName" : null,
+    "UserTargetFacetInputTerm" : null,
+    "HotJobFlag" : null,
+    "WorkplaceType" : null,
+    "SelectedWorkplaceTypesFacet" : null,
+    "BotQRShortCode" : null,
+    "requisitionList" : [ {
+      "Id" : "26012214",
+      "Title" : "Microfactory Leader",
+      "PostedDate" : "2026-10-13",
+      "PostingEndDate" : null,
+      "Language" : "US",
+      "PrimaryLocationCountry" : "SK",
+      "GeographyId" : 300000000229077,
+      "HotJobFlag" : false,
+      "WorkplaceTypeCode" : "ORA_ON_SITE",
+      "JobFamily" : null,
+      "JobFunction" : null,
+      "WorkerType" : null,
+      "ContractType" : null,
+      "ManagerLevel" : null,
+      "JobSchedule" : null,
+      "JobShift" : null,
+      "JobType" : null,
+      "StudyLevel" : null,
+      "DomesticTravelRequired" : null,
+      "InternationalTravelRequired" : null,
+      "WorkDurationYears" : null,
+      "WorkDurationMonths" : null,
+      "WorkHours" : null,
+      "WorkDays" : null,
+      "LegalEmployer" : null,
+      "BusinessUnit" : null,
+      "Department" : null,
+      "Organization" : null,
+      "BusinessUnitId" : 300000303020360,
+      "LegalEmployerId" : 300002222064440,
+      "OrganizationId" : 300000090096559,
+      "MediaThumbURL" : null,
+      "ShortDescriptionStr" : "Position Summary – If you are a Microfactory Leader professional Iooking for an opportunity to grow your career, this is your chance to lead a high-performing manufacturing cell (“microfactory”) in Dolný Kubín, Slovakia, where safety, quality, delivery, and continuous improvement are part of everyday work. In this role, you will guide a cross-functional team to achieve operational excellence, strengthen standard work, and accelerate innovation in how we manufacture—while living Emerson’s values of innovation, integrity, collaboration, and inclusion. You will be a visible leader on the shop floor, developing people, improving processes, and driving results through data, teamwork, and a customer-first mindset.",
+      "PrimaryLocation" : "Slovakia",
+      "Distance" : 1.7918496E+12,
+      "TrendingFlag" : false,
+      "BeFirstToApplyFlag" : true,
+      "Relevancy" : 1E+1,
+      "WorkplaceType" : "On-site",
+      "ExternalQualificationsStr" : null,
+      "ExternalResponsibilitiesStr" : null,
+      "secondaryLocations" : [ ]
+    }, {
+      "Id" : "26011670",
+      "Title" : "Regional Business Manager (m/f/d) - Transportation (North or Central EMEA)",
+      "PostedDate" : "2026-10-12",
+      "PostingEndDate" : null,
+      "Language" : "US",
+      "PrimaryLocationCountry" : "DE",
+      "GeographyId" : 300000024901252,
+      "HotJobFlag" : false,
+      "WorkplaceTypeCode" : "ORA_HYBRID",
+      "JobFamily" : null,
+      "JobFunction" : null,
+      "WorkerType" : null,
+      "ContractType" : null,
+      "ManagerLevel" : null,
+      "JobSchedule" : null,
+      "JobShift" : null,
+      "JobType" : null,
+      "StudyLevel" : null,
+      "DomesticTravelRequired" : null,
+      "InternationalTravelRequired" : null,
+      "WorkDurationYears" : null,
+      "WorkDurationMonths" : null,
+      "WorkHours" : null,
+      "WorkDays" : null,
+      "LegalEmployer" : null,
+      "BusinessUnit" : null,
+      "Department" : null,
+      "Organization" : null,
+      "BusinessUnitId" : 300012142648830,
+      "LegalEmployerId" : 300012185544262,
+      "OrganizationId" : 300000090096559,
+      "MediaThumbURL" : null,
+      "ShortDescriptionStr" : "If you are a Business Development professional looking for an opportunity to grow your career, Emerson Test & Measurement (T&M) has an exciting opportunity for you. Based in North or Central EMEA, you will play a key role in expanding market demand for NI products, platforms, and solutions, across the transportation sector. In this highly collaborative and customer-focused position, you will build strategic relationships, identify growth opportunities, influence market adoption of innovative technologies, and partner with cross-functional teams to accelerate business growth. You will serve as a trusted advisor to customers and industry stakeholders while helping shape the future of transportation technologies across the region.",
+      "PrimaryLocation" : "MÜNCHEN, Bavaria, Germany",
+      "Distance" : 1.7917632E+12,
+      "TrendingFlag" : true,
+      "BeFirstToApplyFlag" : false,
+      "Relevancy" : 1E+1,
+      "WorkplaceType" : "Hybrid",
+      "ExternalQualificationsStr" : null,
+      "ExternalResponsibilitiesStr" : null,
+      "secondaryLocations" : [ {
+        "RequisitionLocationId" : 300016084878381,
+        "GeographyNodeId" : 100003456197176,
+        "GeographyId" : 300000000228702,
+        "Name" : "United Kingdom",
+        "CountryCode" : "GB",
+        "Latitude" : 49.48703,
+        "Longitude" : -2.57648
+      }, {
+        "RequisitionLocationId" : 300016084878382,
+        "GeographyNodeId" : 100003456197411,
+        "GeographyId" : 300000000228777,
+        "Name" : "Ireland",
+        "CountryCode" : "IE",
+        "Latitude" : 53.46504,
+        "Longitude" : -9.81313
+      }, {
+        "RequisitionLocationId" : 300016084878383,
+        "GeographyNodeId" : 100003456197340,
+        "GeographyId" : 300000000229008,
+        "Name" : "Poland",
+        "CountryCode" : "PL",
+        "Latitude" : 49.84569,
+        "Longitude" : 21.1696
+      }, {
+        "RequisitionLocationId" : 300016084878384,
+        "GeographyNodeId" : 100003456197139,
+        "GeographyId" : 300000000229062,
+        "Name" : "Sweden",
+        "CountryCode" : "SE",
+        "Latitude" : 57.74282,
+        "Longitude" : 13.0297
+      }, {
+        "RequisitionLocationId" : 300016084878385,
+        "GeographyNodeId" : 100003456197280,
+        "GeographyId" : 300000000228771,
+        "Name" : "Hungary",
+        "CountryCode" : "HU",
+        "Latitude" : 47.07681,
+        "Longitude" : 18.97637
+      }, {
+        "RequisitionLocationId" : 300016084878386,
+        "GeographyNodeId" : 100003456197444,
+        "GeographyId" : 300000000228639,
+        "Name" : "Czech Republic",
+        "CountryCode" : "CZ",
+        "Latitude" : 49.17719,
+        "Longitude" : 15.63628
+      }, {
+        "RequisitionLocationId" : 300016084878387,
+        "GeographyNodeId" : 100003456197787,
+        "GeographyId" : 300000000229077,
+        "Name" : "Slovakia",
+        "CountryCode" : "SK",
+        "Latitude" : 49.08927,
+        "Longitude" : 21.31365
+      }, {
+        "RequisitionLocationId" : 300016084878388,
+        "GeographyNodeId" : 100003456197179,
+        "GeographyId" : 300000000228969,
+        "Name" : "Netherlands",
+        "CountryCode" : "NL",
+        "Latitude" : 52.14218,
+        "Longitude" : 5.62084
+      }, {
+        "RequisitionLocationId" : 300016084878389,
+        "GeographyNodeId" : 100003456197099,
+        "GeographyId" : 300000000228642,
+        "Name" : "Germany",
+        "CountryCode" : "DE",
+        "Latitude" : 50.51707,
+        "Longitude" : 10.20266
+      } ]
+    }, {
+      "Id" : "26011716",
+      "Title" : "Setter",
+      "PostedDate" : "2026-10-02",
+      "PostingEndDate" : null,
+      "Language" : "US",
+      "PrimaryLocationCountry" : "SK",
+      "GeographyId" : 300000000229077,
+      "HotJobFlag" : false,
+      "WorkplaceTypeCode" : "ORA_ON_SITE",
+      "JobFamily" : null,
+      "JobFunction" : null,
+      "WorkerType" : null,
+      "ContractType" : null,
+      "ManagerLevel" : null,
+      "JobSchedule" : null,
+      "JobShift" : null,
+      "JobType" : null,
+      "StudyLevel" : null,
+      "DomesticTravelRequired" : null,
+      "InternationalTravelRequired" : null,
+      "WorkDurationYears" : null,
+      "WorkDurationMonths" : null,
+      "WorkHours" : null,
+      "WorkDays" : null,
+      "LegalEmployer" : null,
+      "BusinessUnit" : null,
+      "Department" : null,
+      "Organization" : null,
+      "BusinessUnitId" : 300000303020360,
+      "LegalEmployerId" : 300002222064440,
+      "OrganizationId" : 300000090096559,
+      "MediaThumbURL" : null,
+      "ShortDescriptionStr" : "We are looking for a Setter - Production Operator who will be responsible for setting/arranging KMP lines, presses and equipment according to plan/need. Preparing material, changing tools/tools. Setting, or adjusting dimensions/parameters of products according to relevant tables or arrangement plans. We are looking for setter responsible for the quality of the products manufactured at the workplace, release production and perform quality control in accordance with the quality control plan. This position involves leading all aspects of the production of the designated product in alignment with the manufacturing documentation and technological process of the facility.",
+      "PrimaryLocation" : "Slovakia",
+      "Distance" : 1.7908992E+12,
+      "TrendingFlag" : false,
+      "BeFirstToApplyFlag" : true,
+      "Relevancy" : 5,
+      "WorkplaceType" : "On-site",
+      "ExternalQualificationsStr" : null,
+      "ExternalResponsibilitiesStr" : null,
+      "secondaryLocations" : [ ]
+    }, {
+      "Id" : "26011718",
+      "Title" : "Setter",
+      "PostedDate" : "2026-10-02",
+      "PostingEndDate" : null,
+      "Language" : "US",
+      "PrimaryLocationCountry" : "SK",
+      "GeographyId" : 300000000229077,
+      "HotJobFlag" : false,
+      "WorkplaceTypeCode" : "ORA_ON_SITE",
+      "JobFamily" : null,
+      "JobFunction" : null,
+      "WorkerType" : null,
+      "ContractType" : null,
+      "ManagerLevel" : null,
+      "JobSchedule" : null,
+      "JobShift" : null,
+      "JobType" : null,
+      "StudyLevel" : null,
+      "DomesticTravelRequired" : null,
+      "InternationalTravelRequired" : null,
+      "WorkDurationYears" : null,
+      "WorkDurationMonths" : null,
+      "WorkHours" : null,
+      "WorkDays" : null,
+      "LegalEmployer" : null,
+      "BusinessUnit" : null,
+      "Department" : null,
+      "Organization" : null,
+      "BusinessUnitId" : 300000303020360,
+      "LegalEmployerId" : 300002222064440,
+      "OrganizationId" : 300000090096559,
+      "MediaThumbURL" : null,
+      "ShortDescriptionStr" : "We are looking for a Setter - Production Operator who will be responsible for setting/arranging KMP lines, presses and equipment according to plan/need. Preparing material, changing tools/tools. Setting, or adjusting dimensions/parameters of products according to relevant tables or arrangement plans. We are looking for setter responsible for the quality of the products manufactured at the workplace, release production and perform quality control in accordance with the quality control plan. This position involves leading all aspects of the production of the designated product in alignment with the manufacturing documentation and technological process of the facility.",
+      "PrimaryLocation" : "Slovakia",
+      "Distance" : 1.7908992E+12,
+      "TrendingFlag" : false,
+      "BeFirstToApplyFlag" : true,
+      "Relevancy" : 5,
+      "WorkplaceType" : "On-site",
+      "ExternalQualificationsStr" : null,
+      "ExternalResponsibilitiesStr" : null,
+      "secondaryLocations" : [ ]
+    } ],
+    "categoriesFacet" : [ {
+      "Id" : 300000067390063,
+      "Name" : "Operations",
+      "TotalCount" : 2
+    }, {
+      "Id" : 300013577106288,
+      "Name" : "Manufacturing",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300014298627734,
+      "Name" : "Technical Strategic Business Development",
+      "TotalCount" : 1
+    } ],
+    "locationsFacet" : [ {
+      "Id" : 300000000229077,
+      "Name" : "Slovakia",
+      "TotalCount" : 4
+    }, {
+      "Id" : 300000000228642,
+      "Name" : "Germany",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000228639,
+      "Name" : "Czech Republic",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000228702,
+      "Name" : "United Kingdom",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000228771,
+      "Name" : "Hungary",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000228777,
+      "Name" : "Ireland",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000228969,
+      "Name" : "Netherlands",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000229008,
+      "Name" : "Poland",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000000229062,
+      "Name" : "Sweden",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000024887637,
+      "Name" : "Bavaria, Germany",
+      "TotalCount" : 1
+    }, {
+      "Id" : 300000024901252,
+      "Name" : "MÜNCHEN, Bavaria, Germany",
+      "TotalCount" : 1
+    } ],
+    "postingDatesFacet" : [ {
+      "Id" : 7,
+      "Name" : "Less than 7 days",
+      "TotalCount" : 2
+    }, {
+      "Id" : 30,
+      "Name" : "Less than 30 days",
+      "TotalCount" : 4
+    } ],
+    "titlesFacet" : [ {
+      "Id" : "PRDCTN_WRKFRC",
+      "Name" : "Production Workforce",
+      "TotalCount" : 2
+    }, {
+      "Id" : "MANUFACTURING",
+      "Name" : "Manufacturing",
+      "TotalCount" : 1
+    }, {
+      "Id" : "STRATEGIC DEVELOPMENT",
+      "Name" : "Strategic Development",
+      "TotalCount" : 1
+    } ],
+    "workLocationsFacet" : [ {
+      "Id" : 300002242684572,
+      "Name" : "SK Dolny Kubin Nabrezie Oravy 2711",
+      "TotalCount" : 3
+    }, {
+      "Id" : 300012946282799,
+      "Name" : "DE Munchen Landsberger Strasse 346",
+      "TotalCount" : 1
+    } ],
+    "flexFieldsFacet" : [ {
+      "Name" : "AttributeChar2",
+      "Label" : "Experience Level"
+    } ],
+    "organizationsFacet" : [ {
+      "Id" : 300000090096559,
+      "Name" : "Emerson",
+      "TotalCount" : 4
+    } ],
+    "workplaceTypesFacet" : [ {
+      "Id" : "ORA_ON_SITE",
+      "Name" : "On-site",
+      "TotalCount" : 3
+    }, {
+      "Id" : "ORA_HYBRID",
+      "Name" : "Hybrid",
+      "TotalCount" : 1
+    } ]
+  } ],
+  "count" : 1,
+  "hasMore" : false,
+  "limit" : 200,
+  "offset" : 0,
+  "links" : [ {
+    "rel" : "self",
+    "href" : "https://hdjq.fa.us2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions",
+    "name" : "recruitingCEJobRequisitions",
+    "kind" : "collection"
+  }, {
+    "rel" : "action",
+    "href" : "https://hdjq.fa.us2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionsLocationCoordinates",
+    "name" : "getRequisitionsLocationCoordinates",
+    "kind" : "other"
+  }, {
+    "rel" : "action",
+    "href" : "https://hdjq.fa.us2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionDetailsForMap",
+    "name" : "getRequisitionDetailsForMap",
+    "kind" : "other"
+  } ]
+}

@@ -84,6 +84,22 @@ class CareerLinksTests {
     }
 
     /**
+     * Oracle Recruiting Cloud: ссылка на сайт, список или вакансию → хост и номер сайта (номер — в прежнем регистре);
+     * хост не сайта Oracle Recruiting — не доска (§117).
+     */
+    @Test
+    void recognisesOracleRecruitingCloudSite() {
+        Board carmeuse = new Board("oraclecloud", "ekiz.fa.em2.oraclecloud.com/CX");
+        assertThat(CareerLinks.board("https://ekiz.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX"))
+                .contains(carmeuse);
+        assertThat(CareerLinks.board("https://EKIZ.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/sk/sites/CX/job/193713"))
+                .contains(carmeuse);
+        assertThat(CareerLinks.board("https://hdjq.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs"))
+                .contains(new Board("oraclecloud", "hdjq.fa.us2.oraclecloud.com/CX_1"));
+        assertThat(CareerLinks.board("https://frkq.compat.objectstorage.eu-frankfurt-1.oraclecloud.com/n/x")).isEmpty();
+    }
+
+    /**
      * Регистр букв в адресе доски не создаёт второй доски: ключ — в нижнем регистре у всех провайдеров.
      */
     @Test

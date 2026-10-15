@@ -6,6 +6,7 @@ import com.roleorienta.worker.adapter.personio.PersonioAdapter;
 import com.roleorienta.worker.adapter.phenom.PhenomAdapter;
 import com.roleorienta.worker.adapter.smartrecruiters.SmartRecruitersAdapter;
 import com.roleorienta.worker.adapter.successfactors.SuccessFactorsAdapter;
+import com.roleorienta.worker.adapter.oraclecloud.OracleCloudAdapter;
 import com.roleorienta.worker.adapter.taleo.TaleoAdapter;
 import com.roleorienta.worker.adapter.workday.WorkdayAdapter;
 import com.roleorienta.worker.site.SiteBrand;
@@ -50,6 +51,8 @@ import org.jsoup.nodes.Element;
  *       jobsearch.ftl} ({@code jobdetail.ftl}, {@code moresearch.ftl}) в тексте страницы (бывает только в данных
  *       скрипта, с экранированными {@code \/}) → {@code <компания>.taleo.net/<раздел>} (§60; вход {@code …/iam/…},
  *       служебные {@code rest}, {@code theme} — не разделы, аудит §65).</li>
+ *   <li>Oracle Recruiting Cloud — {@code <код>.fa.<зона>.oraclecloud.com/hcmUI/CandidateExperience/<язык>/sites/<номер>}
+ *       → {@code <код>.fa.<зона>.oraclecloud.com/<номер>} (§117; номер сайта — в прежнем регистре, хост — в нижнем).</li>
  *   <li>Кадровая страница — как в скрипте замера топ-500 ({@code survey/employer-survey.py}, §76): ссылка, в тексте
  *       или адресе которой кадровое слово ({@link #CAREER_WORDS}). Принимается ссылка того же регистрируемого домена
  *       ({@code kariera.firma.sk}, {@code www.firma.sk} с {@code sk.firma.sk}); ссылка на кадровый хост другого домена с
@@ -83,6 +86,9 @@ public final class CareerLinks {
             "\\\\?\"organization\\\\?\"\\s*:\\s*\\\\?\"([a-z0-9-]+)", Pattern.CASE_INSENSITIVE);
     private static final String PHENOM_CDN = "cdn.phenompeople.com";
     private static final Pattern PHENOM_BASE_URL = Pattern.compile("\"baseUrl\"\\s*:\\s*\"https?://([^\"?#]+?)/?\"");
+    private static final Pattern ORACLE_CLOUD = Pattern.compile(
+            "([a-z0-9-]+\\.fa\\.[a-z0-9-]+\\.oraclecloud\\.com)/hcmUI/CandidateExperience/[a-z_-]+/sites/([A-Za-z0-9_]+)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern TALEO = Pattern.compile(
             "(?<![a-z0-9-])([a-z0-9-]+\\.taleo\\.net)/careersection/([a-z0-9_]+)/(?:jobsearch|jobdetail|moresearch)\\.ftl",
             Pattern.CASE_INSENSITIVE);
@@ -223,6 +229,10 @@ public final class CareerLinks {
             String organization = lower(nalgoo.group(1) != null ? nalgoo.group(1) : nalgoo.group(2));
             return "www".equals(organization) ? Optional.empty()
                     : Optional.of(new Board(NalgooAdapter.PROVIDER, organization));
+        }
+        Matcher oracle = ORACLE_CLOUD.matcher(link);
+        if (oracle.lookingAt()) {
+            return Optional.of(new Board(OracleCloudAdapter.PROVIDER, lower(oracle.group(1)) + "/" + oracle.group(2)));
         }
         Matcher personio = PERSONIO.matcher(link);
         return personio.lookingAt() ? Optional.of(new Board(PersonioAdapter.PROVIDER, lower(personio.group(1))))

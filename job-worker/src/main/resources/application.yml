@@ -193,6 +193,9 @@ app:
     taleo:                  # кадровые разделы Oracle Taleo (<компания>.taleo.net, §60)
       site-url: https://{host}  # {host} — хост компании на taleo.net
       max-pages: 40        # потолок страниц списка за чтение (по 25 вакансий страны сбора)
+    oraclecloud:            # кадровые сайты Oracle Recruiting Cloud (<код>.fa.<зона>.oraclecloud.com, §117)
+      site-url: https://{host}  # {host} — хост сайта работодателя
+      max-pages: 40        # потолок страниц списка за чтение (по 25 вакансий страны сбора)
     phenom:                 # кадровые сайты работодателей на Phenom (§59)
       site-url: https://{board}  # {board} — доска (хост и путь языка сайта)
       max-pages: 40        # потолок страниц списка за чтение (по 10 вакансий страны сбора)
