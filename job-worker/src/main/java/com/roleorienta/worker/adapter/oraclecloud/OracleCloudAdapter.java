@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.oraclecloud;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
@@ -103,6 +104,7 @@ public class OracleCloudAdapter implements SourceAdapter {
                 Locale.of("", country).getDisplayCountry(Locale.ENGLISH), StandardCharsets.UTF_8).replace("+", "%20");
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         List<String> responses = new ArrayList<>();
+        PostedDates dates = new PostedDates();
         int offset = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
             HttpResult result = httpClient.get(URI.create(site(matcher) + API
@@ -117,26 +119,29 @@ public class OracleCloudAdapter implements SourceAdapter {
                     return new SourceReadResult.Unavailable(failure);
                 }
                 LOG.warn("Oracle Recruiting Cloud {} read partially at offset {}: {}", board, offset, failure);
-                return SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_FAILED,
-                        responses);
+                return dates.attach(SourceReadResult.Read.partial(List.copyOf(postings.values()),
+                        PartialReason.PAGE_FAILED, responses));
             }
             responses.add(((HttpResult.Success) result).body());
             int total = list.get("TotalJobsCount").asInt();
             JsonNode requisitions = list.path("requisitionList");
             for (JsonNode requisition : requisitions) {
-                posting(requisition, matcher, country).ifPresent(posting ->
-                        postings.putIfAbsent(posting.externalId(), posting));
+                posting(requisition, matcher, country).ifPresent(posting -> {
+                    postings.putIfAbsent(posting.externalId(), posting);
+                    dates.put(posting.externalId(), PostedDates.parse(requisition.path("PostedDate").asText(null)));
+                });
             }
             offset += requisitions.size();
             if (requisitions.isEmpty() || offset >= total) {
                 return requisitions.isEmpty() && total > offset
-                        ? SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.LIST_ENDED_EARLY,
-                                responses)
-                        : SourceReadResult.Read.full(List.copyOf(postings.values()), responses);
+                        ? dates.attach(SourceReadResult.Read.partial(List.copyOf(postings.values()),
+                                PartialReason.LIST_ENDED_EARLY, responses))
+                        : dates.attach(SourceReadResult.Read.full(List.copyOf(postings.values()), responses));
             }
         }
         LOG.warn("Oracle Recruiting Cloud {} exceeds {} pages, read partially", board, properties.maxPages());
-        return SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_LIMIT, responses);
+        return dates.attach(
+                SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_LIMIT, responses));
     }
 
     /**

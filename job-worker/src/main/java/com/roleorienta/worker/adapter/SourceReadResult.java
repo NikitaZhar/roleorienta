@@ -3,7 +3,9 @@ package com.roleorienta.worker.adapter;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -22,9 +24,32 @@ public sealed interface SourceReadResult {
      *                      кругу {@code JobPosting}, аудит §121): их известные публикации не подтверждаются, не
      *                      теряют подтверждение и не засчитываются отсутствующими (и при неполном чтении). Пусто —
      *                      прочитано всё, что в списке
+     * @param postedAt      даты размещения работодателем по внешнему id (§127; {@link PostedDates}) — только те,
+     *                      что дал источник
      */
     record Read(List<FetchedPosting> postings, PartialReason partialReason, List<String> responses,
-            Set<String> notRead) implements SourceReadResult {
+            Set<String> notRead, Map<String, Instant> postedAt) implements SourceReadResult {
+
+        /**
+         * Чтение без дат размещения.
+         *
+         * @param postings      публикации доски
+         * @param partialReason причина неполного чтения; {@code null} — полное
+         * @param responses     тела ответов
+         * @param notRead       есть в списке, но не прочитаны
+         */
+        public Read(List<FetchedPosting> postings, PartialReason partialReason, List<String> responses,
+                Set<String> notRead) {
+            this(postings, partialReason, responses, notRead, Map.of());
+        }
+
+        /**
+         * @param dates даты размещения по внешнему id
+         * @return то же чтение с датами
+         */
+        public Read withPostedAt(Map<String, Instant> dates) {
+            return new Read(postings, partialReason, responses, notRead, dates);
+        }
 
         /**
          * @param postings  публикации доски

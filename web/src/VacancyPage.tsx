@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { markUnsuitable, unmarkUnsuitable, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText } from './format';
+import { countriesText, dateText, openedText } from './format';
 
 interface Props {
   id: number;
@@ -17,7 +17,7 @@ const STATES: Record<string, string> = {
 
 /**
  * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна с пометкой неопределённости
- * (формат не показывается — решение владельца 2026-10-16, §124), ссылка на первичную публикацию, даты проверки,
+ * (формат не показывается — решение владельца 2026-10-16, §124), ссылка на первичную публикацию, дата открытия (§127) и последней проверки,
  * состояние; отметка «не подходит» и её снятие (бизнес-описание §7.2).
  */
 export function VacancyPage({ id, onBack, onMarked }: Props) {
@@ -64,8 +64,8 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
         {work.remoteTerritory !== null && (<><dt>Remote from</dt><dd>{work.remoteTerritory.join(', ')}</dd></>)}
         <dt>State</dt>
         <dd>{STATES[publication.state] ?? publication.state}</dd>
-        <dt>Found</dt>
-        <dd>{dateText(publication.firstSeenAt)}</dd>
+        <dt>Opened</dt>
+        <dd>{openedText(publication.opened)}{!publication.opened.byEmployer && ' (the employer gives no date)'}</dd>
         <dt>Last confirmed</dt>
         <dd>{dateText(publication.lastConfirmedAt)}</dd>
       </dl>

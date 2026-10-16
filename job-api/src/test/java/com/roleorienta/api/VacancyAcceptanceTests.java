@@ -179,6 +179,32 @@ class VacancyAcceptanceTests {
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Hybrid,Office");
     }
 
+    /**
+     * Порядок и дата открытия (решение владельца 2026-10-16, §127): дата размещения работодателем, без неё — дата
+     * первого обнаружения («найдена», 60 дней назад); открытые позже — сверху, независимо от порядка выдачи.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void listIsOrderedByOpeningDate() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        posted(delivered(condition, "PostedLongAgo", "ACTIVE", 0, 1), 90);
+        delivered(condition, "FoundOnly", "ACTIVE", 0, 2);
+        posted(delivered(condition, "PostedYesterday", "ACTIVE", 0, 3), 1);
+
+        String body = client.send("GET", "/api/v1/me/vacancies", null).body();
+
+        assertThat(titles(body)).isEqualTo("PostedYesterday,FoundOnly,PostedLongAgo");
+        assertThat(body).contains("\"byEmployer\":true", "\"byEmployer\":false", "\"opened\":{\"at\":");
+    }
+
+    private void posted(long vacancy, int daysAgo) {
+        jdbcTemplate.update("UPDATE vacancy SET posted_at = date_trunc('day', now() - make_interval(days => ?)) "
+                + "WHERE id = ?", daysAgo, vacancy);
+    }
+
     private void format(long vacancy, String format) {
         jdbcTemplate.update("UPDATE vacancy SET work_format = ? WHERE id = ?", format, vacancy);
     }

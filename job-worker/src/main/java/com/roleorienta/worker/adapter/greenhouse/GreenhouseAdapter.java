@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.greenhouse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
@@ -57,7 +58,8 @@ public class GreenhouseAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         try {
-            return SourceReadResult.Read.full(parse(success.body()), List.of(success.body()));
+            PostedDates dates = new PostedDates();
+            return dates.attach(SourceReadResult.Read.full(parse(success.body(), dates), List.of(success.body())));
         } catch (JsonProcessingException exception) {
             return new SourceReadResult.Unavailable(
                     new HttpResult.TemporaryFailure("Malformed Greenhouse response: " + exception.getOriginalMessage(),
@@ -83,9 +85,14 @@ public class GreenhouseAdapter implements SourceAdapter {
         }
     }
 
-    private static List<FetchedPosting> parse(String body) throws JsonProcessingException {
+    /**
+     * Публикации списка; дата размещения — {@code first_published}, если Greenhouse её отдаёт (в описании API списка
+     * поля нет, есть у одной вакансии; {@code updated_at} — дата изменения, не размещения; §127).
+     */
+    private static List<FetchedPosting> parse(String body, PostedDates dates) throws JsonProcessingException {
         List<FetchedPosting> postings = new ArrayList<>();
         for (JsonNode job : JSON.readTree(body).path("jobs")) {
+            dates.put(job.path("id").asText(), PostedDates.parse(job.path("first_published").asText(null)));
             postings.add(new FetchedPosting(
                     job.path("id").asText(),
                     job.path("title").asText(),

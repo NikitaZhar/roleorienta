@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.roleorienta.worker.adapter.CountryNames;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
@@ -14,7 +15,11 @@ import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.net.URI;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -65,6 +70,14 @@ public class WorkdayAdapter implements SourceAdapter {
     /** Сводка списка вместо мест: «2 Locations». */
     private static final Pattern LOCATIONS_SUMMARY = Pattern.compile("\\d+ Locations");
 
+    /**
+     * Дата размещения в списке — относительно сегодняшнего дня: «Posted Today», «Posted Yesterday», «Posted 3 Days
+     * Ago»; «Posted 30+ Days Ago» (и другие записи) — даты нет (§127).
+     */
+    private static final Pattern POSTED_DAYS_AGO = Pattern.compile("(?i)posted (\\d+) days? ago");
+    private static final Pattern POSTED_TODAY = Pattern.compile("(?i)posted today");
+    private static final Pattern POSTED_YESTERDAY = Pattern.compile("(?i)posted yesterday");
+
     /** {@code appliedFacets} без фильтра. */
     private static final String NO_FACETS = "{}";
 
@@ -72,14 +85,17 @@ public class WorkdayAdapter implements SourceAdapter {
 
     private final ExternalHttpClient httpClient;
     private final WorkdayProperties properties;
+    private final Clock clock;
 
     /**
      * @param httpClient внешний HTTP-клиент
      * @param properties адрес витрины и размер страниц
+     * @param clock      часы — день, от которого считается «Posted N Days Ago»
      */
-    public WorkdayAdapter(ExternalHttpClient httpClient, WorkdayProperties properties) {
+    public WorkdayAdapter(ExternalHttpClient httpClient, WorkdayProperties properties, Clock clock) {
         this.httpClient = httpClient;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Override
@@ -206,6 +222,8 @@ public class WorkdayAdapter implements SourceAdapter {
         List<FetchedPosting> postings = new ArrayList<>();
         List<String> responses = new ArrayList<>();
         int total = 0;
+        PostedDates dates = new PostedDates();
+        LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         for (int page = 0; page < properties.maxPages(); page++) {
             int offset = page * properties.pageSize();
             HttpResult result = httpClient.postJson(uri, requestBody(appliedFacets, offset));
@@ -217,7 +235,7 @@ public class WorkdayAdapter implements SourceAdapter {
                     return new SourceReadResult.Unavailable(failure);
                 }
                 LOG.warn("Workday board {} read partially at offset {}: {}", board, offset, failure);
-                return SourceReadResult.Read.partial(postings, PartialReason.PAGE_FAILED, responses);
+                return dates.attach(SourceReadResult.Read.partial(postings, PartialReason.PAGE_FAILED, responses));
             }
             responses.add(((HttpResult.Success) result).body());
             if (page == 0) {
@@ -237,16 +255,36 @@ public class WorkdayAdapter implements SourceAdapter {
                 }
                 postings.add(new FetchedPosting(path, job.path("title").asText(), postingUrl(matcher, path),
                         location, null));
+                dates.put(path, posted(job.path("postedOn").asText(""), today));
             }
             if (offset + jobs.size() >= total) {
-                return SourceReadResult.Read.full(postings, responses);
+                return dates.attach(SourceReadResult.Read.full(postings, responses));
             }
             if (jobs.isEmpty()) {
-                return SourceReadResult.Read.partial(postings, PartialReason.LIST_ENDED_EARLY, responses);
+                return dates.attach(
+                        SourceReadResult.Read.partial(postings, PartialReason.LIST_ENDED_EARLY, responses));
             }
         }
         LOG.warn("Workday board {} exceeds {} pages, read partially", board, properties.maxPages());
-        return SourceReadResult.Read.partial(postings, PartialReason.PAGE_LIMIT, responses);
+        return dates.attach(SourceReadResult.Read.partial(postings, PartialReason.PAGE_LIMIT, responses));
+    }
+
+    /**
+     * Дата размещения из относительной записи списка ({@code postedOn}).
+     *
+     * @param postedOn запись Workday
+     * @param today    сегодняшний день UTC
+     * @return начало суток UTC; {@code null} — запись без точного числа дней
+     */
+    static Instant posted(String postedOn, LocalDate today) {
+        if (POSTED_TODAY.matcher(postedOn).matches()) {
+            return PostedDates.day(today);
+        }
+        if (POSTED_YESTERDAY.matcher(postedOn).matches()) {
+            return PostedDates.day(today.minusDays(1));
+        }
+        Matcher daysAgo = POSTED_DAYS_AGO.matcher(postedOn);
+        return daysAgo.matches() ? PostedDates.day(today.minusDays(Long.parseLong(daysAgo.group(1)))) : null;
     }
 
     /**

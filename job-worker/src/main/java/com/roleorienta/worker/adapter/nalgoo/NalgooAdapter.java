@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.nalgoo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
@@ -76,14 +77,16 @@ public class NalgooAdapter implements SourceAdapter {
                 return malformed("not an array");
             }
             List<FetchedPosting> postings = new ArrayList<>();
+            PostedDates dates = new PostedDates();
             for (JsonNode job : jobs) {
                 String id = job.path("id").asText();
                 if (JOB_ID.matcher(id).matches()) {
                     postings.add(new FetchedPosting(id, job.path("title").asText(), job.path("url").asText(),
                             text(job.path("location")), null));
+                    dates.put(id, PostedDates.parse(job.path("publishedOn").asText(null)));
                 }
             }
-            return SourceReadResult.Read.full(postings, List.of(success.body()));
+            return dates.attach(SourceReadResult.Read.full(postings, List.of(success.body())));
         } catch (JsonProcessingException exception) {
             return malformed(exception.getOriginalMessage());
         }

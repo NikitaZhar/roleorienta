@@ -212,10 +212,19 @@ export interface VacancyItem {
   position: string;
   parties: Parties;
   work: Work;
-  listedAt: string;
+  opened: Opened;
 }
 
-/** Страница списка: новые сверху; nextCursor null — страниц больше нет. */
+/**
+ * Когда вакансия открыта (§127): byEmployer — дата размещения работодателем (начало суток UTC); иначе — когда
+ * вакансия впервые найдена системой.
+ */
+export interface Opened {
+  at: string;
+  byEmployer: boolean;
+}
+
+/** Страница списка: открытые позже сверху (отмеченные — отмеченные позже); nextCursor null — страниц больше нет. */
 export interface VacancyPage {
   items: VacancyItem[];
   nextCursor: string | null;
@@ -224,7 +233,7 @@ export interface VacancyPage {
 /** Публикация и её проверка. */
 export interface Publication {
   url: string | null;
-  firstSeenAt: string;
+  opened: Opened;
   lastConfirmedAt: string | null;
   state: 'ACTIVE' | 'NEEDS_RECHECK' | 'CLOSED';
   unsuitable: boolean;

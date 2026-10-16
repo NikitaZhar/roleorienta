@@ -15,6 +15,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -99,6 +100,7 @@ class OracleCloudAdapterTests {
         assertThat(read.postings().get(0)).isEqualTo(new FetchedPosting("15023", "Shift Process Technician APU ZET",
                 base() + "/ehth.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/15023",
                 "ZÁBORSKÉ, PREŠOV, Slovakia", null));
+        assertThat(read.postedAt()).containsEntry("15023", Instant.parse("2026-09-16T00:00:00Z"));
         assertThat(queries).anyMatch(query ->
                 query.contains("finder=findReqs;siteNumber=CX_2001,location=Slovakia,limit=25,offset=0"));
     }

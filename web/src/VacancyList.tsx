@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { searchCondition, type VacancyItem, type VacancyPage } from './api';
-import { countriesText, dateText } from './format';
+import { countriesText, openedText } from './format';
 
 interface Props {
   title: string;
@@ -17,8 +17,8 @@ const REFRESH_MS = 5000;
 const REFRESH_TIMES = 24;
 
 /**
- * Список вакансий страницами по курсору («Load more»), новые сверху: накопленный список или отмеченные «не
- * подходит». Пустой накопленный список объясняется: что искать не задано — задать выше; задано — подходящих вакансий
+ * Список вакансий страницами по курсору («Load more»): накопленный список (открытые позже сверху, дата открытия —
+ * §127) или отмеченные «не подходит». Пустой накопленный список объясняется: что искать не задано — задать выше; задано — подходящих вакансий
  * пока нет (проходы выдачи раз в час). Сразу после новых условий ({@code poll}) пустой список перечитывается каждые
  * 5 с в течение 2 минут — первая порция выдаётся в течение ~30 с (§120); следующий запрос — только после ответа на
  * предыдущий (аудит §121). При обычном открытии раздела опроса нет. Точная причина
@@ -87,7 +87,7 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
               <strong>{item.position}</strong>
               <span>{item.parties.employer ?? 'Employer not specified'}
                 {item.parties.agency !== null && ` · via ${item.parties.agency}`}</span>
-              <span className="muted">{countriesText(item.work)} · {dateText(item.listedAt)}</span>
+              <span className="muted">{countriesText(item.work)} · {openedText(item.opened)}</span>
             </button>
           </li>
         ))}

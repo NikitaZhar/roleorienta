@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.MissingNode;
 import com.roleorienta.worker.adapter.CountryNames;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
@@ -93,6 +94,7 @@ public class PhenomAdapter implements SourceAdapter {
                 Locale.of("", country).getDisplayCountry(Locale.ENGLISH), StandardCharsets.UTF_8) + "&";
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         List<String> responses = new ArrayList<>();
+        PostedDates dates = new PostedDates();
         int total = -1;
         int offset = 0;
         for (int page = 0; page < properties.maxPages(); page++) {
@@ -108,27 +110,30 @@ public class PhenomAdapter implements SourceAdapter {
                             : result);
                 }
                 LOG.warn("Phenom {} read partially at {}: {}", board, offset, result);
-                return SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_FAILED,
-                        responses);
+                return dates.attach(SourceReadResult.Read.partial(List.copyOf(postings.values()),
+                        PartialReason.PAGE_FAILED, responses));
             }
             responses.add(((HttpResult.Success) result).body());
             if (page == 0) {
                 total = search.path("totalHits").asInt(-1);
             }
             for (JsonNode job : jobs) {
-                posting(job, board, country)
-                        .ifPresent(posting -> postings.putIfAbsent(posting.externalId(), posting));
+                posting(job, board, country).ifPresent(posting -> {
+                    postings.putIfAbsent(posting.externalId(), posting);
+                    dates.put(posting.externalId(), PostedDates.parse(job.path("postedDate").asText(null)));
+                });
             }
             offset += jobs.size();
             if (jobs.isEmpty() || total >= 0 && offset >= total) {
                 return jobs.isEmpty() && total > offset
-                        ? SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.LIST_ENDED_EARLY,
-                                responses)
-                        : SourceReadResult.Read.full(List.copyOf(postings.values()), responses);
+                        ? dates.attach(SourceReadResult.Read.partial(List.copyOf(postings.values()),
+                                PartialReason.LIST_ENDED_EARLY, responses))
+                        : dates.attach(SourceReadResult.Read.full(List.copyOf(postings.values()), responses));
             }
         }
         LOG.warn("Phenom {} exceeds {} pages, read partially", board, properties.maxPages());
-        return SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_LIMIT, responses);
+        return dates.attach(
+                SourceReadResult.Read.partial(List.copyOf(postings.values()), PartialReason.PAGE_LIMIT, responses));
     }
 
     /**

@@ -151,7 +151,7 @@ public class VacancyService {
     private static VacancyItem item(ListedRow row, String conditionFormat) {
         VacancyRow vacancy = row.vacancy();
         return new VacancyItem(vacancy.id(), vacancy.title(), vacancy.parties(), work(vacancy.work(), conditionFormat),
-                row.listedAt());
+                vacancy.publication().opened());
     }
 
     /**

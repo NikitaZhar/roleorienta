@@ -131,7 +131,7 @@ public class ReadSourceHandler implements TaskHandler {
                 postings = withDetail(adapter, source, postings);
                 nameEmployer(adapter, source, postings);
                 run.read(postings.size(), read.partialReason());
-                recorder.record(run, postings, unverified, read.notRead());
+                recorder.record(run, postings, unverified, read.notRead(), read.postedAt());
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {

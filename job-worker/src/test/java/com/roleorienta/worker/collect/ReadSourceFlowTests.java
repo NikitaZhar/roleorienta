@@ -10,6 +10,8 @@ import com.roleorienta.worker.source.Source;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -216,6 +218,29 @@ class ReadSourceFlowTests {
         assertThat(jdbcTemplate.queryForObject("SELECT title FROM vacancy", String.class))
                 .isEqualTo("Senior Java Developer");
         assertThat(revisions()).containsExactly("TITLE:Java Developer->Senior Java Developer");
+    }
+
+    /**
+     * Дата размещения (§127): нет у источника — пусто; появилась — записана; более поздняя — не заменяет раннюю.
+     */
+    @Test
+    void readKeepsEarliestPostedDate() {
+        STUB.respondWithJobs("101", "Java Developer");
+        readOnce("r1");
+        assertThat(postedAt()).isNull();
+        STUB.respond(200, "{\"jobs\":[{\"id\":101,\"title\":\"Java Developer\",\"first_published\":"
+                + "\"2026-09-20T10:00:00-04:00\",\"absolute_url\":\"https://job-boards.greenhouse.io/acme/jobs/101\"}]}");
+        readOnce("r2");
+        assertThat(postedAt()).isEqualTo(Instant.parse("2026-09-20T00:00:00Z"));
+        STUB.respond(200, "{\"jobs\":[{\"id\":101,\"title\":\"Java Developer\",\"first_published\":"
+                + "\"2026-10-01\",\"absolute_url\":\"https://job-boards.greenhouse.io/acme/jobs/101\"}]}");
+        readOnce("r3");
+        assertThat(postedAt()).isEqualTo(Instant.parse("2026-09-20T00:00:00Z"));
+    }
+
+    private Instant postedAt() {
+        Timestamp posted = jdbcTemplate.queryForObject("SELECT posted_at FROM vacancy", Timestamp.class);
+        return posted == null ? null : posted.toInstant();
     }
 
     /**

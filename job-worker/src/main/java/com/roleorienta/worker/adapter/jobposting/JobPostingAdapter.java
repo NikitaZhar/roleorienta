@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.jobposting;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.PartialReason;
@@ -111,11 +112,12 @@ public class JobPostingAdapter implements SourceAdapter {
         PartialReason partialReason = null;
         List<FetchedPosting> postings = new ArrayList<>();
         List<String> responses = new ArrayList<>(List.of(success.body()));
+        PostedDates dates = new PostedDates();
         for (URI page : pages) {
             HttpResult pageResult = httpClient.get(page);
             if (pageResult instanceof HttpResult.Success pageSuccess) {
                 responses.add(pageSuccess.body());
-                FetchedPosting posting = posting(pageSuccess.body(), page.toString());
+                FetchedPosting posting = posting(pageSuccess.body(), page.toString(), dates);
                 if (posting != null) {
                     postings.add(posting);
                 }
@@ -126,7 +128,7 @@ public class JobPostingAdapter implements SourceAdapter {
                 }
             }
         }
-        return new SourceReadResult.Read(postings, partialReason, responses, Set.copyOf(notRead));
+        return dates.attach(new SourceReadResult.Read(postings, partialReason, responses, Set.copyOf(notRead)));
     }
 
     /**
@@ -187,10 +189,10 @@ public class JobPostingAdapter implements SourceAdapter {
     }
 
     /**
-     * @return публикация из первого блока JSON-LD с {@code JobPosting} и непустым {@code title};
-     *         {@code null} — такого блока нет
+     * @return публикация из первого блока JSON-LD с {@code JobPosting} и непустым {@code title} (его
+     *         {@code datePosted} — в {@code dates}, §127); {@code null} — такого блока нет
      */
-    private static FetchedPosting posting(String html, String pageUrl) {
+    private static FetchedPosting posting(String html, String pageUrl, PostedDates dates) {
         for (Element script : Jsoup.parse(html, pageUrl).select("script[type=application/ld+json]")) {
             JsonNode node;
             try {
@@ -200,6 +202,7 @@ public class JobPostingAdapter implements SourceAdapter {
                 continue;
             }
             if (node != null && node.path("title").isTextual() && !node.path("title").asText().isBlank()) {
+                dates.put(pageUrl, PostedDates.parse(node.path("datePosted").asText(null)));
                 return new FetchedPosting(pageUrl, node.path("title").asText().trim(), pageUrl,
                         location(node.path("jobLocation")), textOrNull(node.path("description")));
             }

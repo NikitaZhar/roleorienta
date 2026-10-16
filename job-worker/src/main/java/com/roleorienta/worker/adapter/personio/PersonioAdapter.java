@@ -1,5 +1,6 @@
 package com.roleorienta.worker.adapter.personio;
 
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
@@ -63,14 +64,16 @@ public class PersonioAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(result);
         }
         try {
-            return SourceReadResult.Read.full(parse(success.body(), base), List.of(success.body()));
+            PostedDates dates = new PostedDates();
+            return dates.attach(
+                    SourceReadResult.Read.full(parse(success.body(), base, dates), List.of(success.body())));
         } catch (XMLStreamException exception) {
             return new SourceReadResult.Unavailable(new HttpResult.TemporaryFailure(
                     "Malformed Personio feed: " + exception.getMessage(), Duration.ZERO));
         }
     }
 
-    private static List<FetchedPosting> parse(String body, String base) throws XMLStreamException {
+    private static List<FetchedPosting> parse(String body, String base, PostedDates dates) throws XMLStreamException {
         XMLStreamReader xml = SafeXml.reader(body);
         try {
             if (xml.nextTag() != XMLStreamConstants.START_ELEMENT || !ROOT.equals(xml.getLocalName())) {
@@ -79,7 +82,7 @@ public class PersonioAdapter implements SourceAdapter {
             List<FetchedPosting> postings = new ArrayList<>();
             while (xml.hasNext()) {
                 if (xml.next() == XMLStreamConstants.START_ELEMENT && "position".equals(xml.getLocalName())) {
-                    FetchedPosting posting = position(xml, base);
+                    FetchedPosting posting = position(xml, base, dates);
                     if (posting != null) {
                         postings.add(posting);
                     }
@@ -93,10 +96,13 @@ public class PersonioAdapter implements SourceAdapter {
 
     /**
      * Читает один {@code position} до его закрывающего тега; прямые поля — на глубине 0, тексты
-     * описания — {@code value} внутри {@code jobDescription} (глубина 2).
+     * описания — {@code value} внутри {@code jobDescription} (глубина 2); дата размещения — {@code createdAt}
+     * (§127), в {@code dates}.
      */
-    private static FetchedPosting position(XMLStreamReader xml, String base) throws XMLStreamException {
+    private static FetchedPosting position(XMLStreamReader xml, String base, PostedDates dates)
+            throws XMLStreamException {
         String id = null;
+        String created = null;
         String title = null;
         String office = null;
         StringJoiner content = new StringJoiner("\n");
@@ -116,6 +122,8 @@ public class PersonioAdapter implements SourceAdapter {
                     title = xml.getElementText().trim();
                 } else if (depth == 0 && "office".equals(name)) {
                     office = xml.getElementText().trim();
+                } else if (depth == 0 && "createdAt".equals(name)) {
+                    created = xml.getElementText().trim();
                 } else if (depth == 2 && "value".equals(name)) {
                     content.add(xml.getElementText());
                 } else {
@@ -126,6 +134,7 @@ public class PersonioAdapter implements SourceAdapter {
         if (id == null || id.isEmpty() || title == null || title.isEmpty()) {
             return null;
         }
+        dates.put(id, PostedDates.parse(created));
         return new FetchedPosting(id, title, base + "/job/" + id, office,
                 content.length() == 0 ? null : content.toString());
     }

@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -79,6 +80,7 @@ class NalgooAdapterTests {
         assertThat(billa.postings().get(0)).isEqualTo(new FetchedPosting("93165",
                 "Brigádnik (ž/m) - Sládkovičovo - práca vhodná pre študenta", "https://billa.nalgoo-jobs.com/jobs/93165",
                 "Sládkovičovo", null));
+        assertThat(billa.postedAt()).containsEntry("93165", Instant.parse("2026-10-06T00:00:00Z"));
 
         SourceReadResult.Read foxconn = (SourceReadResult.Read) adapter.read("foxconn");
         assertThat(foxconn.postings()).hasSize(8).allMatch(posting -> "Nitra".equals(posting.location()));

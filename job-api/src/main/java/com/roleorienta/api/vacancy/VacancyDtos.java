@@ -19,15 +19,26 @@ public final class VacancyDtos {
      * @param position позиция (название публикации)
      * @param parties  работодатель и агентство
      * @param work     страна и формат работы
-     * @param listedAt когда вакансия выдана в список (в списке отмеченных — когда отмечена)
+     * @param opened   когда вакансия открыта (§127)
      */
-    public record VacancyItem(long id, String position, Parties parties, Work work, Instant listedAt) {
+    public record VacancyItem(long id, String position, Parties parties, Work work, Opened opened) {
+    }
+
+    /**
+     * Когда вакансия открыта (решение владельца 2026-10-16, §127).
+     *
+     * @param at         дата размещения работодателем (начало суток UTC); источник её не дал — момент первого
+     *                   обнаружения вакансии системой
+     * @param byEmployer {@code true} — дата от источника (работодатель, система найма); {@code false} — «найдена»
+     */
+    public record Opened(Instant at, boolean byEmployer) {
     }
 
     /**
      * Страница списка.
      *
-     * @param items      вакансии, новые сверху
+     * @param items      вакансии: накопленный список — открытые позже сверху (§127), отмеченные — отмеченные позже
+     *                   сверху
      * @param nextCursor курсор следующей страницы; {@code null} — страниц больше нет
      */
     public record VacancyPage(List<VacancyItem> items, String nextCursor) {
@@ -72,12 +83,12 @@ public final class VacancyDtos {
      * Публикация и её проверка.
      *
      * @param url             первичная публикация
-     * @param firstSeenAt     обнаружена
+     * @param opened          когда открыта: дата размещения работодателем или «найдена» (§127)
      * @param lastConfirmedAt последняя успешная проверка
      * @param state           {@code ACTIVE}, {@code NEEDS_RECHECK}, {@code CLOSED}
      * @param unsuitable      отмечена пользователем «не подходит»
      */
-    public record Publication(String url, Instant firstSeenAt, Instant lastConfirmedAt, String state,
+    public record Publication(String url, Opened opened, Instant lastConfirmedAt, String state,
             boolean unsuitable) {
     }
 }

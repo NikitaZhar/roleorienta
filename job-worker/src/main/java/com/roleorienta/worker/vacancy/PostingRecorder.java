@@ -96,9 +96,12 @@ public class PostingRecorder {
      *                   подтверждаются, не теряют подтверждение, отсутствие не засчитывается и счётчик отсутствия
      *                   не сбрасывается (вакансия, закрытая по серии отсутствий, открывается снова, когда её
      *                   страница прочитана с вакансией)
+     * @param postedAt   даты размещения работодателем по внешнему id (§127): записываются вакансии при любом чтении,
+     *                   остаётся самая ранняя
      */
     @Transactional
-    public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified, Set<String> notRead) {
+    public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified, Set<String> notRead,
+            Map<String, Instant> postedAt) {
         Instant now = clock.instant();
         crawlLog.finish(run, now);
         Source source = run.getSource();
@@ -115,10 +118,16 @@ public class PostingRecorder {
                 continue;
             }
             JobPosting existing = known.remove(posting.externalId());
+            Instant posted = postedAt.get(posting.externalId());
             if (existing == null) {
-                Vacancy vacancy = vacancies.save(new Vacancy(posting.title(), posting.url(), now));
+                Vacancy created = new Vacancy(posting.title(), posting.url(), now);
+                created.notePosted(posted);
+                Vacancy vacancy = vacancies.save(created);
                 postings.save(new JobPosting(source, vacancy, posting, now));
-            } else if (complete) {
+                continue;
+            }
+            existing.getVacancy().notePosted(posted);
+            if (complete) {
                 existing.update(posting, run, now);
                 existing.getVacancy().confirm(posting.title(), posting.url(), now);
                 touched.add(existing.getVacancy().getId());

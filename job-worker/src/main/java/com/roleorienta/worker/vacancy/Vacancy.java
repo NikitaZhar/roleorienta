@@ -39,6 +39,9 @@ public class Vacancy {
 
     private Instant closedAt;
 
+    /** Дата размещения работодателем — самая ранняя из данных источниками (§127); {@code null} — не дана. */
+    private Instant postedAt;
+
     /** Версия словаря позиций, по которой вакансия сопоставлена; {@code null} — сопоставить заново. */
     private String matchVersion;
 
@@ -75,6 +78,17 @@ public class Vacancy {
         this.title = newTitle;
         this.primaryUrl = newPrimaryUrl;
         this.lastConfirmedAt = confirmedAt;
+    }
+
+    /**
+     * Источник дал дату размещения публикации (§127): остаётся самая ранняя из известных.
+     *
+     * @param date дата размещения; {@code null} — источник не дал, ничего не меняется
+     */
+    public void notePosted(Instant date) {
+        if (date != null && (postedAt == null || date.isBefore(postedAt))) {
+            this.postedAt = date;
+        }
     }
 
     /**

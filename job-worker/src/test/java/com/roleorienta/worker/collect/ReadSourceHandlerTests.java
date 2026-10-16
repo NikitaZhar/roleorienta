@@ -20,6 +20,7 @@ import com.roleorienta.worker.vacancy.PostingRecorder;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -57,7 +58,7 @@ class ReadSourceHandlerTests {
         verify(adapter, never()).detail(BOARD, "c");
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", null),
                 new FetchedPosting("b", "Title", "https://example.com/b", "IND.Pune", "text b"),
-                posting("c", null))), eq(Set.of()), eq(Set.of()));
+                posting("c", null))), eq(Set.of()), eq(Set.of()), eq(Map.of()));
     }
 
     /**
@@ -83,7 +84,7 @@ class ReadSourceHandlerTests {
         verify(adapter, never()).check(BOARD, "a");
         verify(adapter, never()).check(BOARD, "d");
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"), posting("b", "moved"))),
-                eq(Set.of("d")), eq(Set.of()));
+                eq(Set.of("d")), eq(Set.of()), eq(Map.of()));
     }
 
     /**
@@ -108,7 +109,8 @@ class ReadSourceHandlerTests {
 
         verify(adapter, never()).check(BOARD, "b");
         verify(adapter).check(BOARD, "c");
-        verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"))), eq(Set.of()), eq(Set.of("b")));
+        verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"))), eq(Set.of()), eq(Set.of("b")),
+                eq(Map.of()));
     }
 
     /**

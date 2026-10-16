@@ -1,5 +1,6 @@
 package com.roleorienta.api.vacancy;
 
+import com.roleorienta.api.vacancy.VacancyDtos.Opened;
 import com.roleorienta.api.vacancy.VacancyDtos.Parties;
 import com.roleorienta.api.vacancy.VacancyDtos.Publication;
 import java.sql.Array;
@@ -28,7 +29,7 @@ public class VacancyRepository {
      * считается только для сведений о вакансии ({@link #UNSUITABLE}, аудит §66).
      */
     private static final String COLUMNS = """
-            v.id, v.title, v.primary_url, v.first_seen_at, v.last_confirmed_at, v.state, v.work_countries,
+            v.id, v.title, v.primary_url, v.first_seen_at, v.posted_at, v.last_confirmed_at, v.state, v.work_countries,
             v.country_uncertain, v.work_format,
             coalesce((SELECT co.name FROM job_posting p
                       JOIN company_source cs ON cs.source_id = p.source_id AND cs.role IN ('EMPLOYER', 'GROUP')
@@ -40,6 +41,9 @@ public class VacancyRepository {
                       ORDER BY s.id LIMIT 1)) AS employer,
             (SELECT co.name FROM job_posting p JOIN company_source cs ON cs.source_id = p.source_id AND cs.role = 'AGENCY'
              JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id ORDER BY co.id LIMIT 1) AS agency""";
+
+    /** Дата открытия вакансии (§127): размещена работодателем, иначе — впервые найдена. */
+    private static final String OPENED = "coalesce(v.posted_at, v.first_seen_at)";
 
     /** Отметка «не подходит» пользователя из параметра запроса — для сведений о вакансии. */
     private static final String UNSUITABLE =
@@ -86,22 +90,23 @@ public class VacancyRepository {
     }
 
     /**
-     * Видимая часть накопленного списка версии условий, новые сверху.
+     * Видимая часть накопленного списка версии условий: открытые позже сверху — по дате размещения работодателем, а
+     * без неё по дате первого обнаружения ({@code coalesce(posted_at, first_seen_at)}; решение владельца 2026-10-16, §127).
      *
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param after        курсор: строки строго после него; {@code null} — с начала
      * @param limit        не больше
-     * @return строки с моментом выдачи
+     * @return строки с датой открытия
      */
     public List<ListedRow> delivered(long condition, Instant visibleSince, Cursor after, int limit) {
         List<Object> arguments = new ArrayList<>(List.of(condition, utc(visibleSince)));
-        String page = page(after, "d.delivered_at", "d.vacancy_id", arguments);
+        String page = page(after, OPENED, "d.vacancy_id", arguments);
         arguments.add(limit);
-        return jdbcTemplate.query("SELECT " + COLUMNS + ", d.delivered_at AS listed_at FROM delivered_vacancy d "
+        return jdbcTemplate.query("SELECT " + COLUMNS + ", " + OPENED + " AS listed_at FROM delivered_vacancy d "
                 + "JOIN search_condition c ON c.id = d.search_condition_id JOIN vacancy v ON v.id = d.vacancy_id "
                 + "WHERE d.search_condition_id = ? AND " + VISIBLE + page
-                + " ORDER BY d.delivered_at DESC, d.vacancy_id DESC LIMIT ?",
+                + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ?",
                 (row, number) -> listed(row, false), arguments.toArray());
     }
 
@@ -175,10 +180,15 @@ public class VacancyRepository {
                 new Parties(row.getString("employer"), row.getString("agency")),
                 new WorkFacts(countries == null ? List.of() : List.of((String[]) countries.getArray()),
                         row.getString("work_format"), uncertain == null || uncertain),
-                new Publication(row.getString("primary_url"),
-                        row.getObject("first_seen_at", OffsetDateTime.class).toInstant(),
+                new Publication(row.getString("primary_url"), opened(row),
                         row.getObject("last_confirmed_at", OffsetDateTime.class).toInstant(), row.getString("state"),
                         unsuitable));
+    }
+
+    private static Opened opened(ResultSet row) throws SQLException {
+        OffsetDateTime posted = row.getObject("posted_at", OffsetDateTime.class);
+        return posted != null ? new Opened(posted.toInstant(), true)
+                : new Opened(row.getObject("first_seen_at", OffsetDateTime.class).toInstant(), false);
     }
 
     private static OffsetDateTime utc(Instant instant) {
@@ -220,7 +230,7 @@ public class VacancyRepository {
      * Строка списка.
      *
      * @param vacancy  вакансия
-     * @param listedAt момент выдачи (или отметки)
+     * @param listedAt ключ порядка строки: дата открытия (накопленный список) или момент отметки (отмеченные)
      */
     public record ListedRow(VacancyRow vacancy, Instant listedAt) {
     }

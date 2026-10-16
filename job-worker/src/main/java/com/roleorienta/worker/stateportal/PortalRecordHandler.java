@@ -14,6 +14,7 @@ import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -90,7 +91,7 @@ public class PortalRecordHandler implements TaskHandler {
         CrawlRun run = recorder.startRun(source, task.id());
         run.read(postings.size(), partial == null ? null : PartialReason.valueOf(partial));
         try {
-            recorder.record(run, postings, Set.of(), Set.of());
+            recorder.record(run, postings, Set.of(), Set.of(), Map.of());
         } catch (DataIntegrityViolationException concurrent) {
             return new TaskOutcome.Retry("Concurrent record of source " + source.getId(), Duration.ZERO);
         }

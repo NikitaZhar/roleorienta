@@ -15,7 +15,11 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,7 +101,8 @@ class WorkdayAdapterTests {
             }
         });
         server.start();
-        adapter = new WorkdayAdapter(httpClient, new WorkdayProperties(stubUrl() + "/{host}", PAGE_SIZE, 10));
+        adapter = new WorkdayAdapter(httpClient, new WorkdayProperties(stubUrl() + "/{host}", PAGE_SIZE, 10),
+                Clock.fixed(Instant.parse("2026-10-16T12:00:00Z"), ZoneOffset.UTC));
     }
 
     /**
@@ -129,6 +134,25 @@ class WorkdayAdapterTests {
         assertThat(read.postings().get(0)).isEqualTo(new FetchedPosting("/job/Bratislava/Java-Developer",
                 "Java Developer", stubUrl() + "/" + HOST + "/External/job/Bratislava/Java-Developer",
                 "Bratislava", null));
+    }
+
+    /**
+     * Дата размещения из относительной записи списка (§127): сегодня 2026-10-16 (часы адаптера).
+     */
+    @Test
+    void readsPostedDateRelativeToToday() {
+        pages.put(0, page(1, "Java Developer").replace("\"title\":", "\"postedOn\":\"Posted 3 Days Ago\",\"title\":"));
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(BOARD);
+
+        assertThat(read.postedAt()).containsEntry("/job/Bratislava/Java-Developer",
+                Instant.parse("2026-10-13T00:00:00Z"));
+        LocalDate today = LocalDate.of(2026, 10, 16);
+        assertThat(WorkdayAdapter.posted("Posted Today", today)).isEqualTo(Instant.parse("2026-10-16T00:00:00Z"));
+        assertThat(WorkdayAdapter.posted("Posted Yesterday", today)).isEqualTo(Instant.parse("2026-10-15T00:00:00Z"));
+        assertThat(WorkdayAdapter.posted("Posted 1 Day Ago", today)).isEqualTo(Instant.parse("2026-10-15T00:00:00Z"));
+        assertThat(WorkdayAdapter.posted("Posted 30+ Days Ago", today)).isNull();
+        assertThat(WorkdayAdapter.posted("", today)).isNull();
     }
 
     /**
