@@ -123,4 +123,21 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
     @Transactional
     @Query(nativeQuery = true, value = "UPDATE source SET employer_name = ?2 WHERE id = ?1 AND employer_name IS NULL")
     int nameEmployer(Long sourceId, String name);
+
+    /**
+     * Записывает название работодателя, заданное вручную ({@link ManualEmployerNames}, §123): заменяет название от
+     * системы найма. Источник ищется по провайдеру и доске (уникальная пара); его ещё нет — ничего не записывается.
+     *
+     * @param provider провайдер
+     * @param board    доска, как записана в источнике
+     * @param name     название
+     * @return 1 — записано, 0 — источника нет или название то же
+     */
+    @Modifying
+    @Transactional
+    @Query(nativeQuery = true, value = """
+            UPDATE source SET employer_name = ?3
+            WHERE provider = ?1 AND board = ?2 AND employer_name IS DISTINCT FROM ?3
+            """)
+    int nameEmployerManually(String provider, String board, String name);
 }

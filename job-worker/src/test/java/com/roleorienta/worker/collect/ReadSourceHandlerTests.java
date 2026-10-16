@@ -28,7 +28,7 @@ import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Запрос детали публикаций (текст и места) при чтении: только без сохранённого текста и в пределах потолка;
- * проверка публикаций, пропавших из списка с фильтром по стране.
+ * проверка публикаций, пропавших из списка с фильтром по стране; название работодателя источника без компании.
  */
 class ReadSourceHandlerTests {
 
@@ -109,6 +109,43 @@ class ReadSourceHandlerTests {
         verify(adapter, never()).check(BOARD, "b");
         verify(adapter).check(BOARD, "c");
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", "t"))), eq(Set.of()), eq(Set.of("b")));
+    }
+
+    /**
+     * Источник без компании (§123): у {@code a} название работодателя пустое, у {@code b} есть — записывается
+     * название {@code b}, у {@code c} не спрашивается.
+     */
+    @Test
+    void namesEmployerFromFirstPostingThatHasName() {
+        Source source = new Source("workday", BOARD);
+        when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(
+                List.of(posting("a", "t"), posting("b", "t"), posting("c", "t")), List.of()));
+        when(sources.needsEmployerName(any())).thenReturn(true);
+        when(adapter.employerName(BOARD, "a")).thenReturn(Optional.empty());
+        when(adapter.employerName(BOARD, "b")).thenReturn(Optional.of("Acme s.r.o."));
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(sources).nameEmployer(any(), eq("Acme s.r.o."));
+        verify(adapter, never()).employerName(BOARD, "c");
+    }
+
+    /**
+     * Ни у одной из первых 5 публикаций названия нет — шестая не спрашивается, ничего не записывается (§123).
+     */
+    @Test
+    void asksEmployerNameOfAtMostFivePostings() {
+        Source source = new Source("workday", BOARD);
+        when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(List.of(posting("a", "t"),
+                posting("b", "t"), posting("c", "t"), posting("d", "t"), posting("e", "t"), posting("f", "t")),
+                List.of()));
+        when(sources.needsEmployerName(any())).thenReturn(true);
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(adapter).employerName(BOARD, "e");
+        verify(adapter, never()).employerName(BOARD, "f");
+        verify(sources, never()).nameEmployer(any(), any());
     }
 
     @SuppressWarnings("unchecked")

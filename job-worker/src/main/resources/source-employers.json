@@ -1,0 +1,11 @@
+{
+  "version": "2026-10-16.1",
+  "comment": "Название работодателя источника без компании, которого система найма не даёт (стенограмма §123). Доска — как в source.board. Правка — только этот файл; применяется при запуске воркера.",
+  "employers": [
+    { "provider": "workday", "board": "cat.wd5.myworkdayjobs.com/caterpillarcareers", "name": "Caterpillar" },
+    { "provider": "workday", "board": "hpe.wd5.myworkdayjobs.com/jobsathpe", "name": "Hewlett Packard Enterprise" },
+    { "provider": "workday", "board": "hpe.wd5.myworkdayjobs.com/acjobsite", "name": "Hewlett Packard Enterprise" },
+    { "provider": "workday", "board": "hpe.wd5.myworkdayjobs.com/wfmathpe", "name": "Hewlett Packard Enterprise" },
+    { "provider": "personio", "board": "personio.jobs.personio.de", "name": "Personio" }
+  ]
+}

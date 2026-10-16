@@ -63,6 +63,9 @@ public class ReadSourceHandler implements TaskHandler {
     /** Длина {@code source.employer_name}. */
     private static final int MAX_EMPLOYER_NAME = 300;
 
+    /** У скольких первых публикаций чтения спрашивается название работодателя (§123: Workday даёт его не у всех). */
+    private static final int MAX_EMPLOYER_NAME_ATTEMPTS = 5;
+
     private static final Logger LOG = LoggerFactory.getLogger(ReadSourceHandler.class);
 
     private final SourceRepository sources;
@@ -178,19 +181,27 @@ public class ReadSourceHandler implements TaskHandler {
     }
 
     /**
-     * Источник без компании (доска обратного пути) получает название работодателя от системы найма —
-     * один раз, пока его нет (аудит §65: иначе в сведениях о вакансии работодатель «не указан», бизнес-описание §6).
+     * Источник без компании (доска обратного пути) получает название работодателя от системы найма — пока его нет
+     * (аудит §65: иначе в сведениях о вакансии работодатель «не указан», бизнес-описание §6). Название спрашивается
+     * у первых {@value #MAX_EMPLOYER_NAME_ATTEMPTS} публикаций чтения по порядку, до первого непустого: Workday
+     * отдаёт {@code hiringOrganization.name} пустым у части вакансий доски (§123). Не нашлось — следующее чтение
+     * спросит снова; название, которого система найма не даёт совсем, задаётся вручную
+     * ({@link com.roleorienta.worker.source.ManualEmployerNames}).
      */
     private void nameEmployer(SourceAdapter adapter, Source source, List<FetchedPosting> postings) {
         if (postings.isEmpty() || !sources.needsEmployerName(source.getId())) {
             return;
         }
-        adapter.employerName(source.getBoard(), postings.get(0).externalId())
-                .map(name -> name.length() > MAX_EMPLOYER_NAME ? name.substring(0, MAX_EMPLOYER_NAME) : name)
-                .ifPresent(name -> {
-                    sources.nameEmployer(source.getId(), name);
-                    LOG.info("Source {} employer named by provider: {}", source.getId(), name);
-                });
+        for (FetchedPosting posting : postings.subList(0, Math.min(postings.size(), MAX_EMPLOYER_NAME_ATTEMPTS))) {
+            Optional<String> found = adapter.employerName(source.getBoard(), posting.externalId());
+            if (found.isPresent()) {
+                String name = found.get();
+                sources.nameEmployer(source.getId(),
+                        name.length() > MAX_EMPLOYER_NAME ? name.substring(0, MAX_EMPLOYER_NAME) : name);
+                LOG.info("Source {} employer named by provider: {}", source.getId(), name);
+                return;
+            }
+        }
     }
 
     private List<FetchedPosting> withDetail(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
