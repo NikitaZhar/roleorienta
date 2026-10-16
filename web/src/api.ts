@@ -145,7 +145,8 @@ export type WorkFormat = 'OFFICE' | 'REMOTE';
 /** Условия поиска (технический документ §8; бизнес-описание §7.2). */
 export interface SearchCondition {
   countries: string[];
-  position: string;
+  /** Коды позиций (от 1 до 10, §126). */
+  positions: string[];
   format: WorkFormat | null;
   portionLimit: number;
 }
@@ -153,7 +154,7 @@ export interface SearchCondition {
 /** Условия к сохранению: лимит null — значение по умолчанию сервера. */
 export interface SearchConditionInput {
   countries: string[];
-  position: string;
+  positions: string[];
   format: WorkFormat | null;
   portionLimit: number | null;
 }

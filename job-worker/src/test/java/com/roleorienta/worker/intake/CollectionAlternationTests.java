@@ -142,10 +142,12 @@ class CollectionAlternationTests {
                 "INSERT INTO position (code, name) VALUES (?, 'Test') RETURNING id", Long.class, POSITION);
         long user = jdbcTemplate.queryForObject(
                 "INSERT INTO user_account (email, password_hash) VALUES (?, '-') RETURNING id", Long.class, EMAIL);
-        jdbcTemplate.update("""
-                INSERT INTO search_condition (user_id, countries, position_id, portion_limit, active)
-                VALUES (?, ?::text[], ?, 20, TRUE)
-                """, user, countries, position);
+        long condition = jdbcTemplate.queryForObject("""
+                INSERT INTO search_condition (user_id, countries, portion_limit, active)
+                VALUES (?, ?::text[], 20, TRUE) RETURNING id
+                """, Long.class, user, countries);
+        jdbcTemplate.update("INSERT INTO search_condition_position (search_condition_id, position_id) VALUES (?, ?)",
+                condition, position);
     }
 
     private void executeQueuedOnce() {

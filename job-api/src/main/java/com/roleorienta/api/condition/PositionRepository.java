@@ -1,7 +1,7 @@
 package com.roleorienta.api.condition;
 
+import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -10,10 +10,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PositionRepository extends JpaRepository<Position, Long> {
 
     /**
-     * @param code код позиции
-     * @return позиция
+     * @param codes коды позиций
+     * @return найденные позиции (неизвестных кодов среди них нет)
      */
-    Optional<Position> findByCode(String code);
+    List<Position> findByCodeIn(Collection<String> codes);
 
     /**
      * Подсказка: позиции, в названии или коде которых есть строка, по названию; не больше 20.

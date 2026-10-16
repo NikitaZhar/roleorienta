@@ -62,7 +62,8 @@ class DeliveryAcceptanceTests {
     private int passes;
 
     /**
-     * Чистые таблицы; позиция, две компании (источники), пользователь с условиями: Словакия, Java,
+     * Чистые таблицы; позиция, две компании (источники), пользователь с условиями: Словакия, Java (позиция —
+     * {@code search_condition_position}, §126),
      * формат не задан (лимит порции 20 записан — столбец обязателен, выдача его не читает, §120).
      */
     @BeforeEach
@@ -75,9 +76,11 @@ class DeliveryAcceptanceTests {
                 "INSERT INTO user_account (email, password_hash) VALUES ('user@example.com', '-') RETURNING id",
                 Long.class);
         conditionId = jdbcTemplate.queryForObject("""
-                INSERT INTO search_condition (user_id, countries, position_id, portion_limit, active)
-                VALUES (?, '{SK}', ?, 20, TRUE) RETURNING id
-                """, Long.class, userId, positionId);
+                INSERT INTO search_condition (user_id, countries, portion_limit, active)
+                VALUES (?, '{SK}', 20, TRUE) RETURNING id
+                """, Long.class, userId);
+        jdbcTemplate.update("INSERT INTO search_condition_position (search_condition_id, position_id) VALUES (?, ?)",
+                conditionId, positionId);
     }
 
     /**
@@ -175,9 +178,8 @@ class DeliveryAcceptanceTests {
     /**
      * Отбор в порции (условия: Словакия, удалённо): выдаются только вакансии, среди определённых стран которых есть
      * Словакия или «*» — удалённо без ограничения страны (§120, аудит §121): другая страна и страна не определена — нет;
-     * явное несоответствие формата (офис и гибрид при «удалённо»), закрытая и отмеченная «не подходит» вакансии и
-     * вакансия без позиции не выдаются;
-     * противоречивый формат — выдаётся.
+     * явное несоответствие формата (офис при «удалённо»), закрытая и отмеченная «не подходит» вакансии и вакансия без
+     * позиции не выдаются; противоречивый формат и гибрид (подходит к любому формату, §125) — выдаются.
      */
     @Test
     void portionKeepsOnlyCountryOfConditions() {
@@ -200,11 +202,11 @@ class DeliveryAcceptanceTests {
 
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
-                """, String.class)).containsExactly("Slovakia remote", "Worldwide", "Conflicting format", "Recheck");
+                """, String.class)).containsExactly("Slovakia remote", "Worldwide", "Conflicting format", "Recheck", "Hybrid");
     }
 
     /**
-     * Условия «офис» (решение владельца 2026-10-16, §124): выдаются офисная, гибридная и вакансия без формата;
+     * Условия «офис» (решения владельца 2026-10-16, §124, §125): выдаются офисная, гибридная и вакансия без формата;
      * удалённая — нет.
      */
     @Test
@@ -220,6 +222,39 @@ class DeliveryAcceptanceTests {
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
                 """, String.class)).containsExactly("Office", "Hybrid", "No format");
+    }
+
+    /**
+     * Несколько позиций в условиях (§126): выдаются вакансии каждой из них, вакансия двух позиций — один раз;
+     * вакансия третьей позиции, которой нет в условиях, — нет.
+     */
+    @Test
+    void portionCoversEveryPositionOfConditions() {
+        long devops = jdbcTemplate.queryForObject(
+                "INSERT INTO position (code, name) VALUES ('devops-engineer', 'DevOps') RETURNING id", Long.class);
+        long qa = jdbcTemplate.queryForObject(
+                "INSERT INTO position (code, name) VALUES ('qa-engineer', 'QA') RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO search_condition_position (search_condition_id, position_id) VALUES (?, ?)",
+                conditionId, devops);
+        vacancy("Java", 1, "acme");
+        rematch(vacancy("DevOps", 2, "acme"), devops);
+        long both = vacancy("Java and DevOps", 3, "acme");
+        jdbcTemplate.update("""
+                INSERT INTO vacancy_position_match (vacancy_id, position_id, dictionary_version, explanation)
+                VALUES (?, ?, 'test', 'test')
+                """, both, devops);
+        rematch(vacancy("QA", 4, "acme"), qa);
+
+        assertThat(runPass()).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
+                """, String.class)).containsExactly("Java", "DevOps", "Java and DevOps");
+    }
+
+    /** Соответствие вакансии — только другой позиции. */
+    private void rematch(long vacancyId, long otherPositionId) {
+        jdbcTemplate.update("UPDATE vacancy_position_match SET position_id = ? WHERE vacancy_id = ?", otherPositionId,
+                vacancyId);
     }
 
     /**

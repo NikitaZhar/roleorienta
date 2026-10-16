@@ -29,7 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import(TestcontainersConfiguration.class)
 class AccountConditionAcceptanceTests {
 
-    private static final String JAVA_SK = "{\"countries\":[\"sk\"],\"position\":\"java-developer\"}";
+    private static final String JAVA_SK = "{\"countries\":[\"sk\"],\"positions\":[\"java-developer\"]}";
 
     @Autowired
     private Environment environment;
@@ -101,8 +101,9 @@ class AccountConditionAcceptanceTests {
     /**
      * Сценарий 3: смена позиции — новая версия, прежний список и место остановки не используются,
      * отметка «не подходит» сохранена; смена только лимита — та же версия и тот же список;
-     * {@code If-Match}: не указан — {@code 428}, устарел — {@code 412}; неподдерживаемая страна и
-     * неизвестная позиция — {@code 400}.
+     * {@code If-Match}: не указан — {@code 428}, устарел — {@code 412}; неподдерживаемая страна,
+     * неизвестная позиция и неизвестный формат — {@code 400}; формат {@code HYBRID} — «любой» (§125); несколько
+     * позиций (§126): тот же набор в другом порядке — та же версия, пустой набор — {@code 400}.
      *
      * @throws Exception ошибка HTTP
      */
@@ -113,7 +114,7 @@ class AccountConditionAcceptanceTests {
         ApiTestClient.Response first = client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
         assertThat(first.status()).isEqualTo(200);
         assertThat(first.body()).isEqualTo(
-                "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"format\":null,\"portionLimit\":20}");
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"],\"format\":null,\"portionLimit\":20}");
         long firstVersion = activeVersion();
         long vacancyId = deliveredAndMarked(firstVersion);
 
@@ -124,21 +125,21 @@ class AccountConditionAcceptanceTests {
 
         client.ifMatch = first.etag();
         ApiTestClient.Response limit = client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"portionLimit\":5}");
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"],\"portionLimit\":5}");
         assertThat(limit.status()).isEqualTo(200);
         assertThat(activeVersion()).isEqualTo(firstVersion);
         assertThat(delivered(firstVersion)).isEqualTo(1);
 
         client.ifMatch = limit.etag();
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"DE\"],\"position\":\"devops-engineer\"}").body()).contains("\"pointer\":\"/countries\"");
+                "{\"countries\":[\"DE\"],\"positions\":[\"devops-engineer\"]}").body()).contains("\"pointer\":\"/countries\"");
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"SK\"],\"position\":\"nobody\"}").body()).contains("\"pointer\":\"/position\"");
+                "{\"countries\":[\"SK\"],\"positions\":[\"nobody\"]}").body()).contains("\"pointer\":\"/positions\"");
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\",\"format\":\"HYBRID\"}").status())
+                "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"],\"format\":\"WEEKEND\"}").status())
                 .isEqualTo(400);
         ApiTestClient.Response changed = client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\",\"format\":\"REMOTE\"}");
+                "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"],\"format\":\"REMOTE\"}");
         assertThat(changed.status()).isEqualTo(200);
         long secondVersion = activeVersion();
         assertThat(secondVersion).isNotEqualTo(firstVersion);
@@ -151,7 +152,26 @@ class AccountConditionAcceptanceTests {
         client.ifMatch = null;
         ApiTestClient.Response current = client.send("GET", "/api/v1/me/search-condition", null);
         assertThat(current.etag()).isEqualTo(changed.etag());
-        assertThat(current.body()).contains("\"position\":\"devops-engineer\"", "\"format\":\"REMOTE\"");
+        assertThat(current.body()).contains("\"positions\":[\"devops-engineer\"]", "\"format\":\"REMOTE\"");
+
+        client.ifMatch = current.etag();
+        ApiTestClient.Response hybrid = client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"],\"format\":\"HYBRID\"}");
+        assertThat(hybrid.status()).isEqualTo(200);
+        assertThat(hybrid.body()).contains("\"format\":null");
+
+        client.ifMatch = hybrid.etag();
+        ApiTestClient.Response two = client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\",\"devops-engineer\"]}");
+        assertThat(two.body()).contains("\"positions\":[\"devops-engineer\",\"java-developer\"]");
+        long twoPositions = activeVersion();
+        client.ifMatch = two.etag();
+        assertThat(client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\",\"java-developer\"]}").status())
+                .isEqualTo(200);
+        assertThat(activeVersion()).isEqualTo(twoPositions);
+        assertThat(client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[]}").body()).contains("\"pointer\":\"/positions\"");
     }
 
     /**
@@ -170,7 +190,7 @@ class AccountConditionAcceptanceTests {
         first.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
         ApiTestClient second = signedIn("second@example.com");
         assertThat(second.send("GET", "/api/v1/me/search-condition", null).status()).isEqualTo(404);
-        second.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\"}");
+        second.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"]}");
 
         assertThat(first.send("GET", "/api/v1/me/search-condition", null).body()).contains("java-developer");
         assertThat(second.send("GET", "/api/v1/me/search-condition", null).body()).contains("devops-engineer");

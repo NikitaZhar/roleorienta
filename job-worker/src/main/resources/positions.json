@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-29.2",
+  "version": "2026-10-16.1",
   "comment": "Словарь позиций (технический документ §6, §16.13). titles — эквивалентные названия; roles + keywords — роль и специализация в названии (Backend Engineer — Java); keywords в тексте — не меньше contentHits раз при роли в названии; exclude — в названии исключает позицию. Регистр и диакритика не важны, границы слов учитываются (C#, C++, .NET, Node.js). otherSpecializations — признаки специализаций вне словаря: при них в названии правило по тексту не применяется (Backend Engineer (Ruby) — не Python по тексту).",
   "contentHits": 3,
   "otherSpecializations": [
@@ -171,7 +171,6 @@
         "devops",
         "site reliability engineer",
         "sre",
-        "platform engineer",
         "cloud engineer"
       ],
       "roles": [],
@@ -188,7 +187,9 @@
         "datovy analytik",
         "bi analyst",
         "business intelligence analyst",
-        "reporting analyst"
+        "reporting analyst",
+        "data analytics",
+        "data and analytics"
       ],
       "roles": [],
       "keywords": [],
@@ -302,6 +303,116 @@
         "product management",
         "product manager"
       ]
+    },
+    {
+      "code": "platform-engineer",
+      "name": "Platform engineer",
+      "titles": [
+        "platform engineer",
+        "cloud platform engineer"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": [
+        "data"
+      ]
+    },
+    {
+      "code": "architect",
+      "name": "Architect",
+      "titles": [
+        "solution architect",
+        "solutions architect",
+        "enterprise architect",
+        "software architect",
+        "it architect",
+        "cloud architect",
+        "technical architect",
+        "application architect",
+        "integration architect"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
+    },
+    {
+      "code": "data-architect",
+      "name": "Data architect",
+      "titles": [
+        "data architect",
+        "data platform architect",
+        "analytics architect"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
+    },
+    {
+      "code": "ai-engineer",
+      "name": "AI engineer",
+      "titles": [
+        "ai engineer",
+        "ai engineering",
+        "ml engineer",
+        "machine learning engineer",
+        "ai developer",
+        "llm engineer",
+        "genai engineer"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
+    },
+    {
+      "code": "engineering-manager",
+      "name": "Engineering manager",
+      "titles": [
+        "engineering manager",
+        "software engineering manager",
+        "head of engineering",
+        "development manager"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": [
+        "business"
+      ]
+    },
+    {
+      "code": "application-engineer",
+      "name": "Application engineer",
+      "titles": [
+        "application engineer",
+        "applications engineer"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
+    },
+    {
+      "code": "data-quality",
+      "name": "Data quality",
+      "titles": [
+        "data quality analyst",
+        "data quality engineer",
+        "data quality specialist",
+        "data quality"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
+    },
+    {
+      "code": "analytics-engineer",
+      "name": "Analytics engineer",
+      "titles": [
+        "analytics engineer",
+        "bi engineer",
+        "bi developer"
+      ],
+      "roles": [],
+      "keywords": [],
+      "exclude": []
     }
   ]
 }

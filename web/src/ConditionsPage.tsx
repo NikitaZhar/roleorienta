@@ -13,17 +13,21 @@ const FORMATS: { value: WorkFormat | ''; label: string }[] = [
   { value: 'REMOTE', label: 'Remote' },
 ];
 
+/** Позиций в условиях не больше (§126; как в API). */
+const MAX_POSITIONS = 10;
+
 /**
- * Условия поиска (бизнес-описание §7.2): страны, позиция словаря, формат работы (Any — все форматы; гибрида нет —
+ * Условия поиска (бизнес-описание §7.2): страны, позиции словаря (одна или несколько — вакансия подходит к любой из
+ * них; выбранные — метками с «×», §126), формат работы (Any — все форматы; гибрида нет —
  * гибридные вакансии выдаются при Office, §124). Нет условий —
  * отмечена первая страна из поддерживаемых. Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран,
- * позиции или формата создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
+ * набора позиций или формата создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
  * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [position, setPosition] = useState<CatalogItem | null>(null);
+  const [chosen, setChosen] = useState<CatalogItem[]>([]);
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<CatalogItem[]>([]);
   const [format, setFormat] = useState<WorkFormat | ''>('');
@@ -41,9 +45,10 @@ export function ConditionsPage({ onSaved }: Props) {
       const condition = current.data;
       setSelected(condition.countries);
       setFormat(condition.format ?? '');
-      const matches = await positions(condition.position);
-      setPosition(matches.find((item) => item.code === condition.position)
-        ?? { code: condition.position, name: condition.position });
+      setChosen(await Promise.all(condition.positions.map(async (code) => {
+        const matches = await positions(code);
+        return matches.find((item) => item.code === code) ?? { code, name: code };
+      })));
     }
     setLoaded(true);
   }
@@ -82,14 +87,14 @@ export function ConditionsPage({ onSaved }: Props) {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selected.length === 0 || position === null) {
-      setMessage('Choose at least one country and a position');
+    if (selected.length === 0 || chosen.length === 0) {
+      setMessage('Choose at least one country and a vacancy');
       return;
     }
     try {
       const saved = await saveSearchCondition({
         countries: selected,
-        position: position.code,
+        positions: chosen.map((item) => item.code),
         format: format === '' ? null : format,
         portionLimit: null,
       }, etag);
@@ -124,16 +129,27 @@ export function ConditionsPage({ onSaved }: Props) {
         ))}
       </fieldset>
       <label>
-        Vacancy to look for {position !== null && <strong>— {position.name}</strong>}
+        Vacancies to look for
         <input type="search" placeholder="Type at least 2 letters" value={query}
-          onChange={(event) => setQuery(event.target.value)} />
+          disabled={chosen.length >= MAX_POSITIONS} onChange={(event) => setQuery(event.target.value)} />
       </label>
+      {chosen.length > 0 && (
+        <ul className="chips">
+          {chosen.map((item) => (
+            <li key={item.code}>
+              {item.name}
+              <button type="button" aria-label={'Remove ' + item.name}
+                onClick={() => setChosen((current) => current.filter((other) => other.code !== item.code))}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
       {found.length > 0 && (
         <ul className="choices">
-          {found.map((item) => (
+          {found.filter((item) => !chosen.some((other) => other.code === item.code)).map((item) => (
             <li key={item.code}>
               <button type="button" onClick={() => {
-                setPosition(item);
+                setChosen((current) => current.length >= MAX_POSITIONS ? current : [...current, item]);
                 setQuery('');
               }}>{item.name}</button>
             </li>

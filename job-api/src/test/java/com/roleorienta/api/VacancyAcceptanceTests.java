@@ -30,7 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import(TestcontainersConfiguration.class)
 class VacancyAcceptanceTests {
 
-    private static final String JAVA_SK = "{\"countries\":[\"SK\"],\"position\":\"java-developer\"}";
+    private static final String JAVA_SK = "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"]}";
     private static final Pattern CURSOR = Pattern.compile("\"nextCursor\":\"([^\"]+)\"");
 
     @Autowired
@@ -102,7 +102,7 @@ class VacancyAcceptanceTests {
         assertThat(titles(client.send("GET", "/api/v1/me/unsuitable", null).body())).isEqualTo("Second");
 
         client.ifMatch = client.send("GET", "/api/v1/me/search-condition", null).etag();
-        client.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\"}");
+        client.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"]}");
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEmpty();
         assertThat(titles(client.send("GET", "/api/v1/me/unsuitable", null).body())).isEqualTo("Second");
         assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body()).contains("\"unsuitable\":true");
@@ -170,7 +170,7 @@ class VacancyAcceptanceTests {
     void officeListShowsHybrid() throws Exception {
         ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
         client.send("PUT", "/api/v1/me/search-condition",
-                "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"format\":\"OFFICE\"}");
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"],\"format\":\"OFFICE\"}");
         long condition = activeCondition();
         format(delivered(condition, "Office", "ACTIVE", 0, 3), "OFFICE");
         format(delivered(condition, "Hybrid", "ACTIVE", 0, 2), "HYBRID");

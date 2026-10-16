@@ -5,6 +5,8 @@ import com.roleorienta.api.condition.ConditionDtos.ConditionResponse;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,7 +52,7 @@ public class ConditionService {
 
     /**
      * Сохраняет условия одной транзакцией под блокировкой активной версии. Условий нет — первая
-     * версия (без {@code If-Match}). Есть — нужна текущая версия: изменились страны, позиция или
+     * версия (без {@code If-Match}). Есть — нужна текущая версия: изменились страны, набор позиций или
      * формат — прежняя версия гасится и создаётся новая с пустым накопленным списком; изменился только
      * лимит — меняется в той же версии, список не сбрасывается. Отметки «не подходит» не затрагиваются.
      *
@@ -58,22 +60,20 @@ public class ConditionService {
      * @param request условия
      * @param ifMatch версия из {@code If-Match}; {@code null} — не указана
      * @return сохранённые условия
-     * @throws InvalidFieldException      неподдерживаемая страна или неизвестная позиция
+     * @throws InvalidFieldException      неподдерживаемая страна или неизвестная позиция ({@code /positions})
      * @throws ConditionVersionException  версия не указана ({@code 428}) или не та ({@code 412})
      */
     @Transactional
     public Saved save(long userId, ConditionRequest request, String ifMatch) {
         List<String> countries = countries(request.countries());
-        long positionId = positions.findByCode(request.position())
-                .orElseThrow(() -> new InvalidFieldException("/position", "Unknown position"))
-                .getId();
+        Set<Long> positionIds = positionIds(request.positions());
         int limit = request.portionLimit() == null ? properties.defaultPortionLimit() : request.portionLimit();
         Optional<SearchCondition> active = conditions.findActiveForUpdate(userId);
         if (active.isEmpty()) {
             if (ifMatch != null) {
                 throw new ConditionVersionException(false);
             }
-            return saved(conditions.save(new SearchCondition(userId, countries, positionId, request.format(), limit)));
+            return saved(conditions.save(new SearchCondition(userId, countries, positionIds, request.format(), limit)));
         }
         SearchCondition current = active.get();
         if (ifMatch == null) {
@@ -82,13 +82,27 @@ public class ConditionService {
         if (!ifMatch.equals(current.etag())) {
             throw new ConditionVersionException(false);
         }
-        if (current.sameSelection(countries, positionId, request.format())) {
+        if (current.sameSelection(countries, positionIds, request.format())) {
             current.setPortionLimit(limit);
             return saved(conditions.saveAndFlush(current));
         }
         current.deactivate();
         conditions.saveAndFlush(current);
-        return saved(conditions.save(new SearchCondition(userId, countries, positionId, request.format(), limit)));
+        return saved(conditions.save(new SearchCondition(userId, countries, positionIds, request.format(), limit)));
+    }
+
+    /**
+     * Позиции по кодам (без повторов); каждая — из словаря.
+     */
+    private Set<Long> positionIds(List<String> codes) {
+        Set<String> requested = codes.stream().map(String::strip).collect(Collectors.toSet());
+        List<Position> found = positions.findByCodeIn(requested);
+        if (found.size() != requested.size()) {
+            Set<String> known = found.stream().map(Position::getCode).collect(Collectors.toSet());
+            throw new InvalidFieldException("/positions", "Unknown positions: "
+                    + requested.stream().filter(code -> !known.contains(code)).sorted().toList());
+        }
+        return found.stream().map(Position::getId).collect(Collectors.toSet());
     }
 
     /**
@@ -104,8 +118,9 @@ public class ConditionService {
     }
 
     private Saved saved(SearchCondition condition) {
-        String position = positions.findById(condition.getPositionId()).map(Position::getCode).orElseThrow();
-        return new Saved(new ConditionResponse(condition.getCountries(), position, condition.getWorkFormat(),
+        List<String> codes = positions.findAllById(condition.getPositionIds()).stream().map(Position::getCode)
+                .sorted().toList();
+        return new Saved(new ConditionResponse(condition.getCountries(), codes, condition.getWorkFormat(),
                 condition.getPortionLimit()), condition.etag());
     }
 }
