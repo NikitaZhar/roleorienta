@@ -175,7 +175,8 @@ class DeliveryAcceptanceTests {
     /**
      * Отбор в порции (условия: Словакия, удалённо): выдаются только вакансии, среди определённых стран которых есть
      * Словакия или «*» — удалённо без ограничения страны (§120, аудит §121): другая страна и страна не определена — нет;
-     * явное несоответствие формата, закрытая и отмеченная «не подходит» вакансии и вакансия без позиции не выдаются;
+     * явное несоответствие формата (офис и гибрид при «удалённо»), закрытая и отмеченная «не подходит» вакансии и
+     * вакансия без позиции не выдаются;
      * противоречивый формат — выдаётся.
      */
     @Test
@@ -187,6 +188,7 @@ class DeliveryAcceptanceTests {
         facts(vacancy("Worldwide", 4, "acme"), "{*}", false, "REMOTE");
         facts(vacancy("No country", 5, "acme"), "{}", false, null);
         facts(vacancy("Office", 6, "acme"), "{SK}", false, "OFFICE");
+        facts(vacancy("Hybrid", 12, "acme"), "{SK}", false, "HYBRID");
         facts(vacancy("Conflicting format", 7, "acme"), "{SK}", false, "CONFLICT");
         jdbcTemplate.update("UPDATE vacancy SET state = 'CLOSED' WHERE id = ?", vacancy("Closed", 8, "acme"));
         jdbcTemplate.update("UPDATE vacancy SET state = 'NEEDS_RECHECK' WHERE id = ?", vacancy("Recheck", 9, "acme"));
@@ -199,6 +201,25 @@ class DeliveryAcceptanceTests {
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
                 """, String.class)).containsExactly("Slovakia remote", "Worldwide", "Conflicting format", "Recheck");
+    }
+
+    /**
+     * Условия «офис» (решение владельца 2026-10-16, §124): выдаются офисная, гибридная и вакансия без формата;
+     * удалённая — нет.
+     */
+    @Test
+    void officeConditionIncludesHybrid() {
+        jdbcTemplate.update("UPDATE search_condition SET work_format = 'OFFICE'");
+        facts(vacancy("Office", 1, "acme"), "{SK}", false, "OFFICE");
+        facts(vacancy("Hybrid", 2, "acme"), "{SK}", false, "HYBRID");
+        facts(vacancy("Remote", 3, "acme"), "{SK}", false, "REMOTE");
+        facts(vacancy("No format", 4, "acme"), "{SK}", false, null);
+
+        runPass();
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
+                """, String.class)).containsExactly("Office", "Hybrid", "No format");
     }
 
     /**

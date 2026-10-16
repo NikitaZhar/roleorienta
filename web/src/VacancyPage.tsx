@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { markUnsuitable, unmarkUnsuitable, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText, formatText } from './format';
+import { countriesText, dateText } from './format';
 
 interface Props {
   id: number;
@@ -16,9 +16,9 @@ const STATES: Record<string, string> = {
 };
 
 /**
- * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна и формат с пометками
- * неопределённости, ссылка на первичную публикацию, даты проверки, состояние; отметка «не подходит» и её снятие
- * (бизнес-описание §7.2).
+ * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна с пометкой неопределённости
+ * (формат не показывается — решение владельца 2026-10-16, §124), ссылка на первичную публикацию, даты проверки,
+ * состояние; отметка «не подходит» и её снятие (бизнес-описание §7.2).
  */
 export function VacancyPage({ id, onBack, onMarked }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
@@ -61,8 +61,6 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
         {parties.agency !== null && (<><dt>Agency</dt><dd>{parties.agency}</dd></>)}
         <dt>Country</dt>
         <dd>{countriesText(work)}{work.countryUncertain && ' (not clear from the posting)'}</dd>
-        <dt>Format</dt>
-        <dd>{formatText(work)}{work.formatUncertain && ' (not clear from the posting)'}</dd>
         {work.remoteTerritory !== null && (<><dt>Remote from</dt><dd>{work.remoteTerritory.join(', ')}</dd></>)}
         <dt>State</dt>
         <dd>{STATES[publication.state] ?? publication.state}</dd>

@@ -139,8 +139,8 @@ export interface CatalogItem {
   name: string;
 }
 
-/** Формат работы. */
-export type WorkFormat = 'OFFICE' | 'HYBRID' | 'REMOTE';
+/** Формат работы в условиях поиска; null — любой (Any). Гибрида нет: гибридные вакансии выдаются при OFFICE (§124). */
+export type WorkFormat = 'OFFICE' | 'REMOTE';
 
 /** Условия поиска (технический документ §8; бизнес-описание §7.2). */
 export interface SearchCondition {
@@ -198,7 +198,8 @@ export interface Parties {
 /** Где и как выполняется работа; countries «*» — без ограничения страны. */
 export interface Work {
   countries: string[];
-  format: WorkFormat | null;
+  /** Формат вакансии; на экране не показывается (решение владельца 2026-10-16, §124). */
+  format: 'OFFICE' | 'HYBRID' | 'REMOTE' | null;
   remoteTerritory: string[] | null;
   countryUncertain: boolean;
   formatUncertain: boolean;

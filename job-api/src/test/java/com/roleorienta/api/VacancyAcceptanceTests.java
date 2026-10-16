@@ -161,6 +161,28 @@ class VacancyAcceptanceTests {
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Worldwide,Slovakia");
     }
 
+    /**
+     * Условия «офис» (решение владельца 2026-10-16, §124): видны офисная и гибридная вакансии, удалённая — нет.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void officeListShowsHybrid() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"position\":\"java-developer\",\"format\":\"OFFICE\"}");
+        long condition = activeCondition();
+        format(delivered(condition, "Office", "ACTIVE", 0, 3), "OFFICE");
+        format(delivered(condition, "Hybrid", "ACTIVE", 0, 2), "HYBRID");
+        format(delivered(condition, "Remote", "ACTIVE", 0, 1), "REMOTE");
+
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Hybrid,Office");
+    }
+
+    private void format(long vacancy, String format) {
+        jdbcTemplate.update("UPDATE vacancy SET work_format = ? WHERE id = ?", format, vacancy);
+    }
+
     private void countries(long vacancy, String countries) {
         jdbcTemplate.update("UPDATE vacancy SET work_countries = ?::text[] WHERE id = ?", countries, vacancy);
     }

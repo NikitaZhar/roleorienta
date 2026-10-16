@@ -48,13 +48,15 @@ public class VacancyRepository {
     /**
      * Вакансия видна в накопленном списке версии условий (те же правила, что у выдачи job-worker): не закрыта,
      * подтверждена не раньше срока, подходит по позиции, стране (среди определённых стран вакансии есть страна
-     * условий или «*» — удалённо без ограничения страны; §120, аудит §121) и формату текущих условий, не отмечена.
+     * условий или «*» — удалённо без ограничения страны; §120, аудит §121) и формату текущих условий (гибрид — при
+     * «офисе», §124), не отмечена.
      */
     private static final String VISIBLE = """
             v.state <> 'CLOSED' AND v.last_confirmed_at >= ?
             AND EXISTS (SELECT 1 FROM vacancy_position_match m WHERE m.vacancy_id = v.id AND m.position_id = c.position_id)
             AND (v.work_countries && c.countries OR '*' = ANY (v.work_countries))
-            AND (c.work_format IS NULL OR v.work_format IS NULL OR v.work_format IN ('CONFLICT', c.work_format))
+            AND (c.work_format IS NULL OR v.work_format IS NULL OR v.work_format IN ('CONFLICT', c.work_format)
+                 OR c.work_format = 'OFFICE' AND v.work_format = 'HYBRID')
             AND NOT EXISTS (SELECT 1 FROM unsuitable_mark u WHERE u.user_id = c.user_id AND u.vacancy_id = v.id)""";
 
     /** Вакансия выдавалась пользователю (по любой версии условий) или отмечена им. */

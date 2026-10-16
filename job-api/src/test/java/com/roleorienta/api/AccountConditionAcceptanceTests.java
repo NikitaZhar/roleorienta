@@ -134,6 +134,9 @@ class AccountConditionAcceptanceTests {
                 "{\"countries\":[\"DE\"],\"position\":\"devops-engineer\"}").body()).contains("\"pointer\":\"/countries\"");
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"position\":\"nobody\"}").body()).contains("\"pointer\":\"/position\"");
+        assertThat(client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\",\"format\":\"HYBRID\"}").status())
+                .isEqualTo(400);
         ApiTestClient.Response changed = client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"position\":\"devops-engineer\",\"format\":\"REMOTE\"}");
         assertThat(changed.status()).isEqualTo(200);

@@ -35,7 +35,8 @@ public enum Fit {
 
     /**
      * Формат: не задан в условиях — соответствие; у вакансии не указан или противоречив — неясно;
-     * совпадает — соответствие; иначе — несоответствие.
+     * совпадает — соответствие; гибрид при «офис» — соответствие (работа требует присутствия; в условиях гибрида нет —
+     * решение владельца 2026-10-16, стенограмма §124); иначе — несоответствие.
      *
      * @param vacancyFormat формат вакансии; {@code null} — не указан
      * @param searchFormat  формат из условий; {@code null} — не задан
@@ -48,6 +49,7 @@ public enum Fit {
         if (vacancyFormat == null || vacancyFormat == WorkFormat.CONFLICT) {
             return UNCERTAIN;
         }
-        return vacancyFormat == searchFormat ? MATCH : MISMATCH;
+        return vacancyFormat == searchFormat || searchFormat == WorkFormat.OFFICE && vacancyFormat == WorkFormat.HYBRID
+                ? MATCH : MISMATCH;
     }
 }

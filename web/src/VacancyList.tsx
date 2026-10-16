@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { searchCondition, type VacancyItem, type VacancyPage } from './api';
-import { countriesText, dateText, formatText } from './format';
+import { countriesText, dateText } from './format';
 
 interface Props {
   title: string;
@@ -87,7 +87,7 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
               <strong>{item.position}</strong>
               <span>{item.parties.employer ?? 'Employer not specified'}
                 {item.parties.agency !== null && ` · via ${item.parties.agency}`}</span>
-              <span className="muted">{countriesText(item.work)} · {formatText(item.work)} · {dateText(item.listedAt)}</span>
+              <span className="muted">{countriesText(item.work)} · {dateText(item.listedAt)}</span>
             </button>
           </li>
         ))}

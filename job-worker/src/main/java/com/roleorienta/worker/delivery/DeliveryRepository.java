@@ -22,7 +22,8 @@ public class DeliveryRepository {
      * вакансии есть страна пользователя или «*» (удалённо без ограничения страны, аудит §121); страна не определена —
      * вакансия не выдаётся (решение владельца 2026-10-15, стенограмма §120: в список Словакии попадали вакансии
      * Бангалора с нераспознанным местом). Формат не подходит, если он задан в условиях, указан у вакансии без противоречия и
-     * отличается.
+     * отличается; гибрид подходит к «офису» (в условиях гибрида нет — решение владельца 2026-10-16, §124). Логика та же,
+     * что {@code Fit.format}.
      */
     private static final String PORTION = """
             INSERT INTO delivered_vacancy (search_condition_id, vacancy_id, pass_run_id, delivered_at)
@@ -34,7 +35,8 @@ public class DeliveryRepository {
               AND v.state <> 'CLOSED'
               AND v.last_confirmed_at >= ?
               AND (v.work_countries && c.countries OR '*' = ANY (v.work_countries))
-              AND (c.work_format IS NULL OR v.work_format IS NULL OR v.work_format IN ('CONFLICT', c.work_format))
+              AND (c.work_format IS NULL OR v.work_format IS NULL OR v.work_format IN ('CONFLICT', c.work_format)
+                   OR c.work_format = 'OFFICE' AND v.work_format = 'HYBRID')
               AND NOT EXISTS (SELECT 1 FROM unsuitable_mark u WHERE u.user_id = c.user_id AND u.vacancy_id = v.id)
               AND NOT EXISTS (SELECT 1 FROM delivered_vacancy d
                               WHERE d.search_condition_id = c.id AND d.vacancy_id = v.id)
