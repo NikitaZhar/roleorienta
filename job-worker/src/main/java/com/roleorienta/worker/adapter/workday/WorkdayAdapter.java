@@ -72,7 +72,8 @@ public class WorkdayAdapter implements SourceAdapter {
 
     /**
      * Дата размещения в списке — относительно сегодняшнего дня: «Posted Today», «Posted Yesterday», «Posted 3 Days
-     * Ago»; «Posted 30+ Days Ago» (и другие записи) — даты нет (§127).
+     * Ago»; «Posted 30+ Days Ago» (и другие записи) — даты в списке нет (§127), она берётся из детали
+     * ({@link #postedDate}, §128).
      */
     private static final Pattern POSTED_DAYS_AGO = Pattern.compile("(?i)posted (\\d+) days? ago");
     private static final Pattern POSTED_TODAY = Pattern.compile("(?i)posted today");
@@ -331,6 +332,19 @@ public class WorkdayAdapter implements SourceAdapter {
         } catch (JsonProcessingException exception) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Дата размещения — {@code jobPostingInfo.startDate} детали публикации (§128; образец
+     * {@code docs/samples/wd-ing-job.json}): список даёт дату только относительно сегодняшнего дня и без неё у
+     * вакансий старше 30 дней.
+     */
+    @Override
+    public Optional<Instant> postedDate(String board, String externalId) {
+        HttpResult result = requestDetail(BOARD.matcher(board), externalId);
+        JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
+        return info == null ? Optional.empty()
+                : Optional.ofNullable(PostedDates.parse(textOrNull(info.path("startDate"))));
     }
 
     /**

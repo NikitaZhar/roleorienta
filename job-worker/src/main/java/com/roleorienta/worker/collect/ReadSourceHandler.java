@@ -15,7 +15,9 @@ import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +44,9 @@ import org.springframework.stereotype.Component;
  * больше
  * {@link CollectProperties#maxContentRequestsPerRead()} за чтение, чтобы задание оставалось
  * ограниченным. Не полученный текст запрашивается при следующем чтении.</p>
+ *
+ * <p>Дата размещения, которой не дал список, спрашивается у детали публикации — только пока у вакансии нет даты и в
+ * пределах того же потолка запросов, что остался после запросов текста (§128).</p>
  *
  * <p>Каждое чтение записывается обходом ({@link CrawlRun}): от начала чтения до записи
  * результата, включая запросы текста. Тела ответов списка сохраняются снимками в хранилище до
@@ -128,10 +133,13 @@ public class ReadSourceHandler implements TaskHandler {
                 if (read.complete() && source.getCountry() != null) {
                     checkMissing(adapter, source, postings, read.notRead(), unverified);
                 }
-                postings = withDetail(adapter, source, postings);
+                Detailed detailed = withDetail(adapter, source, postings);
+                postings = detailed.postings();
                 nameEmployer(adapter, source, postings);
+                Map<String, Instant> postedAt = withPostedDates(adapter, source, postings, read.postedAt(),
+                        properties.maxContentRequestsPerRead() - detailed.requests());
                 run.read(postings.size(), read.partialReason());
-                recorder.record(run, postings, unverified, read.notRead(), read.postedAt());
+                recorder.record(run, postings, unverified, read.notRead(), postedAt);
                 yield new TaskOutcome.Done();
             }
             case SourceReadResult.Unavailable unavailable -> {
@@ -204,7 +212,47 @@ public class ReadSourceHandler implements TaskHandler {
         }
     }
 
-    private List<FetchedPosting> withDetail(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
+    /**
+     * Даты размещения, которых не дал список (§128): у публикаций, чья вакансия ещё без даты, дата спрашивается у
+     * детали — один запрос на публикацию, не больше {@code budget} за чтение. Не получена — следующее чтение спросит
+     * снова; пока даты нет, на экране — дата первого обнаружения («найдена»).
+     *
+     * @param listed даты из списка
+     * @param budget остаток потолка запросов детали за чтение
+     * @return даты списка и полученные из детали
+     */
+    private Map<String, Instant> withPostedDates(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
+            Map<String, Instant> listed, int budget) {
+        Map<String, Instant> dates = new HashMap<>(listed);
+        Set<String> dated = recorder.externalIdsWithPostedDate(source);
+        int requested = 0;
+        for (FetchedPosting posting : postings) {
+            String externalId = posting.externalId();
+            if (requested >= budget) {
+                break;
+            }
+            if (dates.containsKey(externalId) || dated.contains(externalId)) {
+                continue;
+            }
+            requested++;
+            adapter.postedDate(source.getBoard(), externalId).ifPresent(date -> dates.put(externalId, date));
+        }
+        int received = dates.size() - listed.size();
+        if (received > 0) {
+            LOG.info("Source {} posted dates from detail: requested {}, received {}", source.getId(), requested,
+                    received);
+        }
+        return dates;
+    }
+
+    /**
+     * @param postings публикации с текстом и местами детали
+     * @param requests сколько запросов детали сделано
+     */
+    private record Detailed(List<FetchedPosting> postings, int requests) {
+    }
+
+    private Detailed withDetail(SourceAdapter adapter, Source source, List<FetchedPosting> fetched) {
         Set<String> haveContent = recorder.externalIdsWithContent(source);
         int budget = properties.maxContentRequestsPerRead();
         int received = 0;
@@ -227,7 +275,7 @@ public class ReadSourceHandler implements TaskHandler {
         if (requested > 0) {
             LOG.info("Source {} text: requested {}, received {}", source.getId(), requested, received);
         }
-        return result;
+        return new Detailed(result, requested);
     }
 
     private static TaskOutcome toOutcome(HttpResult failure) {

@@ -169,6 +169,15 @@ public class PostingRecorder {
 
     /**
      * @param source источник
+     * @return внешние id публикаций источника, у вакансии которых уже есть дата размещения (§128)
+     */
+    @Transactional(readOnly = true)
+    public Set<String> externalIdsWithPostedDate(Source source) {
+        return new HashSet<>(postings.findExternalIdsWithPostedDate(source.getId()));
+    }
+
+    /**
+     * @param source источник
      * @return внешние id незакрытых публикаций источника
      */
     @Transactional(readOnly = true)

@@ -29,7 +29,8 @@ import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Запрос детали публикаций (текст и места) при чтении: только без сохранённого текста и в пределах потолка;
- * проверка публикаций, пропавших из списка с фильтром по стране; название работодателя источника без компании.
+ * проверка публикаций, пропавших из списка с фильтром по стране; название работодателя источника без компании; дата
+ * размещения из детали.
  */
 class ReadSourceHandlerTests {
 
@@ -59,6 +60,31 @@ class ReadSourceHandlerTests {
         verify(recorder).record(any(CrawlRun.class), eq(List.of(posting("a", null),
                 new FetchedPosting("b", "Title", "https://example.com/b", "IND.Pune", "text b"),
                 posting("c", null))), eq(Set.of()), eq(Set.of()), eq(Map.of()));
+    }
+
+    /**
+     * Дата размещения из детали (§128, потолок 1): {@code a} — дата есть в списке, {@code b} — у вакансии уже есть,
+     * {@code c} — спрошена у детали, {@code d} — за потолком.
+     */
+    @Test
+    void asksPostedDateOnlyWhereNeitherListNorVacancyHasIt() {
+        Source source = new Source("workday", BOARD);
+        Instant listed = Instant.parse("2026-10-01T00:00:00Z");
+        Instant detailed = Instant.parse("2026-09-01T00:00:00Z");
+        List<FetchedPosting> postings = List.of(posting("a", "text"), posting("b", "text"), posting("c", "text"),
+                posting("d", "text"));
+        when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(postings, List.of())
+                .withPostedAt(Map.of("a", listed)));
+        when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of("b"));
+        when(adapter.postedDate(BOARD, "c")).thenReturn(Optional.of(detailed));
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(adapter, never()).postedDate(BOARD, "a");
+        verify(adapter, never()).postedDate(BOARD, "b");
+        verify(adapter, never()).postedDate(BOARD, "d");
+        verify(recorder).record(any(CrawlRun.class), eq(postings), eq(Set.of()), eq(Set.of()),
+                eq(Map.of("a", listed, "c", detailed)));
     }
 
     /**

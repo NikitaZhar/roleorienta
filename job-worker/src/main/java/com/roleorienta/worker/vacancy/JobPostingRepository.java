@@ -36,6 +36,13 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
 
     /**
      * @param sourceId источник
+     * @return внешние id публикаций источника, у вакансии которых есть дата размещения работодателем (§128)
+     */
+    @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.vacancy.postedAt is not null")
+    List<String> findExternalIdsWithPostedDate(Long sourceId);
+
+    /**
+     * @param sourceId источник
      * @return внешние id незакрытых публикаций источника
      */
     @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.closedAt is null")

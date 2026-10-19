@@ -91,8 +91,10 @@ class WorkdayAdapterTests {
             }
             String additional = exchange.getRequestURI().getPath().contains("/Multi")
                     ? "\"additionalLocations\":[\"IND.Pune\",\"USA.VA.Reston\"]," : "";
+            String start = exchange.getRequestURI().getPath().contains("/Undated")
+                    ? "" : "\"startDate\":\"2026-09-01\",";
             byte[] bytes = ("{\"jobPostingInfo\":{\"title\":\"Java Developer\",\"location\":\"Vienna\","
-                    + additional + "\"jobDescription\":\"<p>Java</p>\"},"
+                    + additional + start + "\"jobDescription\":\"<p>Java</p>\"},"
                     + "\"hiringOrganization\":{\"name\":\"Acme Slovakia s.r.o.\",\"url\":\"\"}}")
                     .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
@@ -189,6 +191,17 @@ class WorkdayAdapterTests {
         assertThat(adapter.employerName(BOARD, "/job/Vienna/Java-Developer")).contains("Acme Slovakia s.r.o.");
         assertThat(adapter.employerName(BOARD, "/job/Gone/Java-Developer")).isEmpty();
         assertThat(adapter.employerName("not a board", "/job/Vienna/Java-Developer")).isEmpty();
+    }
+
+    /**
+     * Дата размещения — {@code startDate} детали (§128); без неё или публикации нет — пусто.
+     */
+    @Test
+    void readsPostedDateFromDetail() {
+        assertThat(adapter.postedDate(BOARD, "/job/Vienna/Java-Developer"))
+                .contains(Instant.parse("2026-09-01T00:00:00Z"));
+        assertThat(adapter.postedDate(BOARD, "/job/Undated/Java-Developer")).isEmpty();
+        assertThat(adapter.postedDate(BOARD, "/job/Gone/Java-Developer")).isEmpty();
     }
 
     /**

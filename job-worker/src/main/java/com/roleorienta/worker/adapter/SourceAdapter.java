@@ -1,6 +1,7 @@
 package com.roleorienta.worker.adapter;
 
 import com.roleorienta.worker.vacancy.FetchedPosting;
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -80,6 +81,18 @@ public interface SourceAdapter {
      * @return название; пусто — провайдер не называет или запрос не удался
      */
     default Optional<String> employerName(String board, String externalId) {
+        return Optional.empty();
+    }
+
+    /**
+     * Дата размещения публикации работодателем из её детали — для публикации, у которой список даты не дал (§128:
+     * Workday «Posted 30+ Days Ago»). Один запрос; вызывается, пока у вакансии нет даты.
+     *
+     * @param board      идентификатор доски у провайдера
+     * @param externalId id публикации у провайдера
+     * @return начало суток UTC; пусто — провайдер не даёт даты в детали или запрос не удался
+     */
+    default Optional<Instant> postedDate(String board, String externalId) {
         return Optional.empty();
     }
 }
