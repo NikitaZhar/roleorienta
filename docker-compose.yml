@@ -58,6 +58,27 @@ services:
       timeout: 5s
       retries: 5
 
+  # Резервная копия PostgreSQL (стенограмма §141): при старте и раз в сутки pg_dump в ./backups, последние 14 копий;
+  # восстановление и его проверка — ops/restore.sh. Снимки SeaweedFS не копируются (срок хранения 30 дней,
+  # потеря снимков не теряет данных: вакансии и история — в PostgreSQL); RabbitMQ — тоже (задания — в PostgreSQL).
+  backup:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${DB_NAME:-roleorienta}
+      PGUSER: ${DB_USERNAME:-roleorienta}
+      PGPASSWORD: ${DB_PASSWORD:-roleorienta}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}   # секунд между копиями
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}              # сколько последних копий хранить
+    volumes:
+      - ./backups:/backups
+      - ./ops/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   rabbitmq-data:

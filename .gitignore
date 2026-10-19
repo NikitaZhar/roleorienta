@@ -22,6 +22,9 @@ bin/
 # Локальные переменные окружения для docker compose
 .env
 
+# Резервные копии PostgreSQL (сервис backup, стенограмма §141)
+/backups/
+
 # Логи
 *.log
 

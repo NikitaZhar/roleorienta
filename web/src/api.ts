@@ -403,3 +403,16 @@ export function adminSearchCompanies(query: string): Promise<CompanyItem[]> {
 export function setNotEmployer(companyId: number, notEmployer: boolean): Promise<void> {
   return request<void>(notEmployer ? 'PUT' : 'DELETE', '/api/v1/admin/companies/' + companyId + '/not-employer');
 }
+
+/** Состояние ядра сейчас (§142): чтения, задания, тревоги NO_RECENT_READ и QUEUE_STALLED. */
+export interface CoreStatus {
+  checkedAt: string;
+  reads: { lastSuccessAt: string | null; lastHour: number; failedLastHour: number };
+  tasks: { queued: number; oldestQueuedAt: string | null; failedLastDay: number };
+  warnings: string[];
+}
+
+/** Состояние ядра для администратора. */
+export function coreStatus(): Promise<CoreStatus> {
+  return request<CoreStatus>('GET', '/api/v1/admin/status');
+}

@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
-  type Admin, adminLogin, adminSearchCompanies, type CompanyItem, currentAdmin, logout, metrics, type MetricRow,
-  type MetricsTable, setNotEmployer,
+  type Admin, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
+  metrics, type MetricRow, type MetricsTable, setNotEmployer,
 } from './api';
 import { GROUPS } from './companyGroups';
 
@@ -40,7 +40,7 @@ function countryLabel(code: string): string {
 /**
  * Экран администратора (/admin, §132): отдельный вход (имя admin) и показатели ядра по дням (бизнес-описание §7.3):
  * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
- * «обработано»; отметка компании «не работодатель» (§138) — общая для всех, такая компания не проверяется и не
+ * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель» (§138) — общая для всех, такая компания не проверяется и не
  * предлагается пользователям.
  */
 export function AdminApp() {
@@ -76,6 +76,7 @@ export function AdminApp() {
         <button type="button" onClick={signOut}>Sign out</button>
       </header>
       <main className="page wide">
+        <StatusView />
         <MetricsView />
         <NotEmployerView />
       </main>
@@ -246,6 +247,60 @@ function NotEmployerView() {
           </tbody>
         </table>
       ))}
+    </section>
+  );
+}
+
+/** Тексты тревог состояния ядра. */
+const WARNINGS: Record<string, string> = {
+  NO_RECENT_READ: 'No source has been read for more than 2 hours — the worker may be stopped.',
+  QUEUE_STALLED: 'A task has been waiting in the queue for more than 2 hours — the queue is not processed.',
+};
+
+/** Сколько прошло от момента до проверки: «12 min ago», «3 h ago». */
+function ago(at: string | null, now: string): string {
+  if (at === null) {
+    return 'never';
+  }
+  const minutes = Math.round((Date.parse(now) - Date.parse(at)) / 60000);
+  return minutes < 120 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
+}
+
+function StatusView() {
+  const [status, setStatus] = useState<CoreStatus | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function load() {
+    setMessage(null);
+    coreStatus().then(setStatus, (failure: Error) => setMessage(failure.message));
+  }
+
+  useEffect(load, []);
+
+  if (message !== null) {
+    return <p className="error">{message}</p>;
+  }
+  if (status === null) {
+    return <p>Loading…</p>;
+  }
+  const { reads, tasks } = status;
+  return (
+    <section>
+      <h1>Core status</h1>
+      {status.warnings.length === 0
+        ? <p>Working: sources are read, the queue is processed.</p>
+        : status.warnings.map((code) => <p key={code} className="error" role="alert">{WARNINGS[code] ?? code}</p>)}
+      <table className="companies">
+        <tbody>
+          <tr><th scope="row">Last successful read</th><td>{ago(reads.lastSuccessAt, status.checkedAt)}</td></tr>
+          <tr><th scope="row">Reads in the last hour</th><td>{reads.lastHour} ok, {reads.failedLastHour} failed</td></tr>
+          <tr><th scope="row">Tasks in the queue</th>
+            <td>{tasks.queued}{tasks.oldestQueuedAt !== null
+              && `, oldest ${ago(tasks.oldestQueuedAt, status.checkedAt)}`}</td></tr>
+          <tr><th scope="row">Tasks failed after all retries, last 24 h</th><td>{tasks.failedLastDay}</td></tr>
+        </tbody>
+      </table>
+      <button type="button" onClick={load}>Refresh</button>
     </section>
   );
 }

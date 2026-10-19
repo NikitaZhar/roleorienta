@@ -73,11 +73,20 @@ SPA в разработке (после `mvn verify`; job-api запущен н�
 mvn -pl web frontend:npm -Dfrontend.npm.arguments="run dev"   # http://localhost:5173, /api — на job-api
 ```
 
-Показатели ядра для администратора — `http://localhost:5173/admin`, имя `admin`; вход включается паролем в
+Состояние ядра (работает ли сбор сейчас) и показатели по дням для администратора — `http://localhost:5173/admin`,
+имя `admin`; вход включается паролем в
 переменной окружения job-api:
 
 ```bash
 ADMIN_PASSWORD='пароль' mvn -pl job-api spring-boot:run
+```
+
+Резервная копия PostgreSQL — сервис `backup` (запускается с `docker compose up -d`): копия при старте и раз в сутки
+в `./backups`, хранятся последние 14 (`BACKUP_INTERVAL`, `BACKUP_KEEP`). Проверка копии и восстановление:
+
+```bash
+ops/restore.sh backups/<файл>.dump              # в отдельную базу roleorienta_restore, сравнение с рабочей
+ops/restore.sh backups/<файл>.dump --replace    # рабочая база из копии; job-api и job-worker остановлены
 ```
 
 Настройки подключения — переменные окружения (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,

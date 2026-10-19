@@ -13,7 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * Отдельный вход администратора и показатели ядра через настоящий HTTP (§132; бизнес-описание §7.3): без входа —
  * {@code 401}, пользователь — {@code 403}, администратор видит таблицу показателей и не видит пользовательских
- * функций.
+ * функций; состояние ядра сейчас с тревогами «ядро остановилось» (§142).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "app.admin.password=" + AdminMetricsAcceptanceTests.ADMIN_PASSWORD)
@@ -85,6 +85,39 @@ class AdminMetricsAcceptanceTests {
 
         assertThat(client.send("POST", "/api/v1/auth/logout", null).status()).isEqualTo(204);
         assertThat(client.send("GET", METRICS, null).status()).isEqualTo(401);
+    }
+
+    /**
+     * Состояние ядра: последнее успешное чтение 3 ч назад и задание 3 ч в очереди — обе тревоги; свежее чтение и пустая
+     * очередь — тревог нет, чтения и отказы за час посчитаны.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void coreStatusWarnsWhenCoreStops() throws Exception {
+        jdbcTemplate.update("DELETE FROM crawl_run");
+        jdbcTemplate.update("DELETE FROM task");
+        long source = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES ('greenhouse', "
+                + "'qwstatus') ON CONFLICT (provider, board) DO UPDATE SET board = EXCLUDED.board RETURNING id",
+                Long.class);
+        jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, postings_count) "
+                + "VALUES (?, now() - interval '3 hours', now() - interval '3 hours', 'COMPLETE', 1)", source);
+        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state, created_at) "
+                + "VALUES ('READ_SOURCE', 'qwstatus', '{}', 'QUEUED', now() - interval '3 hours')");
+        ApiTestClient client = new ApiTestClient(port());
+        assertThat(client.send("POST", "/api/v1/admin/login", admin(ADMIN_PASSWORD)).status()).isEqualTo(200);
+
+        assertThat(client.send("GET", "/api/v1/admin/status", null).body())
+                .contains("\"lastHour\":0", "\"queued\":1", "\"warnings\":[\"NO_RECENT_READ\",\"QUEUE_STALLED\"]");
+
+        jdbcTemplate.update("DELETE FROM task");
+        jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, postings_count) "
+                + "VALUES (?, now(), now(), 'COMPLETE', 1)", source);
+        jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, failure_kind, "
+                + "postings_count) VALUES (?, now(), now(), 'FAILED', 'TEMPORARY', 0)", source);
+
+        assertThat(client.send("GET", "/api/v1/admin/status", null).body()).contains("\"lastHour\":1",
+                "\"failedLastHour\":1", "\"queued\":0", "\"oldestQueuedAt\":null", "\"warnings\":[]");
     }
 
     private static String admin(String password) {

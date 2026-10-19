@@ -4,6 +4,7 @@ import com.roleorienta.api.account.SecurityConfig;
 import com.roleorienta.api.account.SessionSignIn;
 import com.roleorienta.api.admin.AdminDtos.Admin;
 import com.roleorienta.api.admin.AdminDtos.AdminCredentials;
+import com.roleorienta.api.admin.AdminDtos.CoreStatus;
 import com.roleorienta.api.admin.AdminDtos.MetricsTable;
 import com.roleorienta.api.company.CompanyDtos.CompanyItem;
 import com.roleorienta.api.company.CompanyService;
@@ -39,19 +40,30 @@ public class AdminController {
     private final SessionSignIn sessionSignIn;
     private final AdminMetricsService metrics;
     private final CompanyService companies;
+    private final CoreStatusService status;
 
     /**
      * @param admin         учётная запись администратора
      * @param sessionSignIn сохранение входа в HTTP-сессии
      * @param metrics       таблица показателей ядра
      * @param companies     поиск компаний и отметка «не работодатель»
+     * @param status        состояние ядра сейчас
      */
     public AdminController(AdminAccount admin, SessionSignIn sessionSignIn, AdminMetricsService metrics,
-            CompanyService companies) {
+            CompanyService companies, CoreStatusService status) {
         this.admin = admin;
         this.sessionSignIn = sessionSignIn;
         this.metrics = metrics;
         this.companies = companies;
+        this.status = status;
+    }
+
+    /**
+     * @return состояние ядра сейчас: чтения, задания, тревоги «ядро остановилось» (§142)
+     */
+    @GetMapping("/api/v1/admin/status")
+    public CoreStatus status() {
+        return status.status();
     }
 
     /**
