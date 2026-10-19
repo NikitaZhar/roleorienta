@@ -88,8 +88,9 @@ class AdminMetricsAcceptanceTests {
     }
 
     /**
-     * Состояние ядра: последнее успешное чтение 3 ч назад и задание 3 ч в очереди — обе тревоги; свежее чтение и пустая
-     * очередь — тревог нет, чтения и отказы за час посчитаны.
+     * Состояние ядра: последнее успешное чтение 3 ч назад и задание 3 ч в очереди — обе тревоги; свежее чтение и
+     * задание, созданное сутки назад, но только что вернувшееся в очередь (повтор), — тревог нет, чтения и отказы за час
+     * посчитаны (аудит §143).
      *
      * @throws Exception ошибка HTTP
      */
@@ -102,22 +103,23 @@ class AdminMetricsAcceptanceTests {
                 Long.class);
         jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, postings_count) "
                 + "VALUES (?, now() - interval '3 hours', now() - interval '3 hours', 'COMPLETE', 1)", source);
-        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state, created_at) "
-                + "VALUES ('READ_SOURCE', 'qwstatus', '{}', 'QUEUED', now() - interval '3 hours')");
+        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state, created_at, updated_at) "
+                + "VALUES ('READ_SOURCE', 'qwstatus', '{}', 'QUEUED', now() - interval '3 hours', "
+                + "now() - interval '3 hours')");
         ApiTestClient client = new ApiTestClient(port());
         assertThat(client.send("POST", "/api/v1/admin/login", admin(ADMIN_PASSWORD)).status()).isEqualTo(200);
 
         assertThat(client.send("GET", "/api/v1/admin/status", null).body())
                 .contains("\"lastHour\":0", "\"queued\":1", "\"warnings\":[\"NO_RECENT_READ\",\"QUEUE_STALLED\"]");
 
-        jdbcTemplate.update("DELETE FROM task");
+        jdbcTemplate.update("UPDATE task SET created_at = now() - interval '1 day', updated_at = now()");
         jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, postings_count) "
                 + "VALUES (?, now(), now(), 'COMPLETE', 1)", source);
         jdbcTemplate.update("INSERT INTO crawl_run (source_id, started_at, finished_at, state, failure_kind, "
                 + "postings_count) VALUES (?, now(), now(), 'FAILED', 'TEMPORARY', 0)", source);
 
         assertThat(client.send("GET", "/api/v1/admin/status", null).body()).contains("\"lastHour\":1",
-                "\"failedLastHour\":1", "\"queued\":0", "\"oldestQueuedAt\":null", "\"warnings\":[]");
+                "\"failedLastHour\":1", "\"queued\":1", "\"warnings\":[]");
     }
 
     private static String admin(String password) {

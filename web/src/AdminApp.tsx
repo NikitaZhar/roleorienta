@@ -3,7 +3,7 @@ import {
   type Admin, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
   metrics, type MetricRow, type MetricsTable, setNotEmployer,
 } from './api';
-import { GROUPS } from './companyGroups';
+import { GroupBadge } from './companyGroups';
 
 /** Сколько последних дней показывать. */
 const DAYS = 14;
@@ -40,8 +40,9 @@ function countryLabel(code: string): string {
 /**
  * Экран администратора (/admin, §132): отдельный вход (имя admin) и показатели ядра по дням (бизнес-описание §7.3):
  * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
- * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель» (§138) — общая для всех, такая компания не проверяется и не
- * предлагается пользователям.
+ * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель»
+ * (§138) — общая для всех: не в сомнительных, сайт и кадровая страница не ищутся, адрес не вводится; подключённые
+ * источники читаются дальше. При ошибке загрузки блока — «Retry» (§143).
  */
 export function AdminApp() {
   const [admin, setAdmin] = useState<Admin | null | undefined>(undefined);
@@ -76,6 +77,7 @@ export function AdminApp() {
         <button type="button" onClick={signOut}>Sign out</button>
       </header>
       <main className="page wide">
+        <h1 className="sr-only">Administration</h1>
         <StatusView />
         <MetricsView />
         <NotEmployerView />
@@ -131,20 +133,30 @@ function MetricsView() {
   const [table, setTable] = useState<MetricsTable | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    metrics(country, DAYS).then(setTable, (failure: Error) => setMessage(failure.message));
-  }, [country]);
+  const [attempt, setAttempt] = useState(0);
 
-  if (message !== null) {
-    return <p className="error">{message}</p>;
-  }
-  if (table === null) {
-    return <p>Loading…</p>;
+  useEffect(() => {
+    setMessage(null);
+    metrics(country, DAYS).then(setTable, (failure: Error) => setMessage(failure.message));
+  }, [country, attempt]);
+
+  if (message !== null || table === null) {
+    return (
+      <section>
+        <h2>Core metrics</h2>
+        {message === null ? <p className="muted">Loading…</p> : (
+          <>
+            <p className="error" role="alert">{message}</p>
+            <button type="button" onClick={() => setAttempt((count) => count + 1)}>Retry</button>
+          </>
+        )}
+      </section>
+    );
   }
   const processed = table.rows.find((row) => row.metric === 'companies_processed' && row.dimension === '');
   return (
-    <>
-      <h1>Core metrics</h1>
+    <section>
+      <h2>Core metrics</h2>
       <label className="inline">
         Country
         <select value={table.country} onChange={(event) => setCountry(event.target.value)}>
@@ -170,7 +182,7 @@ function MetricsView() {
             </table>
           </div>
         )}
-    </>
+    </section>
   );
 }
 
@@ -221,26 +233,35 @@ function NotEmployerView() {
 
   return (
     <section>
-      <h1>Not an employer</h1>
-      <p className="muted">A trade union, an association, an owners' community: the mark is shared by all users, the
-        company is no longer checked and not offered as doubtful.</p>
-      <form className="inline-form" onSubmit={search}>
-        <input placeholder="Company name or IČO" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <h2>Not an employer</h2>
+      <p className="muted">A trade union, an association, an owners' community: the mark is shared by all users. The
+        company is no longer offered as doubtful, its site and career page are no longer searched by name and on its
+        sites, and users cannot add its career page address. Vacancies of sources already connected are still
+        read.</p>
+      <form className="inline-form" onSubmit={search} role="search">
+        <input aria-label="Company name or IČO" placeholder="Company name or IČO" value={query}
+          onChange={(event) => setQuery(event.target.value)} />
         <button type="submit">Search</button>
       </form>
       {message !== null && <p className="error" role="alert">{message}</p>}
-      {found !== null && (found.length === 0 ? <p>No companies found.</p> : (
+      {found !== null && (found.length === 0 ? <p className="muted">No companies found.</p> : (
         <table className="companies">
+          <thead>
+            <tr><th>Company</th><th>Group</th><th>Site</th><th><span className="sr-only">Actions</span></th></tr>
+          </thead>
           <tbody>
             {found.map((item) => (
               <tr key={item.id}>
                 <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
-                <td>{GROUPS[item.check.group]}</td>
+                <td><GroupBadge item={item} /></td>
                 <td>{item.check.site ?? ''}</td>
-                <td>
+                <td className="row-actions">
                   {item.check.group === 'NOT_EMPLOYER'
                     ? <button type="button" onClick={() => mark(item, false)}>Remove mark</button>
                     : <button type="button" onClick={() => mark(item, true)}>Mark not an employer</button>}
+                  {(item.check.group === 'YES' || item.check.group === 'PORTAL') && (
+                    <p className="muted">Vacancies are collected from this company.</p>
+                  )}
                 </td>
               </tr>
             ))}
@@ -277,23 +298,33 @@ function StatusView() {
 
   useEffect(load, []);
 
-  if (message !== null) {
-    return <p className="error">{message}</p>;
-  }
-  if (status === null) {
-    return <p>Loading…</p>;
+  if (message !== null || status === null) {
+    return (
+      <section>
+        <h2>Core status</h2>
+        {message === null ? <p className="muted">Loading…</p> : (
+          <>
+            <p className="error" role="alert">{message}</p>
+            <button type="button" onClick={load}>Retry</button>
+          </>
+        )}
+      </section>
+    );
   }
   const { reads, tasks } = status;
   return (
     <section>
-      <h1>Core status</h1>
+      <h2>Core status</h2>
       {status.warnings.length === 0
-        ? <p>Working: sources are read, the queue is processed.</p>
+        ? <p className="status-ok">Working: sources are read, the queue is processed.</p>
         : status.warnings.map((code) => <p key={code} className="error" role="alert">{WARNINGS[code] ?? code}</p>)}
       <table className="companies">
         <tbody>
           <tr><th scope="row">Last successful read</th><td>{ago(reads.lastSuccessAt, status.checkedAt)}</td></tr>
-          <tr><th scope="row">Reads in the last hour</th><td>{reads.lastHour} ok, {reads.failedLastHour} failed</td></tr>
+          <tr>
+            <th scope="row">Reads in the last hour</th>
+            <td>{reads.lastHour} ok, {reads.failedLastHour} failed</td>
+          </tr>
           <tr><th scope="row">Tasks in the queue</th>
             <td>{tasks.queued}{tasks.oldestQueuedAt !== null
               && `, oldest ${ago(tasks.oldestQueuedAt, status.checkedAt)}`}</td></tr>

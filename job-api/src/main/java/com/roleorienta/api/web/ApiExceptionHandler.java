@@ -1,6 +1,7 @@
 package com.roleorienta.api.web;
 
 import com.roleorienta.api.account.EmailTakenException;
+import com.roleorienta.api.company.CompanyRuleException;
 import com.roleorienta.api.condition.ConditionVersionException;
 import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.vacancy.InvalidCursorException;
@@ -58,6 +59,20 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCursorException.class)
     public ProblemDetail invalidCursor(InvalidCursorException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * @param exception нарушено правило компаний и адресов кадровых страниц (§143)
+     * @return {@code 404}, {@code 409} или {@code 429}
+     */
+    @ExceptionHandler(CompanyRuleException.class)
+    public ProblemDetail companyRule(CompanyRuleException exception) {
+        HttpStatus status = switch (exception.getKind()) {
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CONFLICT -> HttpStatus.CONFLICT;
+            case TOO_MANY -> HttpStatus.TOO_MANY_REQUESTS;
+        };
+        return ProblemDetail.forStatusAndDetail(status, exception.getMessage());
     }
 
     /**

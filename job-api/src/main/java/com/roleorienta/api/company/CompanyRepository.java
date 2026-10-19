@@ -16,9 +16,9 @@ import org.springframework.stereotype.Repository;
  * Компании с группой и итогом проверки, адреса кадровых страниц пользователей (§137; бизнес-описание §4.2, §5).
  *
  * <p>Группа: {@code NOT_EMPLOYER} — отметка администратора «не работодатель» (§138); {@code YES} — итог проверки
- * «подключена» (кадровая страница читается или вакансии на портале); {@code MAYBE} — найден сайт; {@code NO} — сайта
- * нет. Только действующие компании; скрытые пользователем ({@code company_hidden}) — не в его поиске и
- * сомнительных.</p>
+ * «подключена» и есть свой источник (кадровая страница или система найма); {@code PORTAL} — «подключена» только
+ * вакансиями государственного портала (§143); {@code MAYBE} — найден сайт; {@code NO} — сайта нет. Только действующие
+ * компании; скрытые пользователем ({@code company_hidden}) — не в его поиске и сомнительных.</p>
  */
 @Repository
 public class CompanyRepository {
@@ -27,7 +27,10 @@ public class CompanyRepository {
     private static final String COMPANY = """
             SELECT c.id, c.name, c.registration_number,
                    CASE WHEN c.not_employer THEN 'NOT_EMPLOYER'
-                        WHEN ch.result = 'CONNECTED' THEN 'YES'
+                        WHEN ch.result = 'CONNECTED' AND EXISTS (SELECT 1 FROM company_source cs
+                                JOIN source so ON so.id = cs.source_id
+                                WHERE cs.company_id = c.id AND so.provider <> 'sluzbyzamestnanosti') THEN 'YES'
+                        WHEN ch.result = 'CONNECTED' THEN 'PORTAL'
                         WHEN EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND')
                             THEN 'MAYBE'
                         ELSE 'NO' END AS company_group,
@@ -40,10 +43,13 @@ public class CompanyRepository {
             WHERE c.terminated_on IS NULL
             """;
 
-    /** Не скрыта пользователем (параметр — пользователь; {@code 0} — никем не скрыта для администратора). */
+    /** Не скрыта пользователем (параметр — пользователь). */
     private static final String NOT_HIDDEN = """
               AND NOT EXISTS (SELECT 1 FROM company_hidden h WHERE h.company_id = c.id AND h.user_id = ?)
             """;
+
+    /** Пространство ключей advisory-lock ввода адресов (первое число пары). */
+    static final int REQUEST_LOCK_SPACE = 143;
 
     /** Найдено столько компаний поиска не больше. */
     private static final int SEARCH_LIMIT = 50;
@@ -57,37 +63,52 @@ public class CompanyRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /** Условие и порядок поиска: номер или часть названия; с вакансиями первыми, затем приоритетные, по названию. */
+    private static final String MATCHING = """
+              AND (c.registration_number = ? OR c.name_slug LIKE ?)
+            ORDER BY coalesce(ch.result = 'CONNECTED', FALSE) AND NOT c.not_employer DESC, c.priority DESC,
+                     c.name, c.id
+            LIMIT ?""";
+
     /**
-     * @param userId пользователь — его скрытые компании не ищутся; {@code 0} — все (администратор)
+     * @param userId пользователь — его скрытые компании не ищутся
      * @param number регистрационный номер (точно)
      * @param slug   часть названия в виде {@code company.name_slug} (без диакритики, через дефис)
-     * @return компании с этим номером или с этой частью названия: с читаемой кадровой страницей первыми, затем
-     *         приоритетные, по названию; не больше {@value #SEARCH_LIMIT}
+     * @return компании с этим номером или с этой частью названия: с вакансиями (кадровая страница или портал)
+     *         первыми, затем приоритетные, по названию; не больше {@value #SEARCH_LIMIT}
      */
     public List<CompanyItem> search(long userId, String number, String slug) {
-        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + """
-                  AND (c.registration_number = ? OR c.name_slug LIKE ?)
-                ORDER BY coalesce(ch.result = 'CONNECTED', FALSE) AND NOT c.not_employer DESC, c.priority DESC,
-                         c.name, c.id
-                LIMIT ?""", CompanyRepository::company, userId, number, "%" + slug + "%", SEARCH_LIMIT);
+        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + MATCHING, CompanyRepository::company, userId, number,
+                "%" + slug + "%", SEARCH_LIMIT);
     }
 
     /**
-     * Сомнительные компании (бизнес-описание §5): без читаемой кадровой страницы — с найденным сайтом или, без сайта, с
-     * признаком найма (приоритетная — эталон, или 10+ сотрудников по RÚZ); остальные — только поиском (решение
-     * владельца 2026-10-19).
+     * Поиск администратора: личные скрытия пользователей не учитываются.
      *
-     * @param userId пользователь — его скрытые компании не показываются
-     * @param after  курсор: id последней компании прежней страницы; {@code 0} — первая
-     * @param limit  сколько
+     * @param number регистрационный номер (точно)
+     * @param slug   часть названия в виде {@code company.name_slug}
+     * @return как {@link #search}
+     */
+    public List<CompanyItem> searchAll(String number, String slug) {
+        return jdbcTemplate.query(COMPANY + MATCHING, CompanyRepository::company, number, "%" + slug + "%",
+                SEARCH_LIMIT);
+    }
+
+    /**
+     * Сомнительные компании (бизнес-описание §5): без вакансий (ни кадровой страницы, ни портала) — с найденным сайтом
+     * или, без сайта, с признаком найма (приоритетная — эталон, или сотрудников не меньше порога по RÚZ); остальные —
+     * только поиском (решение владельца 2026-10-19).
+     *
+     * @param page страница: пользователь (его скрытые не показываются), курсор, сколько, порог сотрудников
      * @return компании по id; без отметки «не работодатель»
      */
-    public List<CompanyItem> doubtful(long userId, long after, int limit) {
+    public List<CompanyItem> doubtful(DoubtfulPage page) {
         return jdbcTemplate.query(COMPANY + NOT_HIDDEN + """
                   AND c.id > ? AND ch.result IS DISTINCT FROM 'CONNECTED' AND NOT c.not_employer
-                  AND (c.priority OR c.employees_min >= 10
+                  AND (c.priority OR c.employees_min >= ?
                        OR EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'))
-                ORDER BY c.id LIMIT ?""", CompanyRepository::company, userId, after, limit);
+                ORDER BY c.id LIMIT ?""", CompanyRepository::company, page.userId(), page.after(),
+                page.minEmployees(), page.limit());
     }
 
     /**
@@ -122,10 +143,11 @@ public class CompanyRepository {
     /**
      * @param companyId   компания
      * @param notEmployer отметка администратора «не работодатель»
-     * @return {@code true} — компания есть
+     * @return {@code true} — действующая компания есть
      */
     public boolean markNotEmployer(long companyId, boolean notEmployer) {
-        return jdbcTemplate.update("UPDATE company SET not_employer = ? WHERE id = ?", notEmployer, companyId) > 0;
+        return jdbcTemplate.update("UPDATE company SET not_employer = ? WHERE id = ? AND terminated_on IS NULL",
+                notEmployer, companyId) > 0;
     }
 
     /**
@@ -134,6 +156,30 @@ public class CompanyRepository {
      */
     public Optional<CompanyItem> find(long id) {
         return jdbcTemplate.query(COMPANY + " AND c.id = ?", CompanyRepository::company, id).stream().findFirst();
+    }
+
+    /**
+     * Ввод адресов одного пользователя — по очереди до конца транзакции: подсчёт за сутки и вставка не расходятся при
+     * параллельных запросах (аудит §143). Пространство ключей {@value #REQUEST_LOCK_SPACE} не пересекается с
+     * leader-lock воркера (одно число).
+     *
+     * @param userId пользователь
+     */
+    public void lockRequests(long userId) {
+        jdbcTemplate.queryForList("SELECT 1 FROM (SELECT pg_advisory_xact_lock(?, ?)) locked", Integer.class,
+                REQUEST_LOCK_SPACE, (int) userId);
+    }
+
+    /**
+     * @param userId    пользователь
+     * @param companyId компания
+     * @param url       адрес
+     * @return {@code true} — тот же адрес той же компании от этого пользователя ещё проверяется
+     */
+    public boolean pendingExists(long userId, long companyId, String url) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM company_request WHERE user_id = ? AND company_id = ? AND career_url = ?
+                               AND state = 'PENDING')""", Boolean.class, userId, companyId, url));
     }
 
     /**
@@ -184,5 +230,16 @@ public class CompanyRepository {
     private static CareerRequestItem request(ResultSet row, int number) throws SQLException {
         return new CareerRequestItem(row.getLong(1), row.getString(2), row.getString(3), new Status(row.getString(4),
                 row.getString(5), row.getObject(6, OffsetDateTime.class).toInstant()));
+    }
+
+    /**
+     * Страница сомнительных компаний.
+     *
+     * @param userId       пользователь — его скрытые компании не показываются
+     * @param after        курсор: id последней компании прежней страницы; {@code 0} — первая
+     * @param limit        сколько
+     * @param minEmployees признак найма без сайта: сотрудников не меньше
+     */
+    public record DoubtfulPage(long userId, long after, int limit, int minEmployees) {
     }
 }

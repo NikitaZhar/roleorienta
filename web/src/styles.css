@@ -228,3 +228,75 @@ table.companies td {
   vertical-align: top;
   overflow-wrap: anywhere;
 }
+
+table.companies thead th {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 2px solid #d0d0d0;
+}
+
+table.companies td.row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+table.companies td.row-actions button + button {
+  margin-left: 6px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+section {
+  margin: 24px 0;
+}
+
+/* Группа компании: цвет дополняет подпись (§143). */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.85em;
+  border: 1px solid transparent;
+}
+
+.badge-yes {
+  background: #e6f4ea;
+  color: #1e6b34;
+}
+
+.badge-portal {
+  background: #e8f0fe;
+  color: #1a4fa0;
+}
+
+.badge-maybe {
+  background: #fff4e0;
+  color: #8a5300;
+}
+
+.badge-no {
+  background: #f0f0f0;
+  color: #555;
+}
+
+.badge-not_employer {
+  border-color: #c7c7c7;
+  color: #6b6b6b;
+}
+
+.status-ok {
+  color: #1e6b34;
+}
+
+/* Только для экранного диктора. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

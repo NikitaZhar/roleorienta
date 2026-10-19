@@ -329,10 +329,11 @@ export function metrics(country: string | null, days: number): Promise<MetricsTa
 }
 
 /**
- * Группа компании (бизнес-описание §4.2): YES — есть, MAYBE — может быть, NO — нет; NOT_EMPLOYER — отметка
- * администратора «не работодатель» (§138).
+ * Группа компании (бизнес-описание §4.2): YES — своя кадровая страница читается, PORTAL — только вакансии
+ * государственного портала (§143), MAYBE — может быть, NO — нет; NOT_EMPLOYER — отметка администратора «не
+ * работодатель» (§138).
  */
-export type CompanyGroup = 'YES' | 'MAYBE' | 'NO' | 'NOT_EMPLOYER';
+export type CompanyGroup = 'YES' | 'PORTAL' | 'MAYBE' | 'NO' | 'NOT_EMPLOYER';
 
 /** Группа и итог проверки компании. */
 export interface CompanyCheck {

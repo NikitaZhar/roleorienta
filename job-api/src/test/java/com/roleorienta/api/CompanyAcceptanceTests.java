@@ -34,14 +34,18 @@ class CompanyAcceptanceTests {
     private long beta;
     private long gama;
     private long delta;
+    private long epsi;
 
     /**
-     * Qwalfa — подключена (YES); Qwbeta — сайт найден, страница не читается (MAYBE); Qwgama — сайта нет, мелкая
-     * (NO, только поиском); Qwdelta — сайта нет, 50+ сотрудников (NO, в сомнительных).
+     * Qwalfa — подключена своей системой найма (YES); Qwbeta — сайт найден, страница не читается (MAYBE); Qwgama — сайта
+     * нет, мелкая (NO, только поиском); Qwdelta — сайта нет, 50+ сотрудников (NO, в сомнительных); Qwepsi — подключена
+     * только порталом (PORTAL, §143).
      */
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("DELETE FROM company_request");
+        jdbcTemplate.update("DELETE FROM company_source WHERE company_id IN "
+                + "(SELECT id FROM company WHERE registration_number LIKE '9901%')");
         jdbcTemplate.update("DELETE FROM company_site WHERE company_id IN "
                 + "(SELECT id FROM company WHERE registration_number LIKE '9901%')");
         jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN "
@@ -61,6 +65,18 @@ class CompanyAcceptanceTests {
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, "
                 + "career_url) VALUES (?, 'qwbeta.sk', 'https://qwbeta.sk/', 'NAME', 'FOUND', 'BRAND', "
                 + "'https://qwbeta.sk/kariera')", beta);
+        epsi = company("99010006", "Qwepsi s.r.o.", 20);
+        jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
+                + "VALUES (?, 'CONNECTED', now(), now())", epsi);
+        link(alfa, "greenhouse", "qwalfa");
+        link(epsi, "sluzbyzamestnanosti", "99010006");
+    }
+
+    private void link(long company, String provider, String board) {
+        long source = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES (?, ?) "
+                + "ON CONFLICT (provider, board) DO UPDATE SET board = EXCLUDED.board RETURNING id", Long.class,
+                provider, board);
+        jdbcTemplate.update("INSERT INTO company_source (company_id, source_id) VALUES (?, ?)", company, source);
     }
 
     /**
@@ -202,6 +218,32 @@ class CompanyAcceptanceTests {
                 .isEqualTo(204);
         assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
                 .contains("\"id\":" + delta + ",");
+    }
+
+    /**
+     * «Только портал» (§143): своя группа, нет в сомнительных, адрес кадровой страницы принимается; тот же адрес, пока
+     * проверяется, — {@code 409}; поиск администратора не учитывает личные скрытия.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void portalOnlyCompanyAcceptsCareerPage() throws Exception {
+        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
+        String page = "{\"url\":\"https://qwepsi.sk/kariera\"}";
+
+        assertThat(user.send("GET", "/api/v1/companies?query=qwepsi", null).body())
+                .contains("\"group\":\"PORTAL\"", "\"reason\":null");
+        assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+                .doesNotContain("\"id\":" + epsi + ",");
+        assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(201);
+        assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(409);
+
+        assertThat(user.send("PUT", "/api/v1/me/hidden-companies/" + epsi, null).status()).isEqualTo(204);
+        ApiTestClient admin = new ApiTestClient(port());
+        assertThat(admin.send("POST", "/api/v1/admin/login",
+                "{\"username\":\"admin\",\"password\":\"" + ADMIN + "\"}").status()).isEqualTo(200);
+        assertThat(admin.send("GET", "/api/v1/admin/companies?query=qwepsi", null).body())
+                .contains("\"id\":" + epsi + ",");
     }
 
     private long company(String number, String name, Integer employees) {

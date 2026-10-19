@@ -22,12 +22,31 @@ public class CareerRequestRepository {
     }
 
     /**
-     * @param limit не больше
-     * @return ожидающие проверки, старые первыми
+     * @param keyPrefix начало ключа задания проверки (за ним — номер запроса)
+     * @param limit     не больше
+     * @return ожидающие проверки, для которых задания ещё нет, старые первыми: поставленные не ставятся снова и не
+     *         занимают место новых (аудит §143)
      */
-    public List<Long> pending(int limit) {
-        return jdbcTemplate.queryForList(
-                "SELECT id FROM company_request WHERE state = 'PENDING' ORDER BY id LIMIT ?", Long.class, limit);
+    public List<Long> pendingWithoutTask(String keyPrefix, int limit) {
+        return jdbcTemplate.queryForList("""
+                SELECT r.id FROM company_request r
+                WHERE r.state = 'PENDING' AND NOT EXISTS (SELECT 1 FROM task t WHERE t.task_key = CAST(? AS text) || r.id)
+                ORDER BY r.id LIMIT ?""", Long.class, keyPrefix, limit);
+    }
+
+    /**
+     * Ожидающие запросы, задание проверки которых не выполнилось после всех попыток ({@code FAILED}), — «не
+     * подключена», причина «страница не открылась».
+     *
+     * @param keyPrefix начало ключа задания проверки
+     * @return сколько запросов закрыто
+     */
+    public int failWithFailedTask(String keyPrefix) {
+        return jdbcTemplate.update("""
+                UPDATE company_request r SET state = 'NOT_CONNECTED', reason = ?, checked_at = now()
+                WHERE r.state = 'PENDING'
+                  AND EXISTS (SELECT 1 FROM task t WHERE t.task_key = CAST(? AS text) || r.id AND t.state = 'FAILED')""",
+                Reason.UNREACHABLE.name(), keyPrefix);
     }
 
     /**

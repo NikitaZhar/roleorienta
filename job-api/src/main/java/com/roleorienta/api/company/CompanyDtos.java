@@ -27,8 +27,10 @@ public final class CompanyDtos {
     /**
      * Группа компании (бизнес-описание §4.2) и итог проверки.
      *
-     * @param group     {@code YES} — кадровая страница читается или вакансии на портале; {@code MAYBE} — сайт найден,
-     *                  кадровой страницы нет или она не читается; {@code NO} — сайт не найден
+     * @param group     {@code YES} — своя кадровая страница или система найма читается; {@code PORTAL} — только
+     *                  вакансии государственного портала (§143); {@code MAYBE} — сайт найден, кадровой страницы нет
+     *                  или она не читается; {@code NO} — сайт не найден; {@code NOT_EMPLOYER} — отметка
+     *                  администратора «не работодатель» (§138)
      * @param reason    итог проверки ({@code SITE_NOT_FOUND}, {@code PAGE_NOT_FOUND}, {@code FORMAT_UNSUPPORTED},
      *                  {@code SOURCE_UNAVAILABLE}, {@code USE_FORBIDDEN}); {@code null} — подключена или не проверена
      * @param site      хост найденного сайта; {@code null} — нет

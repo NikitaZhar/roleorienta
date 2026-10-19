@@ -12,7 +12,9 @@ import org.springframework.stereotype.Component;
 /**
  * Ставит проверку адресов кадровых страниц, введённых пользователями ({@link CareerRequestHandler}, §137), под
  * leader-lock: тик раз в минуту — проверка начинается, не дожидаясь очереди компании (бизнес-описание §5); ключ
- * задания по запросу — запрос проверяется один раз. Выключается свойством {@code app.career-request.enabled=false}.
+ * задания по запросу — запрос проверяется один раз. Запрос, задание которого не выполнилось после всех попыток, —
+ * «не подключена» (страница не открылась), а не «в обработке» навсегда (аудит §143). Выключается свойством
+ * {@code app.career-request.enabled=false}.
  */
 @Component
 @ConditionalOnProperty(name = "app.career-request.enabled", havingValue = "true", matchIfMissing = true)
@@ -48,8 +50,15 @@ public class CareerRequestTick {
     @Scheduled(fixedDelayString = "${app.career-request.interval-ms:60000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> requests.pending(BATCH).forEach(id -> taskService.enqueue(
-                    CareerRequestHandler.TYPE, "career-request:" + id, CareerRequestHandler.payload(id))));
+            leaderLock.runIfLeader(LOCK_KEY, () -> {
+                int failed = requests.failWithFailedTask(CareerRequestHandler.KEY_PREFIX);
+                if (failed > 0) {
+                    LOG.warn("Career requests with failed check task marked not connected: {}", failed);
+                }
+                requests.pendingWithoutTask(CareerRequestHandler.KEY_PREFIX, BATCH).forEach(id -> taskService
+                        .enqueue(CareerRequestHandler.TYPE, CareerRequestHandler.KEY_PREFIX + id,
+                                CareerRequestHandler.payload(id)));
+            });
         } catch (DataAccessException exception) {
             LOG.warn("Career request tick failed, will retry on next tick", exception);
         }

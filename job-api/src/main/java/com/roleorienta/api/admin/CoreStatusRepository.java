@@ -31,7 +31,9 @@ public class CoreStatusRepository {
     }
 
     /**
-     * @return чтения источников: последнее успешное, успешные и отказы за час
+     * Успешное чтение — полное или неполное ({@code COMPLETE}, {@code PARTIAL}): источник ответил.
+     *
+     * @return чтения источников: конец последнего успешного, успешные и отказы за час (по концу чтения)
      */
     public ReadStats reads() {
         return jdbcTemplate.queryForObject("""
@@ -44,15 +46,17 @@ public class CoreStatusRepository {
     }
 
     /**
-     * @return задания: в очереди, самое старое в очереди, неудачные за сутки
+     * Время в очереди — от последнего входа в очередь ({@code updated_at}: постановка, возврат из ожидания или повтора),
+     * а не от создания задания (аудит §143: повтор старого задания — не остановка очереди).
+     *
+     * @return задания: в очереди, самое давнее по входу в очередь, неудачные за сутки
      */
     public TaskStats tasks() {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FILTER (WHERE state = 'QUEUED') AS queued,
-                       min(created_at) FILTER (WHERE state = 'QUEUED') AS oldest_queued_at,
-                       count(*) FILTER (WHERE state = 'FAILED' AND updated_at >= now() - interval '1 day')
+                SELECT (SELECT count(*) FROM task WHERE state = 'QUEUED') AS queued,
+                       (SELECT min(updated_at) FROM task WHERE state = 'QUEUED') AS oldest_queued_at,
+                       (SELECT count(*) FROM task WHERE state = 'FAILED' AND updated_at >= now() - interval '1 day')
                            AS failed_last_day
-                FROM task WHERE state IN ('QUEUED', 'FAILED')
                 """, (row, number) -> new TaskStats(row.getLong("queued"),
                 instant(row.getTimestamp("oldest_queued_at")), row.getLong("failed_last_day")));
     }

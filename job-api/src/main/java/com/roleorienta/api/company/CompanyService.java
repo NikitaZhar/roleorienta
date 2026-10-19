@@ -3,6 +3,8 @@ package com.roleorienta.api.company;
 import com.roleorienta.api.company.CompanyDtos.CareerRequestItem;
 import com.roleorienta.api.company.CompanyDtos.CompanyItem;
 import com.roleorienta.api.company.CompanyDtos.CompanyPage;
+import com.roleorienta.api.company.CompanyRepository.DoubtfulPage;
+import com.roleorienta.api.company.CompanyRuleException.Kind;
 import com.roleorienta.api.condition.InvalidFieldException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -10,10 +12,8 @@ import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Компании по группам и адреса кадровых страниц, введённые пользователями (§137; бизнес-описание §4.2, §5): поиск,
@@ -43,13 +43,14 @@ public class CompanyService {
 
     private static final Pattern NUMBER = Pattern.compile("\\d{6,12}");
     private static final Pattern NOT_SLUG = Pattern.compile("[^a-z0-9]+");
+    private static final String COMPANY_NOT_FOUND = "Company not found";
 
     private final CompanyRepository repository;
     private final CompanyProperties properties;
 
     /**
      * @param repository компании и запросы
-     * @param properties ограничение частоты
+     * @param properties ограничение частоты, порог сотрудников признака найма
      */
     public CompanyService(CompanyRepository repository, CompanyProperties properties) {
         this.repository = repository;
@@ -57,18 +58,26 @@ public class CompanyService {
     }
 
     /**
-     * @param userId пользователь — его скрытые компании не ищутся; {@code 0} — все (администратор)
+     * @param userId пользователь — его скрытые компании не ищутся
      * @param query  название (часть, от {@value #MIN_QUERY} символов, без учёта регистра и диакритики) или IČO
      * @return найденные компании; {@code 400} — запрос короче
      */
     @Transactional(readOnly = true)
     public List<CompanyItem> search(long userId, String query) {
-        String trimmed = query == null ? "" : query.strip();
-        String slug = slug(trimmed);
-        if (slug.length() < MIN_QUERY) {
-            throw new InvalidFieldException("/query", "At least " + MIN_QUERY + " letters or digits");
-        }
-        return repository.search(userId, NUMBER.matcher(trimmed).matches() ? trimmed : null, slug);
+        String trimmed = trimmedQuery(query);
+        return repository.search(userId, number(trimmed), slug(trimmed));
+    }
+
+    /**
+     * Поиск администратора — без личных скрытий пользователей.
+     *
+     * @param query название (часть) или IČO
+     * @return найденные компании; {@code 400} — запрос короче {@value #MIN_QUERY}
+     */
+    @Transactional(readOnly = true)
+    public List<CompanyItem> searchAll(String query) {
+        String trimmed = trimmedQuery(query);
+        return repository.searchAll(number(trimmed), slug(trimmed));
     }
 
     /**
@@ -80,39 +89,45 @@ public class CompanyService {
     @Transactional(readOnly = true)
     public CompanyPage doubtful(long userId, Long after, int limit) {
         int size = Math.max(1, Math.min(limit, MAX_LIMIT));
-        List<CompanyItem> rows = repository.doubtful(userId, after == null ? 0 : after, size + 1);
+        List<CompanyItem> rows = repository.doubtful(new DoubtfulPage(userId, after == null ? 0 : after, size + 1,
+                properties.hiringMinEmployees()));
         boolean more = rows.size() > size;
         List<CompanyItem> items = more ? rows.subList(0, size) : rows;
         return new CompanyPage(items, more ? items.get(items.size() - 1).id() : null);
     }
 
     /**
-     * Ввод адреса кадровой страницы компании из групп «может быть» и «нет».
+     * Ввод адреса кадровой страницы компании без своей читаемой кадровой страницы: «только портал», «может быть»,
+     * «нет». Подсчёт за сутки и вставка — под блокировкой пользователя (параллельные запросы лимит не обходят).
      *
      * @param userId    пользователь
      * @param companyId компания
      * @param url       адрес
-     * @return запрос «в обработке»; {@code 404} — компании нет; {@code 409} — кадровая страница уже читается или
-     *         компания отмечена «не работодатель»;
-     *         {@code 400} — адрес не http(s); {@code 429} — больше {@link CompanyProperties#dailyLimit()} адресов
-     *         за сутки
+     * @return запрос «в обработке»
+     * @throws CompanyRuleException {@code NOT_FOUND} — компании нет; {@code CONFLICT} — кадровая страница уже
+     *                              читается, компания отмечена «не работодатель» или этот адрес уже проверяется;
+     *                              {@code TOO_MANY} — больше {@link CompanyProperties#dailyLimit()} адресов за сутки
+     * @throws InvalidFieldException адрес не http(s)
      */
     @Transactional
     public CareerRequestItem addCareerPage(long userId, long companyId, String url) {
-        CompanyItem company = repository.find(companyId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found"));
+        CompanyItem company = existing(companyId);
         if (GROUP_YES.equals(company.check().group())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Career page of the company is already read");
+            throw new CompanyRuleException(Kind.CONFLICT, "Career page of the company is already read");
         }
         if (GROUP_NOT_EMPLOYER.equals(company.check().group())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "The company is marked as not an employer");
+            throw new CompanyRuleException(Kind.CONFLICT, "The company is marked as not an employer");
         }
         String address = url.strip();
         if (!webAddress(address)) {
             throw new InvalidFieldException("/url", "An http(s) address is required");
         }
+        repository.lockRequests(userId);
+        if (repository.pendingExists(userId, companyId, address)) {
+            throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
+        }
         if (repository.requestsLastDay(userId) >= properties.dailyLimit()) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+            throw new CompanyRuleException(Kind.TOO_MANY,
                     "No more than " + properties.dailyLimit() + " addresses a day");
         }
         return repository.addRequest(userId, companyId, address);
@@ -133,12 +148,11 @@ public class CompanyService {
      * @param userId    пользователь
      * @param companyId компания
      * @param hidden    скрыть или вернуть
-     * @throws ResponseStatusException {@code 404} — компании нет
+     * @throws CompanyRuleException {@code NOT_FOUND} — компании нет
      */
     @Transactional
     public void hide(long userId, long companyId, boolean hidden) {
-        repository.find(companyId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found"));
+        existing(companyId);
         if (hidden) {
             repository.hide(userId, companyId);
         } else {
@@ -160,13 +174,30 @@ public class CompanyService {
      *
      * @param companyId   компания
      * @param notEmployer поставить или снять
-     * @throws ResponseStatusException {@code 404} — компании нет
+     * @throws CompanyRuleException {@code NOT_FOUND} — действующей компании нет
      */
     @Transactional
     public void markNotEmployer(long companyId, boolean notEmployer) {
         if (!repository.markNotEmployer(companyId, notEmployer)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found");
+            throw new CompanyRuleException(Kind.NOT_FOUND, COMPANY_NOT_FOUND);
         }
+    }
+
+    private CompanyItem existing(long companyId) {
+        return repository.find(companyId).orElseThrow(() -> new CompanyRuleException(Kind.NOT_FOUND,
+                COMPANY_NOT_FOUND));
+    }
+
+    private static String trimmedQuery(String query) {
+        String trimmed = query == null ? "" : query.strip();
+        if (slug(trimmed).length() < MIN_QUERY) {
+            throw new InvalidFieldException("/query", "At least " + MIN_QUERY + " letters or digits");
+        }
+        return trimmed;
+    }
+
+    private static String number(String query) {
+        return NUMBER.matcher(query).matches() ? query : null;
     }
 
     /**

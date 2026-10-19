@@ -27,13 +27,18 @@ import org.springframework.stereotype.Component;
  * странице есть доски, разметка {@code JobPosting}, собственный список вакансий. Найдено и есть основание
  * использования — источники подключаются к компании (общие для всех пользователей), запрос «подключена»; иначе — «не
  * подключена» с причиной. Временный отказ страницы — тоже «не подключена» (страница не открылась): пользователь
- * вводит адрес снова. Параметры: {@code {"requestId": N}}.
+ * вводит адрес снова. Собственный список вакансий и разметка ищутся только на кадровой странице
+ * ({@link CareerLinks#isCareerPage}; аудит §143: главная с новостями — не список вакансий); ссылки на доски систем
+ * найма — на любой странице. Параметры: {@code {"requestId": N}}.
  */
 @Component
 public class CareerRequestHandler implements TaskHandler {
 
     /** Тип задания. */
     public static final String TYPE = "CHECK_CAREER_URL";
+
+    /** Начало ключа задания: за ним — номер запроса. */
+    public static final String KEY_PREFIX = "career-request:";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -95,11 +100,15 @@ public class CareerRequestHandler implements TaskHandler {
                     && failure.kind() == HttpResult.Kind.USE_FORBIDDEN ? Reason.USE_FORBIDDEN : Reason.UNREACHABLE;
         }
         Document page = Jsoup.parse(success.body(), success.locationOr(uri).toString());
+        boolean careerPage = CareerLinks.isCareerPage(page);
         Set<Board> boards = new LinkedHashSet<>();
         CareerLinks.board(uri.toString()).ifPresent(boards::add);
-        boards.addAll(pages.boards(page, true));
+        boards.addAll(CareerLinks.boards(page));
+        if (boards.isEmpty() && careerPage) {
+            boards.addAll(pages.boards(page, true));
+        }
         if (boards.isEmpty()) {
-            return CareerLinks.isCareerPage(page) ? Reason.FORMAT_UNSUPPORTED : Reason.NO_CAREER_PAGE;
+            return careerPage ? Reason.FORMAT_UNSUPPORTED : Reason.NO_CAREER_PAGE;
         }
         Set<String> providers = sources.permittedProviders();
         Set<Board> permitted = boards.stream().filter(board -> providers.contains(board.provider()))

@@ -70,6 +70,9 @@ class CareerScanTests {
     @Autowired
     private CareerRequestHandler careerRequests;
 
+    @Autowired
+    private CareerRequestRepository careerRequestRepository;
+
     /**
      * Остановка сайта.
      */
@@ -449,20 +452,43 @@ class CareerScanTests {
     void checksCareerPageAddressEnteredByUser() {
         PAGES.put("/praca", "<h1>Kariéra</h1><a href=\"https://alfa.wd3.myworkdayjobs.com/Careers\">Pozície</a>");
         PAGES.put("/nic", "<h1>Kariéra</h1><p>Pošlite životopis</p>");
+        PAGES.put("/novinky", "<h1>Novinky</h1><ul><li><a href=\"/novinky/leto\">Leto</a></li>"
+                + "<li><a href=\"/novinky/jesen\">Jeseň</a></li><li><a href=\"/novinky/zima\">Zima</a></li></ul>");
         jdbcTemplate.update("INSERT INTO user_account (email, password_hash) VALUES ('request@example.com', 'x')");
         long connected = request("http://" + HOST + "/praca");
         long unreadable = request("http://" + HOST + "/nic");
         long unreachable = request("http://" + HOST + "/chyba");
+        long news = request("http://" + HOST + "/novinky");
 
-        for (long id : new long[] {connected, unreadable, unreachable}) {
+        for (long id : new long[] {connected, unreadable, unreachable, news}) {
             careerRequests.handle(new TaskRecord(0, CareerRequestHandler.TYPE, CareerRequestHandler.payload(id), 0));
         }
 
         assertThat(requestState(connected)).isEqualTo("CONNECTED:-");
         assertThat(requestState(unreadable)).isEqualTo("NOT_CONNECTED:FORMAT_UNSUPPORTED");
         assertThat(requestState(unreachable)).isEqualTo("NOT_CONNECTED:UNREACHABLE");
+        assertThat(requestState(news)).isEqualTo("NOT_CONNECTED:NO_CAREER_PAGE");
         assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
         assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    /**
+     * Задание проверки адреса не выполнилось после всех попыток — запрос «не подключена» (страница не открылась), а
+     * не «в обработке» навсегда; запрос с заданием снова не ставится, новый — ставится (аудит §143).
+     */
+    @Test
+    void careerRequestWithFailedTaskIsClosed() {
+        jdbcTemplate.update("INSERT INTO user_account (email, password_hash) VALUES ('request@example.com', 'x')");
+        long stuck = request("http://" + HOST + "/praca");
+        long fresh = request("http://" + HOST + "/nic");
+        jdbcTemplate.update("INSERT INTO task (type, task_key, payload, state) VALUES (?, ?, '{}', 'FAILED')",
+                CareerRequestHandler.TYPE, CareerRequestHandler.KEY_PREFIX + stuck);
+
+        assertThat(careerRequestRepository.pendingWithoutTask(CareerRequestHandler.KEY_PREFIX, 10))
+                .containsExactly(fresh);
+        assertThat(careerRequestRepository.failWithFailedTask(CareerRequestHandler.KEY_PREFIX)).isEqualTo(1);
+        assertThat(requestState(stuck)).isEqualTo("NOT_CONNECTED:UNREACHABLE");
+        assertThat(requestState(fresh)).isEqualTo("PENDING:-");
     }
 
     private long request(String url) {

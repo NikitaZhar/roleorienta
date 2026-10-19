@@ -72,7 +72,8 @@ class SameVacancyTests {
     }
 
     /**
-     * Языковые разделы одной доски Phenom: тот же хост и внешний id — одна вакансия; другой хост — своя.
+     * Языковые разделы одной доски Phenom: тот же хост и внешний id — одна вакансия; другой хост — своя; повторное
+     * чтение присоединённого раздела не меняет название и ссылку вакансии (их задаёт первая публикация, аудит §143).
      */
     @Test
     void sameProviderHostAndIdJoinsVacancy() {
@@ -87,6 +88,12 @@ class SameVacancyTests {
 
         assertThat(count("SELECT count(*) FROM job_posting")).isEqualTo(3);
         assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(2);
+
+        read(local, new FetchedPosting("AV-1", "Vodič", "https://careers.qwsame.test/eu/sk/job/AV-1", null, null));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT v.title || ' ' || v.primary_url FROM vacancy v "
+                + "JOIN job_posting p ON p.vacancy_id = v.id WHERE p.source_id = ?", String.class, local.getId()))
+                .isEqualTo("Driver https://careers.qwsame.test/global/en/job/AV-1");
     }
 
     /**

@@ -76,7 +76,7 @@ public final class AdminDtos {
      * Задания.
      *
      * @param queued         в очереди ({@code QUEUED})
-     * @param oldestQueuedAt создано самое старое из них; {@code null} — очередь пуста
+     * @param oldestQueuedAt самый давний вход в очередь среди них; {@code null} — очередь пуста
      * @param failedLastDay  не выполнены после всех попыток за сутки ({@code FAILED})
      */
     public record TaskStats(long queued, Instant oldestQueuedAt, long failedLastDay) {

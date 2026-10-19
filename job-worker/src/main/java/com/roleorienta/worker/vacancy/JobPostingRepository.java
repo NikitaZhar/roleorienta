@@ -2,7 +2,6 @@ package com.roleorienta.worker.vacancy;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -16,34 +15,29 @@ import org.springframework.data.repository.query.Param;
 public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
 
     /**
-     * Ссылка без схемы и {@code www.}, в нижнем регистре — как {@link SameVacancy#address}. Знака {@code ?} в
-     * выражении нет: в запросе он был бы параметром.
+     * Открытые публикации других источников компаний этого источника (через {@code company_source}, любая роль) у
+     * незакрытых вакансий — кандидаты на присоединение новой публикации (§139; один запрос на чтение — аудит §143).
+     *
+     * @param sourceId источник читаемых публикаций
+     * @return строки: id вакансии, ссылка, провайдер, внешний id; по id вакансии
      */
-    String ADDRESS = "regexp_replace(lower(p.url), '^https{0,1}://(www\\.){0,1}', '')";
+    @Query(value = """
+            SELECT p.vacancy_id, p.url, s.provider, p.external_id
+            FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id JOIN source s ON s.id = p.source_id
+            WHERE p.source_id IN (SELECT o.source_id FROM company_source o JOIN company_source m
+                                  ON m.company_id = o.company_id WHERE m.source_id = :sourceId)
+              AND p.source_id <> :sourceId AND p.closed_at IS NULL AND v.state <> 'CLOSED'
+            ORDER BY p.vacancy_id""", nativeQuery = true)
+    List<Object[]> findNeighbourPostings(@Param("sourceId") long sourceId);
 
     /**
-     * Незакрытая вакансия той же компании из другого её источника, к которой присоединяется новая публикация
-     * (§139; технический документ §16.14): ссылка совпадает без схемы, {@code www.} и {@code /} в конце, или тот же
-     * провайдер, тот же хост ссылки и тот же внешний id (языковые разделы одной доски).
-     *
-     * @param sourceId   источник новой публикации
-     * @param address    её ссылка без схемы, {@code www.} и {@code /} в конце
-     * @param hostPrefix хост её ссылки и {@code /}
-     * @param provider   провайдер источника
-     * @param externalId внешний id
-     * @return вакансия с наименьшим id; нет — пусто
+     * @param sourceId источник
+     * @return внешние id публикаций источника, присоединённых к вакансии с более ранней публикацией другого
+     *         источника: название и ссылку вакансии они не меняют (аудит §143)
      */
-    @Query(value = "SELECT p.vacancy_id FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id "
-            + "JOIN source s ON s.id = p.source_id "
-            + "WHERE p.source_id IN (SELECT o.source_id FROM company_source o JOIN company_source m "
-            + "ON m.company_id = o.company_id WHERE m.source_id = :sourceId) "
-            + "AND p.source_id <> :sourceId AND p.closed_at IS NULL AND v.state <> 'CLOSED' "
-            + "AND (regexp_replace(" + ADDRESS + ", '/+$', '') = :address "
-            + "OR (s.provider = :provider AND p.external_id = :externalId AND starts_with(" + ADDRESS
-            + ", :hostPrefix))) ORDER BY p.vacancy_id LIMIT 1", nativeQuery = true)
-    Optional<Long> findSameVacancy(@Param("sourceId") long sourceId, @Param("address") String address,
-            @Param("hostPrefix") String hostPrefix, @Param("provider") String provider,
-            @Param("externalId") String externalId);
+    @Query("select p.externalId from JobPosting p where p.source.id = ?1 and exists "
+            + "(select q.id from JobPosting q where q.vacancy = p.vacancy and q.id < p.id)")
+    List<String> findJoinedExternalIds(Long sourceId);
 
     /**
      * @param sourceId источник

@@ -104,11 +104,11 @@ public class AdminController {
 
     /**
      * @param query название (часть) или IČO
-     * @return найденные компании с группой (без скрытых кем-либо — скрытие личное); {@code 400} — запрос короче 3
+     * @return найденные компании с группой (личные скрытия пользователей не учитываются); {@code 400} — запрос короче 3
      */
     @GetMapping("/api/v1/admin/companies")
     public List<CompanyItem> searchCompanies(@RequestParam(required = false) String query) {
-        return companies.search(0, query);
+        return companies.searchAll(query);
     }
 
     /**
