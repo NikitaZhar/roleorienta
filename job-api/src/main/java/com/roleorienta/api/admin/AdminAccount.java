@@ -1,5 +1,11 @@
 package com.roleorienta.api.admin;
 
+import com.roleorienta.api.account.SecurityConfig;
+import java.util.List;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -27,11 +33,18 @@ public class AdminAccount {
     }
 
     /**
+     * Проверяет имя и пароль администратора.
+     *
      * @param username имя
      * @param password пароль
-     * @return {@code true} — вход администратора включён, имя и пароль верны
+     * @return проверенный вход с ролью {@code ADMIN}
+     * @throws BadCredentialsException вход администратора выключен или имя и пароль неверны
      */
-    public boolean matches(String username, String password) {
-        return passwordHash != null && USERNAME.equals(username) && passwordEncoder.matches(password, passwordHash);
+    public Authentication authenticate(String username, String password) {
+        if (passwordHash == null || !USERNAME.equals(username) || !passwordEncoder.matches(password, passwordHash)) {
+            throw new BadCredentialsException("Invalid administrator credentials");
+        }
+        return UsernamePasswordAuthenticationToken.authenticated(USERNAME, null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + SecurityConfig.ADMIN_ROLE)));
     }
 }

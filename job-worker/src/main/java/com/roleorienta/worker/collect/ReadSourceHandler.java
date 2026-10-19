@@ -136,8 +136,7 @@ public class ReadSourceHandler implements TaskHandler {
                 Detailed detailed = withDetail(adapter, source, postings);
                 postings = detailed.postings();
                 nameEmployer(adapter, source, postings);
-                Map<String, Instant> postedAt = withPostedDates(adapter, source, postings, read.postedAt(),
-                        properties.maxContentRequestsPerRead() - detailed.requests());
+                Map<String, Instant> postedAt = withPostedDates(adapter, source, detailed, read.postedAt(), task.id());
                 run.read(postings.size(), read.partialReason());
                 recorder.record(run, postings, unverified, read.notRead(), postedAt);
                 yield new TaskOutcome.Done();
@@ -214,32 +213,31 @@ public class ReadSourceHandler implements TaskHandler {
 
     /**
      * Даты размещения, которых не дал список (§128): у публикаций, чья вакансия ещё без даты, дата спрашивается у
-     * детали — один запрос на публикацию, не больше {@code budget} за чтение. Не получена — следующее чтение спросит
-     * снова; пока даты нет, на экране — дата первого обнаружения («найдена»).
+     * детали — один запрос на публикацию, в пределах остатка потолка запросов детали за чтение (после запросов
+     * текста). Не получена — следующее чтение спросит снова; пока даты нет, на экране — дата первого обнаружения
+     * («найдена»). Публикации без даты обходятся по кругу с места, зависящего от номера задания чтения (аудит §133):
+     * публикации, у которых в детали даты нет, не занимают потолок каждого чтения первыми.
      *
-     * @param listed даты из списка
-     * @param budget остаток потолка запросов детали за чтение
+     * @param detailed публикации чтения и число уже сделанных запросов детали
+     * @param listed   даты из списка
+     * @param seed     номер задания чтения — сдвиг начала обхода
      * @return даты списка и полученные из детали
      */
-    private Map<String, Instant> withPostedDates(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
-            Map<String, Instant> listed, int budget) {
+    private Map<String, Instant> withPostedDates(SourceAdapter adapter, Source source, Detailed detailed,
+            Map<String, Instant> listed, long seed) {
         Map<String, Instant> dates = new HashMap<>(listed);
         Set<String> dated = recorder.externalIdsWithPostedDate(source);
-        int requested = 0;
-        for (FetchedPosting posting : postings) {
-            String externalId = posting.externalId();
-            if (requested >= budget) {
-                break;
-            }
-            if (dates.containsKey(externalId) || dated.contains(externalId)) {
-                continue;
-            }
-            requested++;
+        List<String> undated = detailed.postings().stream().map(FetchedPosting::externalId)
+                .filter(externalId -> !dates.containsKey(externalId) && !dated.contains(externalId)).toList();
+        int budget = Math.min(properties.maxContentRequestsPerRead() - detailed.requests(), undated.size());
+        int start = undated.isEmpty() ? 0 : (int) Math.floorMod(seed, (long) undated.size());
+        for (int offset = 0; offset < budget; offset++) {
+            String externalId = undated.get((start + offset) % undated.size());
             adapter.postedDate(source.getBoard(), externalId).ifPresent(date -> dates.put(externalId, date));
         }
         int received = dates.size() - listed.size();
         if (received > 0) {
-            LOG.info("Source {} posted dates from detail: requested {}, received {}", source.getId(), requested,
+            LOG.info("Source {} posted dates from detail: requested {}, received {}", source.getId(), budget,
                     received);
         }
         return dates;

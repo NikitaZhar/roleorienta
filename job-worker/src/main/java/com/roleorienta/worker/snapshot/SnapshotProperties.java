@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Настройки S3-хранилища снимков ({@code app.snapshot.*}); локально — SeaweedFS из docker-compose.
  *
- * @param endpoint  адрес хранилища, например {@code http://localhost:9000}
+ * @param endpoint  адрес хранилища, например {@code http://localhost:8333}
  * @param region    регион подписи запросов; SeaweedFS принимает любой
  * @param bucket    корзина снимков; создаётся при первой записи
  * @param accessKey ключ доступа (из окружения)

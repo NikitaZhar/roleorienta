@@ -65,13 +65,6 @@ public class ManualEmployerNames {
     }
 
     /**
-     * @return записи файла
-     */
-    public List<Entry> entries() {
-        return entries;
-    }
-
-    /**
      * Записывает названия файла в источники. Вызывается Spring после готовности приложения
      * ({@link ApplicationReadyEvent}).
      */
@@ -106,6 +99,6 @@ public class ManualEmployerNames {
      * @param board    доска, как записана в {@code source.board}
      * @param name     название работодателя
      */
-    public record Entry(String provider, String board, String name) {
+    private record Entry(String provider, String board, String name) {
     }
 }

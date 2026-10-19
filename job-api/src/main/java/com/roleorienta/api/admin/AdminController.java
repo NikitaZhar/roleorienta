@@ -8,10 +8,6 @@ import com.roleorienta.api.admin.AdminDtos.MetricsTable;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import java.util.List;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,14 +30,14 @@ public class AdminController {
 
     private final AdminAccount admin;
     private final SessionSignIn sessionSignIn;
-    private final AdminMetricsRepository metrics;
+    private final AdminMetricsService metrics;
 
     /**
      * @param admin         учётная запись администратора
      * @param sessionSignIn сохранение входа в HTTP-сессии
-     * @param metrics       показатели ядра
+     * @param metrics       таблица показателей ядра
      */
-    public AdminController(AdminAccount admin, SessionSignIn sessionSignIn, AdminMetricsRepository metrics) {
+    public AdminController(AdminAccount admin, SessionSignIn sessionSignIn, AdminMetricsService metrics) {
         this.admin = admin;
         this.sessionSignIn = sessionSignIn;
         this.metrics = metrics;
@@ -58,11 +54,7 @@ public class AdminController {
     @PostMapping("/api/v1/admin/login")
     public Admin login(@Valid @RequestBody AdminCredentials credentials, HttpServletRequest request,
             HttpServletResponse response) {
-        if (!admin.matches(credentials.username(), credentials.password())) {
-            throw new BadCredentialsException("Invalid administrator credentials");
-        }
-        sessionSignIn.signIn(UsernamePasswordAuthenticationToken.authenticated(AdminAccount.USERNAME, null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + SecurityConfig.ADMIN_ROLE))), request, response);
+        sessionSignIn.signIn(admin.authenticate(credentials.username(), credentials.password()), request, response);
         return new Admin(AdminAccount.USERNAME);
     }
 

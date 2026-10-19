@@ -28,7 +28,7 @@ const SHARE_OF_PROCESSED = new Set(['companies_with_site', 'companies_connected'
 /** Подпись страны: код, «весь мир» или «без страны». */
 function countryLabel(code: string): string {
   if (code === '*') {
-    return 'Worldwide';
+    return 'Remote, worldwide';
   }
   return code === '' ? 'No country' : code;
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 /**
@@ -53,9 +55,11 @@ class ManualEmployerNamesTests {
 
     @Test
     void applicationFileIsValid() {
-        assertThat(new ManualEmployerNames(sources).entries())
-                .isNotEmpty()
-                .allSatisfy(entry -> assertThat(entry.board()).doesNotStartWith("http"));
+        new ManualEmployerNames(sources).apply();
+
+        ArgumentCaptor<String> boards = ArgumentCaptor.forClass(String.class);
+        verify(sources, atLeastOnce()).nameEmployerManually(any(), boards.capture(), any());
+        assertThat(boards.getAllValues()).isNotEmpty().allSatisfy(board -> assertThat(board).doesNotStartWith("http"));
     }
 
     private static JsonNode file(String json) throws Exception {

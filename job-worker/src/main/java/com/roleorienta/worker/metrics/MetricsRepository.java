@@ -6,6 +6,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HashSet;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,40 +47,55 @@ public class MetricsRepository {
                                        ('companies_remaining', counted.known - counted.processed)) kind (metric, value)
             """;
 
-    /** Компании с подтверждённым сайтом ({@code FOUND}): итог и по способу подтверждения. */
-    private static final String SITES = """
+    /**
+     * Обработанные компании дня — те же, что в {@code companies_processed} ({@link #COMPANIES}): действующие на день,
+     * появившиеся и впервые проверенные до конца дня, с текущим итогом проверки. Показатели сайта, подключения и
+     * неудач берутся только из них — доля от «обработано» не больше 100 % (аудит §133). Параметры: конец дня, конец
+     * дня, день.
+     */
+    private static final String PROCESSED = """
+            WITH processed AS (
+                SELECT co.id, co.country, ch.result
+                FROM company co JOIN company_check ch ON ch.company_id = co.id
+                WHERE ch.first_checked_at < CAST(? AS timestamptz) AND co.first_seen_at < CAST(? AS timestamptz)
+                  AND (co.terminated_on IS NULL OR co.terminated_on > CAST(? AS date)))
+            """;
+
+    /** Обработанные компании с подтверждённым сайтом ({@code FOUND} до конца дня): итог и по способу подтверждения. */
+    private static final String SITES = PROCESSED + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
-            SELECT CAST(? AS date), co.country, 'companies_with_site',
-                   CASE WHEN GROUPING(site.proof) = 1 THEN '' ELSE coalesce(site.proof, 'UNKNOWN') END,
-                   count(DISTINCT co.id)
-            FROM company co
-            JOIN company_site site ON site.company_id = co.id AND site.status = 'FOUND'
+            SELECT CAST(? AS date), processed.country, 'companies_with_site',
+                   CASE WHEN GROUPING(site.proof) = 1 THEN '' ELSE site.proof END, count(DISTINCT processed.id)
+            FROM processed
+            JOIN company_site site ON site.company_id = processed.id AND site.status = 'FOUND'
                                       AND site.found_at < CAST(? AS timestamptz)
-            GROUP BY GROUPING SETS ((co.country), (co.country, site.proof))
+            GROUP BY GROUPING SETS ((processed.country), (processed.country, site.proof))
             """;
 
     /**
      * Компании с подключённым каналом: итог и по системе найма своих источников (роль работодателя или группы;
      * компания с источниками разных систем считается в каждой — сумма разрезов может быть больше итога).
      */
-    private static final String CONNECTED = """
+    private static final String CONNECTED = PROCESSED + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
-            SELECT CAST(? AS date), co.country, 'companies_connected',
+            SELECT CAST(? AS date), processed.country, 'companies_connected',
                    CASE WHEN GROUPING(s.provider) = 1 THEN '' ELSE coalesce(s.provider, 'NONE') END,
-                   count(DISTINCT co.id)
-            FROM company co
-            JOIN company_check ch ON ch.company_id = co.id AND ch.result = 'CONNECTED'
-            LEFT JOIN company_source cs ON cs.company_id = co.id AND cs.role IN ('EMPLOYER', 'GROUP')
+                   count(DISTINCT processed.id)
+            FROM processed
+            LEFT JOIN company_source cs ON cs.company_id = processed.id AND cs.role IN ('EMPLOYER', 'GROUP')
             LEFT JOIN source s ON s.id = cs.source_id
-            GROUP BY GROUPING SETS ((co.country), (co.country, s.provider))
+            WHERE processed.result = 'CONNECTED'
+            GROUP BY GROUPING SETS ((processed.country), (processed.country, s.provider))
             """;
 
-    /** Неудачи определения канала — по причине (итог проверки компании). */
-    private static final String FAILED_CHECKS = """
+    /** Обработанные компании, канал которых не найден: итог и по причине (итог проверки). */
+    private static final String FAILED_CHECKS = PROCESSED + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
-            SELECT CAST(? AS date), co.country, 'companies_failed', ch.result, count(*)
-            FROM company co JOIN company_check ch ON ch.company_id = co.id AND ch.result <> 'CONNECTED'
-            GROUP BY co.country, ch.result
+            SELECT CAST(? AS date), country, 'companies_failed',
+                   CASE WHEN GROUPING(result) = 1 THEN '' ELSE result END, count(*)
+            FROM processed
+            WHERE result <> 'CONNECTED'
+            GROUP BY GROUPING SETS ((country), (country, result))
             """;
 
     /**
@@ -105,14 +122,16 @@ public class MetricsRepository {
             """;
 
     /**
-     * Страна источника: своя страна сбора или страна его компании; иначе {@code ''}.
+     * Страна источника: своя страна сбора или страна его компании (работодателя или группы, не агентства); иначе
+     * {@code ''}.
      */
     private static final String SOURCE_COUNTRY = """
             WITH placed AS (
-                SELECT s.id, s.provider, s.availability,
+                SELECT s.id, s.provider, s.availability, s.created_at,
                        coalesce(CAST(s.country AS text),
                                 (SELECT min(CAST(co.country AS text)) FROM company_source cs
-                                 JOIN company co ON co.id = cs.company_id WHERE cs.source_id = s.id), '') AS country
+                                 JOIN company co ON co.id = cs.company_id
+                                 WHERE cs.source_id = s.id AND cs.role IN ('EMPLOYER', 'GROUP')), '') AS country
                 FROM source s)
             """;
 
@@ -126,12 +145,13 @@ public class MetricsRepository {
             """;
 
     /**
-     * Источники по итогу последнего за день чтения: {@code COMPLETE}, {@code PARTIAL:<причина>},
-     * {@code FAILED:<вид отказа>}.
+     * Источники, читавшиеся за день: итог и по итогу последнего за день чтения — {@code COMPLETE},
+     * {@code PARTIAL:<причина>}, {@code FAILED:<вид отказа>}.
      */
     private static final String SOURCE_READS = SOURCE_COUNTRY + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
-            SELECT CAST(? AS date), last_read.country, 'source_reads', last_read.outcome, count(*)
+            SELECT CAST(? AS date), last_read.country, 'source_reads',
+                   CASE WHEN GROUPING(last_read.outcome) = 1 THEN '' ELSE last_read.outcome END, count(*)
             FROM (SELECT DISTINCT ON (r.source_id) placed.country,
                          CASE r.state WHEN 'COMPLETE' THEN 'COMPLETE'
                                       WHEN 'PARTIAL' THEN 'PARTIAL:' || r.partial_reason
@@ -139,32 +159,34 @@ public class MetricsRepository {
                   FROM crawl_run r JOIN placed ON placed.id = r.source_id
                   WHERE r.finished_at >= CAST(? AS timestamptz) AND r.finished_at < CAST(? AS timestamptz)
                   ORDER BY r.source_id, r.finished_at DESC) last_read
-            GROUP BY last_read.country, last_read.outcome
+            GROUP BY GROUPING SETS ((last_read.country), (last_read.country, last_read.outcome))
             """;
 
     /**
      * Источники с просроченным чтением: доступные (не «недоступен»), читаемые заданием чтения (без источников
-     * государственного портала — их вакансии пишутся общим списком, §107), без чтения, начатого за
-     * {@link #READ_OVERDUE_AFTER} до конца дня.
+     * государственного портала — их вакансии пишутся общим списком, §107), созданные раньше чем за
+     * {@link #READ_OVERDUE_AFTER} до конца дня и без чтения, начатого за это время. Параметры: день, провайдер портала,
+     * начало окна, конец дня.
      */
     private static final String SOURCES_OVERDUE = SOURCE_COUNTRY + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
             SELECT CAST(? AS date), country, 'sources_overdue', '', count(*)
             FROM placed
-            WHERE availability <> 'UNAVAILABLE' AND provider <> ?
+            WHERE availability <> 'UNAVAILABLE' AND provider <> ? AND created_at < CAST(? AS timestamptz)
               AND NOT EXISTS (SELECT 1 FROM crawl_run r WHERE r.source_id = placed.id
                               AND r.started_at >= CAST(? AS timestamptz) AND r.started_at < CAST(? AS timestamptz))
             GROUP BY country
             """;
 
-    /** Операции, не выполненные после всех попыток (задания {@code FAILED} за день), — по типу задания. */
+    /** Операции, не выполненные после всех попыток (задания {@code FAILED} за день): итог и по типу задания. */
     private static final String FAILED_OPERATIONS = """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
-            SELECT CAST(? AS date), '', 'operations_failed', t.type, count(*)
+            SELECT CAST(? AS date), '', 'operations_failed',
+                   CASE WHEN GROUPING(t.type) = 1 THEN '' ELSE t.type END, count(*)
             FROM task t
             WHERE t.state = 'FAILED'
               AND t.updated_at >= CAST(? AS timestamptz) AND t.updated_at < CAST(? AS timestamptz)
-            GROUP BY t.type
+            GROUP BY GROUPING SETS ((), (t.type))
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -190,14 +212,24 @@ public class MetricsRepository {
         OffsetDateTime to = utc(end);
         jdbcTemplate.update("DELETE FROM core_metric_daily WHERE day = ?", day);
         jdbcTemplate.update(COMPANIES, day, to, to, day);
-        jdbcTemplate.update(SITES, day, to);
-        jdbcTemplate.update(CONNECTED, day);
-        jdbcTemplate.update(FAILED_CHECKS, day);
+        jdbcTemplate.update(SITES, to, to, day, day, to);
+        jdbcTemplate.update(CONNECTED, to, to, day, day);
+        jdbcTemplate.update(FAILED_CHECKS, to, to, day, day);
         jdbcTemplate.update(VACANCIES, day, from, to, from, to);
         jdbcTemplate.update(SOURCES, day);
         jdbcTemplate.update(SOURCE_READS, day, from, to);
-        jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, utc(end.minus(READ_OVERDUE_AFTER)), to);
+        OffsetDateTime overdueSince = utc(end.minus(READ_OVERDUE_AFTER));
+        jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, overdueSince, overdueSince, to);
         jdbcTemplate.update(FAILED_OPERATIONS, day, from, to);
+    }
+
+    /**
+     * @param from первый день
+     * @return дни начиная с {@code from}, за которые показатели уже посчитаны
+     */
+    public Set<LocalDate> computedDays(LocalDate from) {
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT DISTINCT day FROM core_metric_daily WHERE day >= ?", LocalDate.class, from));
     }
 
     private static OffsetDateTime utc(Instant instant) {

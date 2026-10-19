@@ -37,7 +37,7 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
     setLoading(true);
     try {
       const next = await load(from);
-      setItems((current) => (from === null ? next.items : [...current, ...next.items]));
+      setItems((current) => (from === null ? next.items : appendNew(current, next.items)));
       setCursor(next.nextCursor);
       if (from === null && next.items.length === 0 && !marked) {
         setHasConditions((await searchCondition()) !== null);
@@ -97,4 +97,13 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
       )}
     </section>
   );
+}
+
+/**
+ * Следующая страница без уже показанных вакансий: порядок — по дате открытия, а она может появиться у вакансии между
+ * загрузками страниц, и вакансия придёт снова (аудит §133).
+ */
+function appendNew(current: VacancyItem[], next: VacancyItem[]): VacancyItem[] {
+  const shown = new Set(current.map((item) => item.id));
+  return [...current, ...next.filter((item) => !shown.has(item.id))];
 }

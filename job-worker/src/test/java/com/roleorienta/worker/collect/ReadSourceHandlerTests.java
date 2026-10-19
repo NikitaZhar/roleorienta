@@ -63,8 +63,9 @@ class ReadSourceHandlerTests {
     }
 
     /**
-     * Дата размещения из детали (§128, потолок 1): {@code a} — дата есть в списке, {@code b} — у вакансии уже есть,
-     * {@code c} — спрошена у детали, {@code d} — за потолком.
+     * Дата размещения из детали (§128, потолок 1): {@code a} — дата есть в списке, {@code b} — у вакансии уже есть;
+     * без даты — {@code c} и {@code d}, обход по кругу начинается с места по номеру задания (1 → второй, аудит §133):
+     * спрошена {@code d}, {@code c} — за потолком.
      */
     @Test
     void asksPostedDateOnlyWhereNeitherListNorVacancyHasIt() {
@@ -76,15 +77,31 @@ class ReadSourceHandlerTests {
         when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(postings, List.of())
                 .withPostedAt(Map.of("a", listed)));
         when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of("b"));
-        when(adapter.postedDate(BOARD, "c")).thenReturn(Optional.of(detailed));
+        when(adapter.postedDate(BOARD, "d")).thenReturn(Optional.of(detailed));
 
         handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
 
         verify(adapter, never()).postedDate(BOARD, "a");
         verify(adapter, never()).postedDate(BOARD, "b");
-        verify(adapter, never()).postedDate(BOARD, "d");
+        verify(adapter, never()).postedDate(BOARD, "c");
         verify(recorder).record(any(CrawlRun.class), eq(postings), eq(Set.of()), eq(Set.of()),
-                eq(Map.of("a", listed, "c", detailed)));
+                eq(Map.of("a", listed, "d", detailed)));
+    }
+
+    /**
+     * Потолок запросов детали общий (§128): запрос текста {@code a} исчерпал потолок 1 — дата {@code b} не
+     * спрашивается.
+     */
+    @Test
+    void textRequestsLeaveNoBudgetForPostedDates() {
+        Source source = new Source("workday", BOARD);
+        when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(
+                List.of(posting("a", null), posting("b", "text")), List.of()));
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(adapter).detail(BOARD, "a");
+        verify(adapter, never()).postedDate(any(), any());
     }
 
     /**
