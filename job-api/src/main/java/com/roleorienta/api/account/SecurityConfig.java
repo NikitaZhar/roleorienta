@@ -31,8 +31,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Вход и доступ (технический документ §8, §10, §16.17).
  *
  * <ul>
- *   <li>Без входа открыты регистрация, вход, справочники стран и позиций, health; остальное —
- *       {@code 401} в формате problem+json.</li>
+ *   <li>Без входа открыты регистрация, вход пользователя и администратора, справочники стран и позиций, health;
+ *       остальное — {@code 401} в формате problem+json.</li>
+ *   <li>Роли (§132): пользователь — {@code USER}, администратор (отдельный вход, {@code AdminController}) —
+ *       {@code ADMIN}. {@code /api/v1/admin/**} — только {@code ADMIN}; остальное — только {@code USER}:
+ *       администратор не видит условий, списков и отметок пользователей (технический документ §10). Чужая
+ *       роль — {@code 403}.</li>
  *   <li>Вход хранится в HTTP-сессии (сессии — в PostgreSQL, Spring Session JDBC); cookie сессии —
  *       {@code HttpOnly}, {@code SameSite=Lax}, {@code Secure} настройкой.</li>
  *   <li>CSRF для SPA ({@code csrf.spa()}): токен в cookie {@code XSRF-TOKEN}, SPA возвращает его
@@ -44,6 +48,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 @Configuration
 public class SecurityConfig {
+
+    /** Роль пользователя. */
+    public static final String USER_ROLE = "USER";
+
+    /** Роль администратора. */
+    public static final String ADMIN_ROLE = "ADMIN";
 
     private static final String UNAUTHORIZED_BODY =
             "{\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"Sign in required\"}";
@@ -58,10 +68,12 @@ public class SecurityConfig {
     public SecurityFilterChain apiSecurity(HttpSecurity http, SecurityContextRepository securityContexts)
             throws Exception {
         http.authorizeHttpRequests(requests -> requests
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
+                                "/api/v1/admin/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/countries", "/api/v1/positions").permitAll()
                         .requestMatchers("/actuator/health/**", "/error").permitAll()
-                        .anyRequest().authenticated())
+                        .requestMatchers("/api/v1/admin/**").hasRole(ADMIN_ROLE)
+                        .anyRequest().hasRole(USER_ROLE))
                 .csrf(csrf -> csrf.spa())
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 .securityContext(context -> context.securityContextRepository(securityContexts))
@@ -95,7 +107,7 @@ public class SecurityConfig {
     public UserDetailsService userDetailsService(UserAccountRepository accounts) {
         return email -> accounts.findByEmail(AccountService.normalize(email))
                 .map(account -> User.withUsername(account.getEmail()).password(account.getPasswordHash())
-                        .roles("USER").build())
+                        .roles(USER_ROLE).build())
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user"));
     }
 

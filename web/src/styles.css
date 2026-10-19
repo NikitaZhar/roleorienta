@@ -169,3 +169,39 @@ a.button {
   text-decoration: none;
   background: #efefef;
 }
+
+.wide {
+  max-width: none;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+table.metrics {
+  border-collapse: collapse;
+  margin-top: 12px;
+  background: #fff;
+}
+
+table.metrics th,
+table.metrics td {
+  padding: 4px 10px;
+  border-bottom: 1px solid #e3e3e3;
+  text-align: right;
+  white-space: nowrap;
+}
+
+table.metrics th[scope='row'] {
+  text-align: left;
+}
+
+table.metrics tr.total th[scope='row'] {
+  font-weight: 600;
+}
+
+table.metrics tr.part th[scope='row'] {
+  font-weight: normal;
+  padding-left: 28px;
+  color: #555;
+}

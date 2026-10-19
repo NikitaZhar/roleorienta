@@ -9,9 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,18 +24,18 @@ public class AccountController {
 
     private final AccountService accounts;
     private final AuthenticationManager authenticationManager;
-    private final SecurityContextRepository securityContexts;
+    private final SessionSignIn sessionSignIn;
 
     /**
      * @param accounts              учётные записи
      * @param authenticationManager проверка email и пароля
-     * @param securityContexts      хранение входа в HTTP-сессии
+     * @param sessionSignIn         сохранение входа в HTTP-сессии
      */
     public AccountController(AccountService accounts, AuthenticationManager authenticationManager,
-            SecurityContextRepository securityContexts) {
+            SessionSignIn sessionSignIn) {
         this.accounts = accounts;
         this.authenticationManager = authenticationManager;
-        this.securityContexts = securityContexts;
+        this.sessionSignIn = sessionSignIn;
     }
 
     /**
@@ -68,13 +65,7 @@ public class AccountController {
         Authentication authentication = authenticationManager.authenticate(
                 UsernamePasswordAuthenticationToken.unauthenticated(AccountService.normalize(credentials.email()),
                         credentials.password()));
-        if (request.getSession(false) != null) {
-            request.changeSessionId();
-        }
-        SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(authentication);
-        SecurityContextHolder.setContext(context);
-        securityContexts.saveContext(context, request, response);
+        sessionSignIn.signIn(authentication, request, response);
         return Account.of(accounts.byEmail(authentication.getName()));
     }
 

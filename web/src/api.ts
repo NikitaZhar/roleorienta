@@ -106,12 +106,12 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   return (await exchange<T>(method, path, body)).data;
 }
 
-/** @returns вошедший пользователь; null — не вошёл (401) */
+/** @returns вошедший пользователь; null — не вошёл (401) или в сессии вход администратора (403) */
 export async function currentAccount(): Promise<Account | null> {
   try {
     return await request<Account>('GET', '/api/v1/me');
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
       return null;
     }
     throw error;
@@ -275,4 +275,55 @@ export function markUnsuitable(id: number): Promise<void> {
 /** Снятие отметки: вакансия возвращается по правилам выдачи. */
 export function unmarkUnsuitable(id: number): Promise<void> {
   return request<void>('DELETE', '/api/v1/me/vacancies/' + id + '/unsuitable');
+}
+
+/** Вошедший администратор. */
+export interface Admin {
+  username: string;
+}
+
+/** Строка показателя: код, разрез ('' — итог), значения по дням таблицы (null — нет строки за день). */
+export interface MetricRow {
+  metric: string;
+  dimension: string;
+  values: (number | null)[];
+}
+
+/** Показатели ядра страны по дням (дни — новые первыми). */
+export interface MetricsTable {
+  country: string;
+  countries: string[];
+  days: string[];
+  rows: MetricRow[];
+}
+
+/** @returns вошедший администратор; null — не вошёл (401) или вошёл пользователь (403) */
+export async function currentAdmin(): Promise<Admin | null> {
+  try {
+    return await request<Admin>('GET', '/api/v1/admin/me');
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** Вход администратора: новая сессия. */
+export function adminLogin(username: string, password: string): Promise<Admin> {
+  return request<Admin>('POST', '/api/v1/admin/login', { username, password });
+}
+
+/**
+ * Показатели ядра.
+ *
+ * @param country страна; null — первая страна с кодом ISO
+ * @param days    сколько последних дней
+ */
+export function metrics(country: string | null, days: number): Promise<MetricsTable> {
+  const query = new URLSearchParams({ days: String(days) });
+  if (country !== null) {
+    query.set('country', country);
+  }
+  return request<MetricsTable>('GET', '/api/v1/admin/metrics?' + query.toString());
 }
