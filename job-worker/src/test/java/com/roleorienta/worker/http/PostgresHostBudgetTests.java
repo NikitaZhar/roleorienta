@@ -84,7 +84,8 @@ class PostgresHostBudgetTests {
     }
 
     private HostBudget budget(Duration maxWait) {
-        return new PostgresHostBudget(jdbcTemplate, new PolitenessProperties("test", INTERVAL, maxWait, List.of()));
+        return new PostgresHostBudget(jdbcTemplate,
+                new PolitenessProperties("test", INTERVAL, maxWait, List.of(), List.of()));
     }
 
     private static long seconds(Optional<Duration> wait) {

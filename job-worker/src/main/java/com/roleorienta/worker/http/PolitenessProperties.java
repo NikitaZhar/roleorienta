@@ -15,11 +15,15 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                          владельца (технический документ §10): {@code query.wikidata.org} — SPARQL-сервис Wikidata,
  *                          программный доступ разрешён правилами Wikidata (Wikidata:Data access), а robots.txt
  *                          закрывает его от поисковых роботов (стенограмма §49)
+ * @param maintenancePages  страницы обслуживания ({@code хост/начало пути}): переадресация на такую страницу —
+ *                          временный отказ, страница не запрашивается (§140: Workday на время обслуживания уводит на
+ *                          {@code community.workday.com/maintenance-page}, закрытую robots.txt)
  */
 @ConfigurationProperties("app.http.politeness")
 public record PolitenessProperties(
         @DefaultValue("Roleorienta/0.1 (+https://github.com/NikitaZhar/roleorienta)") String userAgent,
         @DefaultValue("1s") Duration hostInterval,
         @DefaultValue("30s") Duration hostMaxWait,
-        @DefaultValue List<String> robotsExemptHosts) {
+        @DefaultValue List<String> robotsExemptHosts,
+        @DefaultValue List<String> maintenancePages) {
 }

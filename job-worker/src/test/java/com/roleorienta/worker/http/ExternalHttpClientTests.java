@@ -460,11 +460,36 @@ class ExternalHttpClientTests {
         });
         respond("/sparql", STATUS_OK, "text/plain", "ok");
         try (ExternalHttpClient exempt = new ExternalHttpClient(properties(true),
-                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of("127.0.0.1")), NO_WAIT,
+                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of("127.0.0.1"), List.of()),
+                NO_WAIT,
                 Clock.fixed(NOW, ZoneOffset.UTC))) {
             assertThat(exempt.get(uri("/sparql"))).isEqualTo(new HttpResult.Success(STATUS_OK, "ok"));
         }
         assertThat(robotsReads.get()).isZero();
+    }
+
+    /**
+     * Переадресация на страницу обслуживания (§140) — временный отказ; страница не запрашивается, её запрет в
+     * robots.txt не делает отказ постоянным.
+     */
+    @Test
+    void redirectToMaintenancePageIsTemporaryFailure() throws IOException {
+        AtomicInteger maintenanceReads = new AtomicInteger();
+        respond("/robots.txt", STATUS_OK, "text/plain", "User-agent: *\nDisallow: /maintenance-page\n");
+        server.createContext("/jobs", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/maintenance-page?from=jobs");
+            send(exchange, STATUS_FOUND, new byte[0]);
+        });
+        server.createContext("/maintenance-page", exchange -> {
+            maintenanceReads.incrementAndGet();
+            send(exchange, STATUS_OK, new byte[0]);
+        });
+        try (ExternalHttpClient maintained = new ExternalHttpClient(properties(true),
+                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of(),
+                        List.of("127.0.0.1/Maintenance-Page")), NO_WAIT, Clock.fixed(NOW, ZoneOffset.UTC))) {
+            assertThat(maintained.get(uri("/jobs"))).isInstanceOf(HttpResult.TemporaryFailure.class);
+        }
+        assertThat(maintenanceReads.get()).isZero();
     }
 
     /**
@@ -491,7 +516,7 @@ class ExternalHttpClientTests {
 
     private static ExternalHttpClient client(ExternalHttpProperties properties, HostBudget budget) {
         return new ExternalHttpClient(properties,
-                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of()), budget,
+                new PolitenessProperties(USER_AGENT, Duration.ZERO, Duration.ZERO, List.of(), List.of()), budget,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

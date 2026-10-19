@@ -24,7 +24,7 @@ public final class TestHttpClients {
     public static ExternalHttpClient forLocalStub() {
         return new ExternalHttpClient(
                 new ExternalHttpProperties(TIMEOUT, TIMEOUT, MAX_REDIRECTS, MAX_BODY_BYTES, true),
-                new PolitenessProperties("RoleorientaTest/1.0", Duration.ZERO, Duration.ZERO, List.of()),
+                new PolitenessProperties("RoleorientaTest/1.0", Duration.ZERO, Duration.ZERO, List.of(), List.of()),
                 host -> Optional.of(Duration.ZERO), Clock.systemUTC());
     }
 }

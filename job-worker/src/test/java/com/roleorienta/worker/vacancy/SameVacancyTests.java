@@ -39,12 +39,14 @@ class SameVacancyTests {
     private long company;
 
     /**
-     * Чистые публикации и вакансии; компания теста {@code 99020001}.
+     * Чистые публикации и вакансии (сначала ссылки на вакансии: соответствие позициям, выдача, отметки — их оставляют
+     * другие тесты); компания теста {@code 99020001}.
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"company_source", "source_snapshot", "vacancy_revision", "crawl_run",
-                "job_posting", "vacancy", "outbox_event", "task", "source"}) {
+        for (String table : new String[] {"delivered_vacancy", "unsuitable_mark", "vacancy_position_match",
+                "company_source", "source_snapshot", "vacancy_revision", "crawl_run", "job_posting", "vacancy",
+                "outbox_event", "task", "source"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("DELETE FROM company WHERE registration_number LIKE '9902%'");

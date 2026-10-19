@@ -79,6 +79,8 @@ app:
       host-max-wait: 30s     # дольше запрос не ждёт очереди к хосту — временный отказ
       robots-exempt-hosts:   # API, к которым robots.txt не применяется — только решением владельца (§10)
         - query.wikidata.org # SPARQL Wikidata: программный доступ по правилам Wikidata (Data access), §49
+      maintenance-pages:     # переадресация сюда — временный отказ, страница не запрашивается (§140)
+        - community.workday.com/maintenance-page  # Workday на время обслуживания
   collect:
     read-interval-ms: 3600000  # тик постановки чтений; источник читается, когда с начала его чтения прошло read-after
     read-after: 23h            # чтение не реже раза в сутки по времени, а не по дате (§103)

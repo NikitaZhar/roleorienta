@@ -14,6 +14,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -59,6 +60,9 @@ import org.springframework.stereotype.Component;
  * промежуток между запросами); запрос ждёт своего места, а если очередь длиннее потолка —
  * возвращается временный отказ без запроса. {@code Retry-After} ответа сдвигает очередь хоста.
  * Каждый шаг переадресации резервирует бюджет своего хоста. User-Agent — из {@link PolitenessProperties}.</p>
+ *
+ * <p>Переадресация на страницу обслуживания ({@code app.http.politeness.maintenance-pages}, §140) — временный
+ * отказ без запроса этой страницы: источник работает, но сейчас на обслуживании.</p>
  *
  * <p>Путь сверяется с robots.txt происхождения ({@link RobotsRules}, кэш на сутки в памяти
  * реплики); запрет — постоянный отказ {@code USE_FORBIDDEN} без запроса (технический документ
@@ -109,6 +113,7 @@ public class ExternalHttpClient implements AutoCloseable {
     private final String robotsToken;
     private final Map<String, CachedRobots> robotsByOrigin = new ConcurrentHashMap<>();
     private final Set<String> robotsExemptHosts;
+    private final List<String> maintenancePages;
 
     /**
      * @param properties   таймауты, потолки и политика адресов
@@ -126,6 +131,8 @@ public class ExternalHttpClient implements AutoCloseable {
         this.robotsToken = politeness.userAgent().split("/", 2)[0].strip();
         this.robotsExemptHosts = politeness.robotsExemptHosts().stream()
                 .map(host -> host.toLowerCase(Locale.ROOT)).collect(Collectors.toUnmodifiableSet());
+        this.maintenancePages = politeness.maintenancePages().stream()
+                .map(page -> page.toLowerCase(Locale.ROOT)).toList();
     }
 
     /**
@@ -268,6 +275,10 @@ public class ExternalHttpClient implements AutoCloseable {
                         ? new HttpResult.Success(success.status(), success.body(), current) : done.result();
             }
             Redirect redirect = (Redirect) answer;
+            if (isMaintenancePage(redirect.target())) {
+                return new HttpResult.TemporaryFailure("Under maintenance: " + uri + " -> " + redirect.target(),
+                        Duration.ZERO);
+            }
             visited.add(current);
             if (hop >= maxRedirects || visited.contains(redirect.target())) {
                 return new HttpResult.PermanentFailure(HttpResult.Kind.CLIENT_ERROR,
@@ -278,6 +289,19 @@ public class ExternalHttpClient implements AutoCloseable {
                     : new HttpGet(redirect.target());
             current = redirect.target();
         }
+    }
+
+    /**
+     * @param target адрес переадресации
+     * @return {@code true} — страница обслуживания из {@code app.http.politeness.maintenance-pages}
+     */
+    private boolean isMaintenancePage(URI target) {
+        if (target.getHost() == null) {
+            return false;
+        }
+        String page = target.getHost().toLowerCase(Locale.ROOT)
+                + (target.getRawPath() == null ? "" : target.getRawPath().toLowerCase(Locale.ROOT));
+        return maintenancePages.stream().anyMatch(page::startsWith);
     }
 
     /**
