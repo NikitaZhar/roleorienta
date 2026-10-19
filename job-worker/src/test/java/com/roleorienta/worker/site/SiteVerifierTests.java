@@ -13,6 +13,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,8 +63,8 @@ class SiteVerifierTests {
             }
         });
         server.start();
-        verifier = new SiteVerifier(httpClient,
-                new SiteCheckProperties("http://127.0.0.1:" + server.getAddress().getPort() + "/"));
+        verifier = new SiteVerifier(httpClient, properties(List.of()),
+                new DomainMarketplaces(properties(List.of())));
     }
 
     /**
@@ -228,5 +229,24 @@ class SiteVerifierTests {
 
     private static String html(String title, String body) {
         return "<html><head><title>" + title + "</title></head><body>" + body + "</body></html>";
+    }
+
+    /**
+     * Переадресация на площадку продажи доменов (§135; здесь площадка — {@code localhost}) — сайта нет, даже если на
+     * странице площадки есть IČO.
+     */
+    @Test
+    void redirectToDomainMarketplaceIsGone() {
+        int port = server.getAddress().getPort();
+        pages.put("/", REDIRECT + "http://localhost:" + port + "/domain");
+        pages.put("/domain", "<p>alfaplast.sk is for sale. IČO: " + NUMBER + "</p><p>" + FILLER + "</p>");
+        SiteVerifier withMarketplace = new SiteVerifier(httpClient, properties(List.of()),
+                new DomainMarketplaces(properties(List.of("localhost"))));
+
+        assertThat(withMarketplace.verify("127.0.0.1", "", NUMBER, NAME)).isEqualTo(Verdict.GONE);
+    }
+
+    private SiteCheckProperties properties(List<String> marketplaces) {
+        return new SiteCheckProperties("http://127.0.0.1:" + server.getAddress().getPort() + "/", marketplaces);
     }
 }

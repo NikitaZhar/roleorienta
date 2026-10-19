@@ -8,6 +8,7 @@ import com.roleorienta.worker.career.CareerScanRepository.Role;
 import com.roleorienta.worker.career.CareerScanRepository.Site;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.site.DomainMarketplaces;
 import com.roleorienta.worker.site.SiteBrand;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
@@ -98,19 +99,23 @@ public class CareerScanHandler implements TaskHandler {
     private final CareerScanRepository repository;
     private final CareerProperties properties;
     private final int parallelSites;
+    private final DomainMarketplaces marketplaces;
 
     /**
      * @param http          внешний HTTP-клиент
      * @param repository    сайты и источники
      * @param properties    схема, сайтов за задание, срок перепроверки
      * @param parallelSites сколько сайтов задания проверяется одновременно ({@code app.career.parallel-sites})
+     * @param marketplaces  площадки продажи доменов (§135)
      */
     public CareerScanHandler(ExternalHttpClient http, CareerScanRepository repository,
-            CareerProperties properties, @Value("${app.career.parallel-sites:6}") int parallelSites) {
+            CareerProperties properties, @Value("${app.career.parallel-sites:6}") int parallelSites,
+            DomainMarketplaces marketplaces) {
         this.http = http;
         this.repository = repository;
         this.properties = properties;
         this.parallelSites = parallelSites;
+        this.marketplaces = marketplaces;
     }
 
     /**
@@ -219,6 +224,13 @@ public class CareerScanHandler implements TaskHandler {
         if (homeResult instanceof HttpResult.PermanentFailure failure
                 && failure.kind() == HttpResult.Kind.USE_FORBIDDEN) {
             repository.record(site, Set.of(), CheckResult.USE_FORBIDDEN, null, Role.EMPLOYER);
+            return;
+        }
+        if (homeResult instanceof HttpResult.Success forSale
+                && marketplaces.forSale(forSale.locationOr(home).getHost())) {
+            LOG.info("Site {} of company {} is a domain for sale ({}), rejected", site.host(), site.companyId(),
+                    forSale.locationOr(home));
+            repository.rejectForSale(site);
             return;
         }
         Optional<Document> homePage = homeResult instanceof HttpResult.Success success

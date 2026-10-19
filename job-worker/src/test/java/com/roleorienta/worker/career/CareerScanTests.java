@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.http.ExternalHttpClient;
+import com.roleorienta.worker.site.DomainMarketplaces;
+import com.roleorienta.worker.site.SiteCheckProperties;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
@@ -406,7 +408,7 @@ class CareerScanTests {
     @Test
     void stopsStartingSitesAfterTimeBudget() {
         CareerScanHandler noTime = new CareerScanHandler(http, repository, new CareerProperties("http", 25,
-                Duration.ofDays(30), 20, Duration.ZERO), 6);
+                Duration.ofDays(30), 20, Duration.ZERO), 6, noMarketplaces());
 
         TaskOutcome outcome = noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE,
                 CareerScanHandler.payload("budget"), 0));
@@ -414,6 +416,35 @@ class CareerScanTests {
         assertThat(jdbcTemplate.queryForObject("SELECT checked_at IS NULL FROM company_site", Boolean.class)).isTrue();
         assertThat(outcome).isInstanceOfSatisfying(TaskOutcome.Continue.class,
                 next -> assertThat(next.taskKey()).startsWith("career-scan:budget:"));
+    }
+
+    /**
+     * Главная переадресует на площадку продажи доменов (§135; здесь площадка — {@code localhost}): сайт отклонён с
+     * причиной, адрес прежней «кадровой страницы» снят, итог компании «формат не поддерживается» сменился на «сайт не
+     * найден».
+     */
+    @Test
+    void rejectsSiteRedirectingToDomainMarketplace() {
+        PAGES.put("/", REDIRECT + "http://localhost:" + SITE.getAddress().getPort() + "/domain");
+        PAGES.put("/domain", "<a href=\"/kariera\">Kariéra</a>");
+        jdbcTemplate.update("UPDATE company_site SET career_url = 'http://' || host || '/kariera'");
+        jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
+                + "SELECT id, 'FORMAT_UNSUPPORTED', now(), now() FROM company");
+        CareerScanHandler withMarketplace = new CareerScanHandler(http, repository, new CareerProperties("http", 25,
+                Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1,
+                new DomainMarketplaces(new SiteCheckProperties("https://{host}/", List.of("localhost"))));
+
+        withMarketplace.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("sale"), 0));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM company_site", String.class)).isEqualTo("REJECTED");
+        assertThat(checkResult()).isEqualTo("DOMAIN_FOR_SALE");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class)).isNull();
+        assertThat(companyResult()).isEqualTo("SITE_NOT_FOUND");
+        assertThat(connectedSources()).isEmpty();
+    }
+
+    private static DomainMarketplaces noMarketplaces() {
+        return new DomainMarketplaces(new SiteCheckProperties("https://{host}/", List.of()));
     }
 
     private void runScan() {

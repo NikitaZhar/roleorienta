@@ -67,6 +67,18 @@ public class CareerScanRepository {
             ON CONFLICT (company_id) DO UPDATE SET result = EXCLUDED.result, checked_at = EXCLUDED.checked_at
             """.formatted(CHECKED_SITE);
 
+    /**
+     * У компании не осталось найденного сайта и своего источника — итог «сайт не найден» (§135; как при скане сайтов,
+     * {@code SiteScanRepository}). Параметры: компания трижды.
+     */
+    private static final String SITE_NOT_FOUND = """
+            INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+            SELECT ?, 'SITE_NOT_FOUND', now(), now()
+            WHERE NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = ? AND s.status = 'FOUND')
+              AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = ? AND cs.role <> 'GROUP')
+            ON CONFLICT (company_id) DO UPDATE SET result = 'SITE_NOT_FOUND', checked_at = now()
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -146,6 +158,25 @@ public class CareerScanRepository {
     }
 
     /**
+     * Сайт переадресует на площадку продажи доменов (§135) — не сайт компании: отклоняется ({@code REJECTED}) с
+     * причиной {@link CheckResult#DOMAIN_FOR_SALE}, адрес кадровой страницы снимается. Итог компании (не у кандидата)
+     * пересчитывается по остальным сайтам; не осталось найденного сайта и своего источника — «сайт не найден», и
+     * компания идёт дальше по общим шагам поиска сайта. Одна транзакция.
+     *
+     * @param site сайт
+     */
+    @Transactional
+    public void rejectForSale(Site site) {
+        jdbcTemplate.update("""
+                UPDATE company_site SET status = 'REJECTED', checked_at = now(), check_result = ?, career_url = NULL
+                WHERE id = ?""", CheckResult.DOMAIN_FOR_SALE.name(), site.id());
+        if (!site.candidate()) {
+            jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+            jdbcTemplate.update(SITE_NOT_FOUND, site.companyId(), site.companyId(), site.companyId());
+        }
+    }
+
+    /**
      * @return провайдеры, использование которых разрешено ({@code source_permission}, бизнес-описание §10)
      */
     public Set<String> permittedProviders() {
@@ -194,7 +225,9 @@ public class CareerScanRepository {
         /** Сайт не ответил. */
         UNREACHABLE,
         /** Использование не разрешено: нет основания для провайдера или агентства, запрет robots.txt. */
-        USE_FORBIDDEN
+        USE_FORBIDDEN,
+        /** Домен продаётся: сайт переадресует на площадку продажи доменов, сайт отклонён (§135). */
+        DOMAIN_FOR_SALE
     }
 
     /**

@@ -122,6 +122,21 @@ app:
     timeout: 60s
   site-check:                # проверка сайта компании: IČO, бренд (технический документ §5.1)
     home-url: https://{host}/  # адрес главной сайта по хосту
+    domain-marketplaces:       # площадки продажи доменов: переадресация на них — не сайт компании (§135)
+      - hugedomains.com
+      - buydomains.com
+      - brandsly.com
+      - brandbucket.com
+      - sedo.com
+      - dan.com
+      - afternic.com
+      - atom.com
+      - squadhelp.com
+      - undeveloped.com
+      - domainmarket.com
+      - sav.com
+      - bodis.com
+      - parkingcrew.net
   site-name:                 # шаги 3–4 поиска сайта: адреса из названия компании с признаком найма (§5.1)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки; цепочка — раз в сутки

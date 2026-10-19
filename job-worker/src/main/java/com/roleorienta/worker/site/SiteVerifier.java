@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
  * impressum, ochrana osobných údajov, obchodné podmienky, o nás …); иначе — бренд названия ({@link SiteBrand}).
  * Ссылки на реквизиты и правила бренда — по конечному адресу стартовой страницы после переадресаций, как в
  * скрипте замера {@code survey/site-search.py} (стенограмма §73).
+ * Переадресация на площадку продажи доменов ({@link DomainMarketplaces}, §135) — сайта нет ({@link Verdict#GONE}).
  * Общий компонент шагов, которые проверяют найденный адрес: почта портала (шаг 2), адрес по названию (шаги 3–4).
  */
 @Component
@@ -35,14 +36,18 @@ public class SiteVerifier {
 
     private final ExternalHttpClient httpClient;
     private final SiteCheckProperties properties;
+    private final DomainMarketplaces marketplaces;
 
     /**
-     * @param httpClient внешний HTTP-клиент (бюджет на хост, robots.txt, потолок тела)
-     * @param properties адрес главной по хосту
+     * @param httpClient   внешний HTTP-клиент (бюджет на хост, robots.txt, потолок тела)
+     * @param properties   адрес главной по хосту
+     * @param marketplaces площадки продажи доменов
      */
-    public SiteVerifier(ExternalHttpClient httpClient, SiteCheckProperties properties) {
+    public SiteVerifier(ExternalHttpClient httpClient, SiteCheckProperties properties,
+            DomainMarketplaces marketplaces) {
         this.httpClient = httpClient;
         this.properties = properties;
+        this.marketplaces = marketplaces;
     }
 
     /**
@@ -83,7 +88,8 @@ public class SiteVerifier {
             case HttpResult.Success success -> {
                 URI at = success.locationOr(start);
                 String finalHost = success.location() == null || at.getHost() == null ? host : at.getHost();
-                yield new Check(verdict(at, finalHost, success.body(), registrationNumber, companyName), at, finalHost);
+                yield new Check(marketplaces.forSale(finalHost) ? Verdict.GONE
+                        : verdict(at, finalHost, success.body(), registrationNumber, companyName), at, finalHost);
             }
         };
     }
@@ -172,7 +178,7 @@ public class SiteVerifier {
         CLOSED,
         /** Стартовая страница запрещена robots.txt; запрос не отправлялся. */
         ROBOTS,
-        /** Сайт не существует (в том числе домена нет), удалён или адрес недопустим. */
+        /** Сайт не существует (в том числе домена нет или он продаётся), удалён или адрес недопустим. */
         GONE,
         /** Временный отказ: проверить позже. */
         TEMPORARY
