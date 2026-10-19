@@ -10,6 +10,7 @@ import com.roleorienta.worker.geo.GeoImportHandler;
 import com.roleorienta.worker.intake.CompanySizeHandler;
 import com.roleorienta.worker.intake.RegistryIntakeHandler;
 import com.roleorienta.worker.match.MatchVacanciesHandler;
+import com.roleorienta.worker.metrics.ComputeMetricsHandler;
 import com.roleorienta.worker.site.SiteNameHandler;
 import com.roleorienta.worker.site.SiteScanHandler;
 import com.roleorienta.worker.site.WikidataSiteHandler;
@@ -55,13 +56,13 @@ class RabbitTopologyTests {
     }
 
     /**
-     * Проходы выдачи и соответствия — во внутреннюю очередь, не за чтениями (стенограмма §95); типы в топологии
+     * Проходы выдачи, соответствия и показатели ядра — во внутреннюю очередь, не за чтениями (стенограмма §95); типы в топологии
      * совпадают с константами обработчиков.
      */
     @Test
     void internalTasksGoToInternalQueue() {
         assertThat(RabbitTopology.INTERNAL_TYPES).containsExactlyInAnyOrder(RunPassHandler.TYPE,
-                MatchVacanciesHandler.TYPE);
+                MatchVacanciesHandler.TYPE, ComputeMetricsHandler.TYPE);
         for (String type : RabbitTopology.INTERNAL_TYPES) {
             assertThat(RabbitTopology.routingKey(type)).isEqualTo(RabbitTopology.INTERNAL_ROUTING_KEY);
         }

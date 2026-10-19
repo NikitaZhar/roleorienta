@@ -74,10 +74,11 @@ public class RabbitTopology {
     public static final String INTERNAL_ROUTING_KEY = "internal";
 
     /**
-     * Типы внутренних заданий ({@code RunPassHandler.TYPE}, {@code MatchVacanciesHandler.TYPE}; строками — см.
-     * {@link #DISCOVERY_TYPES}): выдача пользователям не стоит в очереди за чтениями источников (стенограмма §94, §95).
+     * Типы внутренних заданий ({@code RunPassHandler.TYPE}, {@code MatchVacanciesHandler.TYPE},
+     * {@code ComputeMetricsHandler.TYPE}; строками — см. {@link #DISCOVERY_TYPES}): выдача пользователям не стоит в
+     * очереди за чтениями источников (стенограмма §94, §95); расчёт показателей — только БД (§131).
      */
-    static final Set<String> INTERNAL_TYPES = Set.of("RUN_PASS", "MATCH_VACANCIES");
+    static final Set<String> INTERNAL_TYPES = Set.of("RUN_PASS", "MATCH_VACANCIES", "COMPUTE_METRICS");
 
     /** Обменник «мёртвых писем». */
     public static final String DEAD_LETTER_EXCHANGE = "roleorienta.jobs.dlx";
