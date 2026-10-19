@@ -12,8 +12,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * Клиент S3 (AWS SDK v2) для хранилища снимков. {@code endpointOverride} направляет запросы в
- * указанное хранилище (MinIO), {@code forcePathStyle} — адрес вида {@code <хост>/<корзина>/<ключ>},
- * который MinIO понимает без DNS-имён корзин. Таймауты ограничивают вызов и каждую попытку;
+ * указанное хранилище (локально SeaweedFS), {@code forcePathStyle} — адрес вида {@code <хост>/<корзина>/<ключ>},
+ * который S3-совместимые хранилища понимают без DNS-имён корзин. Таймауты ограничивают вызов и каждую попытку;
  * число повторов — по умолчанию SDK (ограничено).
  * https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/examples-s3.html
  */

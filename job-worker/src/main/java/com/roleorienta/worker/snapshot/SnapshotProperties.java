@@ -3,10 +3,10 @@ package com.roleorienta.worker.snapshot;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Настройки S3-хранилища снимков ({@code app.snapshot.*}); локально — MinIO из docker-compose.
+ * Настройки S3-хранилища снимков ({@code app.snapshot.*}); локально — SeaweedFS из docker-compose.
  *
  * @param endpoint  адрес хранилища, например {@code http://localhost:9000}
- * @param region    регион подписи запросов; MinIO принимает любой
+ * @param region    регион подписи запросов; SeaweedFS принимает любой
  * @param bucket    корзина снимков; создаётся при первой записи
  * @param accessKey ключ доступа (из окружения)
  * @param secretKey секрет (из окружения; в журнал не пишется)

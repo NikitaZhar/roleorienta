@@ -14,18 +14,18 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Тестовые зависимости job-worker в контейнерах (Testcontainers).
  *
- * <p>Поднимает одноразовые PostgreSQL, RabbitMQ и MinIO тех же версий, что в docker-compose;
+ * <p>Поднимает одноразовые PostgreSQL, RabbitMQ и SeaweedFS тех же версий, что в docker-compose;
  * {@link ServiceConnection} сам подставляет адреса PostgreSQL и RabbitMQ в контекст Spring, адрес
- * MinIO — {@link DynamicPropertyRegistrar} (для S3 готового подключения в Spring Boot нет). Нужен
+ * SeaweedFS — {@link DynamicPropertyRegistrar} (для S3 готового подключения в Spring Boot нет). Нужен
  * запущенный Docker.</p>
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
-    private static final String MINIO_IMAGE = "bitnamilegacy/minio:2025.2.28-debian-12-r1";
-    private static final String MINIO_USER = "roleorienta";
-    private static final String MINIO_PASSWORD = "roleorienta-secret";
-    private static final int MINIO_PORT = 9000;
+    private static final String SEAWEEDFS_IMAGE = "chrislusf/seaweedfs:4.48";
+    private static final String S3_ACCESS_KEY = "roleorienta";
+    private static final String S3_SECRET_KEY = "roleorienta-secret";
+    private static final int S3_PORT = 8333;
 
     /**
      * Контейнер PostgreSQL для интеграционных тестов.
@@ -50,35 +50,37 @@ public class TestcontainersConfiguration {
     }
 
     /**
-     * Контейнер MinIO — хранилище снимков для интеграционных тестов. Образ тот же, что в
-     * docker-compose (архивный Bitnami: образы MinIO убраны из реестров; замена — в
-     * {@code docs/technical-design.md} §15, «Долг», п. 1). Готовность — по health-адресу MinIO.
+     * Контейнер SeaweedFS — хранилище снимков для интеграционных тестов. Образ тот же, что в
+     * docker-compose; запускает {@code weed mini} (все части SeaweedFS одним процессом, S3-шлюз на 8333).
+     * Доступ — {@code AWS_ACCESS_KEY_ID} / {@code AWS_SECRET_ACCESS_KEY}; готовность — {@code /healthz}
+     * S3-шлюза. Готового модуля Testcontainers для SeaweedFS нет — обычный контейнер.
      *
      * @return контейнер
      */
     @Bean
-    public GenericContainer<?> minioContainer() {
-        return new GenericContainer<>(DockerImageName.parse(MINIO_IMAGE))
-                .withEnv("MINIO_ROOT_USER", MINIO_USER)
-                .withEnv("MINIO_ROOT_PASSWORD", MINIO_PASSWORD)
-                .withExposedPorts(MINIO_PORT)
-                .waitingFor(Wait.forHttp("/minio/health/live").forPort(MINIO_PORT));
+    public GenericContainer<?> seaweedfsContainer() {
+        return new GenericContainer<>(DockerImageName.parse(SEAWEEDFS_IMAGE))
+                .withEnv("AWS_ACCESS_KEY_ID", S3_ACCESS_KEY)
+                .withEnv("AWS_SECRET_ACCESS_KEY", S3_SECRET_KEY)
+                .withExposedPorts(S3_PORT)
+                .waitingFor(Wait.forHttp("/healthz").forPort(S3_PORT));
     }
 
     /**
-     * Адрес и доступ MinIO в настройках {@code app.snapshot.*}. {@link Qualifier} выбирает бин
-     * MinIO по имени: контейнеры PostgreSQL и RabbitMQ — тоже {@code GenericContainer}.
+     * Адрес и доступ SeaweedFS в настройках {@code app.snapshot.*}. {@link Qualifier} выбирает бин
+     * SeaweedFS по имени: контейнеры PostgreSQL и RabbitMQ — тоже {@code GenericContainer}.
      *
-     * @param minio контейнер MinIO
+     * @param seaweedfs контейнер SeaweedFS
      * @return регистратор свойств тестового контекста
      */
     @Bean
-    public DynamicPropertyRegistrar snapshotProperties(@Qualifier("minioContainer") GenericContainer<?> minio) {
+    public DynamicPropertyRegistrar snapshotProperties(
+            @Qualifier("seaweedfsContainer") GenericContainer<?> seaweedfs) {
         return registry -> {
             registry.add("app.snapshot.endpoint",
-                    () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(MINIO_PORT));
-            registry.add("app.snapshot.access-key", () -> MINIO_USER);
-            registry.add("app.snapshot.secret-key", () -> MINIO_PASSWORD);
+                    () -> "http://" + seaweedfs.getHost() + ":" + seaweedfs.getMappedPort(S3_PORT));
+            registry.add("app.snapshot.access-key", () -> S3_ACCESS_KEY);
+            registry.add("app.snapshot.secret-key", () -> S3_SECRET_KEY);
         };
     }
 }

@@ -1,5 +1,5 @@
 # Инфраструктура для локальной разработки (профиль local, технический документ §12):
-# PostgreSQL, RabbitMQ и S3-совместимое хранилище снимков (MinIO).
+# PostgreSQL, RabbitMQ и S3-совместимое хранилище снимков (SeaweedFS).
 # Приложения job-api и job-worker пока запускаются из Maven (см. README).
 # Значения ниже — локальные значения по умолчанию, не секреты; переопределяются файлом .env.
 
@@ -38,22 +38,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # ВРЕМЕННО: MinIO убрал образы с Docker Hub и quay.io (сентябрь 2026). Архивный образ Bitnami
-  # обновлений не получает и может исчезнуть — замена на поддерживаемое S3-совместимое хранилище
-  # записана в docs/technical-design.md §15 («Долг», п. 1). Тег закреплён; тот же образ — в тестах
-  # (job-worker TestcontainersConfiguration).
-  minio:
-    image: bitnamilegacy/minio:2025.2.28-debian-12-r1
+  # Хранилище снимков — SeaweedFS (Apache-2.0; замена архивного образа MinIO, технический документ §15).
+  # Образ сам запускает «weed mini» — все части SeaweedFS (учёт, данные, имена файлов, S3-шлюз) одним
+  # процессом, данные в /data. Доступ к S3 — AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (без них — доступ
+  # всем). Тег закреплён; тот же образ — в тестах (job-worker TestcontainersConfiguration).
+  # https://github.com/seaweedfs/seaweedfs/wiki/Quick-Start-with-weed-mini
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-roleorienta}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-roleorienta-secret}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-roleorienta}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-roleorienta-secret}
     ports:
-      - "9000:9000"
-      - "9001:9001"   # веб-консоль http://localhost:9001
+      - "8333:8333"   # S3-шлюз
     volumes:
-      - snapshots-data:/bitnami/minio/data   # новый том: образ Bitnami работает не от root
+      - seaweedfs-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD-SHELL", "curl -fs http://localhost:8333/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,4 +61,4 @@ services:
 volumes:
   postgres-data:
   rabbitmq-data:
-  snapshots-data:
+  seaweedfs-data:

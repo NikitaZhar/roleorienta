@@ -18,7 +18,7 @@
 >
 > - **Сделано (1.1–1.6):** чтение досок Workday, Greenhouse, Personio, SmartRecruiters и разметки schema.org
 >   `JobPosting`; состояния и закрытие вакансий, история, снимки ответов
->   в MinIO; надёжность (временный отказ, «недоступен», продолжение с места); отбор по позиции, стране (GeoNames) и
+>   в S3-хранилище (SeaweedFS); надёжность (временный отказ, «недоступен», продолжение с места); отбор по позиции, стране (GeoNames) и
 >   формату; страны сбора из условий пользователей, чередование партий реестров (Словакия — RPO, CC BY 4.0),
 >   первичный обход; API — регистрация и вход, условия с версиями, проходы выдачи (новые условия — сразу все подходящие вакансии, дальше раз в час), накопленный список, сведения,
 >   отметки «не подходит»; SPA (`web/`) — вход; условия (страны, позиции, формат), накопленный список, сведения, отметка «не подходит» и список отмеченных.
@@ -34,8 +34,8 @@
 >   работодателей profesia.sk), кадровые сайты групп. На эталоне (`benchmark/`, 500 иностранных компаний Словакии)
 >   кадровая страница найдена у 255 из 500 (прогон 2026-10-08).
 > - **Дальше:** доработка ядра по проверке экрана сделана (работодатель у источников без компании, формат Any /
->   Office / Remote, несколько позиций и расширенный словарь, дата открытия вакансии); затем 1.10 по одному срезу —
->   хранилище снимков SeaweedFS вместо MinIO, срок хранения снимков, показатели ядра, идентичность компаний,
+>   Office / Remote, несколько позиций и расширенный словарь, дата открытия вакансии); хранилище снимков —
+>   SeaweedFS вместо MinIO; затем 1.10 по одному срезу — срок хранения снимков, показатели ядра, идентичность компаний,
 >   наблюдаемость и резервная копия, 14 дней эксплуатационной проверки; во время неё — 1.11б (причина пустого
 >   списка), 1.9 (три группы компаний и ручной адрес кадровой страницы), 1.8 (одна вакансия); 1.12 — чтение кадровых
 >   страниц.
@@ -52,7 +52,7 @@
 
 ## Стек
 
-Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, MinIO (S3), Apache HttpClient 5, Jsoup, Maven,
+Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, SeaweedFS (S3), Apache HttpClient 5, Jsoup, Maven,
 JUnit 5 + Testcontainers, Checkstyle, GitHub Actions; SPA — React 19, TypeScript, Vite (Node.js скачивает
 frontend-maven-plugin, ставить не нужно).
 
@@ -61,7 +61,7 @@ frontend-maven-plugin, ставить не нужно).
 Нужны JDK 21, Maven, Docker.
 
 ```bash
-docker compose up -d                       # PostgreSQL :5433, RabbitMQ :5672, MinIO :9000
+docker compose up -d                       # PostgreSQL :5433, RabbitMQ :5672, SeaweedFS (S3) :8333
 mvn -B -ntp verify                         # Checkstyle, компиляция, тесты (Testcontainers), сборка SPA
 mvn -pl job-api spring-boot:run            # http://localhost:8080/actuator/health
 mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/health
@@ -75,6 +75,6 @@ mvn -pl web frontend:npm -Dfrontend.npm.arguments="run dev"   # http://localhost
 
 Настройки подключения — переменные окружения (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
 `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `SERVER_PORT`; cookie сессии только по HTTPS —
-`SESSION_COOKIE_SECURE=true` (при развёртывании); снимки в MinIO — `S3_ENDPOINT`,
+`SESSION_COOKIE_SECURE=true` (при развёртывании); снимки в S3-хранилище — `S3_ENDPOINT`,
 `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); значения по умолчанию
 совпадают с `docker-compose.yml`.

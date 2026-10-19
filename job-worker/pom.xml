@@ -54,7 +54,7 @@
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
         </dependency>
-        <!-- Клиент S3 для снимков ответов источников (MinIO локально). Асинхронный транспорт Netty
+        <!-- Клиент S3 для снимков ответов источников (SeaweedFS локально). Асинхронный транспорт Netty
              не используется — исключён. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
