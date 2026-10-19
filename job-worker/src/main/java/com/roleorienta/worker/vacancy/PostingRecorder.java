@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -22,6 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
  * (бизнес-описание §4.3).
  *
  * <ul>
+ *   <li>Новая публикация присоединяется к незакрытой вакансии той же компании из другого её источника, если
+ *       ссылка совпадает без схемы, {@code www.} и {@code /} в конце или совпадают провайдер, хост и внешний id
+ *       (§139: одна доска, подключённая дважды, языковые разделы); иначе — новая вакансия. Существующие
+ *       вакансии между собой не объединяются (технический документ §16.14).</li>
  *   <li>Полное чтение: новая публикация — новая вакансия; известная — обновление сведений и
  *       подтверждение; отсутствующая — счётчик отсутствия, закрытие после
  *       {@link VacancyProperties#closeAfterMissingReads()} полных чтений подряд.</li>
@@ -120,10 +125,14 @@ public class PostingRecorder {
             JobPosting existing = known.remove(posting.externalId());
             Instant posted = postedAt.get(posting.externalId());
             if (existing == null) {
-                Vacancy created = new Vacancy(posting.title(), posting.url(), now);
-                created.notePosted(posted);
-                Vacancy vacancy = vacancies.save(created);
+                Optional<Vacancy> same = sameVacancy(source, posting);
+                Vacancy vacancy = same.orElseGet(() ->
+                        vacancies.save(new Vacancy(posting.title(), posting.url(), now)));
+                vacancy.notePosted(posted);
                 postings.save(new JobPosting(source, vacancy, posting, now));
+                if (same.isPresent()) {
+                    touched.add(vacancy.getId());
+                }
                 continue;
             }
             existing.getVacancy().notePosted(posted);
@@ -148,6 +157,15 @@ public class PostingRecorder {
             touched.add(missing.getVacancy().getId());
         }
         refreshStates(touched, now);
+    }
+
+    private Optional<Vacancy> sameVacancy(Source source, FetchedPosting posting) {
+        Optional<Vacancy> same = postings.findSameVacancy(source.getId(), SameVacancy.address(posting.url()),
+                SameVacancy.hostPrefix(posting.url()), source.getProvider(), posting.externalId())
+                .flatMap(vacancies::findById);
+        same.ifPresent(vacancy -> LOG.info("Source {}: posting {} joins vacancy {} of another source",
+                source.getId(), posting.externalId(), vacancy.getId()));
+        return same;
     }
 
     /**
