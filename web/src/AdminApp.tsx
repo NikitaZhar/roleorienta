@@ -1,5 +1,9 @@
 import { type FormEvent, useEffect, useState } from 'react';
-import { type Admin, adminLogin, currentAdmin, logout, metrics, type MetricRow, type MetricsTable } from './api';
+import {
+  type Admin, adminLogin, adminSearchCompanies, type CompanyItem, currentAdmin, logout, metrics, type MetricRow,
+  type MetricsTable, setNotEmployer,
+} from './api';
+import { GROUPS } from './companyGroups';
 
 /** Сколько последних дней показывать. */
 const DAYS = 14;
@@ -36,7 +40,8 @@ function countryLabel(code: string): string {
 /**
  * Экран администратора (/admin, §132): отдельный вход (имя admin) и показатели ядра по дням (бизнес-описание §7.3):
  * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
- * «обработано».
+ * «обработано»; отметка компании «не работодатель» (§138) — общая для всех, такая компания не проверяется и не
+ * предлагается пользователям.
  */
 export function AdminApp() {
   const [admin, setAdmin] = useState<Admin | null | undefined>(undefined);
@@ -72,6 +77,7 @@ export function AdminApp() {
       </header>
       <main className="page wide">
         <MetricsView />
+        <NotEmployerView />
       </main>
     </>
   );
@@ -185,4 +191,61 @@ function MetricLine({ row, processed }: { row: MetricRow; processed: MetricRow |
 
 function percent(value: number, of: number | null): string {
   return of === null || of === 0 ? '' : ` (${Math.round((value * 100) / of)} %)`;
+}
+
+function NotEmployerView() {
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<CompanyItem[] | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    try {
+      setFound(await adminSearchCompanies(query));
+    } catch (failure) {
+      setMessage((failure as Error).message);
+    }
+  }
+
+  async function mark(item: CompanyItem, notEmployer: boolean) {
+    setMessage(null);
+    try {
+      await setNotEmployer(item.id, notEmployer);
+      setFound(await adminSearchCompanies(query));
+    } catch (failure) {
+      setMessage((failure as Error).message);
+    }
+  }
+
+  return (
+    <section>
+      <h1>Not an employer</h1>
+      <p className="muted">A trade union, an association, an owners' community: the mark is shared by all users, the
+        company is no longer checked and not offered as doubtful.</p>
+      <form className="inline-form" onSubmit={search}>
+        <input placeholder="Company name or IČO" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <button type="submit">Search</button>
+      </form>
+      {message !== null && <p className="error" role="alert">{message}</p>}
+      {found !== null && (found.length === 0 ? <p>No companies found.</p> : (
+        <table className="companies">
+          <tbody>
+            {found.map((item) => (
+              <tr key={item.id}>
+                <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
+                <td>{GROUPS[item.check.group]}</td>
+                <td>{item.check.site ?? ''}</td>
+                <td>
+                  {item.check.group === 'NOT_EMPLOYER'
+                    ? <button type="button" onClick={() => mark(item, false)}>Remove mark</button>
+                    : <button type="button" onClick={() => mark(item, true)}>Mark not an employer</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
+    </section>
+  );
 }

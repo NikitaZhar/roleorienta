@@ -28,7 +28,8 @@ public class SiteNameRepository {
      * Компании к проверке: действующие компании Словакии — активной страны сбора — приоритетные ({@code priority},
      * §71), с признаком найма (у компании есть источник вакансий: портал или доска системы найма; решение владельца,
      * §48) или с числом сотрудников не меньше {@code minEmployees} (RÚZ, §53), без найденного сайта, не
-     * проверенные по названию или проверенные давнее срока. Сначала приоритетные, затем не проверенные.
+     * проверенные по названию или проверенные давнее срока; без отметки «не работодатель» (§138). Сначала
+     * приоритетные, затем не проверенные.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторной проверки
@@ -39,7 +40,7 @@ public class SiteNameRepository {
         return jdbcTemplate.query("""
                 SELECT c.id, c.registration_number, c.name FROM company c
                 JOIN collection_country cc ON cc.country = c.country AND cc.active
-                WHERE c.country = ? AND c.terminated_on IS NULL
+                WHERE c.country = ? AND c.terminated_on IS NULL AND NOT c.not_employer
                   AND (c.priority OR c.employees_min >= ?
                        OR EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id))
                   AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND')

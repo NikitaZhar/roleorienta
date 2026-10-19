@@ -327,3 +327,79 @@ export function metrics(country: string | null, days: number): Promise<MetricsTa
   }
   return request<MetricsTable>('GET', '/api/v1/admin/metrics?' + query.toString());
 }
+
+/**
+ * Группа компании (бизнес-описание §4.2): YES — есть, MAYBE — может быть, NO — нет; NOT_EMPLOYER — отметка
+ * администратора «не работодатель» (§138).
+ */
+export type CompanyGroup = 'YES' | 'MAYBE' | 'NO' | 'NOT_EMPLOYER';
+
+/** Группа и итог проверки компании. */
+export interface CompanyCheck {
+  group: CompanyGroup;
+  reason: string | null;
+  site: string | null;
+  careerUrl: string | null;
+}
+
+/** Компания из реестра. */
+export interface CompanyItem {
+  id: number;
+  name: string;
+  registrationNumber: string;
+  check: CompanyCheck;
+}
+
+/** Страница сомнительных компаний; next — курсор следующей, null — последняя. */
+export interface CompanyPage {
+  items: CompanyItem[];
+  next: number | null;
+}
+
+/** Адрес кадровой страницы, введённый пользователем, и его состояние. */
+export interface CareerRequest {
+  id: number;
+  companyName: string;
+  url: string;
+  status: { state: 'PENDING' | 'CONNECTED' | 'NOT_CONNECTED'; reason: string | null; createdAt: string };
+}
+
+/** Поиск компании по названию или IČO. */
+export function searchCompanies(query: string): Promise<CompanyItem[]> {
+  return request<CompanyItem[]>('GET', '/api/v1/companies?query=' + encodeURIComponent(query));
+}
+
+/** Сомнительные компании: «может быть» и «нет» с признаком найма. */
+export function doubtfulCompanies(after: number | null): Promise<CompanyPage> {
+  return request<CompanyPage>('GET', '/api/v1/companies/doubtful' + (after === null ? '' : '?after=' + after));
+}
+
+/** Ввод адреса кадровой страницы компании. */
+export function addCareerPage(companyId: number, url: string): Promise<CareerRequest> {
+  return request<CareerRequest>('POST', '/api/v1/companies/' + companyId + '/career-page', { url });
+}
+
+/** Адреса, введённые пользователем, новые первыми. */
+export function careerRequests(): Promise<CareerRequest[]> {
+  return request<CareerRequest[]>('GET', '/api/v1/me/career-requests');
+}
+
+/** Личное скрытие компании (§138): пропадает из поиска и сомнительных только у этого пользователя. */
+export function setCompanyHidden(companyId: number, hidden: boolean): Promise<void> {
+  return request<void>(hidden ? 'PUT' : 'DELETE', '/api/v1/me/hidden-companies/' + companyId);
+}
+
+/** Компании, скрытые пользователем. */
+export function hiddenCompanies(): Promise<CompanyItem[]> {
+  return request<CompanyItem[]>('GET', '/api/v1/me/hidden-companies');
+}
+
+/** Поиск компании администратором. */
+export function adminSearchCompanies(query: string): Promise<CompanyItem[]> {
+  return request<CompanyItem[]>('GET', '/api/v1/admin/companies?query=' + encodeURIComponent(query));
+}
+
+/** Отметка администратора «не работодатель» (§138), общая для всех. */
+export function setNotEmployer(companyId: number, notEmployer: boolean): Promise<void> {
+  return request<void>(notEmployer ? 'PUT' : 'DELETE', '/api/v1/admin/companies/' + companyId + '/not-employer');
+}

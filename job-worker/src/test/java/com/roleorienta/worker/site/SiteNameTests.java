@@ -117,7 +117,8 @@ class SiteNameTests {
                 INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')
                 ON CONFLICT (country, registration_number) DO UPDATE SET terminated_on = NULL, name = EXCLUDED.name,
                                                                          site_name_checked_at = NULL,
-                                                                         priority = FALSE
+                                                                         priority = FALSE,
+                                                                         not_employer = FALSE
                 """, number, name));
         for (String number : List.of(ALFA, BETA)) {
             jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES ('sluzbyzamestnanosti', ?, 'SK')",
@@ -215,6 +216,20 @@ class SiteNameTests {
 
         assertThat(jdbcTemplate.queryForObject("SELECT site_name_checked_at IS NOT NULL FROM company "
                 + "WHERE registration_number = ?", Boolean.class, GAMA)).isTrue();
+    }
+
+    /**
+     * Отметка администратора «не работодатель» (§138): {@link #DELTA} (50 сотрудников) по названию не проверяется.
+     */
+    @Test
+    void notEmployerIsNotChecked() {
+        jdbcTemplate.update("UPDATE company SET not_employer = TRUE WHERE registration_number = ?", DELTA);
+
+        handler.enqueue("not-employer");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT site_name_checked_at IS NULL FROM company "
+                + "WHERE registration_number = ?", Boolean.class, DELTA)).isTrue();
     }
 
     /**

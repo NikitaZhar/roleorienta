@@ -96,7 +96,7 @@ public class CareerScanRepository {
      *         сбора, ещё не проверенные или проверенные давнее срока, — не больше одного сайта компании за задание:
      *         сайты задания проверяются одновременно, а итог компании пересчитывается по всем её сайтам — два сайта
      *         одной компании в одном задании записали бы итог, не видя друг друга (§80); сайты приоритетных
-     *         компаний — первыми (§71)
+     *         компаний — первыми (§71); компании с отметкой «не работодатель» (§138) — нет
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
@@ -106,7 +106,7 @@ public class CareerScanRepository {
                                AS company_order
                     FROM company_site s JOIN company c ON c.id = s.company_id
                     JOIN collection_country cc ON cc.country = c.country AND cc.active
-                    WHERE c.terminated_on IS NULL AND (%s OR %s)
+                    WHERE c.terminated_on IS NULL AND NOT c.not_employer AND (%s OR %s)
                       AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))) due
                 WHERE company_order = 1
                 ORDER BY priority DESC, checked_at NULLS FIRST, id LIMIT ?
@@ -137,23 +137,48 @@ public class CareerScanRepository {
         if (site.candidate() && role != Role.EMPLOYER) {
             return;
         }
-        Role linkRole = site.candidate() ? Role.GROUP : role;
-        // Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не ждут друг друга (аудит §78).
+        link(site.companyId(), boards, site.candidate() ? Role.GROUP : role);
+        if (!site.candidate()) {
+            jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+        }
+    }
+
+    /**
+     * Источники по адресу кадровой страницы, введённому пользователем (§137; бизнес-описание §5), одной транзакцией:
+     * подключаются и связываются с компанией (общие для всех пользователей), итог компании — «подключена».
+     *
+     * @param companyId компания
+     * @param boards    найденные источники с основанием использования
+     * @param role      роль компании у источников
+     */
+    @Transactional
+    public void connectManually(long companyId, Set<Board> boards, Role role) {
+        link(companyId, boards, role);
+        jdbcTemplate.update("""
+                INSERT INTO company_check (company_id, result, first_checked_at, checked_at)
+                VALUES (?, 'CONNECTED', now(), now())
+                ON CONFLICT (company_id) DO UPDATE SET result = 'CONNECTED', checked_at = now()
+                """, companyId);
+    }
+
+    /**
+     * Источники подключаются (уже подключённый — не дублируется) и связываются с компанией; связь «группы» получает
+     * роль работодателя (аудит §84). Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не
+     * ждут друг друга (аудит §78).
+     */
+    private void link(long companyId, Set<Board> boards, Role role) {
         for (Board board : boards.stream().sorted(Comparator.comparing(Board::provider).thenComparing(Board::board))
                 .toList()) {
             jdbcTemplate.update("""
                     INSERT INTO source (provider, board, country) SELECT ?, ?, country FROM company WHERE id = ?
                     ON CONFLICT (provider, board) DO NOTHING
-                    """, board.provider(), board.board(), site.companyId());
+                    """, board.provider(), board.board(), companyId);
             jdbcTemplate.update("""
                     INSERT INTO company_source (company_id, source_id, role)
                     SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?
                     ON CONFLICT (company_id, source_id) DO UPDATE SET role = EXCLUDED.role
                         WHERE company_source.role = 'GROUP' AND EXCLUDED.role <> 'GROUP'
-                    """, site.companyId(), linkRole.name(), board.provider(), board.board());
-        }
-        if (!site.candidate()) {
-            jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+                    """, companyId, role.name(), board.provider(), board.board());
         }
     }
 

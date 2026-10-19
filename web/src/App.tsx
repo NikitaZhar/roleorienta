@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { type Account, currentAccount, logout, unsuitableVacancies, vacancies } from './api';
+import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
 import { LoginPage } from './LoginPage';
 import { VacancyList } from './VacancyList';
 import { VacancyPage } from './VacancyPage';
 
-type View = 'list' | 'marked';
+type View = 'list' | 'marked' | 'companies';
 
 /**
  * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — два раздела
@@ -70,6 +71,7 @@ export function App() {
         <nav>
           <button type="button" className={view === 'list' ? 'current' : ''} onClick={() => show('list')}>Vacancies</button>
           <button type="button" className={view === 'marked' ? 'current' : ''} onClick={() => show('marked')}>Not suitable</button>
+          <button type="button" className={view === 'companies' ? 'current' : ''} onClick={() => show('companies')}>Companies</button>
         </nav>
         <span className="who">{account.email}</span>
         <button type="button" onClick={signOut}>Sign out</button>
@@ -88,6 +90,7 @@ export function App() {
           <VacancyList key={searches} title="Not suitable" load={unsuitableVacancies} marked poll={false}
             onOpen={setOpened} />
         )}
+        {opened === null && view === 'companies' && <CompaniesPage />}
       </main>
     </>
   );

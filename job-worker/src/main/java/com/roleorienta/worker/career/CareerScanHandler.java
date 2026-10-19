@@ -2,9 +2,7 @@ package com.roleorienta.worker.career;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.roleorienta.worker.adapter.careerpage.CareerPageAdapter;
 import com.roleorienta.worker.adapter.careerpage.CareerPageList;
-import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.career.CareerScanRepository.CheckResult;
 import com.roleorienta.worker.career.CareerScanRepository.Role;
 import com.roleorienta.worker.career.CareerScanRepository.Site;
@@ -53,7 +51,7 @@ import org.springframework.stereotype.Component;
  *       {@code /sk/kariera}, {@code /careers}, {@code /kariera-a-praca}, {@code /pre-uchadzacov},
  *       {@code kariera.|jobs.|careers.<домен>}, {@code jobs.|careers.<бренд>.com}, {@code www.<бренд>-jobs.sk}. На
  *       кадровой странице — те же ссылки на доски; нет и их — страница с разметкой {@code JobPosting} (она сама или
- *       одна из первых {@value #VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}; нет и
+ *       одна из первых {@value CareerPages#VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}; нет и
  *       её — один шаг вглубь по кадровой ссылке ({@code /kariera} → {@code /kariera/volne-pozicie}); ничего и там —
  *       собственная страница вакансий (HTML-список ссылок на вакансии или фраза «вакансий нет»,
  *       {@link CareerPageList}) подключается как источник {@code careerpage} (§136). Кадровая
@@ -84,9 +82,6 @@ public class CareerScanHandler implements TaskHandler {
     public static final String TYPE = "CAREER_SCAN";
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final int VACANCY_CHECKS = 3;
-    /** Длина {@code source.board} в схеме. */
-    private static final int MAX_BOARD = 200;
     /** Длина {@code company_site.career_url} в схеме. */
     private static final int MAX_URL = 2000;
     /** Пробные адреса кадровой страницы на сайте, когда на главной нет ссылки или главная закрыта. */
@@ -99,23 +94,23 @@ public class CareerScanHandler implements TaskHandler {
     private static final Pattern IP_ADDRESS = Pattern.compile("[0-9.]+|\\[.*]");
     private static final Logger LOG = LoggerFactory.getLogger(CareerScanHandler.class);
 
-    private final ExternalHttpClient http;
+    private final CareerPages pages;
     private final CareerScanRepository repository;
     private final CareerProperties properties;
     private final int parallelSites;
     private final DomainMarketplaces marketplaces;
 
     /**
-     * @param http          внешний HTTP-клиент
+     * @param pages         страницы сайтов и источники кадровой страницы
      * @param repository    сайты и источники
      * @param properties    схема, сайтов за задание, срок перепроверки
      * @param parallelSites сколько сайтов задания проверяется одновременно ({@code app.career.parallel-sites})
      * @param marketplaces  площадки продажи доменов (§135)
      */
-    public CareerScanHandler(ExternalHttpClient http, CareerScanRepository repository,
+    public CareerScanHandler(CareerPages pages, CareerScanRepository repository,
             CareerProperties properties, @Value("${app.career.parallel-sites:6}") int parallelSites,
             DomainMarketplaces marketplaces) {
-        this.http = http;
+        this.pages = pages;
         this.repository = repository;
         this.properties = properties;
         this.parallelSites = parallelSites;
@@ -224,7 +219,7 @@ public class CareerScanHandler implements TaskHandler {
     private void check(Site site, Set<String> providers) {
         URI home = URI.create(site.startUrl() != null ? site.startUrl()
                 : properties.scheme() + "://" + site.host() + "/");
-        HttpResult homeResult = http.get(home);
+        HttpResult homeResult = pages.get(home);
         if (homeResult instanceof HttpResult.PermanentFailure failure
                 && failure.kind() == HttpResult.Kind.USE_FORBIDDEN) {
             repository.record(site, Set.of(), CheckResult.USE_FORBIDDEN, null, Role.EMPLOYER);
@@ -381,39 +376,11 @@ public class CareerScanHandler implements TaskHandler {
         return lower.startsWith("www.") ? lower.substring(4) : lower;
     }
 
-    /**
-     * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
-     * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
-     * кадровой ссылке ({@code deeper}); ничего и там — сама страница как источник {@code careerpage}, если на ней
-     * распознан список вакансий или фраза «вакансий нет» (§136). Хост и путь кадровой страницы — по её конечному
-     * адресу после переадресаций (аудит §66).
-     */
     private Set<Board> careerBoards(Document careerPage, boolean deeper) {
-        Set<Board> boards = CareerLinks.boards(careerPage);
-        if (!boards.isEmpty()) {
-            return boards;
-        }
-        URI actual = URI.create(careerPage.location());
-        if (actual.toString().length() <= MAX_BOARD && (CareerLinks.hasJobPosting(careerPage) || CareerLinks
-                .vacancyLinks(careerPage, actual, VACANCY_CHECKS).stream()
-                .map(link -> page(URI.create(link)))
-                .anyMatch(vacancy -> vacancy.isPresent() && CareerLinks.hasJobPosting(vacancy.get())))) {
-            return Set.of(new Board(JobPostingAdapter.PROVIDER, actual.toString()));
-        }
-        Optional<String> next = deeper ? CareerLinks.deeperCareerPage(careerPage, actual) : Optional.empty();
-        Set<Board> deeperBoards = next.flatMap(link -> page(URI.create(link))).map(page -> careerBoards(page, false))
-                .orElse(Set.of());
-        if (!deeperBoards.isEmpty()) {
-            return deeperBoards;
-        }
-        return actual.toString().length() <= MAX_BOARD && (!CareerPageList.vacancies(careerPage).isEmpty()
-                || CareerPageList.saysNoVacancies(careerPage))
-                ? Set.of(new Board(CareerPageAdapter.PROVIDER, actual.toString())) : Set.of();
+        return pages.boards(careerPage, deeper);
     }
 
     private Optional<Document> page(URI uri) {
-        HttpResult result = http.get(uri);
-        return result instanceof HttpResult.Success success
-                ? Optional.of(Jsoup.parse(success.body(), success.locationOr(uri).toString())) : Optional.empty();
+        return pages.page(uri);
     }
 }

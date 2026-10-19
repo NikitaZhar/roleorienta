@@ -67,6 +67,9 @@ class CareerScanTests {
     @Autowired
     private CareerScanRepository repository;
 
+    @Autowired
+    private CareerRequestHandler careerRequests;
+
     /**
      * Остановка сайта.
      */
@@ -83,6 +86,8 @@ class CareerScanTests {
         jdbcTemplate.update("DELETE FROM source_permission WHERE scope = 'AGENCY'");
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
                 + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
+        jdbcTemplate.update("DELETE FROM company_request");
+        jdbcTemplate.update("DELETE FROM user_account WHERE email = 'request@example.com'");
         for (String table : new String[] {"company_check", "company_source", "company_site", "source", "company", "outbox_event",
                 "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
@@ -407,8 +412,8 @@ class CareerScanTests {
      */
     @Test
     void stopsStartingSitesAfterTimeBudget() {
-        CareerScanHandler noTime = new CareerScanHandler(http, repository, new CareerProperties("http", 25,
-                Duration.ofDays(30), 20, Duration.ZERO), 6, noMarketplaces());
+        CareerScanHandler noTime = new CareerScanHandler(new CareerPages(http), repository,
+                new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ZERO), 6, noMarketplaces());
 
         TaskOutcome outcome = noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE,
                 CareerScanHandler.payload("budget"), 0));
@@ -436,6 +441,43 @@ class CareerScanTests {
     }
 
     /**
+     * Адрес кадровой страницы, введённый пользователем (§137): на странице доска Workday — подключена к компании,
+     * запрос «подключена», итог компании «подключена»; страница без читаемого — «не подключена» с причиной; не открылась —
+     * «страница не открылась».
+     */
+    @Test
+    void checksCareerPageAddressEnteredByUser() {
+        PAGES.put("/praca", "<h1>Kariéra</h1><a href=\"https://alfa.wd3.myworkdayjobs.com/Careers\">Pozície</a>");
+        PAGES.put("/nic", "<h1>Kariéra</h1><p>Pošlite životopis</p>");
+        jdbcTemplate.update("INSERT INTO user_account (email, password_hash) VALUES ('request@example.com', 'x')");
+        long connected = request("http://" + HOST + "/praca");
+        long unreadable = request("http://" + HOST + "/nic");
+        long unreachable = request("http://" + HOST + "/chyba");
+
+        for (long id : new long[] {connected, unreadable, unreachable}) {
+            careerRequests.handle(new TaskRecord(0, CareerRequestHandler.TYPE, CareerRequestHandler.payload(id), 0));
+        }
+
+        assertThat(requestState(connected)).isEqualTo("CONNECTED:-");
+        assertThat(requestState(unreadable)).isEqualTo("NOT_CONNECTED:FORMAT_UNSUPPORTED");
+        assertThat(requestState(unreachable)).isEqualTo("NOT_CONNECTED:UNREACHABLE");
+        assertThat(connectedSources()).containsExactly("workday:alfa.wd3.myworkdayjobs.com/careers:SK");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    private long request(String url) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO company_request (user_id, company_id, career_url)
+                SELECT u.id, c.id, ? FROM user_account u, company c WHERE u.email = 'request@example.com'
+                RETURNING id""", Long.class, url);
+    }
+
+    private String requestState(long id) {
+        return jdbcTemplate.queryForObject(
+                "SELECT state || ':' || coalesce(reason, '-') FROM company_request WHERE id = ?", String.class, id);
+    }
+
+    /**
      * Главная переадресует на площадку продажи доменов (§135; здесь площадка — {@code localhost}): сайт отклонён с
      * причиной, адрес прежней «кадровой страницы» снят, итог компании «формат не поддерживается» сменился на «сайт не
      * найден».
@@ -447,8 +489,8 @@ class CareerScanTests {
         jdbcTemplate.update("UPDATE company_site SET career_url = 'http://' || host || '/kariera'");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'FORMAT_UNSUPPORTED', now(), now() FROM company");
-        CareerScanHandler withMarketplace = new CareerScanHandler(http, repository, new CareerProperties("http", 25,
-                Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1,
+        CareerScanHandler withMarketplace = new CareerScanHandler(new CareerPages(http), repository,
+                new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1,
                 new DomainMarketplaces(new SiteCheckProperties("https://{host}/", List.of("localhost"))));
 
         withMarketplace.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("sale"), 0));

@@ -5,11 +5,18 @@ import com.roleorienta.api.account.SessionSignIn;
 import com.roleorienta.api.admin.AdminDtos.Admin;
 import com.roleorienta.api.admin.AdminDtos.AdminCredentials;
 import com.roleorienta.api.admin.AdminDtos.MetricsTable;
+import com.roleorienta.api.company.CompanyDtos.CompanyItem;
+import com.roleorienta.api.company.CompanyService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,16 +38,20 @@ public class AdminController {
     private final AdminAccount admin;
     private final SessionSignIn sessionSignIn;
     private final AdminMetricsService metrics;
+    private final CompanyService companies;
 
     /**
      * @param admin         учётная запись администратора
      * @param sessionSignIn сохранение входа в HTTP-сессии
      * @param metrics       таблица показателей ядра
+     * @param companies     поиск компаний и отметка «не работодатель»
      */
-    public AdminController(AdminAccount admin, SessionSignIn sessionSignIn, AdminMetricsService metrics) {
+    public AdminController(AdminAccount admin, SessionSignIn sessionSignIn, AdminMetricsService metrics,
+            CompanyService companies) {
         this.admin = admin;
         this.sessionSignIn = sessionSignIn;
         this.metrics = metrics;
+        this.companies = companies;
     }
 
     /**
@@ -77,5 +88,36 @@ public class AdminController {
     public MetricsTable metrics(@RequestParam(required = false) String country,
             @RequestParam(defaultValue = "" + DEFAULT_DAYS) int days) {
         return metrics.table(country, Math.max(1, Math.min(days, MAX_DAYS)));
+    }
+
+    /**
+     * @param query название (часть) или IČO
+     * @return найденные компании с группой (без скрытых кем-либо — скрытие личное); {@code 400} — запрос короче 3
+     */
+    @GetMapping("/api/v1/admin/companies")
+    public List<CompanyItem> searchCompanies(@RequestParam(required = false) String query) {
+        return companies.search(0, query);
+    }
+
+    /**
+     * Отметка «не работодатель» (§138): профсоюз, ассоциация, объединение собственников — общая для всех.
+     *
+     * @param id компания
+     * @return {@code 204}; {@code 404} — компании нет
+     */
+    @PutMapping("/api/v1/admin/companies/{id}/not-employer")
+    public ResponseEntity<Void> markNotEmployer(@PathVariable long id) {
+        companies.markNotEmployer(id, true);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * @param id компания
+     * @return {@code 204}; {@code 404} — компании нет
+     */
+    @DeleteMapping("/api/v1/admin/companies/{id}/not-employer")
+    public ResponseEntity<Void> unmarkNotEmployer(@PathVariable long id) {
+        companies.markNotEmployer(id, false);
+        return ResponseEntity.noContent().build();
     }
 }

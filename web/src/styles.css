@@ -205,3 +205,26 @@ table.metrics tr.part th[scope='row'] {
   padding-left: 28px;
   color: #555;
 }
+
+.inline-form {
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+table.companies {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  background: #fff;
+}
+
+table.companies th,
+table.companies td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #e3e3e3;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
