@@ -2,6 +2,8 @@ package com.roleorienta.worker.career;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.careerpage.CareerPageAdapter;
+import com.roleorienta.worker.adapter.careerpage.CareerPageList;
 import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.career.CareerScanRepository.CheckResult;
 import com.roleorienta.worker.career.CareerScanRepository.Role;
@@ -52,7 +54,9 @@ import org.springframework.stereotype.Component;
  *       {@code kariera.|jobs.|careers.<домен>}, {@code jobs.|careers.<бренд>.com}, {@code www.<бренд>-jobs.sk}. На
  *       кадровой странице — те же ссылки на доски; нет и их — страница с разметкой {@code JobPosting} (она сама или
  *       одна из первых {@value #VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}; нет и
- *       её — один шаг вглубь по кадровой ссылке ({@code /kariera} → {@code /kariera/volne-pozicie}). Кадровая
+ *       её — один шаг вглубь по кадровой ссылке ({@code /kariera} → {@code /kariera/volne-pozicie}); ничего и там —
+ *       собственная страница вакансий (HTML-список ссылок на вакансии или фраза «вакансий нет»,
+ *       {@link CareerPageList}) подключается как источник {@code careerpage} (§136). Кадровая
  *       страница сайта есть, но читаемого на ней нет — пробуются ещё кадровые хосты ({@code careers.<домен>} …, без
  *       путей на том же хосте): у Swiss Re {@code swissre.com/careers.html} без ссылки на систему найма (поиск —
  *       скриптом), а {@code careers.swissre.com} — SuccessFactors (§89).</li>
@@ -380,8 +384,9 @@ public class CareerScanHandler implements TaskHandler {
     /**
      * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
      * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
-     * кадровой ссылке ({@code deeper}). Хост и путь кадровой страницы — по её конечному адресу после
-     * переадресаций (аудит §66).
+     * кадровой ссылке ({@code deeper}); ничего и там — сама страница как источник {@code careerpage}, если на ней
+     * распознан список вакансий или фраза «вакансий нет» (§136). Хост и путь кадровой страницы — по её конечному
+     * адресу после переадресаций (аудит §66).
      */
     private Set<Board> careerBoards(Document careerPage, boolean deeper) {
         Set<Board> boards = CareerLinks.boards(careerPage);
@@ -396,7 +401,14 @@ public class CareerScanHandler implements TaskHandler {
             return Set.of(new Board(JobPostingAdapter.PROVIDER, actual.toString()));
         }
         Optional<String> next = deeper ? CareerLinks.deeperCareerPage(careerPage, actual) : Optional.empty();
-        return next.flatMap(link -> page(URI.create(link))).map(page -> careerBoards(page, false)).orElse(Set.of());
+        Set<Board> deeperBoards = next.flatMap(link -> page(URI.create(link))).map(page -> careerBoards(page, false))
+                .orElse(Set.of());
+        if (!deeperBoards.isEmpty()) {
+            return deeperBoards;
+        }
+        return actual.toString().length() <= MAX_BOARD && (!CareerPageList.vacancies(careerPage).isEmpty()
+                || CareerPageList.saysNoVacancies(careerPage))
+                ? Set.of(new Board(CareerPageAdapter.PROVIDER, actual.toString())) : Set.of();
     }
 
     private Optional<Document> page(URI uri) {

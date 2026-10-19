@@ -39,9 +39,11 @@ import org.springframework.stereotype.Component;
  * сводка «2 Locations»: место в списке считается не полученным, места берутся из детали. Публикация
  * без {@code externalPath} пропускается (нет id; пустой id дублировал бы ключ публикации).
  *
- * <p>Доска — {@code <тенант>.<dc>.myworkdayjobs.com/<сайт>}; другой хост не читается (отказ
- * {@code BLOCKED}). Отказ на первой странице — источник недоступен; на следующих, пустая страница
- * раньше {@code total} или упор в потолок страниц — неполное чтение (вакансии не закрываются).
+ * <p>Доска — {@code <тенант>.<dc>.myworkdayjobs.com/<сайт>} или (вторая форма адреса кадрового сайта Workday,
+ * §136) {@code wd<N>.myworkdaysite.com/recruiting/<тенант>/<сайт>} — тот же запрос
+ * {@code <хост>/wday/cxs/<тенант>/<сайт>/jobs}; другой хост не читается (отказ {@code BLOCKED}). Отказ на первой
+ * странице — источник недоступен; на следующих, пустая страница раньше {@code total} или упор в потолок страниц —
+ * неполное чтение (вакансии не закрываются).
  * Endpoint не документирован как публичный контракт (технический документ §5).</p>
  *
  * <p>Фильтр по стране (технический документ §5): первый ответ без фильтра содержит фасеты —
@@ -64,6 +66,10 @@ public class WorkdayAdapter implements SourceAdapter {
 
     private static final Pattern BOARD = Pattern.compile(
             "(([a-z0-9-]+)\\.wd\\d+\\.myworkdayjobs\\.com)/([A-Za-z0-9_-]+)");
+
+    /** Вторая форма адреса: {@code wd<N>.myworkdaysite.com/recruiting/<тенант>/<сайт>} (§136). */
+    private static final Pattern SITE_BOARD = Pattern.compile(
+            "(wd\\d+\\.myworkdaysite\\.com)/recruiting/([a-z0-9_-]+)/([A-Za-z0-9_-]+)");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -111,15 +117,15 @@ public class WorkdayAdapter implements SourceAdapter {
 
     @Override
     public SourceReadResult read(String board, String country) {
-        Matcher matcher = BOARD.matcher(board);
-        if (!matcher.matches()) {
+        Tenant tenant = Tenant.of(board);
+        if (tenant == null) {
             return new SourceReadResult.Unavailable(new HttpResult.PermanentFailure(
                     HttpResult.Kind.BLOCKED, "Not a Workday board: " + board));
         }
         if (country == null) {
-            return readPages(matcher, NO_FACETS);
+            return readPages(tenant, NO_FACETS);
         }
-        HttpResult result = httpClient.postJson(URI.create(apiBase(matcher) + "/jobs"), requestBody(NO_FACETS, 0));
+        HttpResult result = httpClient.postJson(URI.create(apiBase(tenant) + "/jobs"), requestBody(NO_FACETS, 0));
         JsonNode json = result instanceof HttpResult.Success success ? readJson(success.body()) : null;
         if (json == null) {
             return new SourceReadResult.Unavailable(result instanceof HttpResult.Success
@@ -128,10 +134,10 @@ public class WorkdayAdapter implements SourceAdapter {
         CountryFilter filter = countryFilter(json, country);
         if (!filter.facetFound()) {
             LOG.warn("Workday board {} has no country facet and no places in {}, read without filter", board, country);
-            return readPages(matcher, NO_FACETS);
+            return readPages(tenant, NO_FACETS);
         }
         if (filter.appliedFacets() != null) {
-            return readPages(matcher, filter.appliedFacets());
+            return readPages(tenant, filter.appliedFacets());
         }
         LOG.info("Workday board {} has no postings in {}", board, country);
         return SourceReadResult.Read.full(List.of(), List.of(((HttpResult.Success) result).body()));
@@ -143,11 +149,11 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     @Override
     public Optional<Boolean> hasPostingsIn(String board, String country) {
-        Matcher matcher = BOARD.matcher(board);
-        if (!matcher.matches()) {
+        Tenant tenant = Tenant.of(board);
+        if (tenant == null) {
             return Optional.of(false);
         }
-        HttpResult result = httpClient.postJson(URI.create(apiBase(matcher) + "/jobs"), requestBody(NO_FACETS, 0));
+        HttpResult result = httpClient.postJson(URI.create(apiBase(tenant) + "/jobs"), requestBody(NO_FACETS, 0));
         JsonNode json = result instanceof HttpResult.Success success ? readJson(success.body()) : null;
         if (json == null) {
             return Optional.empty();
@@ -217,9 +223,9 @@ public class WorkdayAdapter implements SourceAdapter {
     /**
      * Список страницами с заданными {@code appliedFacets}.
      */
-    private SourceReadResult readPages(Matcher matcher, String appliedFacets) {
-        String board = matcher.group(0);
-        URI uri = URI.create(apiBase(matcher) + "/jobs");
+    private SourceReadResult readPages(Tenant tenant, String appliedFacets) {
+        String board = tenant.board();
+        URI uri = URI.create(apiBase(tenant) + "/jobs");
         List<FetchedPosting> postings = new ArrayList<>();
         List<String> responses = new ArrayList<>();
         int total = 0;
@@ -254,7 +260,7 @@ public class WorkdayAdapter implements SourceAdapter {
                 if (location != null && LOCATIONS_SUMMARY.matcher(location).matches()) {
                     location = null;
                 }
-                postings.add(new FetchedPosting(path, job.path("title").asText(), postingUrl(matcher, path),
+                postings.add(new FetchedPosting(path, job.path("title").asText(), postingUrl(tenant, path),
                         location, null));
                 dates.put(path, posted(job.path("postedOn").asText(""), today));
             }
@@ -307,13 +313,13 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     @Override
     public FetchedPosting detail(String board, String externalId) {
-        Matcher matcher = BOARD.matcher(board);
-        HttpResult result = requestDetail(matcher, externalId);
+        Tenant tenant = Tenant.of(board);
+        HttpResult result = requestDetail(tenant, externalId);
         JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
         if (info == null || !info.path("jobDescription").isTextual()) {
             LOG.warn("Workday posting {} on {}: no jobDescription", externalId, board);
         }
-        return info == null ? null : posting(matcher, externalId, info);
+        return info == null ? null : posting(tenant, externalId, info);
     }
 
     /**
@@ -322,7 +328,7 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     @Override
     public Optional<String> employerName(String board, String externalId) {
-        HttpResult result = requestDetail(BOARD.matcher(board), externalId);
+        HttpResult result = requestDetail(Tenant.of(board), externalId);
         if (!(result instanceof HttpResult.Success success)) {
             return Optional.empty();
         }
@@ -341,7 +347,7 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     @Override
     public Optional<Instant> postedDate(String board, String externalId) {
-        HttpResult result = requestDetail(BOARD.matcher(board), externalId);
+        HttpResult result = requestDetail(Tenant.of(board), externalId);
         JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
         return info == null ? Optional.empty()
                 : Optional.ofNullable(PostedDates.parse(textOrNull(info.path("startDate"))));
@@ -353,8 +359,8 @@ public class WorkdayAdapter implements SourceAdapter {
      */
     @Override
     public PostingCheck check(String board, String externalId) {
-        Matcher matcher = BOARD.matcher(board);
-        HttpResult result = requestDetail(matcher, externalId);
+        Tenant tenant = Tenant.of(board);
+        HttpResult result = requestDetail(tenant, externalId);
         if (result instanceof HttpResult.PermanentFailure failure && failure.kind() == HttpResult.Kind.NOT_FOUND) {
             return new PostingCheck.Absent();
         }
@@ -362,11 +368,11 @@ public class WorkdayAdapter implements SourceAdapter {
         if (info == null || !info.path("title").isTextual()) {
             return new PostingCheck.Unknown("Workday posting " + externalId + " not checked: " + result);
         }
-        return new PostingCheck.Present(posting(matcher, externalId, info));
+        return new PostingCheck.Present(posting(tenant, externalId, info));
     }
 
-    private FetchedPosting posting(Matcher matcher, String externalId, JsonNode info) {
-        return new FetchedPosting(externalId, info.path("title").asText(), postingUrl(matcher, externalId),
+    private FetchedPosting posting(Tenant tenant, String externalId, JsonNode info) {
+        return new FetchedPosting(externalId, info.path("title").asText(), postingUrl(tenant, externalId),
                 locations(info), textOrNull(info.path("jobDescription")));
     }
 
@@ -389,12 +395,12 @@ public class WorkdayAdapter implements SourceAdapter {
     /**
      * {@code GET <api>/<externalPath>}; чужая доска или путь не {@code /job/…} — запрос не выполняется.
      */
-    private HttpResult requestDetail(Matcher matcher, String externalId) {
-        if (!matcher.matches() || !externalId.startsWith("/job/")) {
+    private HttpResult requestDetail(Tenant tenant, String externalId) {
+        if (tenant == null || !externalId.startsWith("/job/")) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Not a Workday posting: " + externalId);
         }
         try {
-            return httpClient.get(URI.create(apiBase(matcher) + externalId));
+            return httpClient.get(URI.create(apiBase(tenant) + externalId));
         } catch (IllegalArgumentException malformedPath) {
             return new HttpResult.PermanentFailure(HttpResult.Kind.BLOCKED, "Malformed path: " + externalId);
         }
@@ -409,18 +415,17 @@ public class WorkdayAdapter implements SourceAdapter {
         }
     }
 
-    private String postingUrl(Matcher matcher, String externalPath) {
-        return properties.baseUrlTemplate().replace("{host}", matcher.group(1)) + "/" + matcher.group(3)
-                + externalPath;
+    private String postingUrl(Tenant tenant, String externalPath) {
+        return properties.baseUrlTemplate().replace("{host}", tenant.host()) + tenant.sitePath() + externalPath;
     }
 
     private static String textOrNull(JsonNode node) {
         return node.isTextual() ? node.asText() : null;
     }
 
-    private String apiBase(Matcher board) {
-        return properties.baseUrlTemplate().replace("{host}", board.group(1))
-                + "/wday/cxs/" + board.group(2) + "/" + board.group(3);
+    private String apiBase(Tenant tenant) {
+        return properties.baseUrlTemplate().replace("{host}", tenant.host())
+                + "/wday/cxs/" + tenant.tenant() + "/" + tenant.site();
     }
 
     private String requestBody(String appliedFacets, int offset) {
@@ -434,6 +439,32 @@ public class WorkdayAdapter implements SourceAdapter {
             return json != null && json.path("jobPostings").isArray() ? json : null;
         } catch (JsonProcessingException exception) {
             return null;
+        }
+    }
+
+    /**
+     * Доска Workday в одной из двух форм адреса (§136).
+     *
+     * @param board    доска как записана в источнике
+     * @param host     хост кадрового сайта и API
+     * @param tenant   тенант
+     * @param site     сайт тенанта
+     * @param sitePath путь публичной страницы сайта: {@code /<сайт>} или {@code /recruiting/<тенант>/<сайт>}
+     */
+    private record Tenant(String board, String host, String tenant, String site, String sitePath) {
+
+        /**
+         * @param board доска
+         * @return тенант доски; {@code null} — не доска Workday
+         */
+        static Tenant of(String board) {
+            Matcher jobs = BOARD.matcher(board);
+            if (jobs.matches()) {
+                return new Tenant(board, jobs.group(1), jobs.group(2), jobs.group(3), "/" + jobs.group(3));
+            }
+            Matcher site = SITE_BOARD.matcher(board);
+            return site.matches() ? new Tenant(board, site.group(1), site.group(2), site.group(3),
+                    "/recruiting/" + site.group(2) + "/" + site.group(3)) : null;
         }
     }
 }

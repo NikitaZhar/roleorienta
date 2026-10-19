@@ -84,6 +84,19 @@ class CareerLinksTests {
     }
 
     /**
+     * Вторая форма адреса Workday (§136): {@code wd<N>.myworkdaysite.com/[<язык>/]recruiting/<тенант>/<сайт>} → доска в
+     * нижнем регистре; запись доски проходит {@link CareerLinks#isBoard}.
+     */
+    @Test
+    void recognisesMyWorkdaySiteAddress() {
+        Board magna = new Board("workday", "wd3.myworkdaysite.com/recruiting/magna/magna");
+        assertThat(CareerLinks.board("https://wd3.myworkdaysite.com/recruiting/magna/Magna")).contains(magna);
+        assertThat(CareerLinks.board("https://wd3.myworkdaysite.com/en-US/recruiting/magna/Magna/job/Kechnec/X_1"))
+                .contains(magna);
+        assertThat(CareerLinks.isBoard(magna)).isTrue();
+    }
+
+    /**
      * Oracle Recruiting Cloud: ссылка на сайт, список или вакансию → хост и номер сайта (номер — в прежнем регистре);
      * хост не сайта Oracle Recruiting — не доска (§117).
      */

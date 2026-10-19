@@ -419,6 +419,23 @@ class CareerScanTests {
     }
 
     /**
+     * Кадровая страница — собственный HTML-список вакансий без системы найма и разметки (§136): подключена как
+     * источник {@code careerpage} со страной компании.
+     */
+    @Test
+    void connectsOwnCareerPageList() {
+        PAGES.put("/", "<a href=\"/kariera\">Kariéra</a>");
+        PAGES.put("/kariera", "<h1>Voľné pracovné pozície</h1><ul><li><a href=\"/kariera/casnik\">Čašník</a></li>"
+                + "<li><a href=\"/kariera/kuchar\">Kuchár</a></li></ul>");
+
+        runScan();
+
+        assertThat(connectedSources()).containsExactly("careerpage:http://" + HOST + "/kariera:SK");
+        assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
+        assertThat(companyResult()).isEqualTo("CONNECTED");
+    }
+
+    /**
      * Главная переадресует на площадку продажи доменов (§135; здесь площадка — {@code localhost}): сайт отклонён с
      * причиной, адрес прежней «кадровой страницы» снят, итог компании «формат не поддерживается» сменился на «сайт не
      * найден».

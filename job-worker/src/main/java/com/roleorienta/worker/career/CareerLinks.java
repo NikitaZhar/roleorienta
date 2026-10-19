@@ -35,7 +35,8 @@ import org.jsoup.nodes.Element;
  *   <li>Workday — {@code <тенант>.wd<N>.myworkdayjobs.com/[<язык>/]<сайт>} → доска
  *       {@code <тенант>.wd<N>.myworkdayjobs.com/<сайт>}. Язык — {@code es} или {@code en-US}; сайт —
  *       целый сегмент пути, не файл ({@code robots.txt}), не код языка и не служебный путь
- *       ({@code wday}).</li>
+ *       ({@code wday}). Вторая форма адреса (§136) — {@code wd<N>.myworkdaysite.com/[<язык>/]recruiting/<тенант>/<сайт>}
+ *       → доска {@code wd<N>.myworkdaysite.com/recruiting/<тенант>/<сайт>}.</li>
  *   <li>Greenhouse — {@code boards.greenhouse.io/<доска>}, {@code job-boards.greenhouse.io/<доска>},
  *       встраивание {@code …/embed/job_board?for=<доска>} → доска.</li>
  *   <li>Personio — {@code <компания>.jobs.personio.de|com} → хост витрины.</li>
@@ -67,6 +68,10 @@ public final class CareerLinks {
 
     private static final Pattern WORKDAY = Pattern.compile(
             "([a-z0-9-]+\\.wd\\d+\\.myworkdayjobs\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([A-Za-z0-9_-]+)(?=$|[/?#])",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern WORKDAY_SITE = Pattern.compile(
+            "(wd\\d+\\.myworkdaysite\\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?recruiting/([a-z0-9_-]+)/"
+                    + "([A-Za-z0-9_-]+)(?=$|[/?#])",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern NOT_WORKDAY_SITE = Pattern.compile("robots|wday|[a-z]{2}(?:-[a-z]{2})?");
     private static final Pattern GREENHOUSE = Pattern.compile(
@@ -113,7 +118,7 @@ public final class CareerLinks {
             Pattern.CASE_INSENSITIVE);
     /** Хосты систем найма (скрипт: {@code ATS_HOSTS}). */
     private static final Pattern RECRUITING_HOSTS = Pattern.compile(
-            "myworkdayjobs|greenhouse|personio|smartrecruiters|successfactors|nalgoo|nelisa|topjobs|teamtailor|recruitee"
+            "myworkdayjobs|myworkdaysite|greenhouse|personio|smartrecruiters|successfactors|nalgoo|nelisa|topjobs|teamtailor|recruitee"
                     + "|lever\\.co|workable|breezy|softgarden|taleo|oraclecloud|icims|eightfold|avature|phenom|radancy"
                     + "|talentbrew|traffit|jobangels",
             Pattern.CASE_INSENSITIVE);
@@ -213,6 +218,13 @@ public final class CareerLinks {
             String site = lower(workday.group(2));
             return NOT_WORKDAY_SITE.matcher(site).matches() ? Optional.empty()
                     : Optional.of(new Board(WorkdayAdapter.PROVIDER, lower(workday.group(1)) + "/" + site));
+        }
+        Matcher workdaySite = WORKDAY_SITE.matcher(link);
+        if (workdaySite.lookingAt()) {
+            String site = lower(workdaySite.group(3));
+            return NOT_WORKDAY_SITE.matcher(site).matches() ? Optional.empty()
+                    : Optional.of(new Board(WorkdayAdapter.PROVIDER, lower(workdaySite.group(1)) + "/recruiting/"
+                            + lower(workdaySite.group(2)) + "/" + site));
         }
         Matcher greenhouse = GREENHOUSE.matcher(link);
         if (greenhouse.lookingAt() && !GREENHOUSE_NOT_BOARDS.contains(lower(greenhouse.group(1)))) {

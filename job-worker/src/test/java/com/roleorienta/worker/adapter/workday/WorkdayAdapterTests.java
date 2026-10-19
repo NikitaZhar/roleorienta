@@ -9,6 +9,7 @@ import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.http.TestHttpClients;
 import com.roleorienta.worker.vacancy.FetchedPosting;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -38,6 +39,8 @@ class WorkdayAdapterTests {
     private static final String HOST = "acme.wd3.myworkdayjobs.com";
     private static final String BOARD = HOST + "/External";
     private static final String JOBS_PATH = "/" + HOST + "/wday/cxs/acme/External/jobs";
+    /** Вторая форма адреса Workday (§136): {@code wd<N>.myworkdaysite.com/recruiting/<тенант>/<сайт>}. */
+    private static final String SITE_HOST = "wd3.myworkdaysite.com";
     private static final int PAGE_SIZE = 2;
     private static final Pattern OFFSET = Pattern.compile("\"offset\":(\\d+)");
     private static final String SK_FACET = "{\"locationCountry\":[\"sk-id\"]}";
@@ -71,7 +74,7 @@ class WorkdayAdapterTests {
     @BeforeEach
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext(JOBS_PATH, exchange -> {
+        HttpHandler jobs = exchange -> {
             String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             Matcher offset = OFFSET.matcher(request);
             int key = offset.find() ? Integer.parseInt(offset.group(1)) : -1;
@@ -82,7 +85,9 @@ class WorkdayAdapterTests {
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(bytes);
             }
-        });
+        };
+        server.createContext(JOBS_PATH, jobs);
+        server.createContext("/" + SITE_HOST + "/wday/cxs/acme/External/jobs", jobs);
         server.createContext("/" + HOST + "/wday/cxs/acme/External/job/", exchange -> {
             if (exchange.getRequestURI().getPath().contains("/Gone")) {
                 exchange.sendResponseHeaders(404, -1);
@@ -136,6 +141,21 @@ class WorkdayAdapterTests {
         assertThat(read.postings().get(0)).isEqualTo(new FetchedPosting("/job/Bratislava/Java-Developer",
                 "Java Developer", stubUrl() + "/" + HOST + "/External/job/Bratislava/Java-Developer",
                 "Bratislava", null));
+    }
+
+    /**
+     * Доска второй формы адреса (§136): тот же запрос {@code <хост>/wday/cxs/<тенант>/<сайт>/jobs}, ссылка на вакансию
+     * — {@code <хост>/recruiting/<тенант>/<сайт>/job/…}.
+     */
+    @Test
+    void readsBoardOfMyWorkdaySiteAddress() {
+        pages.put(0, page(1, "Java Developer"));
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(SITE_HOST + "/recruiting/acme/External");
+
+        assertThat(read.complete()).isTrue();
+        assertThat(read.postings().get(0).url())
+                .isEqualTo(stubUrl() + "/" + SITE_HOST + "/recruiting/acme/External/job/Bratislava/Java-Developer");
     }
 
     /**
