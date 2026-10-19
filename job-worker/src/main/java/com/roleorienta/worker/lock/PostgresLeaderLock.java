@@ -26,7 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
  * «Wikidata» поиска сайта ({@code WikidataSiteTick}); 1012 — постановка шага «адрес по названию»
  * ({@code SiteNameTick}); 1013 — постановка шага «число сотрудников из RÚZ» ({@code CompanySizeTick}); 1014 —
  * лента и полный обход общего списка портала ({@code PortalListTick}); 1015 — следующее чтение провайдеров с общим
- * хостом ({@code ReadSourceTick#sharedHostTick}).</p>
+ * хостом ({@code ReadSourceTick#sharedHostTick}); 1016 — постановка удаления снимков по сроку
+ * ({@code SnapshotPurgeTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {
