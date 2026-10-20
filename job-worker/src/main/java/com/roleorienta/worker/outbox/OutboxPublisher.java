@@ -1,15 +1,19 @@
 package com.roleorienta.worker.outbox;
 
 import com.roleorienta.worker.messaging.RabbitTopology;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +23,20 @@ import org.springframework.transaction.annotation.Transactional;
  * очередь) в RabbitMQ и отмечает их опубликованными (технический документ §6, §9).
  *
  * <p>Одна пачка — одна транзакция БД: захват событий ({@code FOR UPDATE SKIP LOCKED}) →
- * отправка каждого с {@code mandatory} → ожидание подтверждений брокера → отметка
- * {@code published_at}. Подтверждение брокера означает только приём, а не попадание в очередь,
- * поэтому сообщения, вернувшиеся как немаршрутизируемые ({@code basic.return}), не отмечаются:
+ * отправка каждого с {@code mandatory} и своим {@link CorrelationData} → ожидание подтверждения
+ * каждого → отметка {@code published_at}. Подтверждение брокера означает только приём, а не попадание в
+ * очередь, поэтому сообщения, вернувшиеся как немаршрутизируемые ({@code basic.return}), не отмечаются:
  * у них растёт счётчик попыток, и они уйдут в следующей пачке.</p>
  *
- * <p>Если подтверждений нет в срок или брокер ответил отказом, {@code waitForConfirmsOrDie}
- * бросает исключение, транзакция откатывается и ни одно событие пачки не отмечается — повтор на
+ * <p>Возврат узнаётся из {@link CorrelationData#getReturned()}: Spring AMQP записывает вернувшееся
+ * сообщение в {@code CorrelationData} раньше, чем завершает его подтверждение
+ * ({@link CorrelationData#getFuture()}). Прежняя схема — общий {@code waitForConfirmsOrDie} и набор
+ * вернувшихся из обратного вызова — гонялась: обратный вызов возврата выполняется в другом потоке и мог
+ * прийти после конца ожидания, и вернувшееся сообщение отмечалось опубликованным (стенограмма §153).
+ * https://docs.spring.io/spring-amqp/reference/amqp/template.html#template-confirms</p>
+ *
+ * <p>Если подтверждений нет в срок пачки или брокер ответил отказом ({@code nack}), бросается
+ * {@link AmqpException}, транзакция откатывается и ни одно событие пачки не отмечается — повтор на
  * следующем тике. Повторная отправка уже доставленного сообщения возможна; потребитель
  * идемпотентен: задание выполняется, только если его удалось захватить из состояния QUEUED.
  * Транзакция держится на время ожидания подтверждений, поэтому
@@ -41,12 +52,6 @@ public class OutboxPublisher {
     private final OutboxProperties properties;
 
     /**
-     * Идентификаторы сообщений текущей пачки, вернувшихся как немаршрутизируемые. Заполняется
-     * обратным вызовом клиента AMQP в его потоке, поэтому набор потокобезопасный.
-     */
-    private final Set<String> returnedMessageIds = ConcurrentHashMap.newKeySet();
-
-    /**
      * @param repository     доступ к таблице outbox
      * @param rabbitTemplate шаблон отправки; {@code mandatory} и подтверждения включены в настройках
      * @param properties     размер пачки и тайм-аут подтверждений
@@ -56,44 +61,69 @@ public class OutboxPublisher {
         this.repository = repository;
         this.rabbitTemplate = rabbitTemplate;
         this.properties = properties;
-        this.rabbitTemplate.setReturnsCallback(returned ->
-                returnedMessageIds.add(returned.getMessage().getMessageProperties().getMessageId()));
     }
 
     /**
-     * Публикует одну пачку неопубликованных событий.
-     *
-     * <p>{@code synchronized}: набор вернувшихся сообщений общий для пачки, поэтому пачки одного
-     * публикатора не выполняются параллельно; параллельность между репликами обеспечивает
-     * {@code SKIP LOCKED}.</p>
+     * Публикует одну пачку неопубликованных событий. Пачки одной и разных реплик не мешают друг другу:
+     * события захватываются {@code SKIP LOCKED}, у каждого сообщения — свой {@link CorrelationData}.
      *
      * @return число захваченных событий; 0 — публиковать нечего
-     * @throws org.springframework.amqp.AmqpException если брокер недоступен, отказал или не
-     *         подтвердил пачку в срок; ни одно событие пачки не отмечено опубликованным
+     * @throws AmqpException если брокер недоступен, отказал или не подтвердил пачку в срок; ни одно
+     *         событие пачки не отмечено опубликованным
      */
     @Transactional
-    public synchronized int publishBatch() {
+    public int publishBatch() {
         List<OutboxEvent> batch = repository.claimUnpublished(properties.batchSize());
         if (batch.isEmpty()) {
             return 0;
         }
-        returnedMessageIds.clear();
-        rabbitTemplate.invoke(operations -> {
-            for (OutboxEvent event : batch) {
-                operations.send(RabbitTopology.EXCHANGE, RabbitTopology.routingKey(event.taskType()), toMessage(event));
-            }
-            operations.waitForConfirmsOrDie(properties.confirmTimeout().toMillis());
-            return null;
-        });
+        List<CorrelationData> confirms = new ArrayList<>(batch.size());
         for (OutboxEvent event : batch) {
-            if (returnedMessageIds.contains(String.valueOf(event.id()))) {
-                repository.incrementAttempts(event.id());
-                LOG.warn("Outbox event id={} returned as unroutable, left unpublished", event.id());
+            CorrelationData correlation = new CorrelationData(String.valueOf(event.id()));
+            rabbitTemplate.send(RabbitTopology.EXCHANGE, RabbitTopology.routingKey(event.taskType()), toMessage(event),
+                    correlation);
+            confirms.add(correlation);
+        }
+        long deadline = System.nanoTime() + properties.confirmTimeout().toNanos();
+        for (CorrelationData correlation : confirms) {
+            awaitAck(correlation, deadline);
+        }
+        for (int index = 0; index < batch.size(); index++) {
+            long eventId = batch.get(index).id();
+            if (confirms.get(index).getReturned() != null) {
+                repository.incrementAttempts(eventId);
+                LOG.warn("Outbox event id={} returned as unroutable, left unpublished", eventId);
             } else {
-                repository.markPublished(event.id());
+                repository.markPublished(eventId);
             }
         }
         return batch.size();
+    }
+
+    /**
+     * Ждёт подтверждения сообщения до общего срока пачки.
+     *
+     * @param correlation подтверждение сообщения
+     * @param deadline    срок пачки ({@link System#nanoTime()})
+     * @throws AmqpException срок вышел, брокер отказал ({@code nack}) или ожидание прервано
+     */
+    private static void awaitAck(CorrelationData correlation, long deadline) {
+        try {
+            CorrelationData.Confirm confirm = correlation.getFuture()
+                    .get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            if (!confirm.ack()) {
+                throw new AmqpException("Broker rejected outbox message " + correlation.getId() + ": "
+                        + confirm.reason());
+            }
+        } catch (TimeoutException timeout) {
+            throw new AmqpException("Broker did not confirm outbox message " + correlation.getId() + " in time",
+                    timeout);
+        } catch (ExecutionException failure) {
+            throw new AmqpException("Confirm of outbox message " + correlation.getId() + " failed", failure);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AmqpException("Interrupted while waiting for outbox confirms", interrupted);
+        }
     }
 
     /**
