@@ -4,7 +4,7 @@ import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
 import { LoginPage } from './LoginPage';
 import { Logo } from './Logo';
-import { VacancyList } from './VacancyList';
+import { Empty, VacancyList } from './VacancyList';
 import { VacancyPage } from './VacancyPage';
 
 type View = 'list' | 'applications' | 'marked' | 'companies';
@@ -102,14 +102,15 @@ export function App() {
         {opened === null && view === 'list' && (
           <>
             <ConditionsPage onSaved={searched} />
-            <VacancyList key={searches} title="Results" load={vacancies} marked={false} poll={fresh}
+            <VacancyList key={searches} load={vacancies} marked={false} poll={fresh}
               onOpen={setOpened} />
           </>
         )}
         {opened === null && view === 'applications' && (
-          <div className="empty">
-            <p className="lead">Vacancies you work with will appear here</p>
-          </div>
+          <section>
+            <h2>My applications</h2>
+            <Empty text="Vacancies you work with will appear here" />
+          </section>
         )}
         {opened === null && view === 'marked' && (
           <VacancyList key={searches} title="Not interested" load={unsuitableVacancies} marked poll={false}

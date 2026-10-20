@@ -17,11 +17,13 @@ const FORMATS: { value: WorkFormat | ''; label: string }[] = [
 const MAX_POSITIONS = 10;
 
 /**
- * Условия поиска (бизнес-описание §7.2): страны, позиции словаря (одна или несколько — вакансия подходит к любой из
+ * Условия поиска (бизнес-описание §3, §7.2): страны, позиции словаря (одна или несколько — вакансия подходит к любой из
  * них; выбранные — метками с «×», §126), формат работы (Any — все форматы; гибрида нет —
- * гибридные вакансии выдаются при любом формате, §125). Нет условий —
- * отмечена первая страна из поддерживаемых. Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран,
- * набора позиций или формата создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
+ * гибридные вакансии выдаются при любом формате, §125). Экран — по согласованному макету (§147, §152): условия
+ * заданы — свёрнуты в строку меток с «Edit»; «Edit» раскрывает форму с «Cancel»; после «Search» форма снова
+ * свёрнута. Нет условий — «No search criteria yet», форма раскрыта, ни одна страна не отмечена (решение владельца
+ * 2026-10-20). Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран, набора позиций или формата
+ * создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
  * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
@@ -34,13 +36,18 @@ export function ConditionsPage({ onSaved }: Props) {
   const [etag, setEtag] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   async function load() {
     const [all, current] = await Promise.all([countries(), searchCondition()]);
     setCatalog(all);
     setEtag(current?.etag ?? null);
+    setQuery('');
     if (current === null) {
-      setSelected(all.length > 0 ? [all[0].code] : []);
+      setSelected([]);
+      setChosen([]);
+      setFormat('');
+      setEditing(true);
     } else {
       const condition = current.data;
       setSelected(condition.countries);
@@ -49,8 +56,14 @@ export function ConditionsPage({ onSaved }: Props) {
         const matches = await positions(code);
         return matches.find((item) => item.code === code) ?? { code, name: code };
       })));
+      setEditing(false);
     }
     setLoaded(true);
+  }
+
+  function cancel() {
+    setMessage(null);
+    load().catch((failure: Error) => setMessage(failure.message));
   }
 
   useEffect(() => {
@@ -100,6 +113,7 @@ export function ConditionsPage({ onSaved }: Props) {
       }, etag);
       setEtag(saved.etag);
       setMessage(null);
+      setEditing(false);
       onSaved();
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
@@ -116,55 +130,84 @@ export function ConditionsPage({ onSaved }: Props) {
   if (!loaded) {
     return message === null ? <p>Loading…</p> : <p className="error">{message}</p>;
   }
+  if (!editing) {
+    return (
+      <div className="filters-summary">
+        <dl className="criteria" aria-label="Search criteria">
+          <div>
+            <dt>{selected.length > 1 ? 'Countries' : 'Country'}</dt>
+            <dd><ul className="chips">
+              {selected.map((code) => <li key={code}>{catalog.find((item) => item.code === code)?.name ?? code}</li>)}
+            </ul></dd>
+          </div>
+          <div>
+            <dt>{chosen.length > 1 ? 'Positions' : 'Position'}</dt>
+            <dd><ul className="chips">{chosen.map((item) => <li key={item.code}>{item.name}</li>)}</ul></dd>
+          </div>
+          <div>
+            <dt>Format</dt>
+            <dd><ul className="chips"><li>{FORMATS.find((item) => item.value === format)?.label}</li></ul></dd>
+          </div>
+        </dl>
+        <button type="button" onClick={() => setEditing(true)}>Edit</button>
+      </div>
+    );
+  }
   return (
-    <form className="narrow-form" onSubmit={save}>
-      <fieldset>
-        <legend>Countries</legend>
-        {catalog.map((country) => (
-          <label key={country.code} className="inline">
-            <input type="checkbox" checked={selected.includes(country.code)}
-              onChange={() => toggle(country.code)} />
-            {country.name}
+    <form className="filters" onSubmit={save}>
+      {etag === null && <p className="lead">No search criteria yet. Choose a country and a vacancy.</p>}
+      <div className="filters-row">
+        <fieldset>
+          <legend>Countries</legend>
+          {catalog.map((country) => (
+            <label key={country.code} className="inline">
+              <input type="checkbox" checked={selected.includes(country.code)}
+                onChange={() => toggle(country.code)} />
+              {country.name}
+            </label>
+          ))}
+        </fieldset>
+        <div className="positions">
+          <label>
+            Vacancies to look for
+            <input type="search" placeholder="Type at least 2 letters" value={query}
+              disabled={chosen.length >= MAX_POSITIONS} onChange={(event) => setQuery(event.target.value)} />
           </label>
-        ))}
-      </fieldset>
-      <label>
-        Vacancies to look for
-        <input type="search" placeholder="Type at least 2 letters" value={query}
-          disabled={chosen.length >= MAX_POSITIONS} onChange={(event) => setQuery(event.target.value)} />
-      </label>
-      {chosen.length > 0 && (
-        <ul className="chips">
-          {chosen.map((item) => (
-            <li key={item.code}>
-              {item.name}
-              <button type="button" aria-label={'Remove ' + item.name}
-                onClick={() => setChosen((current) => current.filter((other) => other.code !== item.code))}>×</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {found.length > 0 && (
-        <ul className="choices">
-          {found.filter((item) => !chosen.some((other) => other.code === item.code)).map((item) => (
-            <li key={item.code}>
-              <button type="button" onClick={() => {
-                setChosen((current) => current.length >= MAX_POSITIONS ? current : [...current, item]);
-                setQuery('');
-              }}>{item.name}</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <label>
-        Work format
-        <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
-          {FORMATS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
-      </label>
+          {chosen.length > 0 && (
+            <ul className="chips">
+              {chosen.map((item) => (
+                <li key={item.code}>
+                  {item.name}
+                  <button type="button" aria-label={'Remove ' + item.name}
+                    onClick={() => setChosen((current) => current.filter((other) => other.code !== item.code))}>×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {found.length > 0 && (
+            <ul className="choices">
+              {found.filter((item) => !chosen.some((other) => other.code === item.code)).map((item) => (
+                <li key={item.code}>
+                  <button type="button" onClick={() => {
+                    setChosen((current) => current.length >= MAX_POSITIONS ? current : [...current, item]);
+                    setQuery('');
+                  }}>{item.name}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <label>
+          Work format
+          <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
+            {FORMATS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </label>
+      </div>
       {message !== null && <p className="error" role="status">{message}</p>}
       <div className="actions">
-        <button type="submit">Search</button>
+        <button type="submit" className="primary">Search</button>
+        {etag !== null && <button type="button" onClick={cancel}>Cancel</button>}
       </div>
     </form>
   );

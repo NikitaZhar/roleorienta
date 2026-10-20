@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { searchCondition, type VacancyPage } from './api';
-import { countriesText, openedText } from './format';
+import { openedText, rowCountryText } from './format';
 import { PageSize, Pager } from './Pager';
 
 interface Props {
-  title: string;
+  /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
+  title?: string;
   load: (page: number, size: number) => Promise<VacancyPage>;
   /** Список отмеченных «Не интересно»: пустой объясняется иначе, условия не спрашиваются, число не показывается. */
   marked: boolean;
@@ -24,7 +25,8 @@ const DEFAULT_SIZE = 20;
 const SIZE_KEY = 'roleorienta.pageSize';
 
 /**
- * Список вакансий страницами по номеру (§151): накопленный список (открытые позже сверху, дата открытия — §127; над
+ * Список вакансий страницами по номеру (§151) строками-колонками «Company · Position · Country · Opened» (агентство —
+ * только в сведениях; на телефоне строка — плитка в две строчки, §147, §152): накопленный список (открытые позже сверху, дата открытия — §127; над
  * списком — «Found N») или отмеченные «Не интересно». Внизу — номера страниц и выбор размера страницы; выбор
  * запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку; недоступно —
  * размер по умолчанию). Пустой накопленный список объясняется: что искать не задано — задать выше; задано —
@@ -84,26 +86,33 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
   }
   return (
     <section>
-      <h2>{title}</h2>
+      {title !== undefined && <h2>{title}</h2>}
       {!marked && data.total > 0 && <p className="count">Found {data.total}</p>}
-      {data.total === 0 && marked && <p>Vacancies you mark as not interested will appear here.</p>}
-      {data.total === 0 && !marked && !hasConditions && <p>Choose a country and a vacancy above and press Search.</p>}
+      {data.total === 0 && marked && <Empty text="Vacancies you mark as not interested will appear here" />}
+      {data.total === 0 && !marked && !hasConditions && <Empty text="No results yet" />}
       {data.total === 0 && !marked && hasConditions && (
-        <p>{poll && refreshes < REFRESH_TIMES ? 'Searching…'
-          : 'No matching vacancies yet. New vacancies are added to the list every hour.'}</p>
+        <Empty text={poll && refreshes < REFRESH_TIMES ? 'Searching…'
+          : 'No matching vacancies yet. New vacancies are added to the list every hour.'} />
       )}
-      <ul className="vacancies">
-        {data.items.map((item) => (
-          <li key={item.id}>
-            <button type="button" className="vacancy" onClick={() => onOpen(item.id)}>
-              <strong>{item.position}</strong>
-              <span>{item.parties.employer ?? 'Employer not specified'}
-                {item.parties.agency !== null && ` · via ${item.parties.agency}`}</span>
-              <span className="muted">{countriesText(item.work)} · {openedText(item.opened)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {data.total > 0 && (
+        <div className="rows">
+          <div className="row head" aria-hidden="true">
+            <span>Company</span><span>Position</span><span>Country</span><span>Opened</span>
+          </div>
+          <ul>
+            {data.items.map((item) => (
+              <li key={item.id}>
+                <button type="button" className="row" onClick={() => onOpen(item.id)}>
+                  <span className="company">{item.parties.employer ?? 'Employer not specified'}</span>
+                  <span className="position">{item.position}</span>
+                  <span className="country">{rowCountryText(item.work)}</span>
+                  <span className="opened">{openedText(item.opened)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {data.total > 0 && (
         <div className="list-footer">
           <Pager page={data.page} pages={Math.ceil(data.total / data.size)} busy={loading}
@@ -113,6 +122,11 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
       )}
     </section>
   );
+}
+
+/** Пустой раздел — одинаково во всех разделах (§152). */
+export function Empty({ text }: { text: string }) {
+  return <div className="empty"><p className="lead">{text}</p></div>;
 }
 
 /** Сохранённый размер страницы; нет, не из списка или хранилище недоступно — по умолчанию. */

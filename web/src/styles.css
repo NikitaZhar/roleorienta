@@ -190,10 +190,6 @@ button.link {
   color: var(--danger);
 }
 
-.narrow-form {
-  max-width: 480px;
-}
-
 fieldset {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -411,24 +407,183 @@ nav .current,
   background: none;
 }
 
-.vacancies {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.vacancy {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
+/* Условия поиска (§152): раскрытая форма — поля в строку; свёрнутые — строка меток с «Edit». */
+.filters {
   background: var(--surface);
   border: 1px solid var(--border);
-  cursor: pointer;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.filters .lead {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.filters-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 0.8fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.filters fieldset {
+  margin: 0;
+}
+
+.positions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filters-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+/* Свёрнутые условия — таблица из трёх строк: подпись (одна ширина колонки) и значения; «Edit» справа (§152). */
+.criteria {
+  flex: 1;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  align-items: center;
+  margin: 0;
+}
+
+.criteria > div {
+  display: contents;
+}
+
+.criteria dt {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.criteria dd {
+  margin: 0;
+}
+
+.filters-summary .chips {
+  margin: 0;
+}
+
+.filters-summary .chips li {
+  padding: 1px 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* Список вакансий строками-колонками; на телефоне — плитка в две строчки (§152). */
+.rows {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.rows ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr) minmax(0, 0.8fr) 110px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 11px 14px;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  font-size: 14px;
+}
+
+.row.head {
+  border-top: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+button.row:hover {
+  background: var(--surface-2);
+}
+
+.row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row .company,
+.row .country {
+  color: var(--muted);
+}
+
+.row .position {
+  font-weight: 500;
+}
+
+.row .opened,
+.row.head span:last-child {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .filters-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .row.head {
+    display: none;
+  }
+
+  .rows li:first-child .row {
+    border-top: 0;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 6px;
+  }
+
+  .row .position {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+
+  .row .company,
+  .row .country,
+  .row .opened {
+    font-size: 13px;
+  }
+
+  .row .country::before,
+  .row .opened::before {
+    content: '· ';
+  }
 }
 
 .muted {
