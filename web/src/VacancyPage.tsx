@@ -74,7 +74,7 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
           <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">Open the posting</a>
         )}
         <button type="button" onClick={toggle}>
-          {publication.unsuitable ? 'Return to the list' : 'Not suitable'}
+          {publication.unsuitable ? 'Return to the list' : 'Not interested'}
         </button>
       </div>
     </article>

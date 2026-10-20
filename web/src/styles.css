@@ -1,31 +1,110 @@
+/*
+ * Оформление SPA (технический документ §15, этап «MVP», шаг 2; стенограмма §147, §150): цвета и шрифты страницы
+ * продукта владельца. Все цвета — переменные (custom properties) на :root; тёмная тема переопределяет те же
+ * переменные, когда в системе выбрана тёмная тема (@media prefers-color-scheme), — классы экранов не меняются.
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme
+ */
 :root {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: #1d1d1f;
-  background: #fafafa;
+  --bg: #f4f2ec;
+  --surface: #ffffff;
+  --surface-2: #fbfaf6;
+  --border: #e4ded2;
+  --border-strong: #d4ccbc;
+  --ink: #23272e;
+  --ink-soft: #3c424b;
+  --muted: #6e6960;
+  --accent: #b0673a;
+  --accent-soft: #f0e2d2;
+  --accent-ink: #7c481f;
+  --fresh: #dcebe0;
+  --fresh-ink: #1f5a38;
+  --danger: #a3262a;
+  --info-soft: #dcebe8;
+  --info-ink: #0b5952;
+  --amber-soft: #f5e7c8;
+  --amber-ink: #8a5a12;
+  --serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --radius: 10px;
+  color-scheme: light;
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171b;
+    --surface: #1b1f25;
+    --surface-2: #21262d;
+    --border: #2e353d;
+    --border-strong: #3b434c;
+    --ink: #ece6db;
+    --ink-soft: #c8c3b9;
+    --muted: #969189;
+    --accent: #d89a63;
+    --accent-soft: #33261a;
+    --accent-ink: #e4b482;
+    --fresh: #16301f;
+    --fresh-ink: #9ad9b2;
+    --danger: #f0908c;
+    --info-soft: #123734;
+    --info-ink: #7fcfc5;
+    --amber-soft: #2c2413;
+    --amber-ink: #e0b050;
+    color-scheme: dark;
+  }
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
+a {
+  color: var(--accent);
+}
+
+h1,
+h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Верхняя панель: эмблема и название, разделы, меню учётной записи. */
 .bar {
   display: flex;
-  gap: 12px;
+  gap: 20px;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e3e3e3;
-  background: #fff;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--serif);
   font-weight: 600;
+  font-size: 19px;
+  color: var(--ink);
+}
+
+.bar nav {
   flex: 1;
 }
 
 .page {
   max-width: 960px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 16px 20px;
 }
 
 .narrow {
@@ -42,6 +121,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  color: var(--ink-soft);
 }
 
 input,
@@ -49,15 +129,65 @@ select,
 button {
   font: inherit;
   padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--ink-soft);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Главное действие экрана — одно на экран. */
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* Действие-ссылка: без рамки, цвет акцента. */
+button.link {
+  background: none;
+  border-color: transparent;
+  color: var(--accent);
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  button.primary {
+    color: #1b1209;
+  }
 }
 
 .actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .error {
-  color: #b00020;
+  color: var(--danger);
 }
 
 .narrow-form {
@@ -65,7 +195,8 @@ button {
 }
 
 fieldset {
-  border: 1px solid #e3e3e3;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 8px 12px;
 }
 
@@ -81,8 +212,117 @@ nav {
   flex-wrap: wrap;
 }
 
-nav .current {
-  font-weight: 600;
+/* Разделы в панели — текстовые кнопки; текущий — цветом акцента. */
+.bar nav button {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-soft);
+  padding: 6px 10px;
+}
+
+.bar nav button:hover {
+  color: var(--accent);
+}
+
+nav .current,
+.bar nav button.current {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Меню учётной записи: <details>/<summary> — раскрывающийся блок HTML без скриптов. */
+.account {
+  position: relative;
+}
+
+.account summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+}
+
+.account summary::-webkit-details-marker {
+  display: none;
+}
+
+.account summary::after {
+  content: ' ▾';
+}
+
+.account[open] summary::after {
+  content: ' ▴';
+}
+
+.account .menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  z-index: 10;
+}
+
+.account .menu button {
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.account .menu button:hover {
+  background: var(--surface-2);
+}
+
+/* Пустой раздел: приглашение, а не пустота. */
+.empty {
+  padding: 32px 16px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.empty p {
+  margin: 4px 0;
+}
+
+.empty .lead {
+  font-weight: 500;
+}
+
+/* Вход. */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  box-sizing: border-box;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-card h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 30px;
+}
+
+.login-card .tagline {
+  margin: 4px 0 24px;
+  color: var(--muted);
 }
 
 .choices {
@@ -113,13 +353,16 @@ nav .current {
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 10px;
-  border: 1px solid currentColor;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
+  background: var(--surface);
 }
 
 .chips button {
   padding: 0 6px;
   line-height: 1.4;
+  border-color: transparent;
+  background: none;
 }
 
 .vacancies {
@@ -137,13 +380,13 @@ nav .current {
   flex-direction: column;
   gap: 2px;
   text-align: left;
-  background: #fff;
-  border: 1px solid #e3e3e3;
+  background: var(--surface);
+  border: 1px solid var(--border);
   cursor: pointer;
 }
 
 .muted {
-  color: #6b6b6b;
+  color: var(--muted);
   font-size: 0.9em;
 }
 
@@ -154,7 +397,7 @@ nav .current {
 }
 
 .details dt {
-  color: #6b6b6b;
+  color: var(--muted);
 }
 
 .details dd {
@@ -163,11 +406,11 @@ nav .current {
 
 a.button {
   padding: 8px 10px;
-  border: 1px solid #767676;
-  border-radius: 2px;
-  color: inherit;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
   text-decoration: none;
-  background: #efefef;
+  background: var(--surface);
 }
 
 .wide {
@@ -181,13 +424,13 @@ a.button {
 table.metrics {
   border-collapse: collapse;
   margin-top: 12px;
-  background: #fff;
+  background: var(--surface);
 }
 
 table.metrics th,
 table.metrics td {
   padding: 4px 10px;
-  border-bottom: 1px solid #e3e3e3;
+  border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;
 }
@@ -203,7 +446,7 @@ table.metrics tr.total th[scope='row'] {
 table.metrics tr.part th[scope='row'] {
   font-weight: normal;
   padding-left: 28px;
-  color: #555;
+  color: var(--muted);
 }
 
 .inline-form {
@@ -217,23 +460,26 @@ table.companies {
   border-collapse: collapse;
   width: 100%;
   margin: 8px 0;
-  background: #fff;
+  background: var(--surface);
 }
 
 table.companies th,
 table.companies td {
   padding: 6px 8px;
-  border-bottom: 1px solid #e3e3e3;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
 }
 
 table.companies thead th {
-  font-size: 0.85em;
-  font-weight: 600;
-  color: #555;
-  border-bottom: 2px solid #d0d0d0;
+  font-family: var(--mono);
+  font-size: 0.75em;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 table.companies td.row-actions {
@@ -263,32 +509,32 @@ section {
 }
 
 .badge-yes {
-  background: #e6f4ea;
-  color: #1e6b34;
+  background: var(--fresh);
+  color: var(--fresh-ink);
 }
 
 .badge-portal {
-  background: #e8f0fe;
-  color: #1a4fa0;
+  background: var(--info-soft);
+  color: var(--info-ink);
 }
 
 .badge-maybe {
-  background: #fff4e0;
-  color: #8a5300;
+  background: var(--amber-soft);
+  color: var(--amber-ink);
 }
 
 .badge-no {
-  background: #f0f0f0;
-  color: #555;
+  background: var(--surface-2);
+  color: var(--muted);
 }
 
 .badge-not_employer {
-  border-color: #c7c7c7;
-  color: #6b6b6b;
+  border-color: var(--border-strong);
+  color: var(--muted);
 }
 
 .status-ok {
-  color: #1e6b34;
+  color: var(--fresh-ink);
 }
 
 /* Только для экранного диктора. */

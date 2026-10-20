@@ -74,7 +74,7 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
   return (
     <section>
       <h2>{title}</h2>
-      {items.length === 0 && marked && <p>No vacancies marked as not suitable.</p>}
+      {items.length === 0 && marked && <p>Vacancies you mark as not interested will appear here.</p>}
       {items.length === 0 && !marked && !hasConditions && <p>Choose a country and a vacancy above and press Search.</p>}
       {items.length === 0 && !marked && hasConditions && (
         <p>{poll && refreshes < REFRESH_TIMES ? 'Searching…'

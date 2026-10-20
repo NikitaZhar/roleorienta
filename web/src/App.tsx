@@ -3,16 +3,29 @@ import { type Account, currentAccount, logout, unsuitableVacancies, vacancies } 
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
 import { LoginPage } from './LoginPage';
+import { Logo } from './Logo';
 import { VacancyList } from './VacancyList';
 import { VacancyPage } from './VacancyPage';
 
-type View = 'list' | 'marked' | 'companies';
+type View = 'list' | 'applications' | 'marked' | 'companies';
+
+/** Разделы верхней панели в порядке показа (бизнес-описание §6, решение владельца 2026-10-20). */
+const SECTIONS: { view: View; label: string }[] = [
+  { view: 'list', label: 'Search' },
+  { view: 'applications', label: 'My applications' },
+  { view: 'marked', label: 'Not interested' },
+  { view: 'companies', label: 'Companies' },
+];
+
+/** Размер эмблемы в панели, px. */
+const LOGO_SIZE = 24;
 
 /**
- * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — два раздела
- * (бизнес-описание §7.2): «Vacancies» — условия поиска и под ними накопленный список; «Not suitable» — отмеченные
- * «не подходит». Вакансия открывается поверх раздела; отметка или её снятие возвращает к разделу и перечитывает
- * список.
+ * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — панель с эмблемой и
+ * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними накопленный список; «My
+ * applications» — вакансии со статусами пользователя (пока пустое состояние: статусы — срез 4, стенограмма §150);
+ * «Not interested» — отмеченные «Не интересно»; «Companies». Справа — меню учётной записи. Вакансия открывается
+ * поверх раздела; отметка или её снятие возвращает к разделу и перечитывает список.
  */
 export function App() {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -67,14 +80,21 @@ export function App() {
   return (
     <>
       <header className="bar">
-        <span className="brand">roleorienta</span>
-        <nav>
-          <button type="button" className={view === 'list' ? 'current' : ''} onClick={() => show('list')}>Vacancies</button>
-          <button type="button" className={view === 'marked' ? 'current' : ''} onClick={() => show('marked')}>Not suitable</button>
-          <button type="button" className={view === 'companies' ? 'current' : ''} onClick={() => show('companies')}>Companies</button>
+        <span className="brand"><Logo size={LOGO_SIZE} />roleorienta</span>
+        <nav aria-label="Sections">
+          {SECTIONS.map((section) => (
+            <button key={section.view} type="button" className={view === section.view ? 'current' : ''}
+              aria-current={view === section.view ? 'page' : undefined} onClick={() => show(section.view)}>
+              {section.label}
+            </button>
+          ))}
         </nav>
-        <span className="who">{account.email}</span>
-        <button type="button" onClick={signOut}>Sign out</button>
+        <details className="account">
+          <summary>{account.email}</summary>
+          <div className="menu">
+            <button type="button" onClick={signOut}>Sign out</button>
+          </div>
+        </details>
       </header>
       <main className="page">
         {notice !== null && <p className="error">{notice}</p>}
@@ -82,12 +102,17 @@ export function App() {
         {opened === null && view === 'list' && (
           <>
             <ConditionsPage onSaved={searched} />
-            <VacancyList key={searches} title="Vacancies" load={vacancies} marked={false} poll={fresh}
+            <VacancyList key={searches} title="Results" load={vacancies} marked={false} poll={fresh}
               onOpen={setOpened} />
           </>
         )}
+        {opened === null && view === 'applications' && (
+          <div className="empty">
+            <p className="lead">Vacancies you work with will appear here</p>
+          </div>
+        )}
         {opened === null && view === 'marked' && (
-          <VacancyList key={searches} title="Not suitable" load={unsuitableVacancies} marked poll={false}
+          <VacancyList key={searches} title="Not interested" load={unsuitableVacancies} marked poll={false}
             onOpen={setOpened} />
         )}
         {opened === null && view === 'companies' && <CompaniesPage />}
