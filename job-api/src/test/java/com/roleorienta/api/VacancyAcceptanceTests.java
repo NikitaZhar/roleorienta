@@ -141,9 +141,9 @@ class VacancyAcceptanceTests {
     }
 
     /**
-     * Видимость по стране (§120, аудит §121): выданная вакансия видна, только если среди её определённых стран есть
-     * страна условий или «*» (удалённо без ограничения страны); другая страна, пустой список и не рассчитанные страны
-     * ({@code NULL}) — не видны.
+     * Видимость по стране (решения владельца 2026-10-20, §148): выданная вакансия видна, если среди её определённых
+     * стран есть страна условий или страна не определена (пустой список); другая страна, только «*» (удалённо «весь
+     * мир») и не рассчитанные страны ({@code NULL}) — не видны.
      *
      * @throws Exception ошибка HTTP
      */
@@ -158,7 +158,7 @@ class VacancyAcceptanceTests {
         countries(delivered(condition, "NoCountry", "ACTIVE", 0, 2), "{}");
         countries(delivered(condition, "NotResolved", "ACTIVE", 0, 1), null);
 
-        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Worldwide,Slovakia");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("NoCountry,Slovakia");
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.roleorienta.worker.match;
 
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import java.sql.Array;
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -60,18 +61,21 @@ public class MatchRepository {
     /**
      * @param version версия сопоставления
      * @param limit   сколько вакансий
-     * @return незакрытые вакансии, не сопоставленные по этой версии: название, тексты и места публикаций
+     * @return незакрытые вакансии, не сопоставленные по этой версии: название, тексты и места публикаций, страна
+     *         государственного портала, если вакансия пришла и с него (§149)
      */
     public List<VacancyText> vacanciesToMatch(String version, int limit) {
         return jdbcTemplate.query("""
                 SELECT v.id, v.title, v.match_version, string_agg(coalesce(p.content, ''), ' ') AS content,
-                       array_agg(p.location) AS locations
-                FROM vacancy v JOIN job_posting p ON p.vacancy_id = v.id
+                       array_agg(p.location) AS locations,
+                       max(s.country) FILTER (WHERE s.provider = ?) AS portal_country
+                FROM vacancy v JOIN job_posting p ON p.vacancy_id = v.id JOIN source s ON s.id = p.source_id
                 WHERE v.state <> 'CLOSED' AND v.match_version IS DISTINCT FROM ?
                 GROUP BY v.id, v.title, v.match_version ORDER BY v.id LIMIT ?
                 """, (row, number) -> new VacancyText(row.getLong("id"), row.getString("title"),
-                row.getString("content"), row.getString("match_version"), strings(row.getArray("locations"))),
-                version, limit);
+                row.getString("content"), row.getString("match_version"),
+                new Places(strings(row.getArray("locations")), row.getString("portal_country"))),
+                StatePortalAdapter.PROVIDER, version, limit);
     }
 
     private static List<String> strings(Array array) throws SQLException {
@@ -115,8 +119,17 @@ public class MatchRepository {
      * @param content      тексты публикаций (HTML)
      * @param matchVersion версия, по которой сопоставлена; {@code null} или {@code reset:…} — не
      *                     сопоставлялась или изменилась
-     * @param locations    места публикаций ({@code null} — не указано)
+     * @param places       места публикаций и страна портала
      */
-    public record VacancyText(long id, String title, String content, String matchVersion, List<String> locations) {
+    public record VacancyText(long id, String title, String content, String matchVersion, Places places) {
+    }
+
+    /**
+     * Места вакансии.
+     *
+     * @param locations     места публикаций ({@code null} — не указано)
+     * @param portalCountry страна государственного портала, если вакансия пришла и с него; иначе {@code null}
+     */
+    public record Places(List<String> locations, String portalCountry) {
     }
 }

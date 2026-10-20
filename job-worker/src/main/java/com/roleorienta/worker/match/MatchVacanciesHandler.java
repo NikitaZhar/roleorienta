@@ -17,8 +17,9 @@ import org.springframework.stereotype.Component;
 /**
  * Задание {@code MATCH_VACANCIES}: предрасчёт соответствия вакансий позициям словаря и сведений о
  * стране и формате работы (технический документ §6 «Соответствие», «Нормализация»; подэтап 1.4).
- * Версия сопоставления — версии словаря позиций и регионов и размер справочника городов: любая
- * смена пересчитывает все вакансии. Берутся незакрытые вакансии, не сопоставленные по текущей
+ * Версия сопоставления — версии словаря позиций и регионов, размер справочника городов и версия правил
+ * распознавания мест ({@code LocationResolver.VERSION}): любая смена пересчитывает все вакансии. Страна не
+ * определилась по местам, а вакансия пришла с государственного портала — страна портала (§149). Берутся незакрытые вакансии, не сопоставленные по текущей
  * версии; соответствия и сведения вакансии заменяются вместе с отметкой версии. За задание — {@value #BATCH} вакансий, дальше —
  * следующее задание.
  */
@@ -76,7 +77,8 @@ public class MatchVacanciesHandler implements TaskHandler {
         Map<String, Long> positionIds = repository.syncPositions(dictionary);
         Map<String, String> cities = repository.cities();
         LocationResolver resolver = new LocationResolver(cities, regions);
-        String version = dictionary.version() + "/" + regions.version() + "/g" + cities.size();
+        String version = dictionary.version() + "/" + regions.version() + "/g" + cities.size() + "/"
+                + LocationResolver.VERSION;
         List<VacancyText> vacancies = repository.vacanciesToMatch(version, BATCH);
         int matched = 0;
         for (VacancyText vacancy : vacancies) {
@@ -86,7 +88,8 @@ public class MatchVacanciesHandler implements TaskHandler {
                     .forEach(match -> positions.put(positionIds.get(match.code()), match.explanation()));
             try {
                 repository.saveMatches(vacancy, version, positions,
-                        resolver.resolve(vacancy.locations(), vacancy.title(), text));
+                        resolver.resolve(vacancy.places().locations(), vacancy.title(), text)
+                                .orPortalCountry(vacancy.places().portalCountry()));
                 matched += positions.isEmpty() ? 0 : 1;
             } catch (OptimisticLockingFailureException changed) {
                 LOG.debug("Vacancy {} changed while matching, next pass", vacancy.id());

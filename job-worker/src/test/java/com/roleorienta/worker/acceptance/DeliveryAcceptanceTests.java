@@ -176,8 +176,9 @@ class DeliveryAcceptanceTests {
     }
 
     /**
-     * Отбор в порции (условия: Словакия, удалённо): выдаются только вакансии, среди определённых стран которых есть
-     * Словакия или «*» — удалённо без ограничения страны (§120, аудит §121): другая страна и страна не определена — нет;
+     * Отбор в порции (условия: Словакия, удалённо): выдаются вакансии, среди определённых стран которых есть
+     * Словакия, и вакансии без определённой страны (с пометкой); другая страна и только «*» — удалённо «весь мир» —
+     * нет (решения владельца 2026-10-20, §148);
      * явное несоответствие формата (офис при «удалённо»), закрытая и отмеченная «не подходит» вакансии и вакансия без
      * позиции не выдаются; противоречивый формат и гибрид (подходит к любому формату, §125) — выдаются.
      */
@@ -202,7 +203,7 @@ class DeliveryAcceptanceTests {
 
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
-                """, String.class)).containsExactly("Slovakia remote", "Worldwide", "Conflicting format", "Recheck", "Hybrid");
+                """, String.class)).containsExactly("Slovakia remote", "No country", "Conflicting format", "Recheck", "Hybrid");
     }
 
     /**

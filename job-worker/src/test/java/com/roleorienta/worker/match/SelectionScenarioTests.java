@@ -14,16 +14,18 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Приёмочный сценарий 10 (бизнес-описание §7.4-А) на размеченном корпусе {@code selection-corpus.json}:
- * смысловое совпадение позиции включается, другая специализация — нет; страна не определена или другая —
- * исключается (§120), «*» — соответствует; явное несоответствие формата исключает, неясный формат — включение с
- * пометкой. Словарь позиций и регионы —
+ * смысловое совпадение позиции включается, другая специализация — нет; другая страна и только «*» (удалённо «весь
+ * мир») исключаются, страна не определена — включение с пометкой (решения владельца 2026-10-20, §148); места с
+ * тире и скобками и начала названий (§149) распознаются; явное несоответствие формата исключает, неясный формат —
+ * включение с пометкой. Словарь позиций и регионы —
  * настоящие; города — небольшой набор вместо GeoNames. Каждое расхождение с разметкой перечисляется.
  */
 class SelectionScenarioTests {
 
     private static final Set<String> SEARCH_COUNTRIES = Set.of("SK");
     private static final Map<String, String> CITIES = Map.of("bratislava", "SK", "kosice", "SK", "zilina", "SK",
-            "vienna", "AT", "berlin", "DE", "prague", "CZ");
+            "vienna", "AT", "berlin", "DE", "prague", "CZ", "cairo", "EG", "manila", "PH", "bengaluru", "IN",
+            "hyderabad", "IN");
 
     private final PositionDictionary dictionary = new PositionDictionary();
     private final LocationResolver resolver = new LocationResolver(CITIES, new RemoteRegions());

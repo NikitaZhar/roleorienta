@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
 import java.util.Map;
@@ -93,6 +94,28 @@ class MatchVacanciesTests {
     }
 
     /**
+     * Правило портала (§149): вакансия государственного портала, места которой страны не дали, — в стране портала,
+     * без неясности страны; чужая страна в месте («Rakúsko» — Австрия по-словацки) остаётся.
+     */
+    @Test
+    void portalVacancyWithoutCountryIsInCountryOfPortal() {
+        jdbcTemplate.update("DELETE FROM job_posting");
+        jdbcTemplate.update("DELETE FROM vacancy");
+        long portal = jdbcTemplate.queryForObject("""
+                INSERT INTO source (provider, board, country) VALUES (?, '12345678', 'SK') RETURNING id
+                """, Long.class, StatePortalAdapter.PROVIDER);
+        portalVacancy(portal, "Účtovníčka", "Miesto výkonu podľa dohody");
+        portalVacancy(portal, "Účtovník", "Rakúsko");
+
+        runMatch();
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT title || ':' || array_to_string(work_countries, ',') || ':' || country_uncertain
+                FROM vacancy ORDER BY title
+                """, String.class)).containsExactly("Účtovník:AT:false", "Účtovníčka:SK:false");
+    }
+
+    /**
      * Вакансия изменилась, пока сопоставление её читало (у неё новая отметка «сопоставить заново»),
      * — результат по старому тексту не записывается.
      */
@@ -116,6 +139,18 @@ class MatchVacanciesTests {
                                          first_seen_at, last_confirmed_at)
                 SELECT id, ?, ?, ?, 'https://example.com', ?, ?, now(), now() FROM source
                 """, vacancyId, "ext-" + vacancyId, title, content, location);
+    }
+
+    private void portalVacancy(long sourceId, String title, String location) {
+        Long vacancyId = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
+                VALUES ('ACTIVE', ?, 'https://example.com', now(), now()) RETURNING id
+                """, Long.class, title);
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, location, first_seen_at,
+                                         last_confirmed_at)
+                VALUES (?, ?, ?, ?, 'https://example.com', ?, now(), now())
+                """, sourceId, vacancyId, "ext-" + vacancyId, title, location);
     }
 
     private void runMatch() {
