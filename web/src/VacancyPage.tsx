@@ -1,24 +1,19 @@
 import { useEffect, useState } from 'react';
 import { markUnsuitable, unmarkUnsuitable, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText, openedText } from './format';
+import { countriesText, openedText } from './format';
 
 interface Props {
   id: number;
   onBack: () => void;
-  /** Отметка «не подходит» поставлена или снята: вернуться к списку и перечитать его. */
+  /** Отметка «Не интересно» поставлена или снята: вернуться к списку и перечитать его страницу. */
   onMarked: () => void;
 }
 
-const STATES: Record<string, string> = {
-  ACTIVE: 'active',
-  NEEDS_RECHECK: 'needs recheck (source temporarily unavailable)',
-  CLOSED: 'closed',
-};
-
 /**
- * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна с пометкой неопределённости
- * (формат не показывается — решение владельца 2026-10-16, §124), ссылка на первичную публикацию, дата открытия (§127) и последней проверки,
- * состояние; отметка «не подходит» и её снятие (бизнес-описание §7.2).
+ * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна (не определена — «not
+ * specified»), территория удалённой работы, дата открытия («found …», если работодатель даты не дал, §127), ссылка
+ * на первичную публикацию; отметка «Не интересно» и её снятие. Состояние и дата последней проверки не показываются
+ * (решение владельца 2026-10-20, §146; аудит §154). Формат, языки, статусы и история — срезы 4–5.
  */
 export function VacancyPage({ id, onBack, onMarked }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
@@ -60,14 +55,10 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
         <dd>{parties.employer ?? 'not specified'}</dd>
         {parties.agency !== null && (<><dt>Agency</dt><dd>{parties.agency}</dd></>)}
         <dt>Country</dt>
-        <dd>{countriesText(work)}{work.countryUncertain && ' (not clear from the posting)'}</dd>
+        <dd>{countriesText(work)}</dd>
         {work.remoteTerritory !== null && (<><dt>Remote from</dt><dd>{work.remoteTerritory.join(', ')}</dd></>)}
-        <dt>State</dt>
-        <dd>{STATES[publication.state] ?? publication.state}</dd>
         <dt>Opened</dt>
-        <dd>{openedText(publication.opened)}{!publication.opened.byEmployer && ' (the employer gives no date)'}</dd>
-        <dt>Last confirmed</dt>
-        <dd>{dateText(publication.lastConfirmedAt)}</dd>
+        <dd>{openedText(publication.opened)}</dd>
       </dl>
       <div className="actions">
         {publication.url !== null && (

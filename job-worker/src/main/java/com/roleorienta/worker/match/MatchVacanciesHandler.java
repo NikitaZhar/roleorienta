@@ -29,6 +29,12 @@ public class MatchVacanciesHandler implements TaskHandler {
     /** Тип задания. */
     public static final String TYPE = "MATCH_VACANCIES";
 
+    /**
+     * Наибольшая длина версии сопоставления: она хранится в {@code vacancy.match_version} и
+     * {@code vacancy_position_match.dictionary_version} — {@code VARCHAR(40)} (миграция V16).
+     */
+    static final int MAX_VERSION_LENGTH = 40;
+
     private static final String PAYLOAD = "{}";
     private static final int BATCH = 500;
     private static final Logger LOG = LoggerFactory.getLogger(MatchVacanciesHandler.class);
@@ -77,8 +83,7 @@ public class MatchVacanciesHandler implements TaskHandler {
         Map<String, Long> positionIds = repository.syncPositions(dictionary);
         Map<String, String> cities = repository.cities();
         LocationResolver resolver = new LocationResolver(cities, regions);
-        String version = dictionary.version() + "/" + regions.version() + "/g" + cities.size() + "/"
-                + LocationResolver.VERSION;
+        String version = version(dictionary.version(), regions.version(), cities.size());
         List<VacancyText> vacancies = repository.vacanciesToMatch(version, BATCH);
         int matched = 0;
         for (VacancyText vacancy : vacancies) {
@@ -100,6 +105,25 @@ public class MatchVacanciesHandler implements TaskHandler {
             taskService.enqueue(TYPE, taskKey(version + ":" + vacancies.get(BATCH - 1).id()), PAYLOAD);
         }
         return new TaskOutcome.Done();
+    }
+
+    /**
+     * Версия сопоставления: словарь позиций, регионы, размер справочника городов, правила распознавания мест. Длиннее
+     * колонок БД — понятная ошибка задания, а не отказ записи на каждой вакансии (стенограмма §149, аудит §154).
+     *
+     * @param dictionaryVersion версия словаря позиций
+     * @param regionsVersion    версия регионов удалённой работы
+     * @param cityCount         число названий в справочнике городов
+     * @return версия
+     * @throws IllegalStateException версия длиннее {@value #MAX_VERSION_LENGTH} символов
+     */
+    static String version(String dictionaryVersion, String regionsVersion, int cityCount) {
+        String version = dictionaryVersion + "/" + regionsVersion + "/g" + cityCount + "/" + LocationResolver.VERSION;
+        if (version.length() > MAX_VERSION_LENGTH) {
+            throw new IllegalStateException("Match version " + version + " is longer than " + MAX_VERSION_LENGTH
+                    + " characters of vacancy.match_version");
+        }
+        return version;
     }
 
     /**

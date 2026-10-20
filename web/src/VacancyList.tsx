@@ -11,6 +11,8 @@ interface Props {
   marked: boolean;
   /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
   poll: boolean;
+  /** Счётчик перечитываний: изменился — перечитать текущую страницу (отметка поставлена или снята). */
+  reload: number;
   onOpen: (id: number) => void;
 }
 
@@ -32,9 +34,11 @@ const SIZE_KEY = 'roleorienta.pageSize';
  * размер по умолчанию). Пустой накопленный список объясняется: что искать не задано — задать выше; задано —
  * подходящих вакансий пока нет. Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые
  * 5 с в течение 2 минут — первая порция выдаётся в течение ~30 с (§120); следующий запрос — только после ответа на
- * предыдущий (аудит §121).
+ * предыдущий (аудит §121). Перечитывание ({@code reload}) показывает ту же страницу; если она опустела (снята
+ * последняя отметка на последней странице) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
+ * страницы во время загрузки не меняется (аудит §154).
  */
-export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
+export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props) {
   const [data, setData] = useState<VacancyPage | null>(null);
   const [size, setSize] = useState(storedSize);
   const [hasConditions, setHasConditions] = useState(true);
@@ -44,8 +48,12 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
 
   async function show(page: number, rows: number) {
     setLoading(true);
+    setMessage(null);
     try {
-      const next = await load(page, rows);
+      let next = await load(page, rows);
+      if (next.items.length === 0 && next.total > 0 && page > 1) {
+        next = await load(Math.ceil(next.total / rows), rows);
+      }
       setData(next);
       if (next.total === 0 && !marked) {
         setHasConditions((await searchCondition()) !== null);
@@ -64,8 +72,8 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
   }
 
   useEffect(() => {
-    show(1, size);
-  }, []);
+    show(data?.page ?? 1, size);
+  }, [reload]);
 
   useEffect(() => {
     if (!poll || data === null || loading || !hasConditions || data.total > 0 || refreshes >= REFRESH_TIMES) {
@@ -79,7 +87,11 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
   }, [poll, data, loading, hasConditions, refreshes]);
 
   if (message !== null) {
-    return <p className="error">{message}</p>;
+    return (
+      <p className="error" role="alert">
+        {message} <button type="button" onClick={() => show(data?.page ?? 1, size)}>Retry</button>
+      </p>
+    );
   }
   if (data === null) {
     return <p>Loading…</p>;
@@ -117,7 +129,7 @@ export function VacancyList({ title, load, marked, poll, onOpen }: Props) {
         <div className="list-footer">
           <Pager page={data.page} pages={Math.ceil(data.total / data.size)} busy={loading}
             onPage={(page) => show(page, size)} />
-          <PageSize size={size} sizes={PAGE_SIZES} onSize={resize} />
+          <PageSize size={size} sizes={PAGE_SIZES} busy={loading} onSize={resize} />
         </div>
       )}
     </section>

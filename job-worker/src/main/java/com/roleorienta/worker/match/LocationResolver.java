@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
  *       названием); не распознан целиком — пробуется его начало из меньшего числа слов, не короче
  *       {@value #MIN_PREFIX} букв ({@code Bengaluru Millenia}, {@code Bratislava-Staré Mesto}). Место Workday вида
  *       {@code IND.Pune}, {@code USA.VA.Reston} — страна по коду ISO 3166-1 alpha-3 до первой точки.</li>
- *   <li>Часть без распознанной страны («удалённо» без территории, «2 Locations», неизвестный город)
- *       — страна неясна.</li>
+ *   <li>Часть без распознанной страны («удалённо» без территории, «2 Locations», неизвестный город) стран
+ *       не добавляет; у вакансии без единой страны страна не определена (выдача — с пометкой, §148).</li>
  *   <li>Формат: гибрид и удалённо — по названию, местам и тексту; офис — только по названию и местам
  *       (в тексте шаблонные фразы вроде «in the office or in the field» офиса не означают), но офис в
  *       тексте рядом с удалённой работой даёт противоречие («on-site role, work from home
@@ -34,9 +34,9 @@ final class LocationResolver {
 
     /**
      * Версия правил распознавания мест — входит в версию сопоставления: её смена пересчитывает страны и формат всех
-     * незакрытых вакансий ({@code MatchVacanciesHandler}). Коротко: вся версия сопоставления хранится в
-     * {@code vacancy.match_version} и {@code vacancy_position_match.dictionary_version} — {@code VARCHAR(40)}
-     * (с этой частью — 35 символов; «places-2» дал 41 и запись отказала, стенограмма §149).
+     * незакрытых вакансий ({@code MatchVacanciesHandler}). Коротко: длина всей версии ограничена
+     * {@code MatchVacanciesHandler.MAX_VERSION_LENGTH} («places-2» дал 41 символ и запись отказала, стенограмма §149;
+     * запас проверяет {@code MatchVersionTests}).
      */
     static final String VERSION = "p2";
 
@@ -88,25 +88,21 @@ final class LocationResolver {
      * @param locations места публикаций вакансии ({@code null} — не указано)
      * @param title     название вакансии
      * @param text      текст вакансии
-     * @return страны, неясность страны и формат
+     * @return страны и формат
      */
     LocationFacts resolve(List<String> locations, String title, String text) {
         Set<String> countries = new HashSet<>();
-        boolean uncertain = false;
         for (String location : locations) {
             if (location == null || location.isBlank()) {
                 continue;
             }
             for (String place : PLACES.split(location)) {
-                Set<String> placeCountries = place(place);
-                countries.addAll(placeCountries);
-                uncertain |= placeCountries.isEmpty() && !place.isBlank();
+                countries.addAll(place(place));
             }
         }
         String markers = PositionDictionary.normalize(title + " " + String.join(" ", locations.stream()
                 .map(location -> location == null ? "" : location).toList()));
-        return new LocationFacts(Set.copyOf(countries), uncertain,
-                format(markers, PositionDictionary.normalize(text)));
+        return new LocationFacts(Set.copyOf(countries), format(markers, PositionDictionary.normalize(text)));
     }
 
     private Set<String> place(String place) {
@@ -172,11 +168,10 @@ final class LocationResolver {
     }
 
     /**
-     * @param countries страны выполнения работы; «*» — без ограничения
-     * @param uncertain есть место без ясной страны
+     * @param countries страны выполнения работы; «*» — без ограничения; пусто — страна не определена
      * @param format    формат; {@code null} — не указан
      */
-    record LocationFacts(Set<String> countries, boolean uncertain, WorkFormat format) {
+    record LocationFacts(Set<String> countries, WorkFormat format) {
 
         /**
          * Страна государственного портала, если места страны не дали (решение владельца 2026-10-20, стенограмма
@@ -184,11 +179,11 @@ final class LocationResolver {
          * и правило не срабатывает.
          *
          * @param portalCountry страна портала, с которого пришла вакансия; {@code null} — вакансии портала нет
-         * @return сведения со страной портала и без неясности страны; иначе — эти же сведения
+         * @return сведения со страной портала; иначе — эти же сведения
          */
         LocationFacts orPortalCountry(String portalCountry) {
             return countries.isEmpty() && portalCountry != null
-                    ? new LocationFacts(Set.of(portalCountry), false, format) : this;
+                    ? new LocationFacts(Set.of(portalCountry), format) : this;
         }
     }
 }

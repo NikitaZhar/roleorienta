@@ -17,6 +17,7 @@
   --accent: #b0673a;
   --accent-soft: #f0e2d2;
   --accent-ink: #7c481f;
+  --on-accent: #ffffff;
   --fresh: #dcebe0;
   --fresh-ink: #1f5a38;
   --danger: #a3262a;
@@ -47,6 +48,7 @@
     --accent: #d89a63;
     --accent-soft: #33261a;
     --accent-ink: #e4b482;
+    --on-accent: #1b1209;
     --fresh: #16301f;
     --fresh-ink: #9ad9b2;
     --danger: #f0908c;
@@ -74,6 +76,13 @@ h2 {
   font-family: var(--serif);
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+/* Жирное — начертание 600 из сборки (main.tsx); 700 не подключено, браузер дорисовывал бы его сам. */
+th,
+strong,
+b {
+  font-weight: 600;
 }
 
 /* Верхняя панель: эмблема и название, разделы, меню учётной записи. */
@@ -161,7 +170,7 @@ button:disabled {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   font-weight: 500;
 }
 
@@ -172,12 +181,6 @@ button.link {
   color: var(--accent);
   padding-left: 4px;
   padding-right: 4px;
-}
-
-@media (prefers-color-scheme: dark) {
-  button.primary {
-    color: #1b1209;
-  }
 }
 
 .actions {
@@ -296,6 +299,7 @@ nav .current,
 .pager,
 .page-size {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
   font-family: var(--mono);

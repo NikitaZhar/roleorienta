@@ -29,7 +29,7 @@ public class VacancyRepository {
      */
     private static final String COLUMNS = """
             v.id, v.title, v.primary_url, v.first_seen_at, v.posted_at, v.last_confirmed_at, v.state, v.work_countries,
-            v.country_uncertain, v.work_format,
+            v.work_format,
             coalesce((SELECT co.name FROM job_posting p
                       JOIN company_source cs ON cs.source_id = p.source_id AND cs.role IN ('EMPLOYER', 'GROUP')
                       JOIN company co ON co.id = cs.company_id WHERE p.vacancy_id = v.id
@@ -176,11 +176,10 @@ public class VacancyRepository {
 
     private static VacancyRow vacancy(ResultSet row, boolean unsuitable) throws SQLException {
         Array countries = row.getArray("work_countries");
-        Boolean uncertain = (Boolean) row.getObject("country_uncertain");
         return new VacancyRow(row.getLong("id"), row.getString("title"),
                 new Parties(row.getString("employer"), row.getString("agency")),
                 new WorkFacts(countries == null ? List.of() : List.of((String[]) countries.getArray()),
-                        row.getString("work_format"), uncertain == null || uncertain),
+                        row.getString("work_format")),
                 new Publication(row.getString("primary_url"), opened(row),
                         row.getObject("last_confirmed_at", OffsetDateTime.class).toInstant(), row.getString("state"),
                         unsuitable));
@@ -222,9 +221,8 @@ public class VacancyRepository {
      *
      * @param countries        страны; пусто — не определены
      * @param format           {@code OFFICE}/{@code HYBRID}/{@code REMOTE}/{@code CONFLICT}; {@code null} — не указан
-     * @param countryUncertain есть место без ясной страны (или признак не рассчитан)
      */
-    public record WorkFacts(List<String> countries, String format, boolean countryUncertain) {
+    public record WorkFacts(List<String> countries, String format) {
     }
 
     /**

@@ -2,18 +2,13 @@ import type { Opened, Work } from './api';
 
 /** Страна в строке списка: без подписи поля, поэтому «не указано» называет, что именно (§152). */
 export function rowCountryText(work: Work): string {
-  return work.countries.length === 0 ? 'Country not specified' : countriesText(work);
+  return work.countryUncertain ? 'Country not specified' : countriesText(work);
 }
 
-/** Страны работы: «*» — любая страна. */
+/** Страны работы (сведения о вакансии, где есть подпись «Country»): не определена — «not specified»; «*» — любая. */
 export function countriesText(work: Work): string {
-  return work.countries.length === 0 ? 'not specified'
+  return work.countryUncertain ? 'not specified'
     : work.countries.map((country) => (country === '*' ? 'any country' : country)).join(', ');
-}
-
-/** Дата и время в локали браузера; null — «—». */
-export function dateText(value: string | null): string {
-  return value === null ? '—' : new Date(value).toLocaleString();
 }
 
 /**

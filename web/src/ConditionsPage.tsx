@@ -4,7 +4,8 @@ import {
 } from './api';
 
 interface Props {
-  onSaved: () => void;
+  /** Условия сохранены; {@code changed} — создана новая версия условий (ETag сменился). */
+  onSaved: (changed: boolean) => void;
 }
 
 const FORMATS: { value: WorkFormat | ''; label: string }[] = [
@@ -22,7 +23,10 @@ const MAX_POSITIONS = 10;
  * гибридные вакансии выдаются при любом формате, §125). Экран — по согласованному макету (§147, §152): условия
  * заданы — свёрнуты в строку меток с «Edit»; «Edit» раскрывает форму с «Cancel»; после «Search» форма снова
  * свёрнута. Нет условий — «No search criteria yet», форма раскрыта, ни одна страна не отмечена (решение владельца
- * 2026-10-20). Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран, набора позиций или формата
+ * 2026-10-20). Условия сменились в другом окне ({@code 412}) — форма остаётся раскрытой с перечитанными условиями и
+ * сообщением, список под ней начинается заново по новым условиям (аудит §154). Новая версия условий — когда выбор
+ * (страны, позиции, формат) отличается от сохранённого: так же решает сервер (ETag меняется и от лимита порции, которого
+ * на экране нет). Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран, набора позиций или формата
  * создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
  * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
@@ -37,6 +41,8 @@ export function ConditionsPage({ onSaved }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
+  /** Выбор сохранённых условий; {@code null} — условий нет. Сравнение с ним показывает, создана ли новая версия. */
+  const [savedSelection, setSavedSelection] = useState<string | null>(null);
 
   async function load() {
     const [all, current] = await Promise.all([countries(), searchCondition()]);
@@ -47,9 +53,11 @@ export function ConditionsPage({ onSaved }: Props) {
       setSelected([]);
       setChosen([]);
       setFormat('');
+      setSavedSelection(null);
       setEditing(true);
     } else {
       const condition = current.data;
+      setSavedSelection(selectionKey(condition.countries, condition.positions, condition.format ?? ''));
       setSelected(condition.countries);
       setFormat(condition.format ?? '');
       setChosen(await Promise.all(condition.positions.map(async (code) => {
@@ -111,14 +119,19 @@ export function ConditionsPage({ onSaved }: Props) {
         format: format === '' ? null : format,
         portionLimit: null,
       }, etag);
+      const submitted = selectionKey(selected, chosen.map((item) => item.code), format);
+      const changed = submitted !== savedSelection;
+      setSavedSelection(submitted);
       setEtag(saved.etag);
       setMessage(null);
       setEditing(false);
-      onSaved();
+      onSaved(changed);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
         setMessage('Search was changed in another window; reloaded, check and search again');
         await load().catch((reload: Error) => setMessage(reload.message));
+        setEditing(true);
+        onSaved(true);
         return;
       }
       setMessage(failure instanceof ApiError && failure.fields.length > 0
@@ -211,4 +224,9 @@ export function ConditionsPage({ onSaved }: Props) {
       </div>
     </form>
   );
+}
+
+/** Выбор условий одной строкой для сравнения: порядок стран и позиций не важен. */
+function selectionKey(countryCodes: string[], positionCodes: string[], format: WorkFormat | ''): string {
+  return [...countryCodes].sort().join(',') + '|' + [...positionCodes].sort().join(',') + '|' + format;
 }

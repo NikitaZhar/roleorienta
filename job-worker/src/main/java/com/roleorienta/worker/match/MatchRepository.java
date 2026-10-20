@@ -97,9 +97,9 @@ public class MatchRepository {
             LocationResolver.LocationFacts facts) {
         int updated = jdbcTemplate.update("""
                 UPDATE vacancy SET match_version = ?, work_countries = string_to_array(?, ','),
-                                   country_uncertain = ?, work_format = ?
+                                   work_format = ?
                 WHERE id = ? AND match_version IS NOT DISTINCT FROM ?
-                """, version, String.join(",", facts.countries().stream().sorted().toList()), facts.uncertain(),
+                """, version, String.join(",", facts.countries().stream().sorted().toList()),
                 facts.format() == null ? null : facts.format().name(), vacancy.id(), vacancy.matchVersion());
         if (updated == 0) {
             throw new OptimisticLockingFailureException("Vacancy " + vacancy.id() + " changed while matching");

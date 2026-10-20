@@ -19,7 +19,7 @@ const MINOR_FROM = 24;
  */
 export function Logo({ size }: Props) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="logo">
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <circle cx="16" cy="16" r="14.5" fill="none" stroke="var(--accent)" strokeWidth="1.6" />
       {size >= MINOR_FROM && <path d={MINOR} fill="var(--muted)" />}
       <path d={LIGHT_HALVES} fill="var(--ink)" />

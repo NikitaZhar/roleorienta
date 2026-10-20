@@ -72,8 +72,8 @@ public final class VacancyDtos {
      * @param countries        страны выполнения работы (ISO 3166-1 alpha-2; {@code *} — без ограничения)
      * @param format           {@code OFFICE}, {@code HYBRID}, {@code REMOTE}; {@code null} — не указан или противоречив
      * @param remoteTerritory  территория удалённой работы — страны вакансии с форматом {@code REMOTE}; иначе {@code null}
-     * @param countryUncertain страна не ясна: есть место без ясной страны или стран нет вовсе (в накопленном списке
-     *                         такая вакансия — только если среди её стран есть страна условий или «*»; §120)
+     * @param countryUncertain страна не определена — стран нет (экран: «not specified»); такая вакансия выдаётся с
+     *                         этой пометкой (решения владельца 2026-10-20, §148; аудит §154)
      * @param formatUncertain  формат не указан или противоречив, а в условиях пользователя он задан
      */
     public record Work(List<String> countries, String format, List<String> remoteTerritory, boolean countryUncertain,

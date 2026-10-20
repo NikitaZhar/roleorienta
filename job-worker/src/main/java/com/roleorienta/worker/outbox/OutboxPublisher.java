@@ -3,6 +3,7 @@ package com.roleorienta.worker.outbox;
 import com.roleorienta.worker.messaging.RabbitTopology;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -32,7 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
  * сообщение в {@code CorrelationData} раньше, чем завершает его подтверждение
  * ({@link CorrelationData#getFuture()}). Прежняя схема — общий {@code waitForConfirmsOrDie} и набор
  * вернувшихся из обратного вызова — гонялась: обратный вызов возврата выполняется в другом потоке и мог
- * прийти после конца ожидания, и вернувшееся сообщение отмечалось опубликованным (стенограмма §153).
+ * прийти после конца ожидания, и вернувшееся сообщение отмечалось опубликованным (стенограмма §153). Id
+ * подтверждения — id события и случайная часть: после истечения срока пачки событие отправляется снова, и поздний
+ * возврат прежней отправки не должен приписаться новой (аудит §154).
  * https://docs.spring.io/spring-amqp/reference/amqp/template.html#template-confirms</p>
  *
  * <p>Если подтверждений нет в срок пачки или брокер ответил отказом ({@code nack}), бросается
@@ -79,7 +82,7 @@ public class OutboxPublisher {
         }
         List<CorrelationData> confirms = new ArrayList<>(batch.size());
         for (OutboxEvent event : batch) {
-            CorrelationData correlation = new CorrelationData(String.valueOf(event.id()));
+            CorrelationData correlation = new CorrelationData(event.id() + ":" + UUID.randomUUID());
             rabbitTemplate.send(RabbitTopology.EXCHANGE, RabbitTopology.routingKey(event.taskType()), toMessage(event),
                     correlation);
             confirms.add(correlation);

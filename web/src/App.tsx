@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type Account, currentAccount, logout, unsuitableVacancies, vacancies } from './api';
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
@@ -25,7 +25,10 @@ const LOGO_SIZE = 24;
  * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними накопленный список; «My
  * applications» — вакансии со статусами пользователя (пока пустое состояние: статусы — срез 4, стенограмма §150);
  * «Not interested» — отмеченные «Не интересно»; «Companies». Справа — меню учётной записи. Вакансия открывается
- * поверх раздела; отметка или её снятие возвращает к разделу и перечитывает список.
+ * вместо раздела, а раздел не снимается, а скрывается ({@code hidden}): после «Back» видна та же страница списка и
+ * те же условия без новых запросов, прокрутка — та же, что была до открытия (аудит §154). Отметка или её снятие возвращает к разделу и перечитывает ту же
+ * страницу ({@code reloads}); новые условия начинают список заново с первой страницы ({@code searches} — ключ
+ * списка). Выход сбрасывает раздел и открытую вакансию.
  */
 export function App() {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -34,16 +37,32 @@ export function App() {
   const [opened, setOpened] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searches, setSearches] = useState(0);
+  const [reloads, setReloads] = useState(0);
   const [fresh, setFresh] = useState(false);
+  /** Прокрутка раздела в момент открытия вакансии: карточка короче списка, браузер прижал бы прокрутку. */
+  const listScroll = useRef(0);
 
   useEffect(() => {
     currentAccount().then(setAccount, (failure: Error) => setError(failure.message));
   }, []);
 
+  useEffect(() => {
+    window.scrollTo(0, opened === null ? listScroll.current : 0);
+  }, [opened]);
+
+  function open(id: number) {
+    listScroll.current = window.scrollY;
+    setOpened(id);
+  }
+
   async function signOut() {
     try {
       await logout();
       setNotice(null);
+      setView('list');
+      listScroll.current = 0;
+      setOpened(null);
+      setFresh(false);
       setAccount(null);
     } catch (failure) {
       setNotice('Sign out failed: ' + (failure as Error).message);
@@ -52,6 +71,8 @@ export function App() {
 
   function show(next: View) {
     setNotice(null);
+    listScroll.current = 0;
+    window.scrollTo(0, 0);
     setOpened(null);
     setFresh(false);
     setView(next);
@@ -60,12 +81,15 @@ export function App() {
   function marked() {
     setOpened(null);
     setFresh(false);
-    setSearches((count) => count + 1);
+    setReloads((count) => count + 1);
   }
 
-  function searched() {
-    setFresh(true);
-    setSearches((count) => count + 1);
+  /** Условия сохранены; {@code changed} — создана новая версия условий (список начинается заново). */
+  function searched(changed: boolean) {
+    if (changed) {
+      setFresh(true);
+      setSearches((count) => count + 1);
+    }
   }
 
   if (error !== null) {
@@ -99,24 +123,26 @@ export function App() {
       <main className="page">
         {notice !== null && <p className="error">{notice}</p>}
         {opened !== null && <VacancyPage id={opened} onBack={() => setOpened(null)} onMarked={marked} />}
-        {opened === null && view === 'list' && (
-          <>
-            <ConditionsPage onSaved={searched} />
-            <VacancyList key={searches} load={vacancies} marked={false} poll={fresh}
-              onOpen={setOpened} />
-          </>
-        )}
-        {opened === null && view === 'applications' && (
-          <section>
-            <h2>My applications</h2>
-            <Empty text="Vacancies you work with will appear here" />
-          </section>
-        )}
-        {opened === null && view === 'marked' && (
-          <VacancyList key={searches} title="Not interested" load={unsuitableVacancies} marked poll={false}
-            onOpen={setOpened} />
-        )}
-        {opened === null && view === 'companies' && <CompaniesPage />}
+        <div hidden={opened !== null}>
+          {view === 'list' && (
+            <>
+              <ConditionsPage onSaved={searched} />
+              <VacancyList key={searches} load={vacancies} marked={false} poll={fresh} reload={reloads}
+                onOpen={open} />
+            </>
+          )}
+          {view === 'applications' && (
+            <section>
+              <h2>My applications</h2>
+              <Empty text="Vacancies you work with will appear here" />
+            </section>
+          )}
+          {view === 'marked' && (
+            <VacancyList title="Not interested" load={unsuitableVacancies} marked poll={false} reload={reloads}
+              onOpen={open} />
+          )}
+          {view === 'companies' && <CompaniesPage />}
+        </div>
       </main>
     </>
   );

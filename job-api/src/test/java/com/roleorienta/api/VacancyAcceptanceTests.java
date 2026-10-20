@@ -17,13 +17,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * §7.4; технический документ §8). Выдачу (job-worker) заменяют строки {@code delivered_vacancy}.
  *
  * <ul>
- *   <li>Список: новые сверху, страницы по курсору; закрытая и давно не подтверждённая вакансия не видна; видна
- *       только вакансия со страной условий или «*» среди определённых стран (§120, аудит §121).</li>
+ *   <li>Список: открытые позже сверху, при равной дате — больший id выше; страницы по номеру с общим числом (§151);
+ *       закрытая и давно не подтверждённая вакансия не видна; видна вакансия со страной условий среди определённых
+ *       стран или без определённой страны (с пометкой), только «*» — нет (§148, аудит §154).</li>
  *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, даты, состояние.</li>
  *   <li>13 — отметка «не подходит» скрывает вакансию у этого пользователя, сохраняется при смене условий, после
  *       снятия вакансия возвращается; повтор отметки и снятия — без ошибки.</li>
- *   <li>14 (список) — вакансии и отметки другого пользователя недоступны ({@code 404}); курсор другого списка —
- *       {@code 400}.</li>
+ *   <li>14 (список) — вакансии и отметки другого пользователя недоступны ({@code 404}), их списки у него пусты.</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -145,7 +145,8 @@ class VacancyAcceptanceTests {
     /**
      * Видимость по стране (решения владельца 2026-10-20, §148): выданная вакансия видна, если среди её определённых
      * стран есть страна условий или страна не определена (пустой список); другая страна, только «*» (удалённо «весь
-     * мир») и не рассчитанные страны ({@code NULL}) — не видны.
+     * мир») и не рассчитанные страны ({@code NULL}) — не видны. Пометка «страна не определена» — только у вакансии без
+     * стран (аудит §154).
      *
      * @throws Exception ошибка HTTP
      */
@@ -160,7 +161,10 @@ class VacancyAcceptanceTests {
         countries(delivered(condition, "NoCountry", "ACTIVE", 0, 2), "{}");
         countries(delivered(condition, "NotResolved", "ACTIVE", 0, 1), null);
 
-        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("NoCountry,Slovakia");
+        String body = client.send("GET", "/api/v1/me/vacancies", null).body();
+        assertThat(titles(body)).isEqualTo("NoCountry,Slovakia");
+        assertThat(body).containsPattern("\"position\":\"NoCountry\".*?\"countryUncertain\":true")
+                .containsPattern("\"position\":\"Slovakia\".*?\"countryUncertain\":false");
     }
 
     /**
@@ -220,13 +224,14 @@ class VacancyAcceptanceTests {
      * список версии условий.
      *
      * @param daysUnconfirmed сколько дней не подтверждалась
-     * @param hoursAgo        сколько часов назад выдана (меньше — новее)
+     * @param hoursAgo        сколько часов назад выдана; порядок списка от времени выдачи не зависит (§127): дата
+     *                        открытия — момент вставки вакансии минус 60 дней, так что и по дате, и по id созданная
+     *                        позже выше
      */
     private long delivered(long condition, String title, String state, int daysUnconfirmed, int hoursAgo) {
         long vacancy = jdbcTemplate.queryForObject("""
-                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries,
-                                     country_uncertain)
-                VALUES (?, ?, ?, now() - interval '60 days', now() - make_interval(days => ?), ARRAY['SK'], FALSE)
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries)
+                VALUES (?, ?, ?, now() - interval '60 days', now() - make_interval(days => ?), ARRAY['SK'])
                 RETURNING id
                 """, Long.class, state, title, "https://example.com/" + title, daysUnconfirmed);
         jdbcTemplate.update("""

@@ -10,6 +10,8 @@ interface PagerProps {
 interface SizeProps {
   size: number;
   sizes: number[];
+  /** Идёт загрузка — выбор недоступен: ответы на быстрые нажатия могли бы прийти не по порядку. */
+  busy: boolean;
   onSize: (size: number) => void;
 }
 
@@ -45,13 +47,13 @@ export function Pager({ page, pages, busy, onPage }: PagerProps) {
 }
 
 /** Выбор числа строк на странице: «Per page: 20 · 50 · 100». */
-export function PageSize({ size, sizes, onSize }: SizeProps) {
+export function PageSize({ size, sizes, busy, onSize }: SizeProps) {
   return (
     <div className="page-size" role="group" aria-label="Vacancies per page">
       <span className="muted">Per page:</span>
       {sizes.map((choice) => (
         <button key={choice} type="button" className={choice === size ? 'current' : ''}
-          aria-pressed={choice === size} onClick={() => onSize(choice)}>
+          aria-pressed={choice === size} disabled={busy} onClick={() => onSize(choice)}>
           {choice}
         </button>
       ))}

@@ -76,7 +76,7 @@ class MatchVacanciesTests {
                 "SELECT count(*) FROM vacancy WHERE match_version LIKE ?", Integer.class, dictionary.version() + "/%"))
                 .isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("""
-                SELECT 'SK' = ANY (work_countries) AND NOT country_uncertain AND work_format = 'REMOTE'
+                SELECT 'SK' = ANY (work_countries) AND work_format = 'REMOTE'
                 FROM vacancy WHERE title = 'Software Engineer'
                 """, Boolean.class)).isTrue();
 
@@ -95,7 +95,7 @@ class MatchVacanciesTests {
 
     /**
      * Правило портала (§149): вакансия государственного портала, места которой страны не дали, — в стране портала,
-     * без неясности страны; чужая страна в месте («Rakúsko» — Австрия по-словацки) остаётся.
+     * чужая страна в месте («Rakúsko» — Австрия по-словацки) остаётся.
      */
     @Test
     void portalVacancyWithoutCountryIsInCountryOfPortal() {
@@ -110,9 +110,8 @@ class MatchVacanciesTests {
         runMatch();
 
         assertThat(jdbcTemplate.queryForList("""
-                SELECT title || ':' || array_to_string(work_countries, ',') || ':' || country_uncertain
-                FROM vacancy ORDER BY title
-                """, String.class)).containsExactly("Účtovník:AT:false", "Účtovníčka:SK:false");
+                SELECT title || ':' || array_to_string(work_countries, ',') FROM vacancy ORDER BY title
+                """, String.class)).containsExactly("Účtovník:AT", "Účtovníčka:SK");
     }
 
     /**
@@ -125,7 +124,7 @@ class MatchVacanciesTests {
         jdbcTemplate.update("UPDATE vacancy SET match_version = 'reset:changed' WHERE id = ?", read.id());
 
         assertThatThrownBy(() -> repository.saveMatches(read, "any", Map.of(),
-                new LocationResolver.LocationFacts(Set.of(), true, null)))
+                new LocationResolver.LocationFacts(Set.of(), null)))
                 .isInstanceOf(OptimisticLockingFailureException.class);
     }
 

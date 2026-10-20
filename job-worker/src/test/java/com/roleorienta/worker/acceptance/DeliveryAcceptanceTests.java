@@ -5,11 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.delivery.PassPlanner;
 import com.roleorienta.worker.delivery.RunPassHandler;
+import com.roleorienta.worker.match.Fit;
+import com.roleorienta.worker.match.WorkFormat;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskRecord;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,8 +36,9 @@ import org.springframework.test.context.ActiveProfiles;
  *   <li>8 — срок без подтверждения: не подтверждённая дольше срока вакансия не выдаётся; после
  *       подтверждения выдаётся; уже выданная после возвращения не выдаётся как новая.</li>
  *   <li>9 (выдача) — повтор задания прохода и повторное планирование окна порцию не удваивают.</li>
- *   <li>Отбор в порции: страна условий или «*» среди определённых стран вакансии (§120, аудит §121); исключает
- *       явное несоответствие формата, закрытие и отметку «не подходит» (бизнес-описание §4.4).</li>
+ *   <li>Отбор в порции: страна условий среди определённых стран вакансии или страна не определена; только «*» — нет
+ *       (§148); исключает явное несоответствие формата, закрытие и отметку «не подходит» (бизнес-описание §4.4);
+ *       совпадает с оценкой {@code Fit} на полном наборе сочетаний (аудит §154).</li>
  * </ul>
  */
 @SpringBootTest
@@ -185,14 +192,13 @@ class DeliveryAcceptanceTests {
     @Test
     void portionKeepsOnlyCountryOfConditions() {
         jdbcTemplate.update("UPDATE search_condition SET work_format = 'REMOTE'");
-        facts(vacancy("Slovakia remote", 1, "acme"), "{SK}", false, "REMOTE");
-        facts(vacancy("Czechia", 2, "acme"), "{CZ}", false, "REMOTE");
-        facts(vacancy("Czechia and unclear place", 3, "acme"), "{CZ}", true, "REMOTE");
-        facts(vacancy("Worldwide", 4, "acme"), "{*}", false, "REMOTE");
-        facts(vacancy("No country", 5, "acme"), "{}", false, null);
-        facts(vacancy("Office", 6, "acme"), "{SK}", false, "OFFICE");
-        facts(vacancy("Hybrid", 12, "acme"), "{SK}", false, "HYBRID");
-        facts(vacancy("Conflicting format", 7, "acme"), "{SK}", false, "CONFLICT");
+        facts(vacancy("Slovakia remote", 1, "acme"), "{SK}", "REMOTE");
+        facts(vacancy("Czechia", 2, "acme"), "{CZ}", "REMOTE");
+        facts(vacancy("Worldwide", 4, "acme"), "{*}", "REMOTE");
+        facts(vacancy("No country", 5, "acme"), "{}", null);
+        facts(vacancy("Office", 6, "acme"), "{SK}", "OFFICE");
+        facts(vacancy("Hybrid", 12, "acme"), "{SK}", "HYBRID");
+        facts(vacancy("Conflicting format", 7, "acme"), "{SK}", "CONFLICT");
         jdbcTemplate.update("UPDATE vacancy SET state = 'CLOSED' WHERE id = ?", vacancy("Closed", 8, "acme"));
         jdbcTemplate.update("UPDATE vacancy SET state = 'NEEDS_RECHECK' WHERE id = ?", vacancy("Recheck", 9, "acme"));
         jdbcTemplate.update("INSERT INTO unsuitable_mark (user_id, vacancy_id) VALUES (?, ?)", userId,
@@ -207,16 +213,56 @@ class DeliveryAcceptanceTests {
     }
 
     /**
+     * Правило отбора по стране и формату записано и в SQL выдачи ({@code DeliveryRepository.PORTION}), и в
+     * {@code Fit} (аудит §154: копии держались только на JavaDoc). Здесь они сверяются на всех сочетаниях: страны
+     * вакансии × формат вакансии × формат условий; выдаётся ровно то, у чего {@code Fit} не даёт несоответствия.
+     */
+    @Test
+    void portionAgreesWithFitOnEveryCombination() {
+        List<Set<String>> countrySets = List.of(Set.of("SK"), Set.of("CZ"), Set.of(), Set.of("*"), Set.of("SK", "*"),
+                Set.of("CZ", "*"));
+        List<WorkFormat> vacancyFormats = Arrays.asList(null, WorkFormat.OFFICE, WorkFormat.HYBRID, WorkFormat.REMOTE,
+                WorkFormat.CONFLICT);
+        List<Case> cases = new ArrayList<>();
+        for (Set<String> countries : countrySets) {
+            for (WorkFormat format : vacancyFormats) {
+                String array = "{" + String.join(",", countries.stream().sorted().toList()) + "}";
+                Case example = new Case(array + "/" + format, countries, format);
+                facts(vacancy(example.title(), cases.size() + 1, "acme"), array,
+                        format == null ? null : format.name());
+                cases.add(example);
+            }
+        }
+
+        for (WorkFormat conditionFormat : Arrays.asList(null, WorkFormat.OFFICE, WorkFormat.REMOTE)) {
+            jdbcTemplate.update("DELETE FROM delivered_vacancy");
+            jdbcTemplate.update("UPDATE search_condition SET work_format = ? WHERE id = ?",
+                    conditionFormat == null ? null : conditionFormat.name(), conditionId);
+            runPass();
+
+            Set<String> delivered = new HashSet<>(jdbcTemplate.queryForList("""
+                    SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id
+                    WHERE d.search_condition_id = ?
+                    """, String.class, conditionId));
+            Set<String> expected = new HashSet<>(cases.stream()
+                    .filter(example -> Fit.country(example.countries(), Set.of("SK")) != Fit.MISMATCH
+                            && Fit.format(example.format(), conditionFormat) != Fit.MISMATCH)
+                    .map(Case::title).toList());
+            assertThat(delivered).as("condition format %s", conditionFormat).isEqualTo(expected);
+        }
+    }
+
+    /**
      * Условия «офис» (решения владельца 2026-10-16, §124, §125): выдаются офисная, гибридная и вакансия без формата;
      * удалённая — нет.
      */
     @Test
     void officeConditionIncludesHybrid() {
         jdbcTemplate.update("UPDATE search_condition SET work_format = 'OFFICE'");
-        facts(vacancy("Office", 1, "acme"), "{SK}", false, "OFFICE");
-        facts(vacancy("Hybrid", 2, "acme"), "{SK}", false, "HYBRID");
-        facts(vacancy("Remote", 3, "acme"), "{SK}", false, "REMOTE");
-        facts(vacancy("No format", 4, "acme"), "{SK}", false, null);
+        facts(vacancy("Office", 1, "acme"), "{SK}", "OFFICE");
+        facts(vacancy("Hybrid", 2, "acme"), "{SK}", "HYBRID");
+        facts(vacancy("Remote", 3, "acme"), "{SK}", "REMOTE");
+        facts(vacancy("No format", 4, "acme"), "{SK}", null);
 
         runPass();
 
@@ -259,6 +305,16 @@ class DeliveryAcceptanceTests {
     }
 
     /**
+     * Сочетание для сверки выдачи с {@code Fit}.
+     *
+     * @param title     название вакансии (метка сочетания)
+     * @param countries страны вакансии
+     * @param format    формат вакансии; {@code null} — не указан
+     */
+    private record Case(String title, Set<String> countries, WorkFormat format) {
+    }
+
+    /**
      * Проход следующего окна: планирование и выполнение его заданий.
      *
      * @return размер порции
@@ -277,10 +333,9 @@ class DeliveryAcceptanceTests {
      */
     private long vacancy(String title, int order, String company) {
         long vacancyId = jdbcTemplate.queryForObject("""
-                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries,
-                                     country_uncertain)
-                VALUES ('ACTIVE', ?, 'https://example.com', now() - (1000 - ?) * interval '1 second', now(), '{SK}',
-                        FALSE) RETURNING id
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries)
+                VALUES ('ACTIVE', ?, 'https://example.com', now() - (1000 - ?) * interval '1 second', now(), '{SK}')
+                RETURNING id
                 """, Long.class, title, order);
         jdbcTemplate.update("""
                 INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at,
@@ -294,10 +349,10 @@ class DeliveryAcceptanceTests {
         return vacancyId;
     }
 
-    private void facts(long vacancyId, String countries, boolean uncertain, String format) {
+    private void facts(long vacancyId, String countries, String format) {
         jdbcTemplate.update("""
-                UPDATE vacancy SET work_countries = ?::text[], country_uncertain = ?, work_format = ? WHERE id = ?
-                """, countries, uncertain, format, vacancyId);
+                UPDATE vacancy SET work_countries = ?::text[], work_format = ? WHERE id = ?
+                """, countries, format, vacancyId);
     }
 
     private void confirmedDaysAgo(long vacancyId, int days) {

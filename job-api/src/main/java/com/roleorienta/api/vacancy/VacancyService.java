@@ -12,6 +12,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Накопленный список, сведения о вакансии и отметки «не подходит» пользователя (бизнес-описание §4.5, §6;
@@ -53,11 +55,16 @@ public class VacancyService {
     }
 
     /**
+     * Страница и общее число читаются одним снимком данных: транзакция только для чтения с уровнем
+     * {@code REPEATABLE READ} — выдача job-worker, добавившая порцию между двумя запросами, не разводит «Found N» и
+     * строки (аудит §154). https://www.postgresql.org/docs/16/transaction-iso.html#XACT-REPEATABLE-READ
+     *
      * @param userId пользователь
      * @param page   номер страницы, с 1
      * @param size   строк на странице
      * @return страница накопленного списка и общее число; условия не заданы — пусто
      */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VacancyPage delivered(long userId, int page, int size) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
@@ -73,11 +80,14 @@ public class VacancyService {
     }
 
     /**
+     * Страница и общее число — одним снимком данных, как в {@link #delivered}.
+     *
      * @param userId пользователь
      * @param page   номер страницы, с 1
      * @param size   строк на странице
      * @return страница отмеченных вакансий и общее число
      */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VacancyPage marked(long userId, int page, int size) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
@@ -143,12 +153,13 @@ public class VacancyService {
 
     /**
      * Противоречивый формат показывается как «не указано» с пометкой; территория удалённой работы — страны
-     * вакансии с форматом {@code REMOTE}.
+     * вакансии с форматом {@code REMOTE}; страна не определена — стран нет (нераспознанное место рядом с
+     * определённой страной пометки не даёт: страна известна, аудит §154).
      */
     private static Work work(WorkFacts facts, String conditionFormat) {
         String format = CONFLICT.equals(facts.format()) ? null : facts.format();
         return new Work(facts.countries(), format, REMOTE.equals(format) ? facts.countries() : null,
-                facts.countryUncertain() || facts.countries().isEmpty(), conditionFormat != null && format == null);
+                facts.countries().isEmpty(), conditionFormat != null && format == null);
     }
 
     private static int size(int requested) {
