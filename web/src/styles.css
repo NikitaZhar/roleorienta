@@ -280,6 +280,52 @@ nav .current,
   background: var(--surface-2);
 }
 
+/* Число найденных над списком и низ списка: номера страниц и размер страницы (§151). */
+.count {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.list-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.pager,
+.page-size {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.pager button,
+.page-size button {
+  min-width: 34px;
+  padding: 4px 8px;
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+
+.pager button.current,
+.page-size button.current {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.pager .gap {
+  color: var(--muted);
+  padding: 0 4px;
+}
+
 /* Пустой раздел: приглашение, а не пустота. */
 .empty {
   padding: 32px 16px;

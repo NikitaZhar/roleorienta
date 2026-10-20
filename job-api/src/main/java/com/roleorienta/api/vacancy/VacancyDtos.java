@@ -35,13 +35,14 @@ public final class VacancyDtos {
     }
 
     /**
-     * Страница списка.
+     * Страница списка (страницы по номеру — решение владельца 2026-10-20, §151).
      *
-     * @param items      вакансии: накопленный список — открытые позже сверху (§127), отмеченные — отмеченные позже
-     *                   сверху
-     * @param nextCursor курсор следующей страницы; {@code null} — страниц больше нет
+     * @param items вакансии: накопленный список — открытые позже сверху (§127), отмеченные — отмеченные позже сверху
+     * @param page  номер страницы, с 1
+     * @param size  строк на странице
+     * @param total сколько вакансий во всём списке
      */
-    public record VacancyPage(List<VacancyItem> items, String nextCursor) {
+    public record VacancyPage(List<VacancyItem> items, int page, int size, long total) {
     }
 
     /**

@@ -5,14 +5,10 @@ import com.roleorienta.api.vacancy.VacancyDtos.VacancyItem;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
 import com.roleorienta.api.vacancy.VacancyDtos.Work;
 import com.roleorienta.api.vacancy.VacancyRepository.ActiveCondition;
-import com.roleorienta.api.vacancy.VacancyRepository.Cursor;
-import com.roleorienta.api.vacancy.VacancyRepository.ListedRow;
+import com.roleorienta.api.vacancy.VacancyRepository.PageWindow;
 import com.roleorienta.api.vacancy.VacancyRepository.VacancyRow;
 import com.roleorienta.api.vacancy.VacancyRepository.WorkFacts;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -25,8 +21,9 @@ import org.springframework.stereotype.Service;
  *   <li>Список — вакансии, выданные по активной версии условий и видимые сейчас (не закрыта, подтверждена не
  *       раньше {@link VacancyProperties#hideAfter()}, подходит по текущим условиям, не отмечена); новые сверху.
  *       Условия не заданы — список пуст.</li>
- *   <li>Курсор связан со списком: версия условий (или список отмеченных), время и id последней строки; курсор
- *       другого списка или испорченный — {@link InvalidCursorException}.</li>
+ *   <li>Списки — страницами по номеру с общим числом (решение владельца 2026-10-20, §151): номер меньше 1 —
+ *       первая страница, размер обрезается до 1…{@value #MAX_SIZE}; страница за концом списка — пустая, с общим
+ *       числом.</li>
  *   <li>Сведения и отметки — только для вакансий, которые выдавались пользователю или отмечены им; иначе пусто
  *       ({@code 404}: чужая или неизвестная вакансия неотличимы).</li>
  * </ul>
@@ -34,15 +31,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class VacancyService {
 
-    /** Строк на странице по умолчанию и наибольшее. */
-    static final int DEFAULT_LIMIT = 20;
-    static final int MAX_LIMIT = 100;
+    /** Строк на странице по умолчанию и наибольшее (экран предлагает 20, 50, 100). */
+    static final int DEFAULT_SIZE = 20;
+    static final int MAX_SIZE = 100;
+    /** Первая страница. */
+    static final int FIRST_PAGE = 1;
 
-    private static final String MARKED_SCOPE = "u";
-    private static final String CONDITION_SCOPE = "c";
     private static final String CONFLICT = "CONFLICT";
     private static final String REMOTE = "REMOTE";
-    private static final String SEPARATOR = ".";
 
     private final VacancyRepository repository;
     private final VacancyProperties properties;
@@ -58,35 +54,35 @@ public class VacancyService {
 
     /**
      * @param userId пользователь
-     * @param cursor курсор страницы; {@code null} — первая
-     * @param limit  строк на странице (обрезается до 1…{@value #MAX_LIMIT})
-     * @return страница накопленного списка
+     * @param page   номер страницы, с 1
+     * @param size   строк на странице
+     * @return страница накопленного списка и общее число; условия не заданы — пусто
      */
-    public VacancyPage delivered(long userId, String cursor, int limit) {
+    public VacancyPage delivered(long userId, int page, int size) {
+        int number = Math.max(FIRST_PAGE, page);
+        int rows = size(size);
         Optional<ActiveCondition> condition = repository.activeCondition(userId);
         if (condition.isEmpty()) {
-            if (cursor != null && !cursor.isEmpty()) {
-                throw new InvalidCursorException();
-            }
-            return new VacancyPage(List.of(), null);
+            return new VacancyPage(List.of(), number, rows, 0);
         }
-        String scope = CONDITION_SCOPE + condition.get().id();
-        int size = size(limit);
-        List<ListedRow> rows = repository.delivered(condition.get().id(), Instant.now().minus(properties.hideAfter()),
-                decode(cursor, scope), size + 1);
-        return page(rows, size, scope, condition.get().workFormat());
+        Instant visibleSince = Instant.now().minus(properties.hideAfter());
+        long conditionId = condition.get().id();
+        List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows));
+        return new VacancyPage(items(shown, condition.get().workFormat()), number, rows,
+                repository.countDelivered(conditionId, visibleSince));
     }
 
     /**
      * @param userId пользователь
-     * @param cursor курсор страницы; {@code null} — первая
-     * @param limit  строк на странице
-     * @return страница отмеченных вакансий
+     * @param page   номер страницы, с 1
+     * @param size   строк на странице
+     * @return страница отмеченных вакансий и общее число
      */
-    public VacancyPage marked(long userId, String cursor, int limit) {
-        int size = size(limit);
-        List<ListedRow> rows = repository.marked(userId, decode(cursor, MARKED_SCOPE), size + 1);
-        return page(rows, size, MARKED_SCOPE, conditionFormat(userId));
+    public VacancyPage marked(long userId, int page, int size) {
+        int number = Math.max(FIRST_PAGE, page);
+        int rows = size(size);
+        List<VacancyRow> shown = repository.marked(userId, window(number, rows));
+        return new VacancyPage(items(shown, conditionFormat(userId)), number, rows, repository.countMarked(userId));
     }
 
     /**
@@ -135,23 +131,14 @@ public class VacancyService {
         return repository.activeCondition(userId).map(ActiveCondition::workFormat).orElse(null);
     }
 
-    /**
-     * Страница из строк, запрошенных с одной лишней ({@code size + 1}): лишняя есть — следующая страница есть, курсор
-     * указывает на последнюю показанную; нет — {@code nextCursor} пустой (аудит §65: ровно полная последняя страница
-     * давала курсор на пустую).
-     */
-    private VacancyPage page(List<ListedRow> rows, int size, String scope, String conditionFormat) {
-        List<ListedRow> shown = rows.size() > size ? rows.subList(0, size) : rows;
-        List<VacancyItem> items = shown.stream().map(row -> item(row, conditionFormat)).toList();
-        ListedRow last = shown.isEmpty() ? null : shown.get(shown.size() - 1);
-        String next = rows.size() > size ? encode(scope, last.listedAt(), last.vacancy().id()) : null;
-        return new VacancyPage(items, next);
+    /** Окно страницы: смещение в {@code long} — номер страницы, умноженный на размер, не переполняется. */
+    private static PageWindow window(int page, int size) {
+        return new PageWindow((long) (page - FIRST_PAGE) * size, size);
     }
 
-    private static VacancyItem item(ListedRow row, String conditionFormat) {
-        VacancyRow vacancy = row.vacancy();
-        return new VacancyItem(vacancy.id(), vacancy.title(), vacancy.parties(), work(vacancy.work(), conditionFormat),
-                vacancy.publication().opened());
+    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat) {
+        return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(), vacancy.title(), vacancy.parties(),
+                work(vacancy.work(), conditionFormat), vacancy.publication().opened())).toList();
     }
 
     /**
@@ -164,33 +151,7 @@ public class VacancyService {
                 facts.countryUncertain() || facts.countries().isEmpty(), conditionFormat != null && format == null);
     }
 
-    private static int size(int limit) {
-        return Math.max(1, Math.min(MAX_LIMIT, limit));
-    }
-
-    private static String encode(String scope, Instant at, long id) {
-        String plain = scope + SEPARATOR + ChronoUnit.MICROS.between(Instant.EPOCH, at) + SEPARATOR + id;
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(plain.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static Cursor decode(String cursor, String scope) {
-        if (cursor == null || cursor.isEmpty()) {
-            return null;
-        }
-        try {
-            String[] parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8)
-                    .split("\\" + SEPARATOR);
-            if (parts.length != 3 || !scope.equals(parts[0])) {
-                throw new InvalidCursorException();
-            }
-            long micros = Long.parseLong(parts[1]);
-            long id = Long.parseLong(parts[2]);
-            if (micros < 0 || id <= 0) {
-                throw new InvalidCursorException();
-            }
-            return new Cursor(Instant.EPOCH.plus(micros, ChronoUnit.MICROS), id);
-        } catch (IllegalArgumentException malformed) {
-            throw new InvalidCursorException();
-        }
+    private static int size(int requested) {
+        return Math.max(1, Math.min(MAX_SIZE, requested));
     }
 }

@@ -9,7 +9,6 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -65,6 +64,11 @@ public class VacancyRepository {
                  OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))
             AND NOT EXISTS (SELECT 1 FROM unsuitable_mark u WHERE u.user_id = c.user_id AND u.vacancy_id = v.id)""";
 
+    /** Видимая часть накопленного списка версии условий: параметры — версия условий и срок подтверждения. */
+    private static final String DELIVERED_FROM = " FROM delivered_vacancy d "
+            + "JOIN search_condition c ON c.id = d.search_condition_id JOIN vacancy v ON v.id = d.vacancy_id "
+            + "WHERE d.search_condition_id = ? AND " + VISIBLE;
+
     /** Вакансия выдавалась пользователю (по любой версии условий) или отмечена им. */
     private static final String ACCESSIBLE = """
             (EXISTS (SELECT 1 FROM delivered_vacancy d JOIN search_condition c ON c.id = d.search_condition_id
@@ -90,42 +94,52 @@ public class VacancyRepository {
     }
 
     /**
-     * Видимая часть накопленного списка версии условий: открытые позже сверху — по дате размещения работодателем, а
-     * без неё по дате первого обнаружения ({@code coalesce(posted_at, first_seen_at)}; решение владельца 2026-10-16, §127).
+     * Страница видимой части накопленного списка версии условий: открытые позже сверху — по дате размещения
+     * работодателем, а без неё по дате первого обнаружения ({@code coalesce(posted_at, first_seen_at)}; решение
+     * владельца 2026-10-16, §127); при равной дате — больший id выше, порядок однозначен. Страницы по номеру
+     * (решение владельца 2026-10-20, §151): {@code LIMIT … OFFSET …}.
      *
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
-     * @param after        курсор: строки строго после него; {@code null} — с начала
-     * @param limit        не больше
-     * @return строки с датой открытия
+     * @param page         смещение и размер страницы
+     * @return вакансии страницы
      */
-    public List<ListedRow> delivered(long condition, Instant visibleSince, Cursor after, int limit) {
-        List<Object> arguments = new ArrayList<>(List.of(condition, utc(visibleSince)));
-        String page = page(after, OPENED, "d.vacancy_id", arguments);
-        arguments.add(limit);
-        return jdbcTemplate.query("SELECT " + COLUMNS + ", " + OPENED + " AS listed_at FROM delivered_vacancy d "
-                + "JOIN search_condition c ON c.id = d.search_condition_id JOIN vacancy v ON v.id = d.vacancy_id "
-                + "WHERE d.search_condition_id = ? AND " + VISIBLE + page
-                + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ?",
-                (row, number) -> listed(row, false), arguments.toArray());
+    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page) {
+        return jdbcTemplate.query("SELECT " + COLUMNS + DELIVERED_FROM
+                + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row, false), condition, utc(visibleSince), page.size(), page.offset());
     }
 
     /**
-     * Отмеченные пользователем вакансии, последние отмеченные сверху.
+     * @param condition    версия условий
+     * @param visibleSince не подтверждённые с этого момента не показываются
+     * @return сколько вакансий в видимой части накопленного списка (те же условия, что у {@link #delivered})
+     */
+    public long countDelivered(long condition, Instant visibleSince) {
+        return jdbcTemplate.queryForObject("SELECT count(*)" + DELIVERED_FROM, Long.class, condition,
+                utc(visibleSince));
+    }
+
+    /**
+     * Страница отмеченных пользователем вакансий, последние отмеченные сверху.
      *
      * @param userId пользователь
-     * @param after  курсор; {@code null} — с начала
-     * @param limit  не больше
-     * @return строки с моментом отметки
+     * @param page   смещение и размер страницы
+     * @return вакансии страницы
      */
-    public List<ListedRow> marked(long userId, Cursor after, int limit) {
-        List<Object> arguments = new ArrayList<>(List.of(userId));
-        String page = page(after, "u.marked_at", "u.vacancy_id", arguments);
-        arguments.add(limit);
-        return jdbcTemplate.query("SELECT " + COLUMNS + ", u.marked_at AS listed_at FROM unsuitable_mark u "
-                + "JOIN vacancy v ON v.id = u.vacancy_id WHERE u.user_id = ?" + page
-                + " ORDER BY u.marked_at DESC, u.vacancy_id DESC LIMIT ?",
-                (row, number) -> listed(row, true), arguments.toArray());
+    public List<VacancyRow> marked(long userId, PageWindow page) {
+        return jdbcTemplate.query("SELECT " + COLUMNS + " FROM unsuitable_mark u JOIN vacancy v ON v.id = u.vacancy_id "
+                + "WHERE u.user_id = ? ORDER BY u.marked_at DESC, u.vacancy_id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row, true), userId, page.size(), page.offset());
+    }
+
+    /**
+     * @param userId пользователь
+     * @return сколько вакансий отмечено
+     */
+    public long countMarked(long userId) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM unsuitable_mark WHERE user_id = ?", Long.class,
+                userId);
     }
 
     /**
@@ -158,19 +172,6 @@ public class VacancyRepository {
      */
     public void unmark(long userId, long vacancyId) {
         jdbcTemplate.update("DELETE FROM unsuitable_mark WHERE user_id = ? AND vacancy_id = ?", userId, vacancyId);
-    }
-
-    private static String page(Cursor after, String timeColumn, String idColumn, List<Object> arguments) {
-        if (after == null) {
-            return "";
-        }
-        arguments.add(utc(after.at()));
-        arguments.add(after.id());
-        return " AND (" + timeColumn + ", " + idColumn + ") < (?, ?)";
-    }
-
-    private static ListedRow listed(ResultSet row, boolean unsuitable) throws SQLException {
-        return new ListedRow(vacancy(row, unsuitable), row.getObject("listed_at", OffsetDateTime.class).toInstant());
     }
 
     private static VacancyRow vacancy(ResultSet row, boolean unsuitable) throws SQLException {
@@ -227,20 +228,11 @@ public class VacancyRepository {
     }
 
     /**
-     * Строка списка.
+     * Окно страницы в SQL.
      *
-     * @param vacancy  вакансия
-     * @param listedAt ключ порядка строки: дата открытия (накопленный список) или момент отметки (отмеченные)
+     * @param offset сколько строк пропустить
+     * @param size   сколько строк взять
      */
-    public record ListedRow(VacancyRow vacancy, Instant listedAt) {
-    }
-
-    /**
-     * Позиция в списке: строки строго после неё (время, затем id — по убыванию).
-     *
-     * @param at время строки
-     * @param id вакансия
-     */
-    public record Cursor(Instant at, long id) {
+    public record PageWindow(long offset, int size) {
     }
 }

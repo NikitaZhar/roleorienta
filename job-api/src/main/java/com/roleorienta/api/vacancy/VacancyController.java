@@ -37,15 +37,16 @@ public class VacancyController {
 
     /**
      * @param authentication вошедший пользователь
-     * @param cursor         курсор страницы; нет — первая
-     * @param limit          строк на странице (1–100)
-     * @return накопленный список по текущим условиям, новые сверху; условия не заданы — пусто (с курсором — 400);
-     *         {@code 400} — курсор испорчен или от другой версии условий
+     * @param page           номер страницы, с 1 (меньше — первая)
+     * @param size           строк на странице (1–100)
+     * @return страница накопленного списка по текущим условиям, открытые позже сверху, и общее число; условия не
+     *         заданы — пусто
      */
     @GetMapping("/api/v1/me/vacancies")
-    public VacancyPage list(Authentication authentication, @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_LIMIT) int limit) {
-        return vacancies.delivered(userId(authentication), cursor, limit);
+    public VacancyPage list(Authentication authentication,
+            @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
+        return vacancies.delivered(userId(authentication), page, size);
     }
 
     /**
@@ -81,14 +82,15 @@ public class VacancyController {
 
     /**
      * @param authentication вошедший пользователь
-     * @param cursor         курсор страницы; нет — первая
-     * @param limit          строк на странице (1–100)
-     * @return отмеченные вакансии, последние сверху
+     * @param page           номер страницы, с 1 (меньше — первая)
+     * @param size           строк на странице (1–100)
+     * @return страница отмеченных вакансий, последние сверху, и общее число
      */
     @GetMapping("/api/v1/me/unsuitable")
-    public VacancyPage unsuitable(Authentication authentication, @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_LIMIT) int limit) {
-        return vacancies.marked(userId(authentication), cursor, limit);
+    public VacancyPage unsuitable(Authentication authentication,
+            @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
+        return vacancies.marked(userId(authentication), page, size);
     }
 
     private static ResponseEntity<Void> done(boolean found) {

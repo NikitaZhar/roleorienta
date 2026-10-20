@@ -31,7 +31,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class VacancyAcceptanceTests {
 
     private static final String JAVA_SK = "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"]}";
-    private static final Pattern CURSOR = Pattern.compile("\"nextCursor\":\"([^\"]+)\"");
 
     @Autowired
     private Environment environment;
@@ -58,7 +57,7 @@ class VacancyAcceptanceTests {
     }
 
     /**
-     * Список страницами, сведения (источник без компании — работодатель по названию у системы найма, аудит §65),
+     * Список страницами по номеру с общим числом (§151), сведения (источник без компании — работодатель по названию у системы найма, аудит §65),
      * сценарий 13 — отметка, смена условий, снятие.
      *
      * @throws Exception ошибка HTTP
@@ -74,16 +73,19 @@ class VacancyAcceptanceTests {
         delivered(condition, "Closed", "CLOSED", 0, 0);
         delivered(condition, "Unconfirmed", "ACTIVE", 40, 0);
 
-        ApiTestClient.Response page = client.send("GET", "/api/v1/me/vacancies?limit=2", null);
+        ApiTestClient.Response page = client.send("GET", "/api/v1/me/vacancies?page=1&size=2", null);
         assertThat(page.status()).isEqualTo(200);
         assertThat(titles(page.body())).isEqualTo("Third,Second");
-        ApiTestClient.Response next = client.send("GET", "/api/v1/me/vacancies?limit=2&cursor=" + cursor(page.body()),
-                null);
+        assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3");
+        ApiTestClient.Response next = client.send("GET", "/api/v1/me/vacancies?page=2&size=2", null);
         assertThat(titles(next.body())).isEqualTo("First");
-        assertThat(next.body()).contains("\"nextCursor\":null");
-        ApiTestClient.Response whole = client.send("GET", "/api/v1/me/vacancies?limit=3", null);
-        assertThat(titles(whole.body())).isEqualTo("Third,Second,First");
-        assertThat(whole.body()).contains("\"nextCursor\":null");
+        assertThat(next.body()).contains("\"page\":2,\"size\":2,\"total\":3");
+        ApiTestClient.Response beyond = client.send("GET", "/api/v1/me/vacancies?page=3&size=2", null);
+        assertThat(titles(beyond.body())).isEmpty();
+        assertThat(beyond.body()).contains("\"total\":3");
+        ApiTestClient.Response clamped = client.send("GET", "/api/v1/me/vacancies?page=0&size=500", null);
+        assertThat(titles(clamped.body())).isEqualTo("Third,Second,First");
+        assertThat(clamped.body()).contains("\"page\":1,\"size\":100,\"total\":3");
 
         ApiTestClient.Response details = client.send("GET", "/api/v1/me/vacancies/" + first, null);
         assertThat(details.status()).isEqualTo(200);
@@ -99,7 +101,8 @@ class VacancyAcceptanceTests {
         assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
         assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Third,First");
-        assertThat(titles(client.send("GET", "/api/v1/me/unsuitable", null).body())).isEqualTo("Second");
+        assertThat(client.send("GET", "/api/v1/me/unsuitable", null).body())
+                .contains("\"position\":\"Second\"", "\"page\":1,\"size\":20,\"total\":1");
 
         client.ifMatch = client.send("GET", "/api/v1/me/search-condition", null).etag();
         client.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"]}");
@@ -116,8 +119,7 @@ class VacancyAcceptanceTests {
 
     /**
      * Сценарий 14 (список): вакансия первого пользователя второму недоступна — сведения и отметка {@code 404};
-     * без условий список пуст; курсор чужого списка — {@code 400} (и в накопленном списке, где у второго пользователя
-     * нет условий, и в отмеченных).
+     * без условий список пуст, отмеченных нет.
      *
      * @throws Exception ошибка HTTP
      */
@@ -128,15 +130,15 @@ class VacancyAcceptanceTests {
         long condition = activeCondition();
         delivered(condition, "Older", "ACTIVE", 0, 2);
         long vacancy = delivered(condition, "Own", "ACTIVE", 0, 1);
-        String ownerCursor = cursor(owner.send("GET", "/api/v1/me/vacancies?limit=1", null).body());
+        owner.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/unsuitable", null);
 
         ApiTestClient other = ApiTestClient.signedIn(port(), "other@example.com");
         assertThat(other.send("GET", "/api/v1/me/vacancies", null).body())
-                .isEqualTo("{\"items\":[],\"nextCursor\":null}");
+                .isEqualTo("{\"items\":[],\"page\":1,\"size\":20,\"total\":0}");
         assertThat(other.send("GET", "/api/v1/me/vacancies/" + vacancy, null).status()).isEqualTo(404);
         assertThat(other.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/unsuitable", null).status()).isEqualTo(404);
-        assertThat(other.send("GET", "/api/v1/me/vacancies?cursor=" + ownerCursor, null).status()).isEqualTo(400);
-        assertThat(other.send("GET", "/api/v1/me/unsuitable?cursor=" + ownerCursor, null).status()).isEqualTo(400);
+        assertThat(other.send("GET", "/api/v1/me/unsuitable", null).body())
+                .isEqualTo("{\"items\":[],\"page\":1,\"size\":20,\"total\":0}");
         assertThat(new ApiTestClient(port()).send("GET", "/api/v1/me/vacancies", null).status()).isEqualTo(401);
     }
 
@@ -263,12 +265,6 @@ class VacancyAcceptanceTests {
             titles.append(titles.isEmpty() ? "" : ",").append(matcher.group(1));
         }
         return titles.toString();
-    }
-
-    private static String cursor(String body) {
-        Matcher matcher = CURSOR.matcher(body);
-        assertThat(matcher.find()).isTrue();
-        return matcher.group(1);
     }
 
     private int port() {

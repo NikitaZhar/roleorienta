@@ -224,10 +224,12 @@ export interface Opened {
   byEmployer: boolean;
 }
 
-/** Страница списка: открытые позже сверху (отмеченные — отмеченные позже); nextCursor null — страниц больше нет. */
+/** Страница списка по номеру (§151): открытые позже сверху (отмеченные — отмеченные позже); total — во всём списке. */
 export interface VacancyPage {
   items: VacancyItem[];
-  nextCursor: string | null;
+  page: number;
+  size: number;
+  total: number;
 }
 
 /** Публикация и её проверка. */
@@ -248,18 +250,18 @@ export interface VacancyDetails {
   publication: Publication;
 }
 
-function page(path: string, cursor: string | null): Promise<VacancyPage> {
-  return request<VacancyPage>('GET', cursor === null ? path : path + '?cursor=' + encodeURIComponent(cursor));
+function listPage(path: string, page: number, size: number): Promise<VacancyPage> {
+  return request<VacancyPage>('GET', path + '?page=' + page + '&size=' + size);
 }
 
-/** @returns страница накопленного списка */
-export function vacancies(cursor: string | null): Promise<VacancyPage> {
-  return page('/api/v1/me/vacancies', cursor);
+/** @returns страница накопленного списка: номер с 1, строк на странице */
+export function vacancies(page: number, size: number): Promise<VacancyPage> {
+  return listPage('/api/v1/me/vacancies', page, size);
 }
 
-/** @returns страница отмеченных «не подходит» */
-export function unsuitableVacancies(cursor: string | null): Promise<VacancyPage> {
-  return page('/api/v1/me/unsuitable', cursor);
+/** @returns страница отмеченных «Не интересно» */
+export function unsuitableVacancies(page: number, size: number): Promise<VacancyPage> {
+  return listPage('/api/v1/me/unsuitable', page, size);
 }
 
 /** @returns сведения о вакансии */
