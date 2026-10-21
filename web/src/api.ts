@@ -212,7 +212,26 @@ export interface VacancyItem {
   position: string;
   parties: Parties;
   work: Work;
+  timeline: Timeline;
+}
+
+/** Статус, который ставит пользователь или приложение (§156); RETURNED — «Вернуть» из «Не интересно». */
+export type StatusEvent = 'VIEWED' | 'NOT_INTERESTED' | 'APPLIED' | 'INTERVIEW' | 'REJECTED' | 'RETURNED';
+
+/**
+ * Текущий статус вакансии у пользователя (§156): NEW — «Новая» (сведения ещё не открывались); at — когда поставлен
+ * (у новой — когда получена); closed — закрыта работодателем.
+ */
+export interface UserStatus {
+  code: 'NEW' | 'VIEWED' | 'NOT_INTERESTED' | 'APPLIED' | 'INTERVIEW' | 'REJECTED';
+  at: string | null;
+  closed: boolean;
+}
+
+/** Когда вакансия открыта и её статус у пользователя. */
+export interface Timeline {
   opened: Opened;
+  status: UserStatus;
 }
 
 /**
@@ -224,21 +243,32 @@ export interface Opened {
   byEmployer: boolean;
 }
 
-/** Страница списка по номеру (§151): открытые позже сверху (отмеченные — отмеченные позже); total — во всём списке. */
+/**
+ * Страница списка по номеру (§151): результаты — открытые позже сверху, «Мои отклики» и «Не интересно» — статус
+ * изменён позже сверху; total — во всём списке; newCount — новых (только у результатов, §156).
+ */
 export interface VacancyPage {
   items: VacancyItem[];
   page: number;
   size: number;
   total: number;
+  newCount: number;
 }
 
-/** Публикация и её проверка. */
+/**
+ * Строка истории (§156): RECEIVED — «Получена», CLOSED — «Закрыта работодателем», иначе статус; RETURNED —
+ * «Возвращена».
+ */
+export interface HistoryLine {
+  event: 'RECEIVED' | 'CLOSED' | StatusEvent;
+  at: string;
+}
+
+/** Публикация и работа пользователя с вакансией: ссылка, статус, история (раньше сверху). */
 export interface Publication {
   url: string | null;
-  opened: Opened;
-  lastConfirmedAt: string | null;
-  state: 'ACTIVE' | 'NEEDS_RECHECK' | 'CLOSED';
-  unsuitable: boolean;
+  timeline: Timeline;
+  history: HistoryLine[];
 }
 
 /** Сведения о вакансии (бизнес-описание §6). */
@@ -269,14 +299,12 @@ export function vacancy(id: number): Promise<VacancyDetails> {
   return request<VacancyDetails>('GET', '/api/v1/me/vacancies/' + id);
 }
 
-/** Отметка «не подходит»: вакансия уходит из накопленного списка этого пользователя. */
-export function markUnsuitable(id: number): Promise<void> {
-  return request<void>('PUT', '/api/v1/me/vacancies/' + id + '/unsuitable');
-}
-
-/** Снятие отметки: вакансия возвращается по правилам выдачи. */
-export function unmarkUnsuitable(id: number): Promise<void> {
-  return request<void>('DELETE', '/api/v1/me/vacancies/' + id + '/unsuitable');
+/**
+ * Смена статуса вакансии (§156). Часовой пояс браузера задаёт день: статус того же дня заменяет прежний выбор.
+ */
+export function setStatus(id: number, status: StatusEvent): Promise<void> {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return request<void>('PUT', '/api/v1/me/vacancies/' + id + '/status', { status, zone });
 }
 
 /** Вошедший администратор. */

@@ -44,8 +44,8 @@ class SameVacancyTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"delivered_vacancy", "unsuitable_mark", "vacancy_position_match",
-                "company_source", "source_snapshot", "vacancy_revision", "crawl_run", "job_posting", "vacancy",
+        for (String table : new String[] {"delivered_vacancy", "vacancy_status_history", "vacancy_user_status",
+                "vacancy_position_match", "company_source", "source_snapshot", "vacancy_revision", "crawl_run", "job_posting", "vacancy",
                 "outbox_event", "task", "source"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }

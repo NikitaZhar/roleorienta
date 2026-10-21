@@ -1,22 +1,25 @@
 package com.roleorienta.api.vacancy;
 
 import com.roleorienta.api.account.AccountService;
+import com.roleorienta.api.vacancy.VacancyDtos.StatusRequest;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Накопленный список, сведения о вакансии и отметки «не подходит» вошедшего пользователя (технический документ
- * §8; бизнес-описание §6, сценарий 13). Пользователь — из сессии; чужая или неизвестная вакансия — {@code 404}.
+ * Результаты поиска, «Мои отклики», «Не интересно», сведения о вакансии и статусы вакансии вошедшего пользователя
+ * (технический документ §8; бизнес-описание §6, сценарий 13; стенограмма §156). Пользователь — из сессии; чужая или
+ * неизвестная вакансия — {@code 404}.
  */
 @RestController
 public class VacancyController {
@@ -27,7 +30,7 @@ public class VacancyController {
     private final AccountService accounts;
 
     /**
-     * @param vacancies список, сведения, отметки
+     * @param vacancies списки, сведения, статусы
      * @param accounts  учётные записи
      */
     public VacancyController(VacancyService vacancies, AccountService accounts) {
@@ -39,8 +42,8 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @return страница накопленного списка по текущим условиям, открытые позже сверху, и общее число; условия не
-     *         заданы — пусто
+     * @return страница результатов по текущим условиям (новые и просмотренные), открытые позже сверху, общее число и
+     *         число новых; условия не заданы — пусто
      */
     @GetMapping("/api/v1/me/vacancies")
     public VacancyPage list(Authentication authentication,
@@ -52,7 +55,8 @@ public class VacancyController {
     /**
      * @param authentication вошедший пользователь
      * @param id             вакансия
-     * @return сведения о вакансии (без полного текста); {@code 404} — не выдавалась пользователю и не отмечена
+     * @return сведения о вакансии (без полного текста) со статусом и историей; {@code 404} — не выдавалась
+     *         пользователю и нет его статуса
      */
     @GetMapping("/api/v1/me/vacancies/{id}")
     public VacancyDetails details(Authentication authentication, @PathVariable long id) {
@@ -61,36 +65,44 @@ public class VacancyController {
     }
 
     /**
+     * Смена статуса вакансии (правила — {@link StatusRules}).
+     *
      * @param authentication вошедший пользователь
      * @param id             вакансия
-     * @return {@code 204}; повтор — тоже {@code 204}; {@code 404} — чужая или неизвестная вакансия
+     * @param request        статус и часовой пояс браузера
+     * @return {@code 204}, и повтор — тоже {@code 204}; {@code 400} — неизвестный статус или часовой пояс; {@code 404}
+     *         — чужая или неизвестная вакансия
      */
-    @PutMapping("/api/v1/me/vacancies/{id}/unsuitable")
-    public ResponseEntity<Void> mark(Authentication authentication, @PathVariable long id) {
-        return done(vacancies.mark(userId(authentication), id));
-    }
-
-    /**
-     * @param authentication вошедший пользователь
-     * @param id             вакансия
-     * @return {@code 204}; отметки не было — тоже {@code 204}; {@code 404} — чужая или неизвестная вакансия
-     */
-    @DeleteMapping("/api/v1/me/vacancies/{id}/unsuitable")
-    public ResponseEntity<Void> unmark(Authentication authentication, @PathVariable long id) {
-        return done(vacancies.unmark(userId(authentication), id));
+    @PutMapping("/api/v1/me/vacancies/{id}/status")
+    public ResponseEntity<Void> status(Authentication authentication, @PathVariable long id,
+            @Valid @RequestBody StatusRequest request) {
+        return done(vacancies.setStatus(userId(authentication), id, request.status(), request.zone()));
     }
 
     /**
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @return страница отмеченных вакансий, последние сверху, и общее число
+     * @return «Мои отклики»: статус изменён позже сверху, и общее число
+     */
+    @GetMapping("/api/v1/me/responses")
+    public VacancyPage responses(Authentication authentication,
+            @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
+        return vacancies.responses(userId(authentication), page, size);
+    }
+
+    /**
+     * @param authentication вошедший пользователь
+     * @param page           номер страницы, с 1 (меньше — первая)
+     * @param size           строк на странице (1–100)
+     * @return «Не интересно»: отмеченные позже сверху, и общее число
      */
     @GetMapping("/api/v1/me/unsuitable")
     public VacancyPage unsuitable(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
             @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
-        return vacancies.marked(userId(authentication), page, size);
+        return vacancies.notInterested(userId(authentication), page, size);
     }
 
     private static ResponseEntity<Void> done(boolean found) {

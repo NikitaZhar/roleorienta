@@ -19,8 +19,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <ul>
  *   <li>Вход: регистрация, повтор email, неверный пароль, вход, выход; изменяющий запрос без
  *       CSRF-токена отклоняется.</li>
- *   <li>3 — смена условий: новая версия, прежний накопленный список не используется, отметки
- *       сохранены; смена только лимита список не сбрасывает; версия проверяется {@code If-Match}.</li>
+ *   <li>3 — смена условий: новая версия, прежний накопленный список не используется, статусы
+ *       вакансий сохранены; смена только лимита список не сбрасывает; версия проверяется {@code If-Match}.</li>
  *   <li>14 (вход и условия) — без входа пользовательские функции недоступны; условия другого
  *       пользователя не видны.</li>
  * </ul>
@@ -42,7 +42,8 @@ class AccountConditionAcceptanceTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"delivered_vacancy", "pass_run", "unsuitable_mark", "search_condition",
+        for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
+                "search_condition",
                 "user_account", "vacancy_position_match", "job_posting", "vacancy", "position", "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
@@ -100,7 +101,7 @@ class AccountConditionAcceptanceTests {
 
     /**
      * Сценарий 3: смена позиции — новая версия, прежний список и место остановки не используются,
-     * отметка «не подходит» сохранена; смена только лимита — та же версия и тот же список;
+     * статус «Не интересно» сохранён (§156); смена только лимита — та же версия и тот же список;
      * {@code If-Match}: не указан — {@code 428}, устарел — {@code 412}; неподдерживаемая страна,
      * неизвестная позиция и неизвестный формат — {@code 400}; формат {@code HYBRID} — «любой» (§125); несколько
      * позиций (§126): тот же набор в другом порядке — та же версия, пустой набор — {@code 400}.
@@ -146,7 +147,7 @@ class AccountConditionAcceptanceTests {
         assertThat(delivered(secondVersion)).isZero();
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM search_condition WHERE active", Integer.class))
                 .isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM unsuitable_mark WHERE vacancy_id = ?",
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM vacancy_user_status WHERE vacancy_id = ?",
                 Integer.class, vacancyId)).isEqualTo(1);
 
         client.ifMatch = null;
@@ -218,7 +219,7 @@ class AccountConditionAcceptanceTests {
     }
 
     /**
-     * Накопленный список версии из одной вакансии (выдаёт job-worker) и отметка «не подходит» на ней.
+     * Накопленный список версии из одной вакансии (выдаёт job-worker) и статус «Не интересно» у неё (§156).
      */
     private long deliveredAndMarked(long conditionId) {
         long vacancyId = jdbcTemplate.queryForObject("""
@@ -231,8 +232,8 @@ class AccountConditionAcceptanceTests {
                 INSERT INTO delivered_vacancy (search_condition_id, vacancy_id, pass_run_id, delivered_at)
                 VALUES (?, ?, ?, now())
                 """, conditionId, vacancyId, passRunId);
-        jdbcTemplate.update("INSERT INTO unsuitable_mark (user_id, vacancy_id) SELECT user_id, ? FROM search_condition "
-                + "WHERE id = ?", vacancyId, conditionId);
+        jdbcTemplate.update("INSERT INTO vacancy_user_status (user_id, vacancy_id, status, changed_at) "
+                + "SELECT user_id, ?, 'NOT_INTERESTED', now() FROM search_condition WHERE id = ?", vacancyId, conditionId);
         return vacancyId;
     }
 }

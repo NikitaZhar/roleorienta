@@ -13,17 +13,19 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Накопленный список, сведения о вакансии и отметки «не подходит» через настоящий HTTP (бизнес-описание §4.5, §6,
- * §7.4; технический документ §8). Выдачу (job-worker) заменяют строки {@code delivered_vacancy}.
+ * Результаты поиска, сведения о вакансии и статусы вакансии у пользователя через настоящий HTTP (бизнес-описание §4.5,
+ * §6, §7.4; технический документ §8; стенограмма §156). Выдачу (job-worker) заменяют строки {@code delivered_vacancy}.
  *
  * <ul>
  *   <li>Список: открытые позже сверху, при равной дате — больший id выше; страницы по номеру с общим числом (§151);
  *       закрытая и давно не подтверждённая вакансия не видна; видна вакансия со страной условий среди определённых
  *       стран или без определённой страны (с пометкой), только «*» — нет (§148, аудит §154).</li>
- *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, даты, состояние.</li>
- *   <li>13 — отметка «не подходит» скрывает вакансию у этого пользователя, сохраняется при смене условий, после
- *       снятия вакансия возвращается; повтор отметки и снятия — без ошибки.</li>
- *   <li>14 (список) — вакансии и отметки другого пользователя недоступны ({@code 404}), их списки у него пусты.</li>
+ *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, дата открытия, статус и история.</li>
+ *   <li>13 — «Не интересно» скрывает вакансию у этого пользователя, сохраняется при смене условий, после «Вернуть»
+ *       вакансия возвращается; повтор — без ошибки.</li>
+ *   <li>Статусы: «Новая» до открытия сведений, «новых M»; отклик уводит вакансию в «Мои отклики», статус того же
+ *       дня заменяет прежний выбор; закрытая работодателем остаётся в «Моих откликах» со строкой истории.</li>
+ *   <li>14 (список) — вакансии и статусы другого пользователя недоступны ({@code 404}), их списки у него пусты.</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -31,6 +33,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class VacancyAcceptanceTests {
 
     private static final String JAVA_SK = "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"]}";
+    private static final String EMPTY_PAGE = "{\"items\":[],\"page\":1,\"size\":20,\"total\":0,\"newCount\":0}";
 
     @Autowired
     private Environment environment;
@@ -45,7 +48,8 @@ class VacancyAcceptanceTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"delivered_vacancy", "pass_run", "unsuitable_mark", "search_condition",
+        for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
+                "search_condition",
                 "user_account", "vacancy_position_match", "job_posting", "vacancy", "position",
                 "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
@@ -57,13 +61,13 @@ class VacancyAcceptanceTests {
     }
 
     /**
-     * Список страницами по номеру с общим числом (§151), сведения (источник без компании — работодатель по названию у системы найма, аудит §65),
-     * сценарий 13 — отметка, смена условий, снятие.
+     * Список страницами по номеру с общим числом (§151), сведения (источник без компании — работодатель по названию у
+     * системы найма, аудит §65), сценарий 13 — «Не интересно», смена условий, «Вернуть».
      *
      * @throws Exception ошибка HTTP
      */
     @Test
-    void scenario13ListDetailsAndUnsuitableMark() throws Exception {
+    void scenario13ListDetailsAndNotInterested() throws Exception {
         ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
         client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
         long condition = activeCondition();
@@ -76,7 +80,7 @@ class VacancyAcceptanceTests {
         ApiTestClient.Response page = client.send("GET", "/api/v1/me/vacancies?page=1&size=2", null);
         assertThat(page.status()).isEqualTo(200);
         assertThat(titles(page.body())).isEqualTo("Third,Second");
-        assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3");
+        assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3,\"newCount\":3");
         ApiTestClient.Response next = client.send("GET", "/api/v1/me/vacancies?page=2&size=2", null);
         assertThat(titles(next.body())).isEqualTo("First");
         assertThat(next.body()).contains("\"page\":2,\"size\":2,\"total\":3");
@@ -91,35 +95,82 @@ class VacancyAcceptanceTests {
         assertThat(details.status()).isEqualTo(200);
         assertThat(details.body()).contains("\"position\":\"First\"", "\"employer\":\"Employer Ltd\"",
                 "\"agency\":null", "\"countries\":[\"SK\"]", "\"format\":null", "\"countryUncertain\":false",
-                "\"url\":\"https://example.com/First\"", "\"state\":\"ACTIVE\"", "\"unsuitable\":false");
+                "\"url\":\"https://example.com/First\"", "\"code\":\"NEW\"", "\"closed\":false")
+                .doesNotContain("\"state\"", "lastConfirmedAt");
+        assertThat(events(details.body())).isEqualTo("RECEIVED");
         jdbcTemplate.update("DELETE FROM company_source WHERE source_id = (SELECT id FROM source WHERE board = ?)",
                 "vacancy-test-second");
         jdbcTemplate.update("UPDATE source SET employer_name = 'Second Group' WHERE board = ?", "vacancy-test-second");
         assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body())
                 .contains("\"employer\":\"Second Group\"");
 
-        assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
-        assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status()).isEqualTo(204);
+        assertThat(status(client, second, "NOT_INTERESTED")).isEqualTo(204);
+        assertThat(status(client, second, "NOT_INTERESTED")).isEqualTo(204);
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Third,First");
         assertThat(client.send("GET", "/api/v1/me/unsuitable", null).body())
-                .contains("\"position\":\"Second\"", "\"page\":1,\"size\":20,\"total\":1");
+                .contains("\"position\":\"Second\"", "\"page\":1,\"size\":20,\"total\":1,\"newCount\":0");
 
         client.ifMatch = client.send("GET", "/api/v1/me/search-condition", null).etag();
         client.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"positions\":[\"devops-engineer\"]}");
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEmpty();
         assertThat(titles(client.send("GET", "/api/v1/me/unsuitable", null).body())).isEqualTo("Second");
-        assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body()).contains("\"unsuitable\":true");
+        assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body())
+                .contains("\"code\":\"NOT_INTERESTED\"");
 
-        assertThat(client.send("DELETE", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status())
-                .isEqualTo(204);
-        assertThat(client.send("DELETE", "/api/v1/me/vacancies/" + second + "/unsuitable", null).status())
-                .isEqualTo(204);
+        assertThat(status(client, second, "RETURNED")).isEqualTo(204);
+        assertThat(status(client, second, "RETURNED")).isEqualTo(204);
         assertThat(titles(client.send("GET", "/api/v1/me/unsuitable", null).body())).isEmpty();
+        String returned = client.send("GET", "/api/v1/me/vacancies/" + second, null).body();
+        assertThat(returned).contains("\"code\":\"VIEWED\"");
+        assertThat(events(returned)).isEqualTo("RECEIVED,NOT_INTERESTED,RETURNED");
+
+        assertThat(status(client, second, "HIRED")).isEqualTo(400);
+        assertThat(client.send("PUT", "/api/v1/me/vacancies/" + second + "/status",
+                "{\"status\":\"APPLIED\",\"zone\":\"Mars/Olympus\"}").status()).isEqualTo(400);
     }
 
     /**
-     * Сценарий 14 (список): вакансия первого пользователя второму недоступна — сведения и отметка {@code 404};
-     * без условий список пуст, отмеченных нет.
+     * Статусы (бизнес-описание §6, §156): «Новая» до открытия сведений и «новых M»; «Резюме отправлено» уводит
+     * вакансию в «Мои отклики»; «Собеседование» в тот же день заменяет его в истории; закрытая работодателем вакансия
+     * остаётся в «Моих откликах» с пометкой и строкой истории «Закрыта работодателем».
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void statusesMoveVacancyToResponses() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        long applied = delivered(condition, "Applied", "ACTIVE", 0, 2);
+        delivered(condition, "Untouched", "ACTIVE", 0, 1);
+
+        assertThat(status(client, applied, "VIEWED")).isEqualTo(204);
+        assertThat(status(client, applied, "VIEWED")).isEqualTo(204);
+        String list = client.send("GET", "/api/v1/me/vacancies", null).body();
+        assertThat(list).contains("\"total\":2,\"newCount\":1")
+                .containsPattern("\"position\":\"Applied\".*?\"code\":\"VIEWED\"")
+                .containsPattern("\"position\":\"Untouched\".*?\"code\":\"NEW\"");
+
+        assertThat(status(client, applied, "APPLIED")).isEqualTo(204);
+        assertThat(status(client, applied, "INTERVIEW")).isEqualTo(204);
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Untouched");
+        String responses = client.send("GET", "/api/v1/me/responses", null).body();
+        assertThat(titles(responses)).isEqualTo("Applied");
+        assertThat(responses).contains("\"code\":\"INTERVIEW\"", "\"closed\":false", "\"newCount\":0");
+        assertThat(events(client.send("GET", "/api/v1/me/vacancies/" + applied, null).body()))
+                .isEqualTo("RECEIVED,VIEWED,INTERVIEW");
+
+        // Минута вперёд — закрытие позже статуса, поставленного по часам JVM (часы БД могут немного отличаться).
+        jdbcTemplate.update("UPDATE vacancy SET state = 'CLOSED', closed_at = now() + interval '1 minute' WHERE id = ?",
+                applied);
+        assertThat(client.send("GET", "/api/v1/me/responses", null).body()).contains("\"closed\":true");
+        assertThat(events(client.send("GET", "/api/v1/me/vacancies/" + applied, null).body()))
+                .isEqualTo("RECEIVED,VIEWED,INTERVIEW,CLOSED");
+    }
+
+    /**
+     * Сценарий 14 (список): вакансия первого пользователя второму недоступна — сведения и статус {@code 404};
+     * без условий список пуст, отмеченных и откликов нет.
      *
      * @throws Exception ошибка HTTP
      */
@@ -130,15 +181,14 @@ class VacancyAcceptanceTests {
         long condition = activeCondition();
         delivered(condition, "Older", "ACTIVE", 0, 2);
         long vacancy = delivered(condition, "Own", "ACTIVE", 0, 1);
-        owner.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/unsuitable", null);
+        status(owner, vacancy, "NOT_INTERESTED");
 
         ApiTestClient other = ApiTestClient.signedIn(port(), "other@example.com");
-        assertThat(other.send("GET", "/api/v1/me/vacancies", null).body())
-                .isEqualTo("{\"items\":[],\"page\":1,\"size\":20,\"total\":0}");
+        assertThat(other.send("GET", "/api/v1/me/vacancies", null).body()).isEqualTo(EMPTY_PAGE);
         assertThat(other.send("GET", "/api/v1/me/vacancies/" + vacancy, null).status()).isEqualTo(404);
-        assertThat(other.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/unsuitable", null).status()).isEqualTo(404);
-        assertThat(other.send("GET", "/api/v1/me/unsuitable", null).body())
-                .isEqualTo("{\"items\":[],\"page\":1,\"size\":20,\"total\":0}");
+        assertThat(status(other, vacancy, "NOT_INTERESTED")).isEqualTo(404);
+        assertThat(other.send("GET", "/api/v1/me/unsuitable", null).body()).isEqualTo(EMPTY_PAGE);
+        assertThat(other.send("GET", "/api/v1/me/responses", null).body()).isEqualTo(EMPTY_PAGE);
         assertThat(new ApiTestClient(port()).send("GET", "/api/v1/me/vacancies", null).status()).isEqualTo(401);
     }
 
@@ -206,6 +256,11 @@ class VacancyAcceptanceTests {
         assertThat(body).contains("\"byEmployer\":true", "\"byEmployer\":false", "\"opened\":{\"at\":");
     }
 
+    private static int status(ApiTestClient client, long vacancy, String status) throws Exception {
+        return client.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/status",
+                "{\"status\":\"" + status + "\",\"zone\":\"Europe/Bratislava\"}").status();
+    }
+
     private void posted(long vacancy, int daysAgo) {
         jdbcTemplate.update("UPDATE vacancy SET posted_at = date_trunc('day', now() - make_interval(days => ?)) "
                 + "WHERE id = ?", daysAgo, vacancy);
@@ -264,12 +319,20 @@ class VacancyAcceptanceTests {
     }
 
     private static String titles(String body) {
-        Matcher matcher = Pattern.compile("\"position\":\"([^\"]+)\"").matcher(body);
-        StringBuilder titles = new StringBuilder();
+        return joined(body, "position");
+    }
+
+    private static String events(String body) {
+        return joined(body, "event");
+    }
+
+    private static String joined(String body, String field) {
+        Matcher matcher = Pattern.compile("\"" + field + "\":\"([^\"]+)\"").matcher(body);
+        StringBuilder values = new StringBuilder();
         while (matcher.find()) {
-            titles.append(titles.isEmpty() ? "" : ",").append(matcher.group(1));
+            values.append(values.isEmpty() ? "" : ",").append(matcher.group(1));
         }
-        return titles.toString();
+        return values.toString();
     }
 
     private int port() {

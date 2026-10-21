@@ -118,7 +118,7 @@ export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props
                   <span className="company">{item.parties.employer ?? 'Employer not specified'}</span>
                   <span className="position">{item.position}</span>
                   <span className="country">{rowCountryText(item.work)}</span>
-                  <span className="opened">{openedText(item.opened)}</span>
+                  <span className="opened">{openedText(item.timeline.opened)}</span>
                 </button>
               </li>
             ))}

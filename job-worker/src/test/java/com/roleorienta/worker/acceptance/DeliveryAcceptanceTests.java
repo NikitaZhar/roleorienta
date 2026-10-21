@@ -37,7 +37,8 @@ import org.springframework.test.context.ActiveProfiles;
  *       подтверждения выдаётся; уже выданная после возвращения не выдаётся как новая.</li>
  *   <li>9 (выдача) — повтор задания прохода и повторное планирование окна порцию не удваивают.</li>
  *   <li>Отбор в порции: страна условий среди определённых стран вакансии или страна не определена; только «*» — нет
- *       (§148); исключает явное несоответствие формата, закрытие и отметку «не подходит» (бизнес-описание §4.4);
+ *       (§148); исключает явное несоответствие формата, закрытие, «Не интересно» и «Мои отклики» (бизнес-описание
+ *       §4.4, §6);
  *       совпадает с оценкой {@code Fit} на полном наборе сочетаний (аудит §154).</li>
  * </ul>
  */
@@ -47,8 +48,8 @@ import org.springframework.test.context.ActiveProfiles;
 class DeliveryAcceptanceTests {
 
     private static final Instant FIRST_WINDOW = Instant.parse("2026-01-01T00:00:00Z");
-    private static final String[] TABLES = {"delivered_vacancy", "pass_run", "unsuitable_mark", "search_condition",
-        "user_account", "vacancy_position_match", "position", "source_snapshot", "vacancy_revision", "crawl_run",
+    private static final String[] TABLES = {"delivered_vacancy", "pass_run", "vacancy_status_history",
+        "vacancy_user_status", "search_condition", "user_account", "vacancy_position_match", "position", "source_snapshot", "vacancy_revision", "crawl_run",
         "job_posting", "vacancy", "company_source", "source", "outbox_event", "task"};
 
     @Autowired
@@ -186,8 +187,9 @@ class DeliveryAcceptanceTests {
      * Отбор в порции (условия: Словакия, удалённо): выдаются вакансии, среди определённых стран которых есть
      * Словакия, и вакансии без определённой страны (с пометкой); другая страна и только «*» — удалённо «весь мир» —
      * нет (решения владельца 2026-10-20, §148);
-     * явное несоответствие формата (офис при «удалённо»), закрытая и отмеченная «не подходит» вакансии и вакансия без
-     * позиции не выдаются; противоречивый формат и гибрид (подходит к любому формату, §125) — выдаются.
+     * явное несоответствие формата (офис при «удалённо»), закрытая вакансия, вакансии «Не интересно» и «Резюме
+     * отправлено» (§156) и вакансия без позиции не выдаются; противоречивый формат, гибрид (подходит к любому формату,
+     * §125) и просмотренная вакансия — выдаются.
      */
     @Test
     void portionKeepsOnlyCountryOfConditions() {
@@ -201,15 +203,16 @@ class DeliveryAcceptanceTests {
         facts(vacancy("Conflicting format", 7, "acme"), "{SK}", "CONFLICT");
         jdbcTemplate.update("UPDATE vacancy SET state = 'CLOSED' WHERE id = ?", vacancy("Closed", 8, "acme"));
         jdbcTemplate.update("UPDATE vacancy SET state = 'NEEDS_RECHECK' WHERE id = ?", vacancy("Recheck", 9, "acme"));
-        jdbcTemplate.update("INSERT INTO unsuitable_mark (user_id, vacancy_id) VALUES (?, ?)", userId,
-                vacancy("Marked", 10, "acme"));
+        status(vacancy("Not interested", 10, "acme"), "NOT_INTERESTED");
+        status(vacancy("Applied", 13, "acme"), "APPLIED");
+        status(vacancy("Viewed", 14, "acme"), "VIEWED");
         jdbcTemplate.update("DELETE FROM vacancy_position_match WHERE vacancy_id = ?", vacancy("No position", 11, "acme"));
 
         runPass();
 
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
-                """, String.class)).containsExactly("Slovakia remote", "No country", "Conflicting format", "Recheck", "Hybrid");
+                """, String.class)).containsExactly("Slovakia remote", "No country", "Conflicting format", "Recheck", "Hybrid", "Viewed");
     }
 
     /**
@@ -347,6 +350,12 @@ class DeliveryAcceptanceTests {
                 VALUES (?, ?, 'test', 'test')
                 """, vacancyId, positionId);
         return vacancyId;
+    }
+
+    /** Текущий статус пользователя у вакансии (§156). */
+    private void status(long vacancyId, String status) {
+        jdbcTemplate.update("INSERT INTO vacancy_user_status (user_id, vacancy_id, status, changed_at) "
+                + "VALUES (?, ?, ?, now())", userId, vacancyId, status);
     }
 
     private void facts(long vacancyId, String countries, String format) {

@@ -1,10 +1,12 @@
 package com.roleorienta.api.vacancy;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * Ответы API накопленного списка, сведений и отметок (технический документ §8; бизнес-описание §6). Отсутствующие
+ * Ответы и запросы API накопленного списка, сведений и статусов вакансии (технический документ §8; бизнес-описание §6). Отсутствующие
  * сведения — {@code null} («не указано»); полный текст вакансии не возвращается.
  */
 public final class VacancyDtos {
@@ -19,9 +21,31 @@ public final class VacancyDtos {
      * @param position позиция (название публикации)
      * @param parties  работодатель и агентство
      * @param work     страна и формат работы
-     * @param opened   когда вакансия открыта (§127)
+     * @param timeline когда вакансия открыта и её статус у пользователя
      */
-    public record VacancyItem(long id, String position, Parties parties, Work work, Opened opened) {
+    public record VacancyItem(long id, String position, Parties parties, Work work, Timeline timeline) {
+    }
+
+    /**
+     * Когда вакансия открыта и её статус у пользователя (§156).
+     *
+     * @param opened когда открыта: дата размещения работодателем или «найдена» (§127)
+     * @param status текущий статус пользователя
+     */
+    public record Timeline(Opened opened, UserStatus status) {
+    }
+
+    /**
+     * Текущий статус вакансии у пользователя (бизнес-описание §6, §156).
+     *
+     * @param code   {@code NEW} — «Новая» (пришла в результаты, сведения ещё не открывались), иначе статус
+     *               {@link StatusEvent}: {@code VIEWED}, {@code NOT_INTERESTED}, {@code APPLIED}, {@code INTERVIEW},
+     *               {@code REJECTED}
+     * @param at     когда поставлен; у новой — когда вакансия впервые получена пользователем; {@code null} — не
+     *               выдавалась (отметка без выдачи)
+     * @param closed вакансия закрыта работодателем (в «Моих откликах» — пометка «закрыта»)
+     */
+    public record UserStatus(String code, Instant at, boolean closed) {
     }
 
     /**
@@ -37,12 +61,14 @@ public final class VacancyDtos {
     /**
      * Страница списка (страницы по номеру — решение владельца 2026-10-20, §151).
      *
-     * @param items вакансии: накопленный список — открытые позже сверху (§127), отмеченные — отмеченные позже сверху
-     * @param page  номер страницы, с 1
-     * @param size  строк на странице
-     * @param total сколько вакансий во всём списке
+     * @param items    вакансии: результаты — открытые позже сверху (§127); «Мои отклики» и «Не интересно» — статус
+     *                 изменён позже сверху (§156)
+     * @param page     номер страницы, с 1
+     * @param size     строк на странице
+     * @param total    сколько вакансий во всём списке
+     * @param newCount сколько из них новых («новых M»; §156) — только у результатов поиска, у остальных списков 0
      */
-    public record VacancyPage(List<VacancyItem> items, int page, int size, long total) {
+    public record VacancyPage(List<VacancyItem> items, int page, int size, long total, long newCount) {
     }
 
     /**
@@ -52,7 +78,7 @@ public final class VacancyDtos {
      * @param position    позиция
      * @param parties     работодатель и агентство
      * @param work        страна, формат, территория удалённой работы, неопределённость
-     * @param publication ссылка, даты, состояние, отметка пользователя
+     * @param publication ссылка, статус пользователя и история
      */
     public record VacancyDetails(long id, String position, Parties parties, Work work, Publication publication) {
     }
@@ -81,15 +107,34 @@ public final class VacancyDtos {
     }
 
     /**
-     * Публикация и её проверка.
+     * Публикация и работа пользователя с вакансией. Источник, дата последней проверки и состояние вакансии у
+     * работодателя не показываются (решение владельца 2026-10-20, бизнес-описание §6).
      *
-     * @param url             первичная публикация
-     * @param opened          когда открыта: дата размещения работодателем или «найдена» (§127)
-     * @param lastConfirmedAt последняя успешная проверка
-     * @param state           {@code ACTIVE}, {@code NEEDS_RECHECK}, {@code CLOSED}
-     * @param unsuitable      отмечена пользователем «не подходит»
+     * @param url      первичная публикация
+     * @param timeline когда открыта и текущий статус
+     * @param history  история по времени, раньше сверху
      */
-    public record Publication(String url, Opened opened, Instant lastConfirmedAt, String state,
-            boolean unsuitable) {
+    public record Publication(String url, Timeline timeline, List<HistoryLine> history) {
+    }
+
+    /**
+     * Строка истории работы с вакансией (§156).
+     *
+     * @param event {@code RECEIVED} — «Получена» (первая выдача), {@code CLOSED} — «Закрыта работодателем», иначе
+     *              статус {@link StatusEvent} ({@code RETURNED} — «Возвращена» из «Не интересно»)
+     * @param at    когда
+     */
+    public record HistoryLine(String event, Instant at) {
+    }
+
+    /**
+     * Запрос смены статуса (§156).
+     *
+     * @param status статус; {@code VIEWED} ставит экран при открытии сведений, {@code RETURNED} — «Вернуть» из
+     *               «Не интересно»
+     * @param zone   часовой пояс браузера (IANA, например {@code Europe/Bratislava}): по нему определяется день —
+     *               статус того же дня заменяет прежний выбор этого дня (решение владельца 2026-10-21)
+     */
+    public record StatusRequest(@NotNull StatusEvent status, @NotBlank String zone) {
     }
 }

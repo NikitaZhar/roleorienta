@@ -51,7 +51,8 @@ class CompanyAcceptanceTests {
         jdbcTemplate.update("DELETE FROM company_check WHERE company_id IN "
                 + "(SELECT id FROM company WHERE registration_number LIKE '9901%')");
         jdbcTemplate.update("DELETE FROM company WHERE registration_number LIKE '9901%'");
-        for (String table : new String[] {"delivered_vacancy", "pass_run", "unsuitable_mark", "search_condition",
+        for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
+                "search_condition",
                 "user_account", "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }

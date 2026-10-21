@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { markUnsuitable, unmarkUnsuitable, vacancy, type VacancyDetails } from './api';
+import { setStatus, vacancy, type VacancyDetails } from './api';
 import { countriesText, openedText } from './format';
 
 interface Props {
@@ -12,12 +12,14 @@ interface Props {
 /**
  * Сведения о вакансии (бизнес-описание §6): позиция, работодатель и агентство, страна (не определена — «not
  * specified»), территория удалённой работы, дата открытия («found …», если работодатель даты не дал, §127), ссылка
- * на первичную публикацию; отметка «Не интересно» и её снятие. Состояние и дата последней проверки не показываются
- * (решение владельца 2026-10-20, §146; аудит §154). Формат, языки, статусы и история — срезы 4–5.
+ * на первичную публикацию; «Не интересно» и «Вернуть» (статусы, §156). Состояние и дата последней проверки не
+ * показываются (решение владельца 2026-10-20, §146; аудит §154). Остальные статусы и история — срез 4б, формат и
+ * языки — срез 5.
  */
 export function VacancyPage({ id, onBack, onMarked }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const notInterested = details?.publication.timeline.status.code === 'NOT_INTERESTED';
 
   useEffect(() => {
     vacancy(id).then(setDetails, (failure: Error) => setMessage(failure.message));
@@ -28,11 +30,7 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
       return;
     }
     try {
-      if (details.publication.unsuitable) {
-        await unmarkUnsuitable(id);
-      } else {
-        await markUnsuitable(id);
-      }
+      await setStatus(id, notInterested ? 'RETURNED' : 'NOT_INTERESTED');
       onMarked();
     } catch (failure) {
       setMessage((failure as Error).message);
@@ -58,14 +56,14 @@ export function VacancyPage({ id, onBack, onMarked }: Props) {
         <dd>{countriesText(work)}</dd>
         {work.remoteTerritory !== null && (<><dt>Remote from</dt><dd>{work.remoteTerritory.join(', ')}</dd></>)}
         <dt>Opened</dt>
-        <dd>{openedText(publication.opened)}</dd>
+        <dd>{openedText(publication.timeline.opened)}</dd>
       </dl>
       <div className="actions">
         {publication.url !== null && (
           <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">Open the posting</a>
         )}
         <button type="button" onClick={toggle}>
-          {publication.unsuitable ? 'Return to the list' : 'Not interested'}
+          {notInterested ? 'Return to the list' : 'Not interested'}
         </button>
       </div>
     </article>

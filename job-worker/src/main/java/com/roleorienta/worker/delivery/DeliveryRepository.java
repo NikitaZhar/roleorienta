@@ -24,7 +24,8 @@ public class DeliveryRepository {
      * (стран нет — включается с пометкой); только «*» (удалённо «весь мир») — не выдаётся; страны не рассчитаны
      * ({@code NULL}) — не выдаётся. Логика та же, что {@code Fit.country}. Формат не подходит, если он задан в
      * условиях, указан у вакансии без противоречия и отличается; гибрид подходит к любому формату условий (решение
-     * владельца 2026-10-16, §125). Логика та же, что {@code Fit.format}.
+     * владельца 2026-10-16, §125). Логика та же, что {@code Fit.format}. Вакансии со статусом пользователя, кроме
+     * «Просмотрена», — «Не интересно» и «Мои отклики» — не выдаются (§156).
      */
     private static final String PORTION = """
             INSERT INTO delivered_vacancy (search_condition_id, vacancy_id, pass_run_id, delivered_at)
@@ -39,7 +40,8 @@ public class DeliveryRepository {
               AND (v.work_countries && c.countries OR cardinality(v.work_countries) = 0)
               AND (c.work_format IS NULL OR v.work_format IS NULL
                    OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))
-              AND NOT EXISTS (SELECT 1 FROM unsuitable_mark u WHERE u.user_id = c.user_id AND u.vacancy_id = v.id)
+              AND NOT EXISTS (SELECT 1 FROM vacancy_user_status st
+                              WHERE st.user_id = c.user_id AND st.vacancy_id = v.id AND st.status <> 'VIEWED')
               AND NOT EXISTS (SELECT 1 FROM delivered_vacancy d
                               WHERE d.search_condition_id = c.id AND d.vacancy_id = v.id)
             ORDER BY v.first_seen_at, v.id
