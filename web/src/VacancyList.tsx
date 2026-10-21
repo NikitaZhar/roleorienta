@@ -22,11 +22,11 @@ interface Props {
   onOpen: (id: number) => void;
 }
 
-/** Последняя колонка списка: заголовок и значение строки. */
-const LAST_COLUMN: Record<ListKind, { head: MessageKey; value: (item: VacancyItem, i18n: I18n) => string }> = {
-  results: { head: 'list.opened', value: (item, i18n) => openedText(item.timeline.opened, i18n) },
-  responses: { head: 'list.status', value: (item, i18n) => statusText(item.timeline.status, i18n) },
-  notInterested: { head: 'list.marked', value: (item, i18n) => dateText(item.timeline.status.at, i18n) },
+/** Значение справа в строке: дата открытия, статус с датой или дата отметки «Не интересно». */
+const LAST_COLUMN: Record<ListKind, { value: (item: VacancyItem, i18n: I18n) => string }> = {
+  results: { value: (item, i18n) => openedText(item.timeline.opened, i18n) },
+  responses: { value: (item, i18n) => statusText(item.timeline.status, i18n) },
+  notInterested: { value: (item, i18n) => dateText(item.timeline.status.at, i18n) },
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
@@ -38,20 +38,23 @@ const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, MessageKey> = {
 /** Пустой накопленный список перечитывается: первая порция новой версии условий приходит в течение ~30 с (§120). */
 const REFRESH_MS = 5000;
 const REFRESH_TIMES = 24;
+/** Ширины строк-заготовок, пока идёт сбор (% ширины): серые полосы вместо пустоты (§171). */
+const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
 
 
 /**
- * Список вакансий страницами по номеру (§151) строками-колонками «Company · Position · Country · …» (агентство —
- * только в сведениях; на телефоне строка — плитка в две строчки, §147, §152): результаты поиска (открытые позже
- * сверху, дата открытия — §127; над списком — «Found N · new M», у новых — плашка «New», §156), «Мои отклики»
+ * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция; под ней
+ * «работодатель · страна»; справа — дата или статус (агентство — только в сведениях). Результаты поиска (открытые позже
+ * сверху, дата открытия — §127; над списком — «N vacancies · M new · Updated hourly», у новых — пилюля «New»,
+ * просмотренные — светлее, §156), «Мои отклики»
  * (последняя колонка — статус и дата, у закрытой — «closed») или «Не интересно» (дата отметки и «Return» в строке:
  * вакансия возвращается к прежнему статусу, §156). Внизу — номера страниц и выбор размера страницы; выбор
  * запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку; недоступно —
- * размер по умолчанию). Пустой накопленный список объясняется: что искать не задано — задать выше; задано —
- * подходящих вакансий пока нет. Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые
- * 5 с в течение 2 минут — первая порция выдаётся в течение ~30 с (§120); следующий запрос — только после ответа на
- * предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же страницу; если она опустела
- * (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
+ * размер по умолчанию). Условий нет — список не показывается (выше — «Set up your search»); задано, а вакансий нет —
+ * «пока нет». Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые 5 с в течение
+ * 2 минут, на экране — «идёт сбор» и строки-заготовки; первая порция выдаётся в течение ~30 с (§120); следующий
+ * запрос — только после ответа на предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же
+ * страницу; если она опустела (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
  * страницы во время загрузки не меняется (аудит §154).
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
@@ -128,45 +131,61 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const results = kind === 'results';
   const actions = kind === 'notInterested';
   const column = LAST_COLUMN[kind];
+  if (results && data.total === 0 && !hasConditions) {
+    return null;
+  }
+  const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
   return (
-    <section>
-      {title !== undefined && <h2>{title}</h2>}
-      {results && data.total > 0 && <p className="count">{t('list.found', { total: data.total, fresh: data.newCount })}</p>}
-      {data.total === 0 && kind !== 'results' && <Empty text={t(EMPTY_TEXT[kind])} />}
-      {data.total === 0 && results && !hasConditions && <Empty text={t('list.noResults')} />}
-      {data.total === 0 && results && hasConditions && (
-        <Empty text={poll && refreshes < REFRESH_TIMES ? t('list.searching') : t('list.nothingYet')} />
+    <section className="list">
+      {results ? data.total > 0 && (
+        <div className="list-head">
+          <h1>{data.total === 1 ? t('list.countOne') : t('list.count', { total: data.total })}</h1>
+          {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
+          <span className="muted">· {t('list.updatedHourly')}</span>
+        </div>
+      ) : title !== undefined && <h1>{title}</h1>}
+      {data.total === 0 && kind !== 'results' && <Empty title={t(EMPTY_TEXT[kind])} />}
+      {collecting && (
+        <div className="collecting" role="status">
+          <p className="muted">{t('list.collecting')}</p>
+          {SKELETON_WIDTHS.map((width, index) => (
+            <div key={index} className="skeleton-row" aria-hidden="true">
+              <span className="skeleton" style={{ width: width + '%' }} />
+              <span className="skeleton short" style={{ width: (width / 2) + '%' }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {results && data.total === 0 && !collecting && (
+        <Empty title={t('list.nothingYetTitle')} text={t('list.nothingYetText')} />
       )}
       {data.total > 0 && (
-        <div className="rows">
-          <div className={actions ? 'actionable' : undefined} aria-hidden="true">
-            <div className="row head">
-              <span>{t('list.company')}</span><span>{t('list.position')}</span><span>{t('list.country')}</span>
-              <span>{t(column.head)}</span>
-            </div>
-            {actions && <span className="row-action placeholder">{t('list.return')}</span>}
-          </div>
-          <ul>
-            {data.items.map((item) => (
+        <ul className="rows">
+          {data.items.map((item) => {
+            const fresh = results && item.timeline.status.code === 'NEW';
+            return (
               <li key={item.id} className={actions ? 'actionable' : undefined}>
-                <button type="button" className="row" onClick={() => onOpen(item.id)}>
-                  <span className="company">{item.parties.employer ?? t('list.noEmployer')}</span>
-                  <span className="position">
-                    {results && item.timeline.status.code === 'NEW' && <span className="badge">{t('list.new')}</span>}
-                    {item.position}
+                <button type="button" className={results && !fresh ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
+                  <span className="row-main">
+                    <span className="row-title">
+                      {fresh && <span className="pill pill-fresh">{t('list.new')}</span>}
+                      <span className="position">{item.position}</span>
+                    </span>
+                    <span className="row-meta">
+                      {(item.parties.employer ?? t('list.noEmployer')) + ' · ' + rowCountryText(item.work, i18n)}
+                    </span>
                   </span>
-                  <span className="country">{rowCountryText(item.work, i18n)}</span>
-                  <span className="last">{column.value(item, i18n)}</span>
+                  <span className="row-side">{column.value(item, i18n)}</span>
                 </button>
                 {actions && (
-                  <button type="button" className="row-action" disabled={loading} onClick={() => giveBack(item.id)}>
+                  <button type="button" className="link row-action" disabled={loading} onClick={() => giveBack(item.id)}>
                     {t('list.return')}
                   </button>
                 )}
               </li>
-            ))}
-          </ul>
-        </div>
+            );
+          })}
+        </ul>
       )}
       {data.total > 0 && (
         <div className="list-footer">
@@ -179,7 +198,12 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   );
 }
 
-/** Пустой раздел — одинаково во всех разделах (§152). */
-export function Empty({ text }: { text: string }) {
-  return <div className="empty"><p className="lead">{text}</p></div>;
+/** Пустой раздел — одинаково во всех разделах (§152): строка-заголовок и, если есть, пояснение; без рамки (§171). */
+export function Empty({ title, text }: { title: string; text?: string }) {
+  return (
+    <div className="empty">
+      <p className="lead">{title}</p>
+      {text !== undefined && <p className="muted">{text}</p>}
+    </div>
+  );
 }

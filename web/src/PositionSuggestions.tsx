@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type KeyboardEvent, useEffect, useState } from 'react';
 import { ownSuggestions, type Suggestion, suggestPosition } from './api';
 import { errorText, type Translate, useI18n } from './i18n';
 
@@ -17,26 +17,33 @@ export function suggestionStateText(suggestion: Suggestion, t: Translate): strin
   return t('suggest.onReview');
 }
 
+/** Пилюля состояния предложения: цвет дополняет текст. */
+const STATE_CLASS: Record<Suggestion['decision']['state'], string> = {
+  PENDING: 'pill',
+  ADDED: 'pill pill-fresh',
+  REJECTED: 'pill pill-muted',
+};
+
+interface Props {
+  onClose: () => void;
+}
+
 /**
- * «Suggest a position» в форме условий (бизнес-описание §3, макет §147, §161): нужной позиции нет в словаре —
- * пользователь пишет её название и примеры названий вакансий; ниже — свои предложения с состоянием. Добавленную
- * позицию пользователь выбирает в условиях обычным поиском. Не форма (форма условий вокруг): отправка — кнопкой.
- * Видно в раскрытой форме условий: при свёрнутых условиях — «Edit», затем «Suggest a position».
+ * «Suggest a position» (бизнес-описание §3, §161; новый облик — §171): окно поверх экрана — нужной позиции нет в
+ * словаре, пользователь пишет её название и примеры названий вакансий; ниже — свои предложения с состоянием пилюлей.
+ * Список читается при каждом открытии: решение администратора видно без перезагрузки страницы. Добавленную позицию
+ * пользователь выбирает в условиях обычным поиском. Закрывается «×», Escape и щелчком по затемнению.
  */
-export function PositionSuggestions() {
+export function PositionSuggestions({ onClose }: Props) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [items, setItems] = useState<Suggestion[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** Список перечитывается при каждом раскрытии: решение администратора видно без перезагрузки страницы. */
   useEffect(() => {
-    if (open) {
-      ownSuggestions().then(setItems, (failure: unknown) => setMessage(errorText(failure, t)));
-    }
-  }, [open]);
+    ownSuggestions().then(setItems, (failure: unknown) => setMessage(errorText(failure, t)));
+  }, []);
 
   async function send() {
     if (text.trim() === '') {
@@ -55,34 +62,45 @@ export function PositionSuggestions() {
     }
   }
 
+  function onKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      onClose();
+    }
+  }
+
   return (
-    <div className="suggest">
-      <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {t('suggest.link')}
-      </button>
-      {open && (
-        <>
-          <label>
-            {t('suggest.field')}
-            <textarea rows={2} maxLength={MAX_TEXT} value={text} onChange={(event) => setText(event.target.value)}
-              placeholder={t('suggest.placeholder')} />
-          </label>
-          <div className="actions">
-            <button type="button" disabled={busy || text.trim() === ''} onClick={send}>{t('suggest.send')}</button>
-          </div>
-          {message !== null && <p className="error" role="alert">{message}</p>}
-          {items !== null && items.length > 0 && (
-            <>
-              <p className="muted">{t('suggest.yours')}</p>
-              <ul className="suggestions">
-                {items.map((item) => (
-                  <li key={item.id}>{item.text} <span className="muted">· {suggestionStateText(item, t)}</span></li>
-                ))}
-              </ul>
-            </>
-          )}
-        </>
-      )}
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onKeyDown={onKey}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="suggest-title">
+        <div className="modal-head">
+          <h2 id="suggest-title">{t('suggest.link')}</h2>
+          <button type="button" className="icon" aria-label={t('suggest.close')} onClick={onClose}>×</button>
+        </div>
+        <label>
+          {t('suggest.field')}
+          <textarea rows={3} autoFocus maxLength={MAX_TEXT} value={text}
+            onChange={(event) => setText(event.target.value)} placeholder={t('suggest.placeholder')} />
+        </label>
+        <div className="actions">
+          <button type="button" className="primary" disabled={busy || text.trim() === ''} onClick={send}>
+            {t('suggest.send')}
+          </button>
+        </div>
+        {message !== null && <p className="error" role="alert">{message}</p>}
+        {items !== null && items.length > 0 && (
+          <section className="suggestions">
+            <h3>{t('suggest.yours')}</h3>
+            <ul>
+              {items.map((item) => (
+                <li key={item.id}>
+                  <span>{item.text}</span>
+                  <span className={STATE_CLASS[item.decision.state]}>{suggestionStateText(item, t)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

@@ -396,29 +396,23 @@ nav .current,
   background: var(--surface-2);
 }
 
-/* Число найденных над списком и низ списка: номера страниц и размер страницы (§151). */
-.count {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0 0 8px;
-}
-
+/* Низ списка: номера страниц и размер страницы (§151); текущая — мягким акцентом. */
 .list-footer {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .pager,
 .page-size {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .pager button,
@@ -436,10 +430,10 @@ nav .current,
   background: var(--surface-2);
 }
 
-.pager button.current,
-.page-size button.current {
+.pager button.current {
   background: var(--accent-soft);
   color: var(--accent-ink);
+  font-weight: 500;
 }
 
 .pager .gap {
@@ -447,13 +441,38 @@ nav .current,
   padding: 0 4px;
 }
 
-/* Пустой раздел: приглашение, а не пустота. */
-.empty {
-  padding: 32px 16px;
-  text-align: center;
+/* Размер страницы — сегментом: подложка, выбранный — светлая «таблетка». */
+.page-size .muted {
+  margin-right: 6px;
+}
+
+.page-size button {
+  height: 28px;
+  font-size: 13px;
+  background: var(--surface-2);
+  border-radius: 0;
+  color: var(--muted);
+}
+
+.page-size button:first-of-type {
+  border-radius: 6px 0 0 6px;
+}
+
+.page-size button:last-of-type {
+  border-radius: 0 6px 6px 0;
+}
+
+.page-size button.current {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: inset 0 0 0 2px var(--surface-2);
+}
+
+/* Пустой раздел: строка и пояснение по центру, без рамки (§171). */
+.empty {
+  padding: 48px 16px;
+  text-align: center;
 }
 
 .empty p {
@@ -461,7 +480,9 @@ nav .current,
 }
 
 .empty .lead {
+  font-size: 16px;
   font-weight: 500;
+  color: var(--ink);
 }
 
 /* Вход. */
@@ -493,269 +514,390 @@ nav .current,
   color: var(--muted);
 }
 
-.choices {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Условия поиска — строка фильтров-чипов (§171): чип — 32 px; выбор — всплывающее окно под чипом. */
+.conditions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 
-.choices button {
-  width: 100%;
-  height: auto;
-  min-height: 36px;
-  padding: 6px 10px;
-  text-align: left;
+.conditions.setup {
+  align-items: center;
+  text-align: center;
+  max-width: 560px;
+  margin: 40px auto;
 }
 
-.chips {
-  list-style: none;
-  margin: 4px 0;
-  padding: 0;
+.conditions.setup h1 {
+  margin: 0;
+}
+
+.conditions.setup > .muted {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  align-items: center;
 }
 
-.chips li {
+.conditions.setup .filter-bar {
+  justify-content: center;
+}
+
+.filter {
+  position: relative;
+}
+
+.chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 10px;
-  border: 1px solid var(--border-strong);
+  gap: 6px;
+  height: 32px;
+  max-width: 360px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
 }
 
-.chips button {
-  height: auto;
-  padding: 0 6px;
-  line-height: 1.4;
-  background: none;
-}
-
-/* Условия поиска (§152): раскрытая форма — поля в строку; свёрнутые — строка меток с «Edit». */
-.filters {
+.chip:hover {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-color: var(--muted);
 }
 
-.filters .lead {
-  margin: 0;
-  color: var(--ink-soft);
+.chip[aria-expanded='true'] {
+  border-color: var(--ink);
 }
 
-.filters-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 0.8fr);
-  gap: 12px;
-  align-items: start;
-}
-
-.filters fieldset {
-  margin: 0;
-}
-
-.positions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.filters-summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 14px;
-}
-
-/* Свёрнутые условия — таблица из трёх строк: подпись (одна ширина колонки) и значения; «Edit» справа (§152). */
-.criteria {
-  flex: 1;
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
-  align-items: center;
-  margin: 0;
-}
-
-.criteria > div {
-  display: contents;
-}
-
-.criteria dt {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.criteria dd {
-  margin: 0;
-}
-
-.filters-summary .chips {
-  margin: 0;
-}
-
-.filters-summary .chips li {
-  padding: 1px 10px;
-  font-size: 13px;
-  color: var(--ink-soft);
-}
-
-/* Список вакансий строками-колонками; на телефоне — плитка в две строчки (§152). */
-.rows {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.rows ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.row {
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr) minmax(0, 0.8fr) 110px;
-  gap: 12px;
-  align-items: center;
-  width: 100%;
-  height: auto;
-  padding: 11px 14px;
-  text-align: left;
-  border: 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: none;
-  font-size: 14px;
-}
-
-.row.head {
-  border-top: 0;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-button.row:hover {
-  background: var(--surface-2);
-}
-
-.row span {
+.chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.row .company,
-.row .country {
+.filter-bar .primary {
+  height: 32px;
+}
+
+/* Всплывающее окно выбора: поверх списка, с тенью (в тёмной теме — линией). */
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 15;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+}
+
+.popover.small {
+  width: 220px;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.option {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--surface-2);
+}
+
+.option .retired {
+  text-decoration: line-through;
   color: var(--muted);
 }
 
-.row .position {
-  font-weight: 500;
+.popover-note {
+  margin: 0;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
 }
 
-.row .last,
-.row.head span:last-child {
+.popover-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 0;
+}
+
+.popover-foot .primary {
+  height: 32px;
+}
+
+/* Окно поверх экрана («Suggest a position»): затемнение и карточка по центру. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 16px 16px;
+  background: rgba(15, 15, 15, 0.35);
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 20px;
+  text-align: left;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-head h2 {
+  margin: 0;
+}
+
+button.icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.modal textarea {
+  resize: vertical;
+}
+
+.suggestions h3 {
+  margin: 4px 0 6px;
+}
+
+.suggestions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.suggestions li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+/* Пилюли: короткая метка состояния; цвет дополняет текст. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
   font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex: none;
+}
+
+.pill-fresh {
+  background: var(--fresh);
+  color: var(--fresh-ink);
+}
+
+.pill-muted {
+  color: var(--muted);
+}
+
+/* Над списком: «124 vacancies · 12 new · Updated hourly». */
+.list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.list-head h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.list-head .fresh {
+  color: var(--fresh-ink);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.list-head .muted {
+  font-size: 13px;
+}
+
+/* Строка вакансии в две строчки (§171): позиция; «работодатель · страна»; справа — дата или статус. Между строками —
+   тонкая линия; при наведении — подложка. Просмотренная — светлее, как посещённая ссылка. */
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+.rows li {
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: auto;
+  padding: 10px 12px;
+  margin: 0 -12px;
+  width: calc(100% + 24px);
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+}
+
+.row:hover {
+  background: var(--surface);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row .position {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.row.seen .position {
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+.row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.row-side {
+  flex: none;
+  font-size: 13px;
   color: var(--muted);
   text-align: right;
 }
 
-@media (max-width: 640px) {
-  .filters-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .row.head {
-    display: none;
-  }
-
-  .rows li:first-child .row {
-    border-top: 0;
-  }
-
-  .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px 6px;
-  }
-
-  .row .position {
-    flex-basis: 100%;
-    white-space: normal;
-  }
-
-  .row .company,
-  .row .country,
-  .row .last {
-    font-size: 13px;
-  }
-
-  .row .country::before,
-  .row .last::before {
-    content: '· ';
-  }
-
-  .rows li.actionable:first-child {
-    border-top: 0;
-  }
-
-  .row-action.placeholder {
-    display: none;
-  }
-}
-
-/* Плашка «New» у вакансии, пришедшей в результаты и ещё не открытой (§147, §156). */
-.row .badge {
-  display: inline-block;
-  margin-right: 8px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--fresh);
-  color: var(--fresh-ink);
-  font-size: 11px;
-  font-weight: 600;
-  vertical-align: 1px;
-}
-
-/* Строка с действием («Return» в «Не интересно»): строка-кнопка и кнопка действия рядом, линия — у всей строки. */
+/* Строка с действием («Return» в «Не интересно»): строка-кнопка и действие рядом. */
 .actionable {
   display: flex;
   align-items: center;
-}
-
-.rows li.actionable {
-  border-top: 1px solid var(--border);
+  gap: 8px;
 }
 
 .actionable .row {
   flex: 1;
   min-width: 0;
-  border-top: 0;
+  width: auto;
+  margin-right: 0;
 }
 
 .row-action {
   flex: none;
-  margin-right: 14px;
 }
 
-/* Место кнопки в строке заголовков: колонки заголовков совпадают с колонками строк. */
-.row-action.placeholder {
-  visibility: hidden;
-  padding: 0 10px;
-  border: 1px solid transparent;
+/* Идёт сбор: строки-заготовки вместо пустоты. */
+.collecting > p {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.skeleton.short {
+  height: 10px;
+}
+
+@media (max-width: 640px) {
+  .row {
+    align-items: flex-start;
+  }
+
+  .row .position {
+    white-space: normal;
+  }
 }
 
 .details .status {
@@ -988,30 +1130,8 @@ table.dictionary .nowrap {
   white-space: nowrap;
 }
 
-/* «Suggest a position» в форме условий (§161): поле и свои предложения под выбором позиций. */
-.suggest {
-  display: grid;
-  gap: 6px;
-}
-
-.suggest textarea {
-  font: inherit;
-  padding: 8px 10px;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  resize: vertical;
-}
-
-.suggestions {
-  margin: 0;
-  padding-left: 18px;
-}
-
-/* Переключатель языка EN | RU (§162): на экране входа — в правом верхнем углу, в панели — перед меню учётной записи.
-   Выбранный язык — акцентом, как выбранная страница списка. */
-/* Переключатель EN | RU — сегмент: подложка, выбранный — светлая «таблетка». */
+/* Переключатель языка EN | RU (§162, §170): на экране входа — в правом верхнем углу, после входа — в меню учётной записи;
+   сегмент: подложка, выбранный — светлая «таблетка». */
 .language-switch {
   display: inline-flex;
   gap: 2px;
