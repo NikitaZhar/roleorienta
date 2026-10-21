@@ -52,6 +52,8 @@ export function App() {
   const [searches, setSearches] = useState(0);
   const [reloads, setReloads] = useState(0);
   const [fresh, setFresh] = useState(false);
+  /** Меню учётной записи ({@code <details>}): закрывается при переходе в раздел и щелчке мимо (§163). */
+  const menu = useRef<HTMLDetailsElement>(null);
   /** Прокрутка раздела в момент открытия вакансии: карточка короче списка, браузер прижал бы прокрутку. */
   const listScroll = useRef(0);
 
@@ -76,6 +78,16 @@ export function App() {
     window.scrollTo(0, opened === null ? listScroll.current : 0);
   }, [opened]);
 
+  useEffect(() => {
+    function closeOutside(event: MouseEvent) {
+      if (menu.current !== null && !menu.current.contains(event.target as Node)) {
+        menu.current.open = false;
+      }
+    }
+    document.addEventListener('click', closeOutside);
+    return () => document.removeEventListener('click', closeOutside);
+  }, []);
+
   function open(id: number) {
     listScroll.current = window.scrollY;
     setOpened(id);
@@ -96,6 +108,9 @@ export function App() {
   }
 
   function show(next: View) {
+    if (menu.current !== null) {
+      menu.current.open = false;
+    }
     setNotice(null);
     listScroll.current = 0;
     window.scrollTo(0, 0);
@@ -143,7 +158,7 @@ export function App() {
           ))}
         </nav>
         <LanguageSwitch onChange={switchLanguage} />
-        <details className="account">
+        <details className="account" ref={menu}>
           <summary>{account.email}</summary>
           <div className="menu">
             <button type="button" onClick={() => show('settings')}>{t('menu.settings')}</button>

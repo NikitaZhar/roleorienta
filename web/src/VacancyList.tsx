@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
 import { dateText, openedText, rowCountryText, statusText } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
-import { PageSize, Pager } from './Pager';
+import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
  * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «Found N · new M»,
@@ -39,11 +39,6 @@ const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, MessageKey> = {
 const REFRESH_MS = 5000;
 const REFRESH_TIMES = 24;
 
-/** Размеры страницы на выбор (решение владельца 2026-10-20, §147) и размер по умолчанию. */
-const PAGE_SIZES = [20, 50, 100];
-const DEFAULT_SIZE = 20;
-/** Ключ выбранного размера в хранилище браузера. */
-const SIZE_KEY = 'roleorienta.pageSize';
 
 /**
  * Список вакансий страницами по номеру (§151) строками-колонками «Company · Position · Country · …» (агентство —
@@ -187,22 +182,4 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
 /** Пустой раздел — одинаково во всех разделах (§152). */
 export function Empty({ text }: { text: string }) {
   return <div className="empty"><p className="lead">{text}</p></div>;
-}
-
-/** Сохранённый размер страницы; нет, не из списка или хранилище недоступно — по умолчанию. */
-function storedSize(): number {
-  try {
-    const stored = Number(localStorage.getItem(SIZE_KEY));
-    return PAGE_SIZES.includes(stored) ? stored : DEFAULT_SIZE;
-  } catch {
-    return DEFAULT_SIZE;
-  }
-}
-
-function storeSize(size: number) {
-  try {
-    localStorage.setItem(SIZE_KEY, String(size));
-  } catch {
-    // Хранилище недоступно (приватный режим): выбор действует до перезагрузки.
-  }
 }

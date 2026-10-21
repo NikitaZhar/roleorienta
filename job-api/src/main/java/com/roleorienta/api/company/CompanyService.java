@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -29,11 +30,11 @@ public class CompanyService {
     /** Группа: отметка администратора «не работодатель» (§138). */
     static final String GROUP_NOT_EMPLOYER = "NOT_EMPLOYER";
 
-    /** Строк страницы сомнительных компаний по умолчанию. */
-    public static final int DEFAULT_LIMIT = 50;
+    /** Строк страницы сомнительных компаний по умолчанию (как у результатов поиска, экран предлагает 20, 50, 100). */
+    public static final int DEFAULT_SIZE = 20;
 
     /** Строк страницы не больше. */
-    static final int MAX_LIMIT = 100;
+    static final int MAX_SIZE = 100;
 
     /** Символов в запросе поиска не меньше. */
     static final int MIN_QUERY = 3;
@@ -81,19 +82,21 @@ public class CompanyService {
     }
 
     /**
+     * Страница и общее число — одним снимком данных ({@code REPEATABLE READ}, как списки вакансий); номер меньше 1 —
+     * первая страница, размер обрезается до 1…{@value #MAX_SIZE}; страница за концом — пустая, с общим числом.
+     *
      * @param userId пользователь — его скрытые компании не показываются
-     * @param after  курсор: id последней компании прежней страницы; {@code null} — первая
-     * @param limit  строк (1–{@value #MAX_LIMIT})
-     * @return сомнительные компании
+     * @param page   номер страницы, с 1
+     * @param size   строк на странице
+     * @return страница сомнительных компаний по id и общее число
      */
-    @Transactional(readOnly = true)
-    public CompanyPage doubtful(long userId, Long after, int limit) {
-        int size = Math.max(1, Math.min(limit, MAX_LIMIT));
-        List<CompanyItem> rows = repository.doubtful(new DoubtfulPage(userId, after == null ? 0 : after, size + 1,
-                properties.hiringMinEmployees()));
-        boolean more = rows.size() > size;
-        List<CompanyItem> items = more ? rows.subList(0, size) : rows;
-        return new CompanyPage(items, more ? items.get(items.size() - 1).id() : null);
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public CompanyPage doubtful(long userId, int page, int size) {
+        int number = Math.max(1, page);
+        int rows = Math.max(1, Math.min(size, MAX_SIZE));
+        DoubtfulPage window = new DoubtfulPage(userId, (long) (number - 1) * rows, rows,
+                properties.hiringMinEmployees());
+        return new CompanyPage(repository.doubtful(window), number, rows, repository.countDoubtful(window));
     }
 
     /**

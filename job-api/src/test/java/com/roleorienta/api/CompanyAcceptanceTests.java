@@ -101,7 +101,8 @@ class CompanyAcceptanceTests {
     }
 
     /**
-     * Сомнительные: «может быть» и «нет» с признаком найма; подключённая и мелкая без сайта — нет.
+     * Сомнительные: «может быть» и «нет» с признаком найма; подключённая и мелкая без сайта — нет; страницы по номеру
+     * с общим числом (§163).
      *
      * @throws Exception ошибка HTTP
      */
@@ -109,10 +110,16 @@ class CompanyAcceptanceTests {
     void doubtfulListsMaybeAndHiringCompaniesWithoutSite() throws Exception {
         ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
 
-        String list = user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body();
+        String list = user.send("GET", "/api/v1/companies/doubtful?size=100", null).body();
 
         assertThat(list).contains("\"id\":" + beta + ",", "\"id\":" + delta + ",")
                 .doesNotContain("\"id\":" + alfa + ",", "\"id\":" + gama + ",");
+        long total = Long.parseLong(list.replaceAll(".*\"total\":(\\d+).*", "$1"));
+        assertThat(total).isGreaterThanOrEqualTo(2);
+        String first = user.send("GET", "/api/v1/companies/doubtful?page=1&size=1", null).body();
+        String second = user.send("GET", "/api/v1/companies/doubtful?page=2&size=1", null).body();
+        assertThat(first).contains("\"page\":1,\"size\":1,\"total\":" + total);
+        assertThat(second).contains("\"page\":2,\"size\":1,\"total\":" + total).isNotEqualTo(first);
     }
 
     /**
@@ -175,11 +182,11 @@ class CompanyAcceptanceTests {
         assertThat(user.send("PUT", "/api/v1/me/hidden-companies/-1", null).status()).isEqualTo(404);
 
         assertThat(user.send("GET", "/api/v1/companies?query=qwbeta", null).body()).isEqualTo("[]");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
                 .doesNotContain("\"id\":" + beta + ",");
         assertThat(user.send("GET", "/api/v1/me/hidden-companies", null).body()).contains("\"id\":" + beta + ",");
         assertThat(other.send("GET", "/api/v1/companies?query=qwbeta", null).body()).contains("\"id\":" + beta + ",");
-        assertThat(other.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+        assertThat(other.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
                 .contains("\"id\":" + beta + ",");
 
         assertThat(user.send("DELETE", "/api/v1/me/hidden-companies/" + beta, null).status()).isEqualTo(204);
@@ -210,14 +217,14 @@ class CompanyAcceptanceTests {
                 .contains("\"group\":\"NOT_EMPLOYER\"");
         assertThat(user.send("GET", "/api/v1/companies?query=qwdelta", null).body())
                 .contains("\"group\":\"NOT_EMPLOYER\"", "\"reason\":null");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
                 .doesNotContain("\"id\":" + delta + ",");
         assertThat(user.send("POST", "/api/v1/companies/" + delta + "/career-page",
                 "{\"url\":\"https://qwdelta.sk/praca\"}").status()).isEqualTo(409);
 
         assertThat(admin.send("DELETE", "/api/v1/admin/companies/" + delta + "/not-employer", null).status())
                 .isEqualTo(204);
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
                 .contains("\"id\":" + delta + ",");
     }
 
@@ -234,7 +241,7 @@ class CompanyAcceptanceTests {
 
         assertThat(user.send("GET", "/api/v1/companies?query=qwepsi", null).body())
                 .contains("\"group\":\"PORTAL\"", "\"reason\":null");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?limit=100", null).body())
+        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
                 .doesNotContain("\"id\":" + epsi + ",");
         assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(201);
         assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(409);

@@ -40,12 +40,14 @@ public final class CompanyDtos {
     }
 
     /**
-     * Страница списка компаний.
+     * Страница списка компаний по номеру (§163).
      *
      * @param items компании
-     * @param next  курсор следующей страницы; {@code null} — последняя
+     * @param page  номер страницы, с 1
+     * @param size  строк на странице
+     * @param total сколько компаний во всём списке
      */
-    public record CompanyPage(List<CompanyItem> items, Long next) {
+    public record CompanyPage(List<CompanyItem> items, int page, int size, long total) {
     }
 
     /**

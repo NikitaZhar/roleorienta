@@ -1,10 +1,12 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import {
-  addCareerPage, type CareerRequest, careerRequests, type CompanyItem, doubtfulCompanies, hiddenCompanies,
+  addCareerPage, type CareerRequest, careerRequests, type CompanyItem, type CompanyPage, doubtfulCompanies,
+  hiddenCompanies,
   searchCompanies, setCompanyHidden,
 } from './api';
-import { GroupBadge } from './companyGroups';
+import { GroupBadge, GroupLegend } from './companyGroups';
 import { errorText, type MessageKey, type Translate, useI18n } from './i18n';
+import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /** Подпись причины итога проверки и запроса на языке интерфейса (§162); неизвестная — код как есть. */
 function reasonText(reason: string, t: Translate): string {
@@ -28,9 +30,9 @@ export function CompaniesPage() {
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState<string | null>(null);
   const [found, setFound] = useState<CompanyItem[] | null>(null);
-  const [doubtful, setDoubtful] = useState<CompanyItem[] | null>(null);
-  const [next, setNext] = useState<number | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [doubtful, setDoubtful] = useState<CompanyPage | null>(null);
+  const [size, setSize] = useState(storedSize);
+  const [loadingPage, setLoadingPage] = useState(false);
   const [requests, setRequests] = useState<CareerRequest[]>([]);
   const [hidden, setHidden] = useState<CompanyItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,18 +45,33 @@ export function CompaniesPage() {
     hiddenCompanies().then(setHidden, (failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
-  const loadDoubtful = useCallback(() => {
-    doubtfulCompanies(null).then((page) => {
-      setDoubtful(page.items);
-      setNext(page.next);
-    }, (failure: unknown) => setMessage(errorText(failure, t)));
+  /** Страница сомнительных; опустела (скрыта последняя компания последней страницы) — последняя непустая. */
+  const loadDoubtful = useCallback(async (page: number, rows: number) => {
+    setLoadingPage(true);
+    try {
+      let next = await doubtfulCompanies(page, rows);
+      if (next.items.length === 0 && next.total > 0 && page > 1) {
+        next = await doubtfulCompanies(Math.ceil(next.total / rows), rows);
+      }
+      setDoubtful(next);
+    } catch (failure) {
+      setMessage(errorText(failure, t));
+    } finally {
+      setLoadingPage(false);
+    }
   }, []);
 
   useEffect(() => {
-    loadDoubtful();
+    loadDoubtful(1, size);
     loadRequests();
     loadHidden();
   }, [loadDoubtful, loadRequests, loadHidden]);
+
+  function resize(rows: number) {
+    setSize(rows);
+    storeSize(rows);
+    loadDoubtful(1, rows);
+  }
 
   const checking = requests.some((item) => item.status.state === 'PENDING');
   useEffect(() => {
@@ -80,29 +97,12 @@ export function CompaniesPage() {
     void runSearch(query);
   }
 
-  async function more() {
-    if (next === null || loadingMore) {
-      return;
-    }
-    setLoadingMore(true);
-    setMessage(null);
-    try {
-      const page = await doubtfulCompanies(next);
-      setDoubtful((current) => [...(current ?? []), ...page.items]);
-      setNext(page.next);
-    } catch (failure) {
-      setMessage(problem(failure));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
   async function hide(item: CompanyItem) {
     setMessage(null);
     try {
       await setCompanyHidden(item.id, true);
       setFound((current) => current === null ? null : current.filter((other) => other.id !== item.id));
-      setDoubtful((current) => current === null ? null : current.filter((other) => other.id !== item.id));
+      await loadDoubtful(doubtful?.page ?? 1, size);
       loadHidden();
     } catch (failure) {
       setMessage(problem(failure));
@@ -114,7 +114,7 @@ export function CompaniesPage() {
     try {
       await setCompanyHidden(item.id, false);
       setHidden((current) => current.filter((other) => other.id !== item.id));
-      loadDoubtful();
+      await loadDoubtful(doubtful?.page ?? 1, size);
       if (searched !== null) {
         await runSearch(searched);
       }
@@ -173,10 +173,14 @@ export function CompaniesPage() {
         <h2>{t('companies.doubtful')}</h2>
         <p className="muted">{t('companies.doubtfulNote')}</p>
         {doubtful === null ? <p className="muted">{t('app.loading')}</p>
-          : doubtful.length === 0 ? <p className="muted">{t('companies.noDoubtful')}</p>
-            : <CompanyTable items={doubtful} onAdded={added} onHide={hide} />}
-        {next !== null && (
-          <button type="button" onClick={more} disabled={loadingMore}>{loadingMore ? t('app.loading') : t('companies.more')}</button>
+          : doubtful.total === 0 ? <p className="muted">{t('companies.noDoubtful')}</p>
+            : <CompanyTable items={doubtful.items} onAdded={added} onHide={hide} />}
+        {doubtful !== null && doubtful.total > 0 && (
+          <div className="list-footer">
+            <Pager page={doubtful.page} pages={Math.ceil(doubtful.total / doubtful.size)} busy={loadingPage}
+              onPage={(page) => loadDoubtful(page, size)} />
+            <PageSize size={size} sizes={PAGE_SIZES} busy={loadingPage} onSize={resize} />
+          </div>
         )}
       </section>
       <section>
@@ -197,6 +201,7 @@ export function CompaniesPage() {
             </tbody>
           </table>
         )}
+        <GroupLegend items={hidden} />
       </section>
     </>
   );
@@ -211,6 +216,7 @@ interface TableProps {
 function CompanyTable({ items, onAdded, onHide }: TableProps) {
   const { t } = useI18n();
   return (
+    <>
     <table className="companies">
       <thead>
         <tr>
@@ -222,6 +228,8 @@ function CompanyTable({ items, onAdded, onHide }: TableProps) {
         {items.map((item) => <CompanyRow key={item.id} item={item} onAdded={onAdded} onHide={onHide} />)}
       </tbody>
     </table>
+    <GroupLegend items={items} />
+    </>
   );
 }
 
@@ -258,8 +266,7 @@ function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () 
   return (
     <tr>
       <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
-      <td><GroupBadge item={item} />{check.reason !== null && <><br /><span className="muted">
-        {reasonText(check.reason, t)}</span></>}</td>
+      <td><GroupBadge item={item} reason={check.reason === null ? undefined : reasonText(check.reason, t)} /></td>
       <td>
         {check.site !== null && <a href={'https://' + check.site} target="_blank" rel="noreferrer">{check.site}</a>}
       </td>

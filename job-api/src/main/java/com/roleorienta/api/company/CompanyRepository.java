@@ -48,6 +48,16 @@ public class CompanyRepository {
               AND NOT EXISTS (SELECT 1 FROM company_hidden h WHERE h.company_id = c.id AND h.user_id = ?)
             """;
 
+    /**
+     * Сомнительная компания: нет вакансий (итог проверки не «подключена»), не отмечена «не работодатель»; найден сайт
+     * или признак найма — приоритетная или сотрудников не меньше порога (параметр).
+     */
+    private static final String DOUBTFUL = """
+              AND ch.result IS DISTINCT FROM 'CONNECTED' AND NOT c.not_employer
+              AND (c.priority OR c.employees_min >= ?
+                   OR EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'))
+            """;
+
     /** Пространство ключей advisory-lock ввода адресов (первое число пары). */
     static final int REQUEST_LOCK_SPACE = 143;
 
@@ -99,16 +109,21 @@ public class CompanyRepository {
      * или, без сайта, с признаком найма (приоритетная — эталон, или сотрудников не меньше порога по RÚZ); остальные —
      * только поиском (решение владельца 2026-10-19).
      *
-     * @param page страница: пользователь (его скрытые не показываются), курсор, сколько, порог сотрудников
+     * @param page страница: пользователь (его скрытые не показываются), смещение, сколько, порог сотрудников
      * @return компании по id; без отметки «не работодатель»
      */
     public List<CompanyItem> doubtful(DoubtfulPage page) {
-        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + """
-                  AND c.id > ? AND ch.result IS DISTINCT FROM 'CONNECTED' AND NOT c.not_employer
-                  AND (c.priority OR c.employees_min >= ?
-                       OR EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'))
-                ORDER BY c.id LIMIT ?""", CompanyRepository::company, page.userId(), page.after(),
-                page.minEmployees(), page.limit());
+        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + DOUBTFUL + " ORDER BY c.id LIMIT ? OFFSET ?",
+                CompanyRepository::company, page.userId(), page.minEmployees(), page.limit(), page.offset());
+    }
+
+    /**
+     * @param page пользователь и порог сотрудников (смещение и размер не учитываются)
+     * @return сколько сомнительных компаний всего — те же условия, что у {@link #doubtful}
+     */
+    public long countDoubtful(DoubtfulPage page) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM (" + COMPANY + NOT_HIDDEN + DOUBTFUL + ") doubtful",
+                Long.class, page.userId(), page.minEmployees());
     }
 
     /**
@@ -236,10 +251,10 @@ public class CompanyRepository {
      * Страница сомнительных компаний.
      *
      * @param userId       пользователь — его скрытые компании не показываются
-     * @param after        курсор: id последней компании прежней страницы; {@code 0} — первая
+     * @param offset       сколько строк пропустить
      * @param limit        сколько
      * @param minEmployees признак найма без сайта: сотрудников не меньше
      */
-    public record DoubtfulPage(long userId, long after, int limit, int minEmployees) {
+    public record DoubtfulPage(long userId, long offset, int limit, int minEmployees) {
     }
 }

@@ -12,7 +12,7 @@ const LANGUAGE_KEY = 'roleorienta.language';
  * переводится (решение владельца 2026-10-21). Названия позиций не переводятся — как в словаре.
  */
 const EN = {
-  'app.tagline': 'Jobs from companies’ own career pages',
+  'app.tagline': 'Jobs straight from the employer’s own career page',
   'app.unavailable': 'Service unavailable: {detail}',
   'app.loading': 'Loading…',
   'nav.sections': 'Sections',
@@ -89,7 +89,7 @@ const EN = {
   'pager.previous': 'Previous page',
   'pager.next': 'Next page',
   'pager.perPage': 'Per page:',
-  'pager.perPageLabel': 'Vacancies per page',
+  'pager.perPageLabel': 'Rows per page',
   'vacancy.employer': 'Employer',
   'vacancy.agency': 'Agency',
   'vacancy.status': 'Status',
@@ -141,14 +141,13 @@ const EN = {
   'companies.doubtfulNote': 'Companies with no vacancies collected: neither a readable career page nor vacancies on '
     + 'the state portal. Add a career page address — it is checked within minutes and used for all users.',
   'companies.noDoubtful': 'No doubtful companies.',
-  'companies.more': 'More',
   'companies.hidden': 'Hidden companies',
   'companies.hiddenNote': 'Hidden only for you: not shown in search and doubtful companies. Other users still see '
     + 'them.',
   'companies.noHidden': 'You have not hidden any company.',
   'companies.showAgain': 'Show again',
   'companies.company': 'Company',
-  'companies.group': 'Group',
+  'companies.group': 'Vacancy source',
   'companies.site': 'Site',
   'companies.careerPage': 'Career page',
   'companies.actions': 'Actions',
@@ -169,11 +168,18 @@ const EN = {
   'reason.USE_FORBIDDEN': 'use not allowed',
   'reason.UNREACHABLE': 'page did not open',
   'reason.NO_CAREER_PAGE': 'not a career page',
-  'group.YES': 'Career page read',
-  'group.PORTAL': 'State portal vacancies only',
-  'group.MAYBE': 'Site found, no readable career page',
-  'group.NO': 'No site found',
-  'group.NOT_EMPLOYER': 'Not an employer',
+  'group.YES': 'Career page',
+  'group.PORTAL': 'Portal only',
+  'group.MAYBE': 'No career page',
+  'group.NO': 'No site',
+  'group.NOT_EMPLOYER': 'Not employer',
+  'legend.title': 'Marks',
+  'legend.YES': 'vacancies are read from the company’s own career page.',
+  'legend.PORTAL': 'only the company’s vacancies on the state portal are collected.',
+  'legend.MAYBE': 'the company site is known, but no readable career page was found on it — you can add its address.',
+  'legend.NO': 'no company site was found — you can add the career page address.',
+  'legend.NOT_EMPLOYER': 'a trade union, an association and the like: vacancies are not searched.',
+  'legend.reason': 'Hover over a mark to see why the career page was not found.',
 } as const;
 
 /** Ключ текста экрана. */
@@ -181,7 +187,7 @@ export type MessageKey = keyof typeof EN;
 
 /** Тексты по-русски: TypeScript требует перевод каждого ключа. */
 const RU: Record<MessageKey, string> = {
-  'app.tagline': 'Вакансии с кадровых страниц самих компаний',
+  'app.tagline': 'Вакансии прямо с кадровой страницы работодателя',
   'app.unavailable': 'Сервис недоступен: {detail}',
   'app.loading': 'Загрузка…',
   'nav.sections': 'Разделы',
@@ -258,7 +264,7 @@ const RU: Record<MessageKey, string> = {
   'pager.previous': 'Предыдущая страница',
   'pager.next': 'Следующая страница',
   'pager.perPage': 'На странице:',
-  'pager.perPageLabel': 'Вакансий на странице',
+  'pager.perPageLabel': 'Строк на странице',
   'vacancy.employer': 'Работодатель',
   'vacancy.agency': 'Агентство',
   'vacancy.status': 'Статус',
@@ -311,14 +317,13 @@ const RU: Record<MessageKey, string> = {
     + 'вакансий на государственном портале. Добавьте адрес кадровой страницы — он проверяется в течение минут и '
     + 'используется для всех пользователей.',
   'companies.noDoubtful': 'Сомнительных компаний нет.',
-  'companies.more': 'Ещё',
   'companies.hidden': 'Скрытые компании',
   'companies.hiddenNote': 'Скрыты только для вас: не показываются в поиске и среди сомнительных. Другие пользователи '
     + 'их видят.',
   'companies.noHidden': 'Вы не скрыли ни одной компании.',
   'companies.showAgain': 'Показывать снова',
   'companies.company': 'Компания',
-  'companies.group': 'Группа',
+  'companies.group': 'Источник вакансий',
   'companies.site': 'Сайт',
   'companies.careerPage': 'Кадровая страница',
   'companies.actions': 'Действия',
@@ -339,11 +344,18 @@ const RU: Record<MessageKey, string> = {
   'reason.USE_FORBIDDEN': 'использование запрещено',
   'reason.UNREACHABLE': 'страница не открылась',
   'reason.NO_CAREER_PAGE': 'не кадровая страница',
-  'group.YES': 'Кадровая страница читается',
-  'group.PORTAL': 'Только вакансии государственного портала',
-  'group.MAYBE': 'Сайт найден, кадровая страница не читается',
-  'group.NO': 'Сайт не найден',
+  'group.YES': 'Кадровая страница',
+  'group.PORTAL': 'Только портал',
+  'group.MAYBE': 'Нет кадровой',
+  'group.NO': 'Нет сайта',
   'group.NOT_EMPLOYER': 'Не работодатель',
+  'legend.title': 'Пометки',
+  'legend.YES': 'вакансии читаются с собственной кадровой страницы компании.',
+  'legend.PORTAL': 'собираются только вакансии компании на государственном портале.',
+  'legend.MAYBE': 'сайт компании известен, но читаемой кадровой страницы на нём не найдено — можно добавить её адрес.',
+  'legend.NO': 'сайт компании не найден — можно добавить адрес кадровой страницы.',
+  'legend.NOT_EMPLOYER': 'профсоюз, объединение и т. п.: вакансии не ищутся.',
+  'legend.reason': 'Наведите на пометку, чтобы увидеть, почему кадровая страница не найдена.',
 };
 
 const MESSAGES: Record<Language, Record<MessageKey, string>> = { en: EN, ru: RU };

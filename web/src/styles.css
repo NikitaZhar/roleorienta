@@ -933,3 +933,28 @@ table.dictionary .nowrap {
   display: grid;
   gap: 4px;
 }
+
+/* Метка группы компании — в одну строку; расшифровка меток под таблицей компаний (§163). */
+.badge {
+  white-space: nowrap;
+}
+
+.legend {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.legend div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.legend dt,
+.legend dd {
+  margin: 0;
+}

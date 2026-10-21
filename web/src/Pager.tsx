@@ -1,5 +1,33 @@
 import { useI18n } from './i18n';
 
+/**
+ * Размеры страницы на выбор (решение владельца 2026-10-20, §147) и размер по умолчанию — общие для всех списков
+ * страницами (вакансии, сомнительные компании — §163).
+ */
+export const PAGE_SIZES = [20, 50, 100];
+const DEFAULT_SIZE = 20;
+/** Ключ выбранного размера в хранилище браузера: выбор один на все списки. */
+const SIZE_KEY = 'roleorienta.pageSize';
+
+/** Сохранённый размер страницы; нет, не из списка или хранилище недоступно — по умолчанию. */
+export function storedSize(): number {
+  try {
+    const stored = Number(localStorage.getItem(SIZE_KEY));
+    return PAGE_SIZES.includes(stored) ? stored : DEFAULT_SIZE;
+  } catch {
+    return DEFAULT_SIZE;
+  }
+}
+
+/** Запомнить размер страницы в браузере. */
+export function storeSize(size: number) {
+  try {
+    localStorage.setItem(SIZE_KEY, String(size));
+  } catch {
+    // Хранилище недоступно (приватный режим): выбор действует до перезагрузки.
+  }
+}
+
 interface PagerProps {
   /** Текущая страница, с 1. */
   page: number;

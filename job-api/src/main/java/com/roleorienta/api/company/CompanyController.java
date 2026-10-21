@@ -51,14 +51,16 @@ public class CompanyController {
 
     /**
      * @param authentication вошедший пользователь
-     * @param after          курсор следующей страницы; нет — первая
-     * @param limit          строк (1–100)
-     * @return сомнительные компании: «может быть» и «нет» с признаком найма, без скрытых пользователем
+     * @param page           номер страницы, с 1 (меньше — первая)
+     * @param size           строк на странице (1–100)
+     * @return страница сомнительных компаний («может быть» и «нет» с признаком найма, без скрытых пользователем) и
+     *         общее число — страницы по номеру, как у результатов поиска (решение владельца 2026-10-21, §163)
      */
     @GetMapping("/api/v1/companies/doubtful")
-    public CompanyPage doubtful(Authentication authentication, @RequestParam(required = false) Long after,
-            @RequestParam(defaultValue = "" + CompanyService.DEFAULT_LIMIT) int limit) {
-        return companies.doubtful(userId(authentication), after, limit);
+    public CompanyPage doubtful(Authentication authentication,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "" + CompanyService.DEFAULT_SIZE) int size) {
+        return companies.doubtful(userId(authentication), page, size);
     }
 
     /**

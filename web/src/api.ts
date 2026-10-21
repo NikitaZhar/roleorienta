@@ -403,10 +403,12 @@ export interface CompanyItem {
   check: CompanyCheck;
 }
 
-/** Страница сомнительных компаний; next — курсор следующей, null — последняя. */
+/** Страница сомнительных компаний по номеру с общим числом (§163). */
 export interface CompanyPage {
   items: CompanyItem[];
-  next: number | null;
+  page: number;
+  size: number;
+  total: number;
 }
 
 /** Адрес кадровой страницы, введённый пользователем, и его состояние. */
@@ -423,8 +425,8 @@ export function searchCompanies(query: string): Promise<CompanyItem[]> {
 }
 
 /** Сомнительные компании: «может быть» и «нет» с признаком найма. */
-export function doubtfulCompanies(after: number | null): Promise<CompanyPage> {
-  return request<CompanyPage>('GET', '/api/v1/companies/doubtful' + (after === null ? '' : '?after=' + after));
+export function doubtfulCompanies(page: number, size: number): Promise<CompanyPage> {
+  return request<CompanyPage>('GET', '/api/v1/companies/doubtful?page=' + page + '&size=' + size);
 }
 
 /** Ввод адреса кадровой страницы компании. */
