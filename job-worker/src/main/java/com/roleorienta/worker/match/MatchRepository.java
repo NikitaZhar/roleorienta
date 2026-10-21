@@ -75,6 +75,23 @@ public class MatchRepository {
     }
 
     /**
+     * @return версия словаря позиций ({@code d<номер>}) — без чтения слов: для ключа задания постановки
+     *         ({@link MatchVacanciesTick})
+     */
+    public String dictionaryVersion() {
+        return VERSION_PREFIX + jdbcTemplate.queryForObject("SELECT version FROM position_dictionary WHERE id = 1",
+                Integer.class);
+    }
+
+    /**
+     * @return число названий в справочнике городов — столько же, сколько ключей у {@link #cities()} (названия не
+     *         {@code NULL})
+     */
+    public int cityCount() {
+        return jdbcTemplate.queryForObject("SELECT count(DISTINCT name) FROM geo_city", Integer.class);
+    }
+
+    /**
      * @return страна города по нормализованному названию; при одинаковом названии — самого
      *         населённого (GeoNames)
      */

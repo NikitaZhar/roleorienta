@@ -76,6 +76,16 @@ public class MatchVacanciesHandler implements TaskHandler {
         return PAYLOAD;
     }
 
+    /**
+     * Текущая версия сопоставления без чтения слов словаря и городов — для ключа первого задания цепочки
+     * ({@link MatchVacanciesTick}): та же, что посчитает задание из прочитанных данных.
+     *
+     * @return версия
+     */
+    public String currentVersion() {
+        return version(repository.dictionaryVersion(), regions.version(), languages.version(), repository.cityCount());
+    }
+
     @Override
     public String type() {
         return TYPE;

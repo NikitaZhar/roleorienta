@@ -37,10 +37,12 @@ import org.springframework.test.context.DynamicPropertySource;
  * Общий список вакансий портала (стенограмма §105) на заглушке: полный обход страницами по две записи, по две
  * страницы за задание; IČO — по списку работодателей портала, поиском работодателей по названию, со страницы своей
  * вакансии; объявление площадки без IČO записывается без него; по итогу обхода — подключение работодателей и записи в
- * источники; лента «новые сверху» — неполные записи новых вакансий.
+ * источники; лента «новые сверху» — неполные записи новых вакансий. Даты размещения со страниц объявлений здесь
+ * выключены ({@code dates-per-record=0}): объявления площадки — с настоящими адресами; даты проверяет
+ * {@code StatePortalAdapterTests}.
  */
 @SpringBootTest(properties = {"app.http.allow-private-addresses=true", "app.state-portal.list.page-size=2",
-        "app.state-portal.list.pages-per-task=2"})
+        "app.state-portal.list.pages-per-task=2", "app.state-portal.dates-per-record=0"})
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class PortalListTests {

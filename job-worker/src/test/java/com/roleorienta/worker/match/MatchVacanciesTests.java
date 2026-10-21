@@ -41,6 +41,9 @@ class MatchVacanciesTests {
     @Autowired
     private MatchRepository repository;
 
+    @Autowired
+    private MatchVacanciesHandler handler;
+
     private int run;
 
     /**
@@ -91,6 +94,25 @@ class MatchVacanciesTests {
                 SELECT m.explanation FROM vacancy_position_match m JOIN vacancy v ON v.id = m.vacancy_id
                 WHERE v.title = 'Hlavná účtovníčka'
                 """, String.class)).isEqualTo("title: uctovnicka");
+    }
+
+    /**
+     * Ключ постановки (§167): текущая версия без чтения слов и городов — та же, что записывает задание; смена словаря
+     * меняет версию и ключ первого задания того же часа — пересчёт начинается сразу, а не в следующем часу.
+     */
+    @Test
+    void firstTaskKeyFollowsMatchVersion() {
+        runMatch();
+        String version = handler.currentVersion();
+        assertThat(jdbcTemplate.queryForObject("SELECT match_version FROM vacancy WHERE title = 'Software Engineer'",
+                String.class)).isEqualTo(version);
+
+        jdbcTemplate.update("UPDATE position_dictionary SET version = version + 1 WHERE id = 1");
+
+        assertThat(handler.currentVersion()).isNotEqualTo(version);
+        assertThat(MatchVacanciesTick.firstTaskKey("2026-10-21T15:00", handler.currentVersion()))
+                .isNotEqualTo(MatchVacanciesTick.firstTaskKey("2026-10-21T15:00", version))
+                .startsWith("match:2026-10-21T15:00:d");
     }
 
     /**

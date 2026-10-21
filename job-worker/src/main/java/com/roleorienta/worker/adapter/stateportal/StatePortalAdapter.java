@@ -1,11 +1,16 @@
 package com.roleorienta.worker.adapter.stateportal;
 
+import com.roleorienta.worker.adapter.PostedDates;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import java.net.URI;
 import java.text.Normalizer;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -45,6 +50,13 @@ public class StatePortalAdapter implements SourceAdapter {
     private static final Pattern PORTAL_OFFER = Pattern.compile("/pracovne-ponuky/([0-9a-f]{8}-[0-9a-f-]{27})");
     private static final Pattern PROFESIA_OFFER = Pattern.compile("profesia\\.sk/(?:.*/)?O(\\d+)");
     private static final Pattern EMPLOYER_NUMBER = Pattern.compile("IČO:\\s*(\\d{8})");
+    /** Внешний id своей вакансии портала — uuid. */
+    private static final Pattern OFFER_UUID = Pattern.compile("[0-9a-f]{8}-[0-9a-f-]{27}");
+    /** Начало внешнего id объявления profesia.sk ({@link #externalId}). */
+    private static final String PROFESIA_ID = "profesia:";
+    /** Дата в «Dátum a čas vytvorenia» своей вакансии портала: {@code 04.09.2026 o 09:58}. */
+    private static final Pattern PORTAL_DAY = Pattern.compile("(\\d{1,2}\\.\\d{1,2}\\.\\d{4})");
+    private static final DateTimeFormatter PORTAL_DATE = DateTimeFormatter.ofPattern("d.M.uuuu");
     private static final int MAX_EXTERNAL_ID = 200;
     /** Длина поля адреса стартовой страницы ({@code company_site.start_url}). */
     private static final int MAX_ADDRESS = 2000;
@@ -158,6 +170,63 @@ public class StatePortalAdapter implements SourceAdapter {
             return Optional.of(PortalSite.NONE);
         }
         return Optional.of(new PortalSite(null, mailHost, detailUri.toString()));
+    }
+
+    /**
+     * У вакансии общего списка дату размещения можно получить со страницы объявления (§168): своя вакансия портала или
+     * объявление profesia.sk; у объявлений других площадок — нет.
+     *
+     * @param externalId внешний id публикации ({@link #externalId})
+     * @return есть ли страница с датой
+     */
+    public static boolean hasPostedDate(String externalId) {
+        return OFFER_UUID.matcher(externalId).matches() || externalId.startsWith(PROFESIA_ID);
+    }
+
+    /**
+     * Дата размещения вакансии общего списка со страницы объявления (§168): в общем списке портала её нет (только
+     * последнее изменение — датой размещения не считается). Своя вакансия портала — «Dátum a čas vytvorenia» на
+     * странице {@code /pracovne-ponuky/<uuid>}; объявление profesia.sk — разметка schema.org
+     * {@code itemprop="datePosted"} («Dátum zverejnenia») на странице объявления по его адресу.
+     *
+     * @param externalId внешний id публикации
+     * @param url        адрес объявления (для profesia.sk)
+     * @return начало суток UTC; пусто — даты нет, страница не получена или у объявления нет страницы с датой
+     */
+    public Optional<Instant> offerPostedDate(String externalId, String url) {
+        if (OFFER_UUID.matcher(externalId).matches()) {
+            URI uri = URI.create(properties.baseUrl() + "/pracovne-ponuky/" + externalId);
+            if (!(httpClient.get(uri) instanceof HttpResult.Success page)) {
+                return Optional.empty();
+            }
+            Element created = value(Jsoup.parse(page.body(), uri.toString()), "Dátum a čas vytvorenia");
+            Matcher day = created == null ? null : PORTAL_DAY.matcher(created.text());
+            return day != null && day.find() ? portalDay(day.group(1)) : Optional.empty();
+        }
+        if (!externalId.startsWith(PROFESIA_ID) || url == null) {
+            return Optional.empty();
+        }
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (IllegalArgumentException malformed) {
+            return Optional.empty();
+        }
+        if (!(httpClient.get(uri) instanceof HttpResult.Success page)) {
+            return Optional.empty();
+        }
+        Element posted = Jsoup.parse(page.body(), url).selectFirst("[itemprop=datePosted]");
+        return posted == null ? Optional.empty()
+                : Optional.ofNullable(PostedDates.parse(posted.hasAttr("content") ? posted.attr("content")
+                        : posted.text()));
+    }
+
+    private static Optional<Instant> portalDay(String text) {
+        try {
+            return Optional.of(PostedDates.day(LocalDate.parse(text, PORTAL_DATE)));
+        } catch (DateTimeParseException invalid) {
+            return Optional.empty();
+        }
     }
 
     /**

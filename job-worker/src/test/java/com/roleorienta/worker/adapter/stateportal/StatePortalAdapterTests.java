@@ -13,6 +13,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ class StatePortalAdapterTests {
     private final Map<String, String> offerPages = new HashMap<>();
     /** Детали вакансий портала по uuid. */
     private final Map<String, String> detailPages = new HashMap<>();
+    /** Объявления profesia.sk по пути. */
+    private final Map<String, String> profesiaPages = new HashMap<>();
     /** Страницы списка работодателей по номеру. */
     private final Map<String, String> employerPages = new HashMap<>();
 
@@ -56,12 +59,14 @@ class StatePortalAdapterTests {
                     ? offerPages.getOrDefault(param(exchange, "firma") + ":" + param(exchange, "pageNr"), offers(0))
                     : detailPages.getOrDefault(detail, "<html><body></body></html>"));
         });
+        server.createContext("/praca", exchange -> respond(exchange, profesiaPages.getOrDefault(
+                exchange.getRequestURI().getPath(), "<html><body></body></html>")));
         server.createContext("/zamestnavatelia", exchange -> respond(exchange,
                 employerPages.getOrDefault(param(exchange, "pageNr"), "<html><body><main></main></body></html>")));
         server.start();
         adapter = new StatePortalAdapter(httpClient, new StatePortalProperties(
                 "http://127.0.0.1:" + server.getAddress().getPort(), 2,
-                new StatePortalProperties.Task(150, Duration.ofMinutes(5)), Duration.ofDays(7)));
+                new StatePortalProperties.Task(150, Duration.ofMinutes(5)), Duration.ofDays(7), 10));
     }
 
     /**
@@ -81,6 +86,32 @@ class StatePortalAdapterTests {
     @Test
     void readByEmployerIsNotUsed() {
         assertThatThrownBy(() -> adapter.read(KIA)).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    /**
+     * Дата размещения со страницы объявления (§168): своя вакансия портала — «Dátum a čas vytvorenia»; объявление
+     * profesia.sk — {@code itemprop="datePosted"}; без даты на странице и объявление другой площадки — даты нет.
+     */
+    @Test
+    void readsPostedDateFromOfferPage() {
+        String uuid = "4f4762a0-b1ff-4955-91e1-a89792eddd81";
+        detailPages.put(uuid, "<html><body><main><dl class=\"vpm-data-panel\">"
+                + field("Dátum a čas vytvorenia", "04.09.2026 o 09:58")
+                + field("Naposledy aktualizované", "21.10.2026 o 14:59") + "</dl></main></body></html>");
+        String base = "http://127.0.0.1:" + server.getAddress().getPort();
+        profesiaPages.put("/praca/accenture/O5376258", "<div class=\"overall-info\"><strong>ID: </strong>5376258"
+                + "<strong> Dátum zverejnenia: </strong> <span>16.10.2026</span>"
+                + "<span class=\"hidden\" itemprop=\"datePosted\">2026-10-16</span></div>");
+
+        assertThat(adapter.offerPostedDate(uuid, base + "/pracovne-ponuky/" + uuid))
+                .contains(Instant.parse("2026-09-04T00:00:00Z"));
+        assertThat(adapter.offerPostedDate("profesia:5376258", base + "/praca/accenture/O5376258"))
+                .contains(Instant.parse("2026-10-16T00:00:00Z"));
+        assertThat(adapter.offerPostedDate("profesia:1", base + "/praca/none/O1")).isEmpty();
+        assertThat(adapter.offerPostedDate("0a0a0a0a-1111-4111-8111-000000000009", base)).isEmpty();
+        assertThat(StatePortalAdapter.hasPostedDate("https://www.worki.sk/ponuka/1")).isFalse();
+        assertThat(adapter.offerPostedDate("https://www.worki.sk/ponuka/1", "https://www.worki.sk/ponuka/1"))
+                .isEmpty();
     }
 
     /**
