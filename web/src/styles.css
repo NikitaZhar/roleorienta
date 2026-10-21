@@ -926,7 +926,7 @@ table.dictionary .nowrap {
 .settings {
   display: grid;
   gap: 10px;
-  max-width: 360px;
+  max-width: 560px;
 }
 
 .settings label {
@@ -957,4 +957,38 @@ table.dictionary .nowrap {
 .legend dt,
 .legend dd {
   margin: 0;
+}
+
+/* Частота сводки (§164): переключатель из четырёх — подписи-кнопки, выбранная — акцентом. */
+.settings fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.segmented label {
+  display: inline-flex;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.segmented label.current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }

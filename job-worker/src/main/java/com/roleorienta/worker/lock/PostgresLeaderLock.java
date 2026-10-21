@@ -28,7 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
  * лента и полный обход общего списка портала ({@code PortalListTick}); 1015 — следующее чтение провайдеров с общим
  * хостом ({@code ReadSourceTick#sharedHostTick}); 1016 — постановка удаления снимков по сроку
  * ({@code SnapshotPurgeTick}); 1017 — постановка расчёта показателей ядра ({@code ComputeMetricsTick}); 1018 —
- * постановка проверки адресов кадровых страниц пользователей ({@code CareerRequestTick}).</p>
+ * постановка проверки адресов кадровых страниц пользователей ({@code CareerRequestTick}); 1019 — постановка сводок
+ * на почту ({@code DigestTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

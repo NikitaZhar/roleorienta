@@ -38,18 +38,20 @@ public class AccountService {
      * @param email    email
      * @param password пароль
      * @param language язык интерфейса; {@code null} — английский
+     * @param timeZone часовой пояс (проверенный); {@code null} — UTC
      * @return новая учётная запись
      * @throws EmailTakenException email уже зарегистрирован (в том числе одновременной регистрацией)
      */
     @Transactional
-    public UserAccount register(String email, String password, String language) {
+    public UserAccount register(String email, String password, String language, String timeZone) {
         String normalized = normalize(email);
         if (accounts.existsByEmail(normalized)) {
             throw new EmailTakenException();
         }
         try {
             return accounts.saveAndFlush(new UserAccount(normalized, passwordEncoder.encode(password),
-                    language == null ? AccountDtos.DEFAULT_LANGUAGE : language));
+                    language == null ? AccountDtos.DEFAULT_LANGUAGE : language,
+                    timeZone == null ? AccountDtos.DEFAULT_TIME_ZONE : timeZone));
         } catch (DataIntegrityViolationException duplicate) {
             throw new EmailTakenException();
         }
@@ -67,14 +69,24 @@ public class AccountService {
     }
 
     /**
+     * Настройки пользователя: меняются только переданные поля.
+     *
      * @param email    email вошедшего пользователя
-     * @param language язык интерфейса: {@code en} или {@code ru}
-     * @return учётная запись с новым языком
+     * @param settings язык, частота сводки, часовой пояс (проверенный); {@code null} — без изменения
+     * @return учётная запись с новыми настройками
      */
     @Transactional
-    public UserAccount setLanguage(String email, String language) {
+    public UserAccount updateSettings(String email, AccountDtos.Settings settings) {
         UserAccount account = byEmail(email);
-        account.setLanguage(language);
+        if (settings.language() != null) {
+            account.setLanguage(settings.language());
+        }
+        if (settings.digestFrequency() != null) {
+            account.setDigestFrequency(settings.digestFrequency());
+        }
+        if (settings.timeZone() != null) {
+            account.setTimeZone(settings.timeZone());
+        }
         return account;
     }
 }

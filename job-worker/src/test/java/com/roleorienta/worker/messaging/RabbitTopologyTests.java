@@ -9,6 +9,7 @@ import com.roleorienta.worker.delivery.RunPassHandler;
 import com.roleorienta.worker.geo.GeoImportHandler;
 import com.roleorienta.worker.intake.CompanySizeHandler;
 import com.roleorienta.worker.intake.RegistryIntakeHandler;
+import com.roleorienta.worker.digest.SendDigestHandler;
 import com.roleorienta.worker.match.MatchVacanciesHandler;
 import com.roleorienta.worker.metrics.ComputeMetricsHandler;
 import com.roleorienta.worker.site.SiteNameHandler;
@@ -62,7 +63,7 @@ class RabbitTopologyTests {
     @Test
     void internalTasksGoToInternalQueue() {
         assertThat(RabbitTopology.INTERNAL_TYPES).containsExactlyInAnyOrder(RunPassHandler.TYPE,
-                MatchVacanciesHandler.TYPE, ComputeMetricsHandler.TYPE);
+                MatchVacanciesHandler.TYPE, ComputeMetricsHandler.TYPE, SendDigestHandler.TYPE);
         for (String type : RabbitTopology.INTERNAL_TYPES) {
             assertThat(RabbitTopology.routingKey(type)).isEqualTo(RabbitTopology.INTERNAL_ROUTING_KEY);
         }

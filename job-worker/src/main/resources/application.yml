@@ -10,6 +10,19 @@ spring:
       # публикатор outbox, продление аренды (§95); соединение берётся на время запроса, нехватка — ожидание до 30 с,
       # затем временный отказ.
       maximum-pool-size: 20
+  # Почта для сводки (§164): SMTP Brevo — smtp-relay.brevo.com:587, логин и ключ SMTP из кабинета Brevo; STARTTLS —
+  # шифрование соединения после приветствия сервера. Без MAIL_HOST письма не отправляются (сводки выключены).
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
   jpa:
     hibernate:
       ddl-auto: none       # схемой владеет job-api
@@ -193,6 +206,11 @@ app:
   match:                     # предрасчёт соответствия вакансий позициям (словарь позиций — в БД, §159)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки
+  digest:                    # сводка новых вакансий на почту (бизнес-описание §6, стенограмма §164)
+    enabled: ${DIGEST_ENABLED:false}   # true — такт ставит сводки; нужна почта (MAIL_*)
+    interval-ms: 300000        # такт: кому пора (8:00 по времени пользователя)
+    from: ${MAIL_FROM:}        # адрес отправителя (у Brevo — подтверждённый в нём)
+    app-url: ${APP_URL:http://localhost:5173}   # ссылка в письме
   delivery:                  # выдача порциями (технический документ §7)
     enabled: true              # false — планирование проходов выключено (тесты)
     interval-ms: 30000         # тик планирования (§120): новая версия условий получает порцию текущего окна сразу; проход — раз в час, окно — начало часа

@@ -71,7 +71,7 @@ export function App() {
 
   /** Переключатель в панели: язык записывается в учётную запись; ошибка — сообщением, экран уже переключён. */
   function switchLanguage(language: Language) {
-    saveSettings(language).catch((failure: unknown) => setNotice(errorText(failure, t)));
+    saveSettings({ language }).catch((failure: unknown) => setNotice(errorText(failure, t)));
   }
 
   useEffect(() => {
@@ -186,7 +186,7 @@ export function App() {
               reload={reloads} onOpen={open} />
           )}
           {view === 'companies' && <CompaniesPage />}
-          {view === 'settings' && <SettingsPage />}
+          {view === 'settings' && <SettingsPage account={account} onSaved={setAccount} />}
         </div>
       </main>
     </>

@@ -17,8 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * как у SPA.
  *
  * <ul>
- *   <li>Вход: регистрация (и с языком экрана входа, §162), повтор email, неверный пароль, вход, язык интерфейса в
- *       настройках, выход; изменяющий запрос без
+ *   <li>Вход: регистрация (и с языком экрана входа, §162), повтор email, неверный пароль, вход, язык интерфейса,
+ *       частота сводки и часовой пояс в настройках (§164), выход; изменяющий запрос без
  *       CSRF-токена отклоняется.</li>
  *   <li>3 — смена условий: новая версия, прежний накопленный список не используется, статусы
  *       вакансий сохранены; смена только лимита список не сбрасывает; версия проверяется {@code If-Match}.</li>
@@ -81,6 +81,16 @@ class AccountConditionAcceptanceTests {
                 .contains("\"language\":\"ru\"");
         assertThat(client.send("GET", "/api/v1/me", null).body()).contains("\"language\":\"ru\"");
         assertThat(client.send("PUT", "/api/v1/me/settings", "{\"language\":\"de\"}").status()).isEqualTo(400);
+        assertThat(me.body()).contains("\"digestFrequency\":\"DAILY\"");
+        assertThat(client.send("PUT", "/api/v1/me/settings",
+                "{\"digestFrequency\":\"WEEKDAYS\",\"timeZone\":\"Europe/Bratislava\"}").body())
+                .contains("\"language\":\"ru\"", "\"digestFrequency\":\"WEEKDAYS\"");
+        assertThat(jdbcTemplate.queryForObject("SELECT time_zone FROM user_account WHERE email = 'user@example.com'",
+                String.class)).isEqualTo("Europe/Bratislava");
+        assertThat(client.send("PUT", "/api/v1/me/settings", "{\"digestFrequency\":\"HOURLY\"}").status())
+                .isEqualTo(400);
+        assertThat(client.send("PUT", "/api/v1/me/settings", "{\"timeZone\":\"Mars/Olympus\"}").status())
+                .isEqualTo(400);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM spring_session", Integer.class)).isPositive();
 
         assertThat(client.send("POST", "/api/v1/auth/logout", null).status()).isEqualTo(204);

@@ -6,6 +6,8 @@ import com.roleorienta.api.account.AccountDtos.Settings;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Регистрация, вход и текущий пользователь (технический документ §8). Выход —
@@ -49,7 +52,8 @@ public class AccountController {
     @PostMapping("/api/v1/auth/register")
     @ResponseStatus(HttpStatus.CREATED)
     public Account register(@Valid @RequestBody Credentials credentials) {
-        return Account.of(accounts.register(credentials.email(), credentials.password(), credentials.language()));
+        return Account.of(accounts.register(credentials.email(), credentials.password(), credentials.language(),
+                zone(credentials.timeZone())));
     }
 
     /**
@@ -81,14 +85,34 @@ public class AccountController {
     }
 
     /**
-     * Настройки пользователя (§162): сейчас — язык интерфейса.
+     * Настройки пользователя (§162, §164): язык, частота сводки на почту, часовой пояс; не переданное не меняется.
      *
      * @param authentication вошедший пользователь
-     * @param settings       язык: {@code en} или {@code ru}
-     * @return учётная запись; {@code 400} — неизвестный язык
+     * @param settings       язык, частота, часовой пояс браузера
+     * @return учётная запись; {@code 400} — неизвестный язык, частота или часовой пояс
      */
     @PutMapping("/api/v1/me/settings")
     public Account settings(Authentication authentication, @Valid @RequestBody Settings settings) {
-        return Account.of(accounts.setLanguage(authentication.getName(), settings.language()));
+        zone(settings.timeZone());
+        return Account.of(accounts.updateSettings(authentication.getName(), settings));
+    }
+
+    /**
+     * Проверка входа: часовой пояс — известное название IANA ({@code ZoneId}).
+     *
+     * @param timeZone часовой пояс; {@code null} — не передан
+     * @return он же
+     * @throws ResponseStatusException {@code 400} — неизвестный часовой пояс
+     */
+    private static String zone(String timeZone) {
+        if (timeZone == null) {
+            return null;
+        }
+        try {
+            ZoneId.of(timeZone);
+            return timeZone;
+        } catch (DateTimeException unknown) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown time zone: " + timeZone);
+        }
     }
 }

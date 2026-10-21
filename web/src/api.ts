@@ -29,6 +29,16 @@ export interface Account {
   email: string;
   /** Язык интерфейса (§162). */
   language: 'en' | 'ru';
+  /** Частота сводки на почту (§164). */
+  digestFrequency: DigestFrequency;
+}
+
+/** Частота сводки на почту (§164): каждый день, по будням, раз в неделю (понедельник), не присылать. */
+export type DigestFrequency = 'DAILY' | 'WEEKDAYS' | 'WEEKLY' | 'NEVER';
+
+/** Часовой пояс браузера (IANA): письмо-сводка приходит в 8:00 по нему (§164). */
+export function browserTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
@@ -125,14 +135,21 @@ export function login(email: string, password: string): Promise<Account> {
   return request<Account>('POST', '/api/v1/auth/login', { email, password });
 }
 
-/** Регистрация с языком, выбранным на экране входа (вход — отдельным запросом). */
+/** Регистрация с языком экрана входа и часовым поясом браузера (вход — отдельным запросом). */
 export function register(email: string, password: string, language: 'en' | 'ru'): Promise<Account> {
-  return request<Account>('POST', '/api/v1/auth/register', { email, password, language });
+  return request<Account>('POST', '/api/v1/auth/register', { email, password, language, timeZone: browserTimeZone() });
 }
 
-/** Настройки пользователя (§162): язык интерфейса. */
-export function saveSettings(language: 'en' | 'ru'): Promise<Account> {
-  return request<Account>('PUT', '/api/v1/me/settings', { language });
+/** Настройки пользователя (§162, §164): не переданное не меняется. */
+export interface SettingsChange {
+  language?: 'en' | 'ru';
+  digestFrequency?: DigestFrequency;
+  timeZone?: string;
+}
+
+/** Сохранить настройки пользователя. */
+export function saveSettings(settings: SettingsChange): Promise<Account> {
+  return request<Account>('PUT', '/api/v1/me/settings', settings);
 }
 
 /** Выход: сессия закрывается. */
