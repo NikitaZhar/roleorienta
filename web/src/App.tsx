@@ -36,13 +36,14 @@ const LOGO_SIZE = 24;
 /**
  * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — панель с эмблемой и
  * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними результаты; «My applications» —
- * вакансии с откликом (§156); «Not interested»; «Companies». Справа — меню учётной записи. Вакансия открывается
+ * вакансии с откликом (§156); «Not interested»; «Companies». Справа — кружок учётной записи с первой буквой почты
+ * (§170); в его меню — почта, «Settings», язык и «Sign out». Вакансия открывается
  * вместо раздела, а раздел не снимается, а скрывается ({@code hidden}): после «Back» видна та же страница списка и
  * те же условия, прокрутка — та же, что была до открытия (аудит §154). Если статус вакансии менялся (и «Viewed» при
  * открытии новой), возврат перечитывает ту же страницу ({@code reloads}): ушедшая в другой раздел вакансия пропадает,
  * плашка «New» снимается. Новые условия начинают список заново с первой страницы ({@code searches} — ключ списка).
  * Выход сбрасывает раздел и открытую вакансию. Язык интерфейса (§162): после входа — из учётной записи; переключатель
- * EN | RU в панели меняет его сразу и записывает в учётную запись; «Settings» в меню учётной записи — тоже.
+ * EN | RU в меню учётной записи меняет его сразу и записывает в учётную запись; «Settings» — тоже.
  */
 export function App() {
   const { setLanguage, t } = useI18n();
@@ -158,23 +159,28 @@ export function App() {
   return (
     <>
       <header className="bar">
-        <span className="brand"><Logo size={LOGO_SIZE} />roleorienta</span>
-        <nav aria-label={t('nav.sections')}>
-          {SECTIONS.map((section) => (
-            <button key={section.view} type="button" className={view === section.view ? 'current' : ''}
-              aria-current={view === section.view ? 'page' : undefined} onClick={() => show(section.view)}>
-              {t(section.label)}
-            </button>
-          ))}
-        </nav>
-        <LanguageSwitch onChange={switchLanguage} />
-        <details className="account" ref={menu}>
-          <summary>{account.email}</summary>
-          <div className="menu">
-            <button type="button" onClick={() => show('settings')}>{t('menu.settings')}</button>
-            <button type="button" onClick={signOut}>{t('menu.signOut')}</button>
-          </div>
-        </details>
+        <div className="bar-inner">
+          <span className="brand"><Logo size={LOGO_SIZE} />roleorienta</span>
+          <nav aria-label={t('nav.sections')}>
+            {SECTIONS.map((section) => (
+              <button key={section.view} type="button" className={view === section.view ? 'current' : ''}
+                aria-current={view === section.view ? 'page' : undefined} onClick={() => show(section.view)}>
+                {t(section.label)}
+              </button>
+            ))}
+          </nav>
+          <details className="account" ref={menu}>
+            <summary aria-label={t('menu.account')} title={account.email}>
+              {account.email.charAt(0).toUpperCase()}
+            </summary>
+            <div className="menu">
+              <div className="who">{account.email}</div>
+              <button type="button" onClick={() => show('settings')}>{t('menu.settings')}</button>
+              <div className="menu-row">{t('language.switch')}<LanguageSwitch onChange={switchLanguage} /></div>
+              <button type="button" onClick={signOut}>{t('menu.signOut')}</button>
+            </div>
+          </details>
+        </div>
       </header>
       <main className="page">
         {notice !== null && <p className="error">{notice}</p>}

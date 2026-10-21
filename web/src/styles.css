@@ -5,32 +5,41 @@
  * https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties
  * https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme
  */
+/*
+ * Новый облик (стенограмма §170; макеты согласованы владельцем 2026-10-21): спокойный интерфейс — блоки разделяют фон
+ * и отступы, а не рамки; один шрифт (IBM Plex Sans; Fraunces — только в названии «roleorienta»); числа и даты —
+ * табличными цифрами (font-variant-numeric: tabular-nums — у всех цифр одна ширина, столбцы не «пляшут»). Размеры на
+ * компьютере: кнопки и поля 36 px, второстепенные 32, панель 52; шкала отступов 4 · 8 · 12 · 16 · 24 · 32 · 48.
+ * Акцент #A85C2F — чуть темнее прежнего #B0673A: контраст текста на белом 4,9:1 (норма WCAG AA — 4,5:1).
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/font-variant-numeric
+ */
 :root {
   --bg: #f4f2ec;
   --surface: #ffffff;
-  --surface-2: #fbfaf6;
-  --border: #e4ded2;
-  --border-strong: #d4ccbc;
-  --ink: #23272e;
-  --ink-soft: #3c424b;
-  --muted: #6e6960;
-  --accent: #b0673a;
-  --accent-soft: #f0e2d2;
+  --surface-2: #efece5;
+  --border: #e7e1d6;
+  --border-strong: #d6cfc2;
+  --ink: #1f2328;
+  --ink-soft: #4a4f57;
+  --muted: #6b665d;
+  --accent: #a85c2f;
+  --accent-soft: #f5e8dc;
   --accent-ink: #7c481f;
   --on-accent: #ffffff;
-  --fresh: #dcebe0;
-  --fresh-ink: #1f5a38;
+  --fresh: #e3f1e8;
+  --fresh-ink: #1d7a4a;
   --danger: #a3262a;
-  --info-soft: #dcebe8;
-  --info-ink: #0b5952;
-  --amber-soft: #f5e7c8;
+  --info-soft: #dff0ed;
+  --info-ink: #0f5f58;
+  --amber-soft: #f6ead0;
   --amber-ink: #8a5a12;
   --serif: 'Fraunces', Georgia, 'Times New Roman', serif;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-  --radius: 10px;
+  --radius: 8px;
+  --shadow-pop: 0 8px 24px rgba(20, 20, 20, 0.1), 0 1px 2px rgba(20, 20, 20, 0.06);
   color-scheme: light;
   font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
   background: var(--bg);
 }
@@ -39,8 +48,8 @@
   :root {
     --bg: #14171b;
     --surface: #1b1f25;
-    --surface-2: #21262d;
-    --border: #2e353d;
+    --surface-2: #22262b;
+    --border: #2a3037;
     --border-strong: #3b434c;
     --ink: #ece6db;
     --ink-soft: #c8c3b9;
@@ -56,6 +65,7 @@
     --info-ink: #7fcfc5;
     --amber-soft: #2c2413;
     --amber-ink: #e0b050;
+    --shadow-pop: none;
     color-scheme: dark;
   }
 }
@@ -72,10 +82,23 @@ a {
 }
 
 h1,
-h2 {
-  font-family: var(--serif);
+h2,
+h3 {
   font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+h3 {
+  font-size: 14px;
 }
 
 /* Жирное — начертание 600 из сборки (main.tsx); 700 не подключено, браузер дорисовывал бы его сам. */
@@ -85,17 +108,28 @@ b {
   font-weight: 600;
 }
 
-/* Верхняя панель: эмблема и название, разделы, меню учётной записи. */
+/* Верхняя панель (§170): тонкая, закреплена сверху; разделы — вкладки с подчёркиванием текущей, справа — кружок
+   учётной записи. position: sticky — панель прокручивается со страницей до верха окна и там остаётся.
+   https://developer.mozilla.org/en-US/docs/Web/CSS/position#sticky */
 .bar {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-  padding: 10px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+}
+
+.bar-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  gap: 28px;
+  align-items: center;
   flex-wrap: wrap;
 }
 
+/* Название — единственное место шрифта Fraunces. */
 .brand {
   display: inline-flex;
   align-items: center;
@@ -103,17 +137,26 @@ b {
   font-family: var(--serif);
   font-weight: 600;
   font-size: 19px;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
 .bar nav {
   flex: 1;
+  gap: 22px;
+}
+
+/* Панель администратора: название и «Sign out» по краям, высота — как у вкладок. */
+.bar-inner.admin {
+  justify-content: space-between;
+  min-height: 52px;
 }
 
 .page {
   max-width: 960px;
   margin: 0 auto;
-  padding: 16px 20px;
+  padding: 28px 24px 64px;
+  box-sizing: border-box;
 }
 
 .narrow {
@@ -133,19 +176,49 @@ label {
   color: var(--ink-soft);
 }
 
+/* Поля и кнопки — 36 px; поле — тонкая рамка, кнопка по умолчанию — мягкая подложка без рамки (§170). */
 input,
 select,
+textarea,
 button {
   font: inherit;
-  padding: 8px 10px;
+  font-size: 14px;
   color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
+  box-sizing: border-box;
+}
+
+input,
+select {
+  height: 36px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  height: auto;
+  accent-color: var(--accent);
+}
+
+textarea {
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+button {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  cursor: pointer;
 }
 
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible {
@@ -153,12 +226,8 @@ summary:focus-visible {
   outline-offset: 1px;
 }
 
-button {
-  cursor: pointer;
-}
-
 button:hover {
-  border-color: var(--ink-soft);
+  background: var(--border);
 }
 
 button:disabled {
@@ -166,21 +235,27 @@ button:disabled {
   opacity: 0.6;
 }
 
-/* Главное действие экрана — одно на экран. */
+/* Главное действие экрана — одно на экран: заливка акцентом. */
 button.primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--on-accent);
   font-weight: 500;
 }
 
-/* Действие-ссылка: без рамки, цвет акцента. */
+button.primary:hover {
+  background: var(--accent-ink);
+}
+
+/* Действие-ссылка: без подложки, цвет акцента. */
 button.link {
+  height: 32px;
   background: none;
-  border-color: transparent;
   color: var(--accent);
-  padding-left: 4px;
-  padding-right: 4px;
+  padding: 0 8px;
+}
+
+button.link:hover {
+  background: var(--accent-soft);
 }
 
 .actions {
@@ -194,9 +269,16 @@ button.link {
 }
 
 fieldset {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 12px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 label.inline {
@@ -211,16 +293,21 @@ nav {
   flex-wrap: wrap;
 }
 
-/* Разделы в панели — текстовые кнопки; текущий — цветом акцента. */
+/* Разделы в панели — вкладки высотой 52 px; текущая — акцентом и линией снизу. */
 .bar nav button {
-  border-color: transparent;
+  height: 52px;
+  padding: 0 2px;
+  border: 0;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: none;
-  color: var(--ink-soft);
-  padding: 6px 10px;
+  color: var(--muted);
 }
 
 .bar nav button:hover {
-  color: var(--accent);
+  background: none;
+  color: var(--ink);
 }
 
 nav .current,
@@ -229,7 +316,12 @@ nav .current,
   font-weight: 500;
 }
 
-/* Меню учётной записи: <details>/<summary> — раскрывающийся блок HTML без скриптов. */
+.bar nav button.current {
+  border-bottom-color: var(--accent);
+}
+
+/* Меню учётной записи (§170): кружок с первой буквой почты; в меню — почта, «Settings», язык, «Sign out».
+   <details>/<summary> — раскрывающийся блок HTML без скриптов. */
 .account {
   position: relative;
 }
@@ -237,51 +329,75 @@ nav .current,
 .account summary {
   list-style: none;
   cursor: pointer;
-  color: var(--ink-soft);
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
   font-size: 14px;
-  padding: 6px 8px;
-  border-radius: var(--radius);
 }
 
 .account summary::-webkit-details-marker {
   display: none;
 }
 
-.account summary::after {
-  content: ' ▾';
-}
-
-.account[open] summary::after {
-  content: ' ▴';
+.account[open] summary {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .account .menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 4px);
-  min-width: 160px;
+  top: calc(100% + 6px);
+  min-width: 220px;
   display: flex;
   flex-direction: column;
+  gap: 2px;
   padding: 4px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  z-index: 10;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  z-index: 30;
 }
 
-.account .menu button {
-  border-color: transparent;
+.account .menu .who {
+  padding: 8px 10px 6px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account .menu .menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 2px 10px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.account .menu > button {
+  height: 34px;
+  padding: 0 10px;
   background: none;
   text-align: left;
 }
 
-.account .menu button:hover {
+.account .menu > button:hover {
   background: var(--surface-2);
 }
 
 /* Число найденных над списком и низ списка: номера страниц и размер страницы (§151). */
 .count {
-  font-family: var(--mono);
   font-size: 13px;
   color: var(--muted);
   margin: 0 0 8px;
@@ -302,17 +418,22 @@ nav .current,
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  font-family: var(--mono);
   font-size: 13px;
 }
 
 .pager button,
 .page-size button {
-  min-width: 34px;
-  padding: 4px 8px;
-  border-color: transparent;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
   background: none;
-  color: var(--muted);
+  color: var(--ink-soft);
+}
+
+.pager button:hover,
+.page-size button:hover {
+  background: var(--surface-2);
 }
 
 .pager button.current,
@@ -362,6 +483,7 @@ nav .current,
   display: flex;
   align-items: center;
   gap: 10px;
+  font-family: var(--serif);
   margin: 0;
   font-size: 30px;
 }
@@ -382,6 +504,9 @@ nav .current,
 
 .choices button {
   width: 100%;
+  height: auto;
+  min-height: 36px;
+  padding: 6px 10px;
   text-align: left;
 }
 
@@ -405,9 +530,9 @@ nav .current,
 }
 
 .chips button {
+  height: auto;
   padding: 0 6px;
   line-height: 1.4;
-  border-color: transparent;
   background: none;
 }
 
@@ -466,10 +591,7 @@ nav .current,
 }
 
 .criteria dt {
-  font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -507,6 +629,7 @@ nav .current,
   gap: 12px;
   align-items: center;
   width: 100%;
+  height: auto;
   padding: 11px 14px;
   text-align: left;
   border: 0;
@@ -520,10 +643,7 @@ nav .current,
   border-top: 0;
   padding-top: 8px;
   padding-bottom: 8px;
-  font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -548,7 +668,6 @@ button.row:hover {
 
 .row .last,
 .row.head span:last-child {
-  font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
   text-align: right;
@@ -606,7 +725,6 @@ button.row:hover {
   border-radius: 999px;
   background: var(--fresh);
   color: var(--fresh-ink);
-  font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
   vertical-align: 1px;
@@ -662,7 +780,6 @@ button.row:hover {
   display: inline-block;
   min-width: 96px;
   margin-right: 12px;
-  font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
 }
@@ -687,12 +804,16 @@ button.row:hover {
 }
 
 a.button {
-  padding: 8px 10px;
-  border: 1px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  box-sizing: border-box;
   border-radius: var(--radius);
   color: var(--ink);
+  font-size: 14px;
   text-decoration: none;
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .wide {
@@ -755,11 +876,8 @@ table.companies td {
 }
 
 table.companies thead th {
-  font-family: var(--mono);
   font-size: 0.75em;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
   border-bottom: 1px solid var(--border-strong);
 }
@@ -893,23 +1011,34 @@ table.dictionary .nowrap {
 
 /* Переключатель языка EN | RU (§162): на экране входа — в правом верхнем углу, в панели — перед меню учётной записи.
    Выбранный язык — акцентом, как выбранная страница списка. */
+/* Переключатель EN | RU — сегмент: подложка, выбранный — светлая «таблетка». */
 .language-switch {
-  display: flex;
+  display: inline-flex;
   gap: 2px;
-  font-family: var(--mono);
-  font-size: 12px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .language-switch button {
-  padding: 4px 6px;
-  border-color: transparent;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
   background: none;
   color: var(--muted);
+  font-size: 13px;
+}
+
+.language-switch button:hover {
+  background: none;
+  color: var(--ink);
 }
 
 .language-switch button.current {
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(20, 20, 20, 0.08);
 }
 
 .login {

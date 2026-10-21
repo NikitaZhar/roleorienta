@@ -75,8 +75,10 @@ export function AdminApp() {
   return (
     <>
       <header className="bar">
-        <span className="brand">roleorienta · admin</span>
-        <button type="button" onClick={signOut}>Sign out</button>
+        <div className="bar-inner admin">
+          <span className="brand">roleorienta · admin</span>
+          <button type="button" onClick={signOut}>Sign out</button>
+        </div>
       </header>
       <main className="page wide">
         <h1 className="sr-only">Administration</h1>
