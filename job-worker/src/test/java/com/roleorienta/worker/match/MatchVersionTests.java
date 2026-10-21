@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Длина версии сопоставления (аудит §154): версия хранится в колонках {@code VARCHAR(40)}, а в тестах на БД
  * справочник городов пуст и версия короче рабочей — превышение ловил только стенд (стенограмма §149). Здесь версия
- * собирается из настоящих словаря позиций и регионов при справочнике городов с запасом.
+ * собирается из настоящих словаря позиций, регионов и слов языков (§158) при справочнике городов с запасом.
  */
 class MatchVersionTests {
 
@@ -20,11 +20,12 @@ class MatchVersionTests {
      */
     @Test
     void versionFitsDatabaseColumns() {
+        String languages = new LanguageRequirements().version();
         String version = MatchVacanciesHandler.version(new PositionDictionary().version(),
-                new RemoteRegions().version(), CITIES_WITH_MARGIN);
+                new RemoteRegions().version(), languages, CITIES_WITH_MARGIN);
 
         assertThat(version).hasSizeLessThanOrEqualTo(MatchVacanciesHandler.MAX_VERSION_LENGTH)
-                .endsWith("/g" + CITIES_WITH_MARGIN + "/" + LocationResolver.VERSION);
+                .endsWith("/g" + CITIES_WITH_MARGIN + "/" + LocationResolver.VERSION + "/" + languages);
     }
 
     /**
@@ -32,7 +33,7 @@ class MatchVersionTests {
      */
     @Test
     void tooLongVersionIsRejected() {
-        assertThatThrownBy(() -> MatchVacanciesHandler.version("2026-10-16.1-very-long", "2026-09-29.1", 1))
+        assertThatThrownBy(() -> MatchVacanciesHandler.version("2026-10-16.1-very-long", "2026-09-29.1", "l1", 1))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("longer than " + MatchVacanciesHandler.MAX_VERSION_LENGTH);
     }

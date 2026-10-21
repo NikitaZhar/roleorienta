@@ -1,0 +1,36 @@
+{
+  "version": "l1",
+  "comment": "Требования к языку в тексте вакансии (бизнес-описание §6; стенограмма §158). languages — код ISO 639-1 → названия языка на английском, немецком, словацком, чешском и венгерском; cues — признаки знания языка (уровень, «fluent», «znalosť» …); preferred — признаки «желателен» («is a plus», «výhodou» …). Язык засчитывается, если рядом (до 4 слов) есть признак знания или вплотную (до 2 слов) — признак «желателен»; «желателен» относится к ближайшему языку (до 6 слов), иначе язык обязателен. Регистр и диакритика не важны; * в конце слова — любое окончание (anglick* — anglický, anglického …). version — короткая: она входит в версию сопоставления VARCHAR(40).",
+  "languages": {
+    "en": ["english", "englisch*", "anglick*", "anglictin*", "angol", "angolul", "angolt", "angolnyelv*"],
+    "de": ["german", "deutsch", "deutschkenntnis*", "nemeck*", "nemcin*", "nemet", "nemetul", "nemetet", "nemetnyelv*"],
+    "fr": ["french", "franzosisch*", "francuzsk*", "francuzstin*", "francouzsk*", "francouzstin*", "francia", "franciaul"],
+    "it": ["italian", "italienisch*", "taliansk*", "taliancin*", "italsk*", "italstin*", "olasz", "olaszul"],
+    "es": ["spanish", "spanisch*", "spaniel*", "spanel*", "spanyol", "spanyolul"],
+    "pt": ["portuguese", "portugiesisch*", "portugalsk*", "portugalcin*", "portugalstin*", "portugalul"],
+    "nl": ["dutch", "niederlandisch*", "holandsk*", "holandcin*", "nizozemsk*", "nizozemstin*", "hollandul"],
+    "pl": ["polish", "polnisch*", "polsk*", "polstin*", "lengyel", "lengyelul"],
+    "cs": ["czech", "tschechisch*", "cesk* jazyk*", "cestin*", "cseh", "csehul"],
+    "sk": ["slovak", "slowakisch*", "slovensk* jazyk*", "slovencin*", "slovenstin*", "szlovak", "szlovakul"],
+    "hu": ["hungarian", "ungarisch*", "madarsk*", "madarcin*", "madarstin*", "magyar", "magyarul"],
+    "ro": ["romanian", "rumanisch*", "rumunsk*", "rumuncin*", "rumunstin*", "roman nyelv*", "romanul"],
+    "ru": ["russian", "russisch*", "rusk*", "rustin*", "orosz", "oroszul"],
+    "uk": ["ukrainian", "ukrainisch*", "ukrajinsk*", "ukrajincin*", "ukrajinstin*", "ukran", "ukranul"]
+  },
+  "cues": [
+    "language", "languages", "fluent", "fluently", "fluency", "proficient", "proficiency", "spoken", "written",
+    "speaking", "speak", "speaker", "native", "mother tongue", "verbal", "oral", "communicat*", "knowledge", "command",
+    "level", "skills", "required", "requirement", "must", "mandatory", "a1", "a2", "b1", "b2", "c1", "c2",
+    "sprache*", "sprachkenntnis*", "englischkenntnis*", "kenntnis*", "fließend", "fliessend", "verhandlungssicher",
+    "wort und schrift", "erforderlich", "voraussetzung",
+    "jazyk*", "znalost*", "slovom", "pisom*", "plynul*", "aktivn*", "pokrocil*", "komunikativn*", "uroven*", "nutn*",
+    "podmienk*", "podmink*", "vyzadovan*", "vyzaduj*", "pozadovan*", "pozadujeme",
+    "nyelv*", "nyelvtud*", "beszel*", "targyalokepes*", "folyekony*", "anyanyelv*", "elvaras*"
+  ],
+  "preferred": [
+    "is a plus", "a plus", "an asset", "advantage*", "nice to have", "preferred", "preferable", "preferably",
+    "desirable", "desired", "beneficial", "bonus", "welcome", "optional",
+    "von vorteil", "vorteilhaft", "wunschenswert", "erwunscht", "ein plus",
+    "vyhodou", "vyhoda", "vyhodu", "vitan*", "uvitame", "elony*"
+  ]
+}

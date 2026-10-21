@@ -199,7 +199,7 @@ export interface Parties {
 /** Где и как выполняется работа; countries «*» — без ограничения страны. */
 export interface Work {
   countries: string[];
-  /** Формат вакансии; на экране не показывается (решение владельца 2026-10-16, §124). */
+  /** Формат вакансии: в строке списка не показывается (§124), в сведениях — «Format» (§158). */
   format: 'OFFICE' | 'HYBRID' | 'REMOTE' | null;
   remoteTerritory: string[] | null;
   countryUncertain: boolean;
@@ -264,11 +264,21 @@ export interface HistoryLine {
   at: string;
 }
 
-/** Публикация и работа пользователя с вакансией: ссылка, статус, история (раньше сверху). */
+/** Требование к языку из текста публикации (§158): код ISO 639-1, обязателен или желателен. */
+export interface LanguageRequirement {
+  language: string;
+  required: boolean;
+}
+
+/**
+ * Публикация и работа пользователя с вакансией: ссылка, статус, история (раньше сверху), требования к языку (пусто —
+ * «не указано»).
+ */
 export interface Publication {
   url: string | null;
   timeline: Timeline;
   history: HistoryLine[];
+  languages: LanguageRequirement[];
 }
 
 /** Сведения о вакансии (бизнес-описание §6). */

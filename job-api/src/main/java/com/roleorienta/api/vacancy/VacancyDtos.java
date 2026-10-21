@@ -107,14 +107,25 @@ public final class VacancyDtos {
     }
 
     /**
-     * Публикация и работа пользователя с вакансией. Источник, дата последней проверки и состояние вакансии у
-     * работодателя не показываются (решение владельца 2026-10-20, бизнес-описание §6).
+     * Публикация, требования к языку из её текста и работа пользователя с вакансией. Источник, дата последней
+     * проверки и состояние вакансии у работодателя не показываются (решение владельца 2026-10-20, бизнес-описание §6).
      *
-     * @param url      первичная публикация
-     * @param timeline когда открыта и текущий статус
-     * @param history  история по времени, раньше сверху
+     * @param url       первичная публикация
+     * @param timeline  когда открыта и текущий статус
+     * @param history   история по времени, раньше сверху
+     * @param languages требования к языку из текста публикаций, по коду языка; пусто — «не указано» (§158)
      */
-    public record Publication(String url, Timeline timeline, List<HistoryLine> history) {
+    public record Publication(String url, Timeline timeline, List<HistoryLine> history,
+            List<LanguageRequirement> languages) {
+    }
+
+    /**
+     * Требование к языку (бизнес-описание §6, §158).
+     *
+     * @param language код языка (ISO 639-1)
+     * @param required {@code true} — обязателен, {@code false} — желателен
+     */
+    public record LanguageRequirement(String language, boolean required) {
     }
 
     /**

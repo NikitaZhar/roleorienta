@@ -1,5 +1,6 @@
 package com.roleorienta.api.vacancy;
 
+import com.roleorienta.api.vacancy.VacancyDtos.LanguageRequirement;
 import com.roleorienta.api.vacancy.VacancyDtos.Opened;
 import com.roleorienta.api.vacancy.VacancyDtos.Parties;
 import java.sql.Array;
@@ -182,6 +183,15 @@ public class VacancyRepository {
     public boolean isAccessible(long userId, long vacancyId) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT EXISTS (SELECT 1" + ACCESSIBLE_FROM + ")",
                 Boolean.class, userId, vacancyId));
+    }
+
+    /**
+     * @param vacancyId вакансия
+     * @return требования к языку (предрасчёт job-worker, §158), по коду языка; пусто — не указаны
+     */
+    public List<LanguageRequirement> languages(long vacancyId) {
+        return jdbcTemplate.query("SELECT language, required FROM vacancy_language WHERE vacancy_id = ? ORDER BY 1",
+                (row, number) -> new LanguageRequirement(row.getString(1), row.getBoolean(2)), vacancyId);
     }
 
     /**

@@ -7,6 +7,7 @@ import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,8 +51,8 @@ class MatchVacanciesTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"vacancy_position_match", "position", "source_snapshot", "vacancy_revision",
-                "crawl_run", "job_posting", "vacancy", "company_source", "source", "outbox_event", "task"}) {
+        for (String table : new String[] {"vacancy_language", "vacancy_position_match", "position", "source_snapshot",
+                "vacancy_revision", "crawl_run", "job_posting", "vacancy", "company_source", "source", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("INSERT INTO source (provider, board) VALUES ('greenhouse', 'acme')");
@@ -115,6 +116,21 @@ class MatchVacanciesTests {
     }
 
     /**
+     * Требования к языку записываются вместе с сопоставлением (§158): пункты списка — отдельные части текста.
+     */
+    @Test
+    void languageRequirementsAreSaved() {
+        vacancy("Data Analyst", "ACTIVE", "<ul><li>Fluent English</li><li>German is a plus</li></ul>", "Bratislava");
+
+        runMatch();
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT l.language || ':' || l.required FROM vacancy_language l JOIN vacancy v ON v.id = l.vacancy_id
+                WHERE v.title = 'Data Analyst' ORDER BY 1
+                """, String.class)).containsExactly("de:false", "en:true");
+    }
+
+    /**
      * Вакансия изменилась, пока сопоставление её читало (у неё новая отметка «сопоставить заново»),
      * — результат по старому тексту не записывается.
      */
@@ -124,7 +140,7 @@ class MatchVacanciesTests {
         jdbcTemplate.update("UPDATE vacancy SET match_version = 'reset:changed' WHERE id = ?", read.id());
 
         assertThatThrownBy(() -> repository.saveMatches(read, "any", Map.of(),
-                new LocationResolver.LocationFacts(Set.of(), null)))
+                new LocationResolver.LocationFacts(Set.of(), null), List.of()))
                 .isInstanceOf(OptimisticLockingFailureException.class);
     }
 

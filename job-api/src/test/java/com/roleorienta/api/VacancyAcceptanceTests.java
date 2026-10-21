@@ -20,7 +20,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *   <li>Список: открытые позже сверху, при равной дате — больший id выше; страницы по номеру с общим числом (§151);
  *       закрытая и давно не подтверждённая вакансия не видна; видна вакансия со страной условий среди определённых
  *       стран или без определённой страны (с пометкой), только «*» — нет (§148, аудит §154).</li>
- *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, дата открытия, статус и история.</li>
+ *   <li>Сведения: работодатель (компания источника), страна, формат, ссылка, дата открытия, статус и история,
+ *       требования к языку (§158).</li>
  *   <li>13 — «Не интересно» скрывает вакансию у этого пользователя, сохраняется при смене условий, после «Вернуть»
  *       вакансия возвращается; повтор — без ошибки.</li>
  *   <li>Статусы: «Новая» до открытия сведений, «новых M»; отклик уводит вакансию в «Мои отклики», статус того же
@@ -50,7 +51,7 @@ class VacancyAcceptanceTests {
     void setUp() {
         for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
                 "search_condition",
-                "user_account", "vacancy_position_match", "job_posting", "vacancy", "position",
+                "user_account", "vacancy_language", "vacancy_position_match", "job_posting", "vacancy", "position",
                 "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
@@ -91,6 +92,8 @@ class VacancyAcceptanceTests {
         assertThat(titles(clamped.body())).isEqualTo("Third,Second,First");
         assertThat(clamped.body()).contains("\"page\":1,\"size\":100,\"total\":3");
 
+        jdbcTemplate.update("INSERT INTO vacancy_language (vacancy_id, language, required) VALUES (?, 'en', true), "
+                + "(?, 'de', false)", first, first);
         ApiTestClient.Response details = client.send("GET", "/api/v1/me/vacancies/" + first, null);
         assertThat(details.status()).isEqualTo(200);
         assertThat(details.body()).contains("\"position\":\"First\"", "\"employer\":\"Employer Ltd\"",
@@ -98,11 +101,13 @@ class VacancyAcceptanceTests {
                 "\"url\":\"https://example.com/First\"", "\"code\":\"NEW\"", "\"closed\":false")
                 .doesNotContain("\"state\"", "lastConfirmedAt");
         assertThat(events(details.body())).isEqualTo("RECEIVED");
+        assertThat(details.body()).contains("\"languages\":[{\"language\":\"de\",\"required\":false},"
+                + "{\"language\":\"en\",\"required\":true}]");
         jdbcTemplate.update("DELETE FROM company_source WHERE source_id = (SELECT id FROM source WHERE board = ?)",
                 "vacancy-test-second");
         jdbcTemplate.update("UPDATE source SET employer_name = 'Second Group' WHERE board = ?", "vacancy-test-second");
         assertThat(client.send("GET", "/api/v1/me/vacancies/" + second, null).body())
-                .contains("\"employer\":\"Second Group\"");
+                .contains("\"employer\":\"Second Group\"", "\"languages\":[]");
 
         assertThat(status(client, second, "NOT_INTERESTED")).isEqualTo(204);
         assertThat(status(client, second, "NOT_INTERESTED")).isEqualTo(204);

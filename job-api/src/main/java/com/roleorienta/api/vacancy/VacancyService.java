@@ -139,14 +139,15 @@ public class VacancyService {
      *
      * @param userId    пользователь
      * @param vacancyId вакансия
-     * @return сведения со статусом и историей; пусто — вакансия не выдавалась пользователю и нет его статуса
+     * @return сведения со статусом, историей и требованиями к языку; пусто — вакансия не выдавалась пользователю и нет его статуса
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Optional<VacancyDetails> details(long userId, long vacancyId) {
         String format = conditionFormat(userId);
         return repository.accessible(userId, vacancyId).map(row -> new VacancyDetails(row.id(), row.title(),
                 row.parties(), work(row.work(), format), new Publication(row.state().url(), timeline(row.state()),
-                        history(row.state(), repository.history(userId, vacancyId)))));
+                        history(row.state(), repository.history(userId, vacancyId)),
+                        repository.languages(vacancyId))));
     }
 
     /**

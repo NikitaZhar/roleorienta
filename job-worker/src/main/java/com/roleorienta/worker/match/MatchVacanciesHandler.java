@@ -16,9 +16,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Задание {@code MATCH_VACANCIES}: предрасчёт соответствия вакансий позициям словаря и сведений о
- * стране и формате работы (технический документ §6 «Соответствие», «Нормализация»; подэтап 1.4).
- * Версия сопоставления — версии словаря позиций и регионов, размер справочника городов и версия правил
- * распознавания мест ({@code LocationResolver.VERSION}): любая смена пересчитывает все вакансии. Страна не
+ * стране и формате работы и требований к языку (технический документ §6 «Соответствие», «Нормализация»; подэтап
+ * 1.4; §158). Версия сопоставления — версии словаря позиций и регионов, размер справочника городов, версия правил
+ * распознавания мест ({@code LocationResolver.VERSION}) и слов языков ({@code languages.json}): любая смена
+ * пересчитывает все вакансии. Страна не
  * определилась по местам, а вакансия пришла с государственного портала — страна портала (§149). Берутся незакрытые вакансии, не сопоставленные по текущей
  * версии; соответствия и сведения вакансии заменяются вместе с отметкой версии. За задание — {@value #BATCH} вакансий, дальше —
  * следующее задание.
@@ -41,19 +42,22 @@ public class MatchVacanciesHandler implements TaskHandler {
 
     private final PositionDictionary dictionary;
     private final RemoteRegions regions;
+    private final LanguageRequirements languages;
     private final MatchRepository repository;
     private final TaskService taskService;
 
     /**
      * @param dictionary  словарь позиций
      * @param regions     регионы удалённой работы
+     * @param languages   требования к языку в тексте
      * @param repository  позиции, соответствия, города
      * @param taskService постановка следующего задания
      */
-    public MatchVacanciesHandler(PositionDictionary dictionary, RemoteRegions regions, MatchRepository repository,
-            TaskService taskService) {
+    public MatchVacanciesHandler(PositionDictionary dictionary, RemoteRegions regions, LanguageRequirements languages,
+            MatchRepository repository, TaskService taskService) {
         this.dictionary = dictionary;
         this.regions = regions;
+        this.languages = languages;
         this.repository = repository;
         this.taskService = taskService;
     }
@@ -83,7 +87,7 @@ public class MatchVacanciesHandler implements TaskHandler {
         Map<String, Long> positionIds = repository.syncPositions(dictionary);
         Map<String, String> cities = repository.cities();
         LocationResolver resolver = new LocationResolver(cities, regions);
-        String version = version(dictionary.version(), regions.version(), cities.size());
+        String version = version(dictionary.version(), regions.version(), languages.version(), cities.size());
         List<VacancyText> vacancies = repository.vacanciesToMatch(version, BATCH);
         int matched = 0;
         for (VacancyText vacancy : vacancies) {
@@ -94,7 +98,8 @@ public class MatchVacanciesHandler implements TaskHandler {
             try {
                 repository.saveMatches(vacancy, version, positions,
                         resolver.resolve(vacancy.places().locations(), vacancy.title(), text)
-                                .orPortalCountry(vacancy.places().portalCountry()));
+                                .orPortalCountry(vacancy.places().portalCountry()),
+                        languages.find(vacancy.content()));
                 matched += positions.isEmpty() ? 0 : 1;
             } catch (OptimisticLockingFailureException changed) {
                 LOG.debug("Vacancy {} changed while matching, next pass", vacancy.id());
@@ -108,17 +113,20 @@ public class MatchVacanciesHandler implements TaskHandler {
     }
 
     /**
-     * Версия сопоставления: словарь позиций, регионы, размер справочника городов, правила распознавания мест. Длиннее
-     * колонок БД — понятная ошибка задания, а не отказ записи на каждой вакансии (стенограмма §149, аудит §154).
+     * Версия сопоставления: словарь позиций, регионы, размер справочника городов, правила распознавания мест, слова
+     * языков (§158). Длиннее колонок БД — понятная ошибка задания, а не отказ записи на каждой вакансии (стенограмма
+     * §149, аудит §154).
      *
      * @param dictionaryVersion версия словаря позиций
      * @param regionsVersion    версия регионов удалённой работы
+     * @param languagesVersion  версия слов языков
      * @param cityCount         число названий в справочнике городов
      * @return версия
      * @throws IllegalStateException версия длиннее {@value #MAX_VERSION_LENGTH} символов
      */
-    static String version(String dictionaryVersion, String regionsVersion, int cityCount) {
-        String version = dictionaryVersion + "/" + regionsVersion + "/g" + cityCount + "/" + LocationResolver.VERSION;
+    static String version(String dictionaryVersion, String regionsVersion, String languagesVersion, int cityCount) {
+        String version = dictionaryVersion + "/" + regionsVersion + "/g" + cityCount + "/" + LocationResolver.VERSION
+                + "/" + languagesVersion;
         if (version.length() > MAX_VERSION_LENGTH) {
             throw new IllegalStateException("Match version " + version + " is longer than " + MAX_VERSION_LENGTH
                     + " characters of vacancy.match_version");

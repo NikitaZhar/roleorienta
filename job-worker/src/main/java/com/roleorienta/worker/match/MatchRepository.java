@@ -83,18 +83,19 @@ public class MatchRepository {
     }
 
     /**
-     * Соответствия вакансии заменяются одной транзакцией; версия записывается, только если вакансия
+     * Соответствия и требования к языку вакансии заменяются одной транзакцией; версия записывается, только если вакансия
      * не изменилась с чтения — иначе откат, вакансия сопоставится следующим проходом.
      *
      * @param vacancy   вакансия, как прочитана
      * @param version   версия сопоставления
      * @param positions id позиции → объяснение
      * @param facts     страны и формат работы
+     * @param languages требования к языку (§158)
      * @throws OptimisticLockingFailureException вакансия изменилась
      */
     @Transactional
     public void saveMatches(VacancyText vacancy, String version, Map<Long, String> positions,
-            LocationResolver.LocationFacts facts) {
+            LocationResolver.LocationFacts facts, List<LanguageRequirements.Requirement> languages) {
         int updated = jdbcTemplate.update("""
                 UPDATE vacancy SET match_version = ?, work_countries = string_to_array(?, ','),
                                    work_format = ?
@@ -109,6 +110,10 @@ public class MatchRepository {
                 INSERT INTO vacancy_position_match (vacancy_id, position_id, dictionary_version, explanation)
                 VALUES (?, ?, ?, ?)
                 """, vacancy.id(), positionId, version, explanation));
+        jdbcTemplate.update("DELETE FROM vacancy_language WHERE vacancy_id = ?", vacancy.id());
+        languages.forEach(language -> jdbcTemplate.update(
+                "INSERT INTO vacancy_language (vacancy_id, language, required) VALUES (?, ?, ?)", vacancy.id(),
+                language.language(), language.required()));
     }
 
     /**

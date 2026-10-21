@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { setStatus, type StatusEvent, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText, HISTORY_LABELS, openedText, STATUS_LABELS } from './format';
+import { countriesText, dateText, formatText, HISTORY_LABELS, languagesText, openedText, STATUS_LABELS } from './format';
 
 interface Props {
   id: number;
@@ -17,10 +17,11 @@ const CHOICES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
  * Сведения о вакансии (бизнес-описание §6, экран §147): позиция, работодатель и агентство; под ними — текущий статус
  * с датой и выпадающий список статусов: «Viewed» (не выбирается — ставит приложение при открытии новой вакансии),
  * «CV sent», «Interview», «Rejected», за чертой «Not interested» (§156). Ниже — страна (не определена — «not
- * specified»), территория удалённой работы, дата открытия («found …», если работодатель даты не дал, §127), ссылка на
- * первичную публикацию и история с датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
+ * specified»), формат («Only office», «Only remote — from …», «Hybrid», «Not specified») и требования к языку
+ * (§158), дата открытия («found …», если работодатель даты не дал, §127), ссылка на первичную публикацию и история с
+ * датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
  * перечитывается; при возврате список перечитывается — вакансия, ушедшая в другой раздел, из него пропадает.
- * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146). Формат и языки — срез 5.
+ * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146).
  */
 export function VacancyPage({ id, backLabel, onBack }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
@@ -90,7 +91,10 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       <dl>
         <dt>Country</dt>
         <dd>{countriesText(work)}</dd>
-        {work.remoteTerritory !== null && (<><dt>Remote from</dt><dd>{work.remoteTerritory.join(', ')}</dd></>)}
+        <dt>Format</dt>
+        <dd>{formatText(work)}</dd>
+        <dt>Languages</dt>
+        <dd>{languagesText(publication.languages)}</dd>
         <dt>Opened</dt>
         <dd>{openedText(publication.timeline.opened)}</dd>
       </dl>
