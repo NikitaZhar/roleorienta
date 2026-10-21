@@ -15,11 +15,12 @@ interface Props {
 const CHOICES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
 
 /**
- * Сведения о вакансии (бизнес-описание §6, экран §147): позиция, работодатель и агентство; под ними — текущий статус
- * с датой и выпадающий список статусов: «Viewed» (не выбирается — ставит приложение при открытии новой вакансии),
- * «CV sent», «Interview», «Rejected», за чертой «Not interested» (§156). Ниже — страна (не определена — «not
- * specified»), формат («Only office», «Only remote — from …», «Hybrid», «Not specified») и требования к языку
- * (§158), дата открытия («found …», если работодатель даты не дал, §127), ссылка на первичную публикацию и история с
+ * Сведения о вакансии (бизнес-описание §6, экран §147; порядок — решение владельца 2026-10-21, §173): сначала вся
+ * информация о вакансии одним списком, без кнопок между строками — позиция, работодатель и агентство, страна (не
+ * определена — «not specified»), формат («Only office», «Only remote — from …», «Hybrid», «Not specified»),
+ * требования к языку (§158), дата открытия («found …», если работодатель даты не дал, §127); затем ссылка на первичную
+ * публикацию; затем — вместе — текущий статус с датой и выпадающим списком («Viewed» не выбирается — ставит приложение
+ * при открытии новой вакансии; «CV sent», «Interview», «Rejected», за чертой «Not interested», §156) и история с
  * датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
  * перечитывается; при возврате список перечитывается — вакансия, ушедшая в другой раздел, из него пропадает.
  * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146).
@@ -76,22 +77,6 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
         <dt>{t('vacancy.employer')}</dt>
         <dd>{parties.employer ?? t('vacancy.notSpecified')}</dd>
         {parties.agency !== null && (<><dt>{t('vacancy.agency')}</dt><dd>{parties.agency}</dd></>)}
-      </dl>
-      <div className="status">
-        <label>
-          <span className="muted">{t('vacancy.status')}</span>{' '}
-          <select value={status.code} disabled={busy} onChange={(event) => choose(event.target.value as StatusEvent)}>
-            {status.code === 'NEW' && <option value="NEW" disabled>{statusLabel('NEW', i18n)}</option>}
-            <option value="VIEWED" disabled>{statusLabel('VIEWED', i18n)}</option>
-            {CHOICES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
-            <option value="" disabled>──────────</option>
-            <option value="NOT_INTERESTED">{statusLabel('NOT_INTERESTED', i18n)}</option>
-          </select>
-        </label>
-        <span className="muted">{[dateText(status.at, i18n), status.closed ? t('vacancy.closedByEmployer') : '']
-          .filter((part) => part !== '').join(' · ')}</span>
-      </div>
-      <dl>
         <dt>{t('vacancy.country')}</dt>
         <dd>{countriesText(work, i18n)}</dd>
         <dt>{t('vacancy.format')}</dt>
@@ -106,12 +91,28 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
           <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">{t('vacancy.openPosting')}</a>
         </div>
       )}
-      <h3>{t('vacancy.history')}</h3>
-      <ol className="history">
-        {publication.history.map((line, index) => (
-          <li key={index}><span className="date">{dateText(line.at, i18n)}</span>{historyLabel(line.event, i18n)}</li>
-        ))}
-      </ol>
+      <section className="tracking">
+        <div className="status">
+          <label>
+            <span className="muted">{t('vacancy.status')}</span>{' '}
+            <select value={status.code} disabled={busy} onChange={(event) => choose(event.target.value as StatusEvent)}>
+              {status.code === 'NEW' && <option value="NEW" disabled>{statusLabel('NEW', i18n)}</option>}
+              <option value="VIEWED" disabled>{statusLabel('VIEWED', i18n)}</option>
+              {CHOICES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
+              <option value="" disabled>──────────</option>
+              <option value="NOT_INTERESTED">{statusLabel('NOT_INTERESTED', i18n)}</option>
+            </select>
+          </label>
+          <span className="muted">{[dateText(status.at, i18n), status.closed ? t('vacancy.closedByEmployer') : '']
+            .filter((part) => part !== '').join(' · ')}</span>
+        </div>
+        <h3>{t('vacancy.history')}</h3>
+        <ol className="history">
+          {publication.history.map((line, index) => (
+            <li key={index}><span className="date">{dateText(line.at, i18n)}</span>{historyLabel(line.event, i18n)}</li>
+          ))}
+        </ol>
+      </section>
     </article>
   );
 }
