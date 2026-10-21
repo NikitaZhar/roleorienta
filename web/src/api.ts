@@ -27,6 +27,8 @@ export interface FieldError {
 export interface Account {
   id: number;
   email: string;
+  /** Язык интерфейса (§162). */
+  language: 'en' | 'ru';
 }
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
@@ -123,9 +125,14 @@ export function login(email: string, password: string): Promise<Account> {
   return request<Account>('POST', '/api/v1/auth/login', { email, password });
 }
 
-/** Регистрация (вход — отдельным запросом). */
-export function register(email: string, password: string): Promise<Account> {
-  return request<Account>('POST', '/api/v1/auth/register', { email, password });
+/** Регистрация с языком, выбранным на экране входа (вход — отдельным запросом). */
+export function register(email: string, password: string, language: 'en' | 'ru'): Promise<Account> {
+  return request<Account>('POST', '/api/v1/auth/register', { email, password, language });
+}
+
+/** Настройки пользователя (§162): язык интерфейса. */
+export function saveSettings(language: 'en' | 'ru'): Promise<Account> {
+  return request<Account>('PUT', '/api/v1/me/settings', { language });
 }
 
 /** Выход: сессия закрывается. */

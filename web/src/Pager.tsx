@@ -1,3 +1,5 @@
+import { useI18n } from './i18n';
+
 interface PagerProps {
   /** Текущая страница, с 1. */
   page: number;
@@ -23,12 +25,13 @@ const ALL_NUMBERS_UP_TO = 7;
  * {@code aria-current} — экранный диктор её называет.
  */
 export function Pager({ page, pages, busy, onPage }: PagerProps) {
+  const { t } = useI18n();
   if (pages <= 1) {
     return null;
   }
   return (
-    <nav className="pager" aria-label="Pages">
-      <button type="button" aria-label="Previous page" disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>
+    <nav className="pager" aria-label={t('pager.pages')}>
+      <button type="button" aria-label={t('pager.previous')} disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>
         ‹
       </button>
       {numbers(page, pages).map((number, index) => (number === null
@@ -39,7 +42,7 @@ export function Pager({ page, pages, busy, onPage }: PagerProps) {
             {number}
           </button>
         )))}
-      <button type="button" aria-label="Next page" disabled={busy || page >= pages} onClick={() => onPage(page + 1)}>
+      <button type="button" aria-label={t('pager.next')} disabled={busy || page >= pages} onClick={() => onPage(page + 1)}>
         ›
       </button>
     </nav>
@@ -48,9 +51,10 @@ export function Pager({ page, pages, busy, onPage }: PagerProps) {
 
 /** Выбор числа строк на странице: «Per page: 20 · 50 · 100». */
 export function PageSize({ size, sizes, busy, onSize }: SizeProps) {
+  const { t } = useI18n();
   return (
-    <div className="page-size" role="group" aria-label="Vacancies per page">
-      <span className="muted">Per page:</span>
+    <div className="page-size" role="group" aria-label={t('pager.perPageLabel')}>
+      <span className="muted">{t('pager.perPage')}</span>
       {sizes.map((choice) => (
         <button key={choice} type="button" className={choice === size ? 'current' : ''}
           aria-pressed={choice === size} disabled={busy} onClick={() => onSize(choice)}>

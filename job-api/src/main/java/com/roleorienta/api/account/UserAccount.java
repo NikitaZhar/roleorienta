@@ -8,7 +8,7 @@ import jakarta.persistence.Table;
 
 /**
  * Учётная запись (бизнес-описание §6): email — имя для входа, хранится в нижнем регистре; пароль —
- * только хеш.
+ * только хеш; язык интерфейса — {@code en} или {@code ru} (§162).
  */
 @Entity
 @Table(name = "user_account")
@@ -22,6 +22,8 @@ public class UserAccount {
 
     private String passwordHash;
 
+    private String language;
+
     /**
      * Для JPA.
      */
@@ -31,10 +33,12 @@ public class UserAccount {
     /**
      * @param email        email в нижнем регистре
      * @param passwordHash хеш пароля ({@code PasswordEncoder})
+     * @param language     язык интерфейса: {@code en} или {@code ru}
      */
-    public UserAccount(String email, String passwordHash) {
+    public UserAccount(String email, String passwordHash, String language) {
         this.email = email;
         this.passwordHash = passwordHash;
+        this.language = language;
     }
 
     public Long getId() {
@@ -47,5 +51,13 @@ public class UserAccount {
 
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
     }
 }

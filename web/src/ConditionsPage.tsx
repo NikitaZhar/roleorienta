@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import {
   ApiError, type CatalogItem, countries, positions, saveSearchCondition, searchCondition, type WorkFormat,
 } from './api';
+import { errorText, type MessageKey, useI18n } from './i18n';
 import { PositionSuggestions } from './PositionSuggestions';
 
 interface Props {
@@ -9,10 +10,10 @@ interface Props {
   onSaved: (changed: boolean) => void;
 }
 
-const FORMATS: { value: WorkFormat | ''; label: string }[] = [
-  { value: '', label: 'Any' },
-  { value: 'OFFICE', label: 'Office' },
-  { value: 'REMOTE', label: 'Remote' },
+const FORMATS: { value: WorkFormat | ''; label: MessageKey }[] = [
+  { value: '', label: 'format.any' },
+  { value: 'OFFICE', label: 'format.office' },
+  { value: 'REMOTE', label: 'format.remote' },
 ];
 
 /** Позиций в условиях не больше (§126; как в API). */
@@ -32,6 +33,7 @@ const MAX_POSITIONS = 10;
  * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
+  const { locale, t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [chosen, setChosen] = useState<CatalogItem[]>([]);
@@ -64,7 +66,7 @@ export function ConditionsPage({ onSaved }: Props) {
       setChosen(await Promise.all(condition.positions.map(async (code) => {
         const matches = await positions(code);
         // Нет среди предлагаемых — позиция выключена администратором (§160): остаётся в условиях с пометкой.
-        return matches.find((item) => item.code === code) ?? { code, name: code + ' (retired)' };
+        return matches.find((item) => item.code === code) ?? { code, name: t('conditions.retired', { name: code }) };
       })));
       setEditing(false);
     }
@@ -73,11 +75,11 @@ export function ConditionsPage({ onSaved }: Props) {
 
   function cancel() {
     setMessage(null);
-    load().catch((failure: Error) => setMessage(failure.message));
+    load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }
 
   useEffect(() => {
-    load().catch((failure: Error) => setMessage(failure.message));
+    load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
   useEffect(() => {
@@ -91,9 +93,9 @@ export function ConditionsPage({ onSaved }: Props) {
         if (current) {
           setFound(items);
         }
-      }, (failure: Error) => {
+      }, (failure: unknown) => {
         if (current) {
-          setMessage(failure.message);
+          setMessage(errorText(failure, t));
         }
       });
     }, 300);
@@ -111,7 +113,7 @@ export function ConditionsPage({ onSaved }: Props) {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (selected.length === 0 || chosen.length === 0) {
-      setMessage('Choose at least one country and a vacancy');
+      setMessage(t('conditions.chooseBoth'));
       return;
     }
     try {
@@ -130,62 +132,66 @@ export function ConditionsPage({ onSaved }: Props) {
       onSaved(changed);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
-        setMessage('Search was changed in another window; reloaded, check and search again');
-        await load().catch((reload: Error) => setMessage(reload.message));
+        setMessage(t('conditions.changedElsewhere'));
+        await load().catch((reload: unknown) => setMessage(errorText(reload, t)));
         setEditing(true);
         onSaved(true);
         return;
       }
-      setMessage(failure instanceof ApiError && failure.fields.length > 0
-        ? failure.fields.map((field) => `${field.pointer.substring(1)}: ${field.detail}`).join('; ')
-        : (failure as Error).message);
+      setMessage(errorText(failure, t));
     }
   }
 
+  /** Название страны на языке интерфейса (Intl.DisplayNames браузера, §162); нет — как в справочнике сервера. */
+  function countryName(code: string): string {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(code)
+      ?? catalog.find((item) => item.code === code)?.name ?? code;
+  }
+
   if (!loaded) {
-    return message === null ? <p>Loading…</p> : <p className="error">{message}</p>;
+    return message === null ? <p>{t('app.loading')}</p> : <p className="error">{message}</p>;
   }
   if (!editing) {
     return (
       <div className="filters-summary">
-        <dl className="criteria" aria-label="Search criteria">
+        <dl className="criteria" aria-label={t('nav.search')}>
           <div>
-            <dt>{selected.length > 1 ? 'Countries' : 'Country'}</dt>
+            <dt>{selected.length > 1 ? t('conditions.countries') : t('conditions.country')}</dt>
             <dd><ul className="chips">
-              {selected.map((code) => <li key={code}>{catalog.find((item) => item.code === code)?.name ?? code}</li>)}
+              {selected.map((code) => <li key={code}>{countryName(code)}</li>)}
             </ul></dd>
           </div>
           <div>
-            <dt>{chosen.length > 1 ? 'Positions' : 'Position'}</dt>
+            <dt>{chosen.length > 1 ? t('conditions.positions') : t('conditions.position')}</dt>
             <dd><ul className="chips">{chosen.map((item) => <li key={item.code}>{item.name}</li>)}</ul></dd>
           </div>
           <div>
-            <dt>Format</dt>
-            <dd><ul className="chips"><li>{FORMATS.find((item) => item.value === format)?.label}</li></ul></dd>
+            <dt>{t('conditions.format')}</dt>
+            <dd><ul className="chips"><li>{t(FORMATS.find((item) => item.value === format)?.label ?? 'format.any')}</li></ul></dd>
           </div>
         </dl>
-        <button type="button" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" onClick={() => setEditing(true)}>{t('conditions.edit')}</button>
       </div>
     );
   }
   return (
     <form className="filters" onSubmit={save}>
-      {etag === null && <p className="lead">No search criteria yet. Choose a country and a vacancy.</p>}
+      {etag === null && <p className="lead">{t('conditions.empty')}</p>}
       <div className="filters-row">
         <fieldset>
-          <legend>Countries</legend>
+          <legend>{t('conditions.countries')}</legend>
           {catalog.map((country) => (
             <label key={country.code} className="inline">
               <input type="checkbox" checked={selected.includes(country.code)}
                 onChange={() => toggle(country.code)} />
-              {country.name}
+              {countryName(country.code)}
             </label>
           ))}
         </fieldset>
         <div className="positions">
           <label>
-            Vacancies to look for
-            <input type="search" placeholder="Type at least 2 letters" value={query}
+            {t('conditions.lookFor')}
+            <input type="search" placeholder={t('conditions.typeLetters')} value={query}
               disabled={chosen.length >= MAX_POSITIONS} onChange={(event) => setQuery(event.target.value)} />
           </label>
           {chosen.length > 0 && (
@@ -193,7 +199,7 @@ export function ConditionsPage({ onSaved }: Props) {
               {chosen.map((item) => (
                 <li key={item.code}>
                   {item.name}
-                  <button type="button" aria-label={'Remove ' + item.name}
+                  <button type="button" aria-label={t('conditions.remove', { name: item.name })}
                     onClick={() => setChosen((current) => current.filter((other) => other.code !== item.code))}>×</button>
                 </li>
               ))}
@@ -214,16 +220,16 @@ export function ConditionsPage({ onSaved }: Props) {
           <PositionSuggestions />
         </div>
         <label>
-          Work format
+          {t('conditions.workFormat')}
           <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
-            {FORMATS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            {FORMATS.map((item) => <option key={item.value} value={item.value}>{t(item.label)}</option>)}
           </select>
         </label>
       </div>
       {message !== null && <p className="error" role="status">{message}</p>}
       <div className="actions">
-        <button type="submit" className="primary">Search</button>
-        {etag !== null && <button type="button" onClick={cancel}>Cancel</button>}
+        <button type="submit" className="primary">{t('conditions.search')}</button>
+        {etag !== null && <button type="button" onClick={cancel}>{t('conditions.cancel')}</button>}
       </div>
     </form>
   );

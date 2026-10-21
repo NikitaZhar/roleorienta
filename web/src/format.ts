@@ -1,56 +1,45 @@
 import type { HistoryLine, LanguageRequirement, Opened, UserStatus, Work } from './api';
+import type { I18n, MessageKey } from './i18n';
 
 /** Страна в строке списка: без подписи поля, поэтому «не указано» называет, что именно (§152). */
-export function rowCountryText(work: Work): string {
-  return work.countryUncertain ? 'Country not specified' : countriesText(work);
+export function rowCountryText(work: Work, i18n: I18n): string {
+  return work.countryUncertain ? i18n.t('vacancy.countryNotSpecified') : countriesText(work, i18n);
 }
 
 /** Страны работы (сведения о вакансии, где есть подпись «Country»): не определена — «not specified»; «*» — любая. */
-export function countriesText(work: Work): string {
-  return work.countryUncertain ? 'not specified'
-    : work.countries.map((country) => (country === '*' ? 'any country' : country)).join(', ');
+export function countriesText(work: Work, i18n: I18n): string {
+  return work.countryUncertain ? i18n.t('vacancy.notSpecified')
+    : work.countries.map((country) => (country === '*' ? i18n.t('vacancy.anyCountry') : country)).join(', ');
 }
 
 /**
  * Дата открытия вакансии (§127): дата размещения работодателем — как есть (день UTC); источник даты не дал —
- * «found …», день первого обнаружения в локали браузера (макет §147).
+ * «found …», день первого обнаружения; формат даты — по языку интерфейса (§162).
  */
-export function openedText(opened: Opened): string {
+export function openedText(opened: Opened, i18n: I18n): string {
   const date = new Date(opened.at);
-  return opened.byEmployer ? date.toLocaleDateString(undefined, { timeZone: 'UTC' })
-    : 'found ' + date.toLocaleDateString();
+  return opened.byEmployer ? date.toLocaleDateString(i18n.locale, { timeZone: 'UTC' })
+    : i18n.t('vacancy.found', { date: date.toLocaleDateString(i18n.locale) });
 }
 
-/** Подписи статусов вакансии у пользователя (§156); тексты EN / RU — срез 7. */
-export const STATUS_LABELS: Record<UserStatus['code'], string> = {
-  NEW: 'New',
-  VIEWED: 'Viewed',
-  NOT_INTERESTED: 'Not interested',
-  APPLIED: 'CV sent',
-  INTERVIEW: 'Interview',
-  REJECTED: 'Rejected',
-};
+/** Дата события по языку интерфейса; нет даты — пусто. */
+export function dateText(at: string | null, i18n: I18n): string {
+  return at === null ? '' : new Date(at).toLocaleDateString(i18n.locale);
+}
 
-/** Подписи строк истории (§156): статусы, «Получена», «Возвращена», «Закрыта работодателем». */
-export const HISTORY_LABELS: Record<HistoryLine['event'], string> = {
-  RECEIVED: 'Received',
-  VIEWED: 'Viewed',
-  NOT_INTERESTED: 'Not interested',
-  APPLIED: 'CV sent',
-  INTERVIEW: 'Interview',
-  REJECTED: 'Rejected',
-  RETURNED: 'Returned',
-  CLOSED: 'Closed by employer',
-};
+/** Подпись статуса вакансии у пользователя (§156). */
+export function statusLabel(code: UserStatus['code'], i18n: I18n): string {
+  return i18n.t(('status.' + code) as MessageKey);
+}
 
-/** Дата события в локали браузера; нет даты — пусто. */
-export function dateText(at: string | null): string {
-  return at === null ? '' : new Date(at).toLocaleDateString();
+/** Подпись строки истории (§156): статусы, «Получена», «Возвращена», «Закрыта работодателем». */
+export function historyLabel(event: HistoryLine['event'], i18n: I18n): string {
+  return i18n.t(('history.' + event) as MessageKey);
 }
 
 /** Статус в строке «Мои отклики»: «статус · дата», у закрытой работодателем — «· closed» (§147). */
-export function statusText(status: UserStatus): string {
-  return [STATUS_LABELS[status.code], dateText(status.at), status.closed ? 'closed' : '']
+export function statusText(status: UserStatus, i18n: I18n): string {
+  return [statusLabel(status.code, i18n), dateText(status.at, i18n), status.closed ? i18n.t('vacancy.closed') : '']
     .filter((part) => part !== '').join(' · ');
 }
 
@@ -59,28 +48,36 @@ const EU = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'G
   'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'];
 
 /** Подписи формата работы в сведениях (бизнес-описание §6); формат не указан или противоречив — «Not specified». */
-const FORMAT_LABELS = { OFFICE: 'Only office', REMOTE: 'Only remote', HYBRID: 'Hybrid' };
+const FORMAT_KEYS: Record<NonNullable<Work['format']>, MessageKey> = {
+  OFFICE: 'vacancy.onlyOffice',
+  REMOTE: 'vacancy.onlyRemote',
+  HYBRID: 'vacancy.hybrid',
+};
 
 /** Формат работы в сведениях: удалённо — с территорией, если она есть («Only remote — from EU»). */
-export function formatText(work: Work): string {
+export function formatText(work: Work, i18n: I18n): string {
   if (work.format === null) {
-    return 'Not specified';
+    return i18n.t('vacancy.formatNotSpecified');
   }
+  const format = i18n.t(FORMAT_KEYS[work.format]);
   const territory = work.remoteTerritory ?? [];
   if (territory.length === 0) {
-    return FORMAT_LABELS[work.format];
+    return format;
   }
   const eu = territory.length === EU.length && EU.every((country) => territory.includes(country));
-  return FORMAT_LABELS[work.format] + ' — from '
-    + (eu ? 'EU' : territory.map((country) => (country === '*' ? 'any country' : country)).join(', '));
+  return i18n.t('vacancy.from', { format, territory: eu ? 'EU'
+    : territory.map((country) => (country === '*' ? i18n.t('vacancy.anyCountry') : country)).join(', ') });
 }
 
-/** Названия языков по коду ISO 639-1 средствами браузера (Intl.DisplayNames); EN / RU — срез 7. */
-const LANGUAGE_NAMES = new Intl.DisplayNames(['en'], { type: 'language' });
-
-/** Требования к языку: «English — required, German — preferred»; не указаны — «not specified» (§158). */
-export function languagesText(languages: LanguageRequirement[]): string {
-  return languages.length === 0 ? 'not specified' : languages
-    .map((item) => (LANGUAGE_NAMES.of(item.language) ?? item.language) + ' — ' + (item.required ? 'required' : 'preferred'))
-    .join(', ');
+/**
+ * Требования к языку: «English — required, German — preferred»; не указаны — «not specified» (§158). Названия
+ * языков — средствами браузера (Intl.DisplayNames) на языке интерфейса.
+ */
+export function languagesText(languages: LanguageRequirement[], i18n: I18n): string {
+  if (languages.length === 0) {
+    return i18n.t('vacancy.notSpecified');
+  }
+  const names = new Intl.DisplayNames([i18n.locale], { type: 'language' });
+  return languages.map((item) => (names.of(item.language) ?? item.language) + ' — '
+    + i18n.t(item.required ? 'vacancy.required' : 'vacancy.preferred')).join(', ');
 }

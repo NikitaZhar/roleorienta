@@ -1,36 +1,19 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import {
-  addCareerPage, ApiError, type CareerRequest, careerRequests, type CompanyItem, doubtfulCompanies, hiddenCompanies,
+  addCareerPage, type CareerRequest, careerRequests, type CompanyItem, doubtfulCompanies, hiddenCompanies,
   searchCompanies, setCompanyHidden,
 } from './api';
 import { GroupBadge } from './companyGroups';
+import { errorText, type MessageKey, type Translate, useI18n } from './i18n';
 
-/** Подписи причин итога проверки и запроса. */
-const REASONS: Record<string, string> = {
-  SITE_NOT_FOUND: 'site not found',
-  PAGE_NOT_FOUND: 'career page not found',
-  FORMAT_UNSUPPORTED: 'career page not readable',
-  SOURCE_UNAVAILABLE: 'site did not answer',
-  USE_FORBIDDEN: 'use not allowed',
-  UNREACHABLE: 'page did not open',
-  NO_CAREER_PAGE: 'not a career page',
-};
-
-/** Подписи состояния запроса. */
-const STATES: Record<string, string> = {
-  PENDING: 'checking…',
-  CONNECTED: 'connected',
-  NOT_CONNECTED: 'not connected',
-};
+/** Подпись причины итога проверки и запроса на языке интерфейса (§162); неизвестная — код как есть. */
+function reasonText(reason: string, t: Translate): string {
+  return t(('reason.' + reason) as MessageKey) ?? reason;
+}
 
 /** Пока есть адреса «в проверке», их состояние обновляется само с таким промежутком. */
 const REQUEST_POLL_MS = 15000;
 
-/** Текст ошибки: первая ошибка поля или текст ответа. */
-function problem(failure: unknown): string {
-  return failure instanceof ApiError && failure.fields.length > 0
-    ? failure.fields[0].detail : (failure as Error).message;
-}
 
 /**
  * Компании (бизнес-описание §4.2, §5; §137, §138, §143): поиск по названию или IČO, сомнительные компании (без
@@ -40,6 +23,8 @@ function problem(failure: unknown): string {
  * пропадает из поиска и сомнительных только у этого пользователя, «Show again» возвращает её в списки.
  */
 export function CompaniesPage() {
+  const { locale, t } = useI18n();
+  const problem = (failure: unknown) => errorText(failure, t);
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState<string | null>(null);
   const [found, setFound] = useState<CompanyItem[] | null>(null);
@@ -51,18 +36,18 @@ export function CompaniesPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const loadRequests = useCallback(() => {
-    careerRequests().then(setRequests, (failure: Error) => setMessage(failure.message));
+    careerRequests().then(setRequests, (failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
   const loadHidden = useCallback(() => {
-    hiddenCompanies().then(setHidden, (failure: Error) => setMessage(failure.message));
+    hiddenCompanies().then(setHidden, (failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
   const loadDoubtful = useCallback(() => {
     doubtfulCompanies(null).then((page) => {
       setDoubtful(page.items);
       setNext(page.next);
-    }, (failure: Error) => setMessage(failure.message));
+    }, (failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
   useEffect(() => {
@@ -145,58 +130,59 @@ export function CompaniesPage() {
 
   return (
     <>
-      <h1>Companies</h1>
+      <h1>{t('companies.title')}</h1>
       {message !== null && <p className="error" role="alert">{message}</p>}
       <form className="inline-form" onSubmit={search} role="search">
-        <input aria-label="Company name or IČO" placeholder="Company name or IČO" value={query}
+        <input aria-label={t('companies.query')} placeholder={t('companies.query')} value={query}
           onChange={(event) => setQuery(event.target.value)} />
-        <button type="submit">Search</button>
+        <button type="submit">{t('companies.search')}</button>
       </form>
       {found !== null && (
         <section>
-          <h2>Found</h2>
-          {found.length === 0 ? <p className="muted">No companies found.</p>
+          <h2>{t('companies.found')}</h2>
+          {found.length === 0 ? <p className="muted">{t('companies.noneFound')}</p>
             : <CompanyTable items={found} onAdded={added} onHide={hide} />}
         </section>
       )}
       <section>
-        <h2>My career page addresses</h2>
-        {requests.length === 0 ? <p className="muted">You have not added any address yet.</p> : (
+        <h2>{t('companies.myAddresses')}</h2>
+        {requests.length === 0 ? <p className="muted">{t('companies.noAddresses')}</p> : (
           <table className="companies">
             <thead>
-              <tr><th>Company</th><th>Address</th><th>State</th><th>Added</th></tr>
+              <tr>
+                <th>{t('companies.company')}</th><th>{t('companies.address')}</th><th>{t('companies.state')}</th>
+                <th>{t('companies.added')}</th>
+              </tr>
             </thead>
             <tbody>
               {requests.map((item) => (
                 <tr key={item.id}>
                   <td>{item.companyName}</td>
                   <td><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></td>
-                  <td>{STATES[item.status.state]}{item.status.reason !== null
-                    && ': ' + (REASONS[item.status.reason] ?? item.status.reason)}</td>
-                  <td className="nowrap">{new Date(item.status.createdAt).toLocaleString()}</td>
+                  <td>{t(('request.' + item.status.state) as MessageKey)}{item.status.reason !== null
+                    && ': ' + reasonText(item.status.reason, t)}</td>
+                  <td className="nowrap">{new Date(item.status.createdAt).toLocaleString(locale)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {checking && <p className="muted">Addresses being checked are refreshed automatically.</p>}
+        {checking && <p className="muted">{t('companies.refreshing')}</p>}
       </section>
       <section>
-        <h2>Doubtful companies</h2>
-        <p className="muted">Companies with no vacancies collected: neither a readable career page nor vacancies on
-          the state portal. Add a career page address — it is checked within minutes and used for all users.</p>
-        {doubtful === null ? <p className="muted">Loading…</p>
-          : doubtful.length === 0 ? <p className="muted">No doubtful companies.</p>
+        <h2>{t('companies.doubtful')}</h2>
+        <p className="muted">{t('companies.doubtfulNote')}</p>
+        {doubtful === null ? <p className="muted">{t('app.loading')}</p>
+          : doubtful.length === 0 ? <p className="muted">{t('companies.noDoubtful')}</p>
             : <CompanyTable items={doubtful} onAdded={added} onHide={hide} />}
         {next !== null && (
-          <button type="button" onClick={more} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More'}</button>
+          <button type="button" onClick={more} disabled={loadingMore}>{loadingMore ? t('app.loading') : t('companies.more')}</button>
         )}
       </section>
       <section>
-        <h2>Hidden companies</h2>
-        <p className="muted">Hidden only for you: not shown in search and doubtful companies. Other users still see
-          them.</p>
-        {hidden.length === 0 ? <p className="muted">You have not hidden any company.</p> : (
+        <h2>{t('companies.hidden')}</h2>
+        <p className="muted">{t('companies.hiddenNote')}</p>
+        {hidden.length === 0 ? <p className="muted">{t('companies.noHidden')}</p> : (
           <table className="companies">
             <tbody>
               {hidden.map((item) => (
@@ -204,7 +190,7 @@ export function CompaniesPage() {
                   <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
                   <td><GroupBadge item={item} /></td>
                   <td className="row-actions">
-                    <button type="button" onClick={() => unhide(item)}>Show again</button>
+                    <button type="button" onClick={() => unhide(item)}>{t('companies.showAgain')}</button>
                   </td>
                 </tr>
               ))}
@@ -223,12 +209,13 @@ interface TableProps {
 }
 
 function CompanyTable({ items, onAdded, onHide }: TableProps) {
+  const { t } = useI18n();
   return (
     <table className="companies">
       <thead>
         <tr>
-          <th>Company</th><th>Group</th><th>Site</th><th>Career page</th>
-          <th><span className="sr-only">Actions</span></th>
+          <th>{t('companies.company')}</th><th>{t('companies.group')}</th><th>{t('companies.site')}</th>
+          <th>{t('companies.careerPage')}</th><th><span className="sr-only">{t('companies.actions')}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -250,18 +237,19 @@ function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const { check } = item;
+  const { t } = useI18n();
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     try {
       await addCareerPage(item.id, url);
-      setNote('Added — see “My career page addresses”.');
+      setNote(t('companies.addedNote'));
       setUrl('');
       setAdding(false);
       onAdded();
     } catch (failure) {
-      setNote(problem(failure));
+      setNote(errorText(failure, t));
     } finally {
       setBusy(false);
     }
@@ -271,7 +259,7 @@ function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () 
     <tr>
       <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
       <td><GroupBadge item={item} />{check.reason !== null && <><br /><span className="muted">
-        {REASONS[check.reason] ?? check.reason}</span></>}</td>
+        {reasonText(check.reason, t)}</span></>}</td>
       <td>
         {check.site !== null && <a href={'https://' + check.site} target="_blank" rel="noreferrer">{check.site}</a>}
       </td>
@@ -279,19 +267,21 @@ function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () 
         {check.careerUrl !== null && <a href={check.careerUrl} target="_blank" rel="noreferrer">{check.careerUrl}</a>}
         {adding && (
           <form className="inline-form" onSubmit={add}>
-            <input type="url" required aria-label={'Career page address of ' + item.name}
+            <input type="url" required aria-label={t('companies.addressOf', { name: item.name })}
               placeholder="https://…/kariera" value={url} autoFocus onChange={(event) => setUrl(event.target.value)} />
-            <button type="submit" disabled={busy}>Add</button>
-            <button type="button" onClick={() => setAdding(false)}>Cancel</button>
+            <button type="submit" disabled={busy}>{t('companies.add')}</button>
+            <button type="button" onClick={() => setAdding(false)}>{t('companies.cancel')}</button>
           </form>
         )}
         {note !== null && <p className="muted">{note}</p>}
       </td>
       <td className="row-actions">
         {acceptsAddress(item) && !adding && (
-          <button type="button" onClick={() => { setNote(null); setAdding(true); }}>Add address</button>
+          <button type="button" onClick={() => { setNote(null); setAdding(true); }}>{t('companies.addAddress')}</button>
         )}
-        <button type="button" title="Hide only for me" onClick={() => onHide(item)}>Hide</button>
+        <button type="button" title={t('companies.hideOnlyForMe')} onClick={() => onHide(item)}>
+          {t('companies.hide')}
+        </button>
       </td>
     </tr>
   );

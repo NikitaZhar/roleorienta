@@ -2,6 +2,7 @@ package com.roleorienta.api.account;
 
 import com.roleorienta.api.account.AccountDtos.Account;
 import com.roleorienta.api.account.AccountDtos.Credentials;
+import com.roleorienta.api.account.AccountDtos.Settings;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -11,6 +12,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,13 +43,13 @@ public class AccountController {
     /**
      * Регистрация; вход — отдельным запросом.
      *
-     * @param credentials email и пароль
+     * @param credentials email, пароль и язык, выбранный на экране входа
      * @return учётная запись; {@code 409} — email занят, {@code 400} — неверные поля
      */
     @PostMapping("/api/v1/auth/register")
     @ResponseStatus(HttpStatus.CREATED)
     public Account register(@Valid @RequestBody Credentials credentials) {
-        return Account.of(accounts.register(credentials.email(), credentials.password()));
+        return Account.of(accounts.register(credentials.email(), credentials.password(), credentials.language()));
     }
 
     /**
@@ -76,5 +78,17 @@ public class AccountController {
     @GetMapping("/api/v1/me")
     public Account me(Authentication authentication) {
         return Account.of(accounts.byEmail(authentication.getName()));
+    }
+
+    /**
+     * Настройки пользователя (§162): сейчас — язык интерфейса.
+     *
+     * @param authentication вошедший пользователь
+     * @param settings       язык: {@code en} или {@code ru}
+     * @return учётная запись; {@code 400} — неизвестный язык
+     */
+    @PutMapping("/api/v1/me/settings")
+    public Account settings(Authentication authentication, @Valid @RequestBody Settings settings) {
+        return Account.of(accounts.setLanguage(authentication.getName(), settings.language()));
     }
 }

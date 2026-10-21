@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
 import { dateText, openedText, rowCountryText, statusText } from './format';
+import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PageSize, Pager } from './Pager';
 
 /**
@@ -22,16 +23,16 @@ interface Props {
 }
 
 /** Последняя колонка списка: заголовок и значение строки. */
-const LAST_COLUMN: Record<ListKind, { head: string; value: (item: VacancyItem) => string }> = {
-  results: { head: 'Opened', value: (item) => openedText(item.timeline.opened) },
-  responses: { head: 'Status', value: (item) => statusText(item.timeline.status) },
-  notInterested: { head: 'Marked', value: (item) => dateText(item.timeline.status.at) },
+const LAST_COLUMN: Record<ListKind, { head: MessageKey; value: (item: VacancyItem, i18n: I18n) => string }> = {
+  results: { head: 'list.opened', value: (item, i18n) => openedText(item.timeline.opened, i18n) },
+  responses: { head: 'list.status', value: (item, i18n) => statusText(item.timeline.status, i18n) },
+  notInterested: { head: 'list.marked', value: (item, i18n) => dateText(item.timeline.status.at, i18n) },
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
-const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, string> = {
-  responses: 'Vacancies you work with will appear here',
-  notInterested: 'Vacancies you mark as not interested will appear here',
+const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, MessageKey> = {
+  responses: 'list.emptyResponses',
+  notInterested: 'list.emptyNotInterested',
 };
 
 /** Пустой накопленный список перечитывается: первая порция новой версии условий приходит в течение ~30 с (§120). */
@@ -59,6 +60,8 @@ const SIZE_KEY = 'roleorienta.pageSize';
  * страницы во время загрузки не меняется (аудит §154).
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
+  const i18n = useI18n();
+  const { t } = i18n;
   const [data, setData] = useState<VacancyPage | null>(null);
   const [size, setSize] = useState(storedSize);
   const [hasConditions, setHasConditions] = useState(true);
@@ -79,7 +82,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         setHasConditions((await searchCondition()) !== null);
       }
     } catch (failure) {
-      setMessage((failure as Error).message);
+      setMessage(errorText(failure, t));
     } finally {
       setLoading(false);
     }
@@ -90,7 +93,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     try {
       await setStatus(id, 'RETURNED');
     } catch (failure) {
-      setMessage((failure as Error).message);
+      setMessage(errorText(failure, t));
       return;
     }
     show(data?.page ?? 1, size);
@@ -120,12 +123,12 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   if (message !== null) {
     return (
       <p className="error" role="alert">
-        {message} <button type="button" onClick={() => show(data?.page ?? 1, size)}>Retry</button>
+        {message} <button type="button" onClick={() => show(data?.page ?? 1, size)}>{t('list.retry')}</button>
       </p>
     );
   }
   if (data === null) {
-    return <p>Loading…</p>;
+    return <p>{t('app.loading')}</p>;
   }
   const results = kind === 'results';
   const actions = kind === 'notInterested';
@@ -133,36 +136,36 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   return (
     <section>
       {title !== undefined && <h2>{title}</h2>}
-      {results && data.total > 0 && <p className="count">Found {data.total} · new {data.newCount}</p>}
-      {data.total === 0 && kind !== 'results' && <Empty text={EMPTY_TEXT[kind]} />}
-      {data.total === 0 && results && !hasConditions && <Empty text="No results yet" />}
+      {results && data.total > 0 && <p className="count">{t('list.found', { total: data.total, fresh: data.newCount })}</p>}
+      {data.total === 0 && kind !== 'results' && <Empty text={t(EMPTY_TEXT[kind])} />}
+      {data.total === 0 && results && !hasConditions && <Empty text={t('list.noResults')} />}
       {data.total === 0 && results && hasConditions && (
-        <Empty text={poll && refreshes < REFRESH_TIMES ? 'Searching…'
-          : 'No matching vacancies yet. New vacancies are added to the list every hour.'} />
+        <Empty text={poll && refreshes < REFRESH_TIMES ? t('list.searching') : t('list.nothingYet')} />
       )}
       {data.total > 0 && (
         <div className="rows">
           <div className={actions ? 'actionable' : undefined} aria-hidden="true">
             <div className="row head">
-              <span>Company</span><span>Position</span><span>Country</span><span>{column.head}</span>
+              <span>{t('list.company')}</span><span>{t('list.position')}</span><span>{t('list.country')}</span>
+              <span>{t(column.head)}</span>
             </div>
-            {actions && <span className="row-action placeholder">Return</span>}
+            {actions && <span className="row-action placeholder">{t('list.return')}</span>}
           </div>
           <ul>
             {data.items.map((item) => (
               <li key={item.id} className={actions ? 'actionable' : undefined}>
                 <button type="button" className="row" onClick={() => onOpen(item.id)}>
-                  <span className="company">{item.parties.employer ?? 'Employer not specified'}</span>
+                  <span className="company">{item.parties.employer ?? t('list.noEmployer')}</span>
                   <span className="position">
-                    {results && item.timeline.status.code === 'NEW' && <span className="badge">New</span>}
+                    {results && item.timeline.status.code === 'NEW' && <span className="badge">{t('list.new')}</span>}
                     {item.position}
                   </span>
-                  <span className="country">{rowCountryText(item.work)}</span>
-                  <span className="last">{column.value(item)}</span>
+                  <span className="country">{rowCountryText(item.work, i18n)}</span>
+                  <span className="last">{column.value(item, i18n)}</span>
                 </button>
                 {actions && (
                   <button type="button" className="row-action" disabled={loading} onClick={() => giveBack(item.id)}>
-                    Return
+                    {t('list.return')}
                   </button>
                 )}
               </li>

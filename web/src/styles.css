@@ -890,3 +890,46 @@ table.dictionary .nowrap {
   margin: 0;
   padding-left: 18px;
 }
+
+/* Переключатель языка EN | RU (§162): на экране входа — в правом верхнем углу, в панели — перед меню учётной записи.
+   Выбранный язык — акцентом, как выбранная страница списка. */
+.language-switch {
+  display: flex;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.language-switch button {
+  padding: 4px 6px;
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+
+.language-switch button.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.login {
+  position: relative;
+}
+
+.login-language {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+/* «Settings» (§162): поля одно под другим. */
+.settings {
+  display: grid;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.settings label {
+  display: grid;
+  gap: 4px;
+}

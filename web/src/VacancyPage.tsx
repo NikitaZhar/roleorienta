@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { setStatus, type StatusEvent, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText, formatText, HISTORY_LABELS, languagesText, openedText, STATUS_LABELS } from './format';
+import { countriesText, dateText, formatText, historyLabel, languagesText, openedText, statusLabel } from './format';
+import { errorText, useI18n } from './i18n';
 
 interface Props {
   id: number;
@@ -24,6 +25,8 @@ const CHOICES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
  * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146).
  */
 export function VacancyPage({ id, backLabel, onBack }: Props) {
+  const i18n = useI18n();
+  const { t } = i18n;
   const [details, setDetails] = useState<VacancyDetails | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,7 +43,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       }
       setDetails(next);
     }
-    open().catch((failure: Error) => setMessage(failure.message));
+    open().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }, [id]);
 
   async function choose(status: StatusEvent) {
@@ -50,7 +53,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       changed.current = true;
       setDetails(await vacancy(id));
     } catch (failure) {
-      setMessage((failure as Error).message);
+      setMessage(errorText(failure, t));
     } finally {
       setBusy(false);
     }
@@ -61,7 +64,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
     return <p className="error">{message} {back}</p>;
   }
   if (details === null) {
-    return <p>Loading…</p>;
+    return <p>{t('app.loading')}</p>;
   }
   const { parties, work, publication } = details;
   const status = publication.timeline.status;
@@ -70,43 +73,43 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       {back}
       <h2>{details.position}</h2>
       <dl>
-        <dt>Employer</dt>
-        <dd>{parties.employer ?? 'not specified'}</dd>
-        {parties.agency !== null && (<><dt>Agency</dt><dd>{parties.agency}</dd></>)}
+        <dt>{t('vacancy.employer')}</dt>
+        <dd>{parties.employer ?? t('vacancy.notSpecified')}</dd>
+        {parties.agency !== null && (<><dt>{t('vacancy.agency')}</dt><dd>{parties.agency}</dd></>)}
       </dl>
       <div className="status">
         <label>
-          <span className="muted">Status</span>{' '}
+          <span className="muted">{t('vacancy.status')}</span>{' '}
           <select value={status.code} disabled={busy} onChange={(event) => choose(event.target.value as StatusEvent)}>
-            {status.code === 'NEW' && <option value="NEW" disabled>{STATUS_LABELS.NEW}</option>}
-            <option value="VIEWED" disabled>{STATUS_LABELS.VIEWED}</option>
-            {CHOICES.map((choice) => <option key={choice} value={choice}>{STATUS_LABELS[choice]}</option>)}
+            {status.code === 'NEW' && <option value="NEW" disabled>{statusLabel('NEW', i18n)}</option>}
+            <option value="VIEWED" disabled>{statusLabel('VIEWED', i18n)}</option>
+            {CHOICES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
             <option value="" disabled>──────────</option>
-            <option value="NOT_INTERESTED">{STATUS_LABELS.NOT_INTERESTED}</option>
+            <option value="NOT_INTERESTED">{statusLabel('NOT_INTERESTED', i18n)}</option>
           </select>
         </label>
-        <span className="muted">{[dateText(status.at), status.closed ? 'closed by employer' : '']
+        <span className="muted">{[dateText(status.at, i18n), status.closed ? t('vacancy.closedByEmployer') : '']
           .filter((part) => part !== '').join(' · ')}</span>
       </div>
       <dl>
-        <dt>Country</dt>
-        <dd>{countriesText(work)}</dd>
-        <dt>Format</dt>
-        <dd>{formatText(work)}</dd>
-        <dt>Languages</dt>
-        <dd>{languagesText(publication.languages)}</dd>
-        <dt>Opened</dt>
-        <dd>{openedText(publication.timeline.opened)}</dd>
+        <dt>{t('vacancy.country')}</dt>
+        <dd>{countriesText(work, i18n)}</dd>
+        <dt>{t('vacancy.format')}</dt>
+        <dd>{formatText(work, i18n)}</dd>
+        <dt>{t('vacancy.languages')}</dt>
+        <dd>{languagesText(publication.languages, i18n)}</dd>
+        <dt>{t('vacancy.opened')}</dt>
+        <dd>{openedText(publication.timeline.opened, i18n)}</dd>
       </dl>
       {publication.url !== null && (
         <div className="actions">
-          <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">Open the posting</a>
+          <a className="button" href={publication.url} target="_blank" rel="noopener noreferrer">{t('vacancy.openPosting')}</a>
         </div>
       )}
-      <h3>History</h3>
+      <h3>{t('vacancy.history')}</h3>
       <ol className="history">
         {publication.history.map((line, index) => (
-          <li key={index}><span className="date">{dateText(line.at)}</span>{HISTORY_LABELS[line.event]}</li>
+          <li key={index}><span className="date">{dateText(line.at, i18n)}</span>{historyLabel(line.event, i18n)}</li>
         ))}
       </ol>
     </article>

@@ -37,17 +37,19 @@ public class AccountService {
      *
      * @param email    email
      * @param password пароль
+     * @param language язык интерфейса; {@code null} — английский
      * @return новая учётная запись
      * @throws EmailTakenException email уже зарегистрирован (в том числе одновременной регистрацией)
      */
     @Transactional
-    public UserAccount register(String email, String password) {
+    public UserAccount register(String email, String password, String language) {
         String normalized = normalize(email);
         if (accounts.existsByEmail(normalized)) {
             throw new EmailTakenException();
         }
         try {
-            return accounts.saveAndFlush(new UserAccount(normalized, passwordEncoder.encode(password)));
+            return accounts.saveAndFlush(new UserAccount(normalized, passwordEncoder.encode(password),
+                    language == null ? AccountDtos.DEFAULT_LANGUAGE : language));
         } catch (DataIntegrityViolationException duplicate) {
             throw new EmailTakenException();
         }
@@ -62,5 +64,17 @@ public class AccountService {
     public UserAccount byEmail(String email) {
         return accounts.findByEmail(normalize(email))
                 .orElseThrow(() -> new IllegalStateException("No account for the signed-in user"));
+    }
+
+    /**
+     * @param email    email вошедшего пользователя
+     * @param language язык интерфейса: {@code en} или {@code ru}
+     * @return учётная запись с новым языком
+     */
+    @Transactional
+    public UserAccount setLanguage(String email, String language) {
+        UserAccount account = byEmail(email);
+        account.setLanguage(language);
+        return account;
     }
 }

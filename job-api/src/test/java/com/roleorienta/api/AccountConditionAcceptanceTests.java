@@ -17,7 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * как у SPA.
  *
  * <ul>
- *   <li>Вход: регистрация, повтор email, неверный пароль, вход, выход; изменяющий запрос без
+ *   <li>Вход: регистрация (и с языком экрана входа, §162), повтор email, неверный пароль, вход, язык интерфейса в
+ *       настройках, выход; изменяющий запрос без
  *       CSRF-токена отклоняется.</li>
  *   <li>3 — смена условий: новая версия, прежний накопленный список не используется, статусы
  *       вакансий сохранены; смена только лимита список не сбрасывает; версия проверяется {@code If-Match}.</li>
@@ -75,11 +76,20 @@ class AccountConditionAcceptanceTests {
                 .isEqualTo(200);
         ApiTestClient.Response me = client.send("GET", "/api/v1/me", null);
         assertThat(me.status()).isEqualTo(200);
-        assertThat(me.body()).contains("\"email\":\"user@example.com\"");
+        assertThat(me.body()).contains("\"email\":\"user@example.com\"", "\"language\":\"en\"");
+        assertThat(client.send("PUT", "/api/v1/me/settings", "{\"language\":\"ru\"}").body())
+                .contains("\"language\":\"ru\"");
+        assertThat(client.send("GET", "/api/v1/me", null).body()).contains("\"language\":\"ru\"");
+        assertThat(client.send("PUT", "/api/v1/me/settings", "{\"language\":\"de\"}").status()).isEqualTo(400);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM spring_session", Integer.class)).isPositive();
 
         assertThat(client.send("POST", "/api/v1/auth/logout", null).status()).isEqualTo(204);
         assertThat(client.send("GET", "/api/v1/me", null).status()).isEqualTo(401);
+
+        ApiTestClient russian = new ApiTestClient(port());
+        assertThat(russian.send("POST", "/api/v1/auth/register",
+                "{\"email\":\"ru@example.com\",\"password\":\"password-123\",\"language\":\"ru\"}").body())
+                .contains("\"language\":\"ru\"");
     }
 
     /**

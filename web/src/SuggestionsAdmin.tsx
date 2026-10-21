@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { type AdminSuggestion, adminSuggestions, decideSuggestion, dictionary, type DictionaryPosition } from './api';
+import { useI18n } from './i18n';
 import { suggestionStateText } from './PositionSuggestions';
 
 /**
@@ -67,6 +68,7 @@ function SuggestionRow({ item, positions, onDecide }: {
   onDecide: (id: number, decision: 'ADDED' | 'REJECTED', value: string) => void;
 }) {
   const { suggestion } = item;
+  const { t } = useI18n();
   const [position, setPosition] = useState(suggestion.decision.positionCode ?? '');
   const [reason, setReason] = useState(suggestion.decision.reason ?? '');
 
@@ -75,7 +77,7 @@ function SuggestionRow({ item, positions, onDecide }: {
       <td>{new Date(suggestion.createdAt).toLocaleDateString()}</td>
       <td>{item.email}</td>
       <td>{suggestion.text}</td>
-      <td>{suggestionStateText(suggestion)}</td>
+      <td>{suggestionStateText(suggestion, t)}</td>
       <td className="row-actions">
         <select aria-label="Position" value={position} onChange={(event) => setPosition(event.target.value)}>
           <option value="">Choose a position…</option>
