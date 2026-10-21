@@ -507,3 +507,47 @@ export function changePosition(id: number, name: string, active: boolean, terms:
 export function changeDictionarySettings(contentHits: number, otherSpecializations: string[]): Promise<Dictionary> {
   return request<Dictionary>('PUT', '/api/v1/admin/dictionary', { contentHits, otherSpecializations });
 }
+
+/** Состояние предложения позиции и решение администратора (§161). */
+export interface SuggestionDecision {
+  state: 'PENDING' | 'ADDED' | 'REJECTED';
+  positionCode: string | null;
+  positionName: string | null;
+  reason: string | null;
+  decidedAt: string | null;
+}
+
+/** Предложение позиции. */
+export interface Suggestion {
+  id: number;
+  text: string;
+  decision: SuggestionDecision;
+  createdAt: string;
+}
+
+/** Предложение для администратора — с почтой пользователя. */
+export interface AdminSuggestion {
+  suggestion: Suggestion;
+  email: string;
+}
+
+/** Предложить позицию: 429 — больше 10 за сутки. */
+export function suggestPosition(text: string): Promise<Suggestion> {
+  return request<Suggestion>('POST', '/api/v1/me/position-suggestions', { text });
+}
+
+/** @returns свои предложения, новые сверху */
+export function ownSuggestions(): Promise<Suggestion[]> {
+  return request<Suggestion[]>('GET', '/api/v1/me/position-suggestions');
+}
+
+/** @returns все предложения для администратора: на рассмотрении — первыми */
+export function adminSuggestions(): Promise<AdminSuggestion[]> {
+  return request<AdminSuggestion[]>('GET', '/api/v1/admin/position-suggestions');
+}
+
+/** Решение администратора: «добавлена» с кодом позиции словаря или «отклонена» с необязательной причиной. */
+export function decideSuggestion(id: number, decision: 'ADDED' | 'REJECTED', value: string): Promise<void> {
+  return request<void>('PUT', '/api/v1/admin/position-suggestions/' + id, decision === 'ADDED'
+    ? { decision, position: value } : { decision, reason: value });
+}

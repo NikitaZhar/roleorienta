@@ -16,7 +16,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * Словарь позиций для администратора через настоящий HTTP (стенограмма §160): только роль администратора; новая
  * позиция, повтор кода, неверные поля; изменение и выключение — каждое изменение увеличивает номер версии;
  * выключенная позиция не предлагается при выборе и не выбирается заново, но остаётся в условиях, где уже выбрана;
- * общие настройки без повторов. Позиции теста — с кодом {@code test-…}.
+ * общие настройки без повторов; предложения позиций (§161) — свои у пользователя, лимит в сутки, решения
+ * администратора и их смена. Позиции теста — с кодом {@code test-…}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "app.admin.password=" + AdminMetricsAcceptanceTests.ADMIN_PASSWORD)
@@ -39,7 +40,7 @@ class DictionaryAcceptanceTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history",
+        for (String table : new String[] {"position_suggestion", "delivered_vacancy", "pass_run", "vacancy_status_history",
                 "vacancy_user_status", "search_condition", "user_account", "spring_session_attributes",
                 "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
@@ -133,6 +134,66 @@ class DictionaryAcceptanceTests {
         ApiTestClient other = ApiTestClient.signedIn(port(), "other@example.com");
         assertThat(other.send("PUT", "/api/v1/me/search-condition", RUST_CONDITION).body())
                 .contains("\"pointer\":\"/positions\"", "Retired positions: [test-rust]");
+    }
+
+    /**
+     * Предложение позиции (§161): на рассмотрении, видно только автору; администратор видит все с почтой; «добавлена»
+     * — только с позицией из словаря, «на рассмотрении» решением не бывает; решение меняется на «отклонена» с
+     * причиной; нет предложения — {@code 404}; пользователю решения недоступны.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void userSuggestsAndAdministratorDecides() throws Exception {
+        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
+        ApiTestClient.Response suggested = user.send("POST", "/api/v1/me/position-suggestions",
+                "{\"text\":\" Rust developer: Senior Rust Engineer \"}");
+        assertThat(suggested.status()).isEqualTo(201);
+        assertThat(suggested.body()).contains("\"text\":\"Rust developer: Senior Rust Engineer\"",
+                "\"state\":\"PENDING\",\"positionCode\":null,\"positionName\":null,\"reason\":null,"
+                        + "\"decidedAt\":null");
+        assertThat(ApiTestClient.signedIn(port(), "other@example.com")
+                .send("GET", "/api/v1/me/position-suggestions", null).body()).isEqualTo("[]");
+        long id = jdbcTemplate.queryForObject("SELECT id FROM position_suggestion", Long.class);
+        String decision = "/api/v1/admin/position-suggestions/" + id;
+        assertThat(user.send("PUT", decision, "{\"decision\":\"REJECTED\"}").status()).isEqualTo(403);
+
+        ApiTestClient admin = admin();
+        admin.send("POST", "/api/v1/admin/positions", RUST);
+        assertThat(admin.send("GET", "/api/v1/admin/position-suggestions", null).body())
+                .contains("\"email\":\"user@example.com\"", "\"state\":\"PENDING\"");
+        assertThat(admin.send("PUT", decision, "{\"decision\":\"ADDED\",\"position\":\"test-unknown\"}").status())
+                .isEqualTo(400);
+        assertThat(admin.send("PUT", decision, "{\"decision\":\"PENDING\"}").status()).isEqualTo(400);
+        assertThat(admin.send("PUT", decision, "{\"decision\":\"ADDED\",\"position\":\"test-rust\"}").status())
+                .isEqualTo(204);
+        assertThat(user.send("GET", "/api/v1/me/position-suggestions", null).body()).contains(
+                "\"state\":\"ADDED\",\"positionCode\":\"test-rust\",\"positionName\":\"Rust developer\"");
+
+        assertThat(admin.send("PUT", decision, "{\"decision\":\"REJECTED\",\"reason\":\" Too narrow \"}").status())
+                .isEqualTo(204);
+        assertThat(user.send("GET", "/api/v1/me/position-suggestions", null).body()).contains(
+                "\"state\":\"REJECTED\",\"positionCode\":null,\"positionName\":null,\"reason\":\"Too narrow\"");
+        assertThat(admin.send("PUT", "/api/v1/admin/position-suggestions/999999999", "{\"decision\":\"REJECTED\"}")
+                .status()).isEqualTo(404);
+    }
+
+    /**
+     * Не больше 10 предложений за сутки — дальше {@code 429}; пустое — {@code 400}.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void suggestionsAreLimitedPerDay() throws Exception {
+        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
+        for (int number = 1; number <= 10; number++) {
+            assertThat(user.send("POST", "/api/v1/me/position-suggestions", "{\"text\":\"Position " + number
+                    + "\"}").status()).isEqualTo(201);
+        }
+        assertThat(user.send("POST", "/api/v1/me/position-suggestions", "{\"text\":\"One more\"}").status())
+                .isEqualTo(429);
+        assertThat(user.send("POST", "/api/v1/me/position-suggestions", "{\"text\":\" \"}").status())
+                .isEqualTo(400);
     }
 
     private ApiTestClient admin() throws Exception {

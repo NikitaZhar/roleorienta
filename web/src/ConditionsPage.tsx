@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import {
   ApiError, type CatalogItem, countries, positions, saveSearchCondition, searchCondition, type WorkFormat,
 } from './api';
+import { PositionSuggestions } from './PositionSuggestions';
 
 interface Props {
   /** Условия сохранены; {@code changed} — создана новая версия условий (ETag сменился). */
@@ -210,6 +211,7 @@ export function ConditionsPage({ onSaved }: Props) {
               ))}
             </ul>
           )}
+          <PositionSuggestions />
         </div>
         <label>
           Work format

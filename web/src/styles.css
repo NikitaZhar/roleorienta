@@ -869,3 +869,24 @@ table.dictionary td {
 table.dictionary .nowrap {
   white-space: nowrap;
 }
+
+/* «Suggest a position» в форме условий (§161): поле и свои предложения под выбором позиций. */
+.suggest {
+  display: grid;
+  gap: 6px;
+}
+
+.suggest textarea {
+  font: inherit;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+.suggestions {
+  margin: 0;
+  padding-left: 18px;
+}
