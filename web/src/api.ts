@@ -294,6 +294,11 @@ export function unsuitableVacancies(page: number, size: number): Promise<Vacancy
   return listPage('/api/v1/me/unsuitable', page, size);
 }
 
+/** @returns страница «Мои отклики» (§156) */
+export function responses(page: number, size: number): Promise<VacancyPage> {
+  return listPage('/api/v1/me/responses', page, size);
+}
+
 /** @returns сведения о вакансии */
 export function vacancy(id: number): Promise<VacancyDetails> {
   return request<VacancyDetails>('GET', '/api/v1/me/vacancies/' + id);

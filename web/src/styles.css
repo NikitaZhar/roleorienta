@@ -546,7 +546,7 @@ button.row:hover {
   font-weight: 500;
 }
 
-.row .opened,
+.row .last,
 .row.head span:last-child {
   font-family: var(--mono);
   font-size: 12px;
@@ -580,14 +580,91 @@ button.row:hover {
 
   .row .company,
   .row .country,
-  .row .opened {
+  .row .last {
     font-size: 13px;
   }
 
   .row .country::before,
-  .row .opened::before {
+  .row .last::before {
     content: '· ';
   }
+
+  .rows li.actionable:first-child {
+    border-top: 0;
+  }
+
+  .row-action.placeholder {
+    display: none;
+  }
+}
+
+/* Плашка «New» у вакансии, пришедшей в результаты и ещё не открытой (§147, §156). */
+.row .badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fresh);
+  color: var(--fresh-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+/* Строка с действием («Return» в «Не интересно»): строка-кнопка и кнопка действия рядом, линия — у всей строки. */
+.actionable {
+  display: flex;
+  align-items: center;
+}
+
+.rows li.actionable {
+  border-top: 1px solid var(--border);
+}
+
+.actionable .row {
+  flex: 1;
+  min-width: 0;
+  border-top: 0;
+}
+
+.row-action {
+  flex: none;
+  margin-right: 14px;
+}
+
+/* Место кнопки в строке заголовков: колонки заголовков совпадают с колонками строк. */
+.row-action.placeholder {
+  visibility: hidden;
+  padding: 0 10px;
+  border: 1px solid transparent;
+}
+
+.details .status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px 0 16px;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history li {
+  padding: 4px 0;
+}
+
+.history .date {
+  display: inline-block;
+  min-width: 96px;
+  margin-right: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .muted {

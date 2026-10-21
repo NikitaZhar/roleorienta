@@ -1,20 +1,38 @@
 import { useEffect, useState } from 'react';
-import { searchCondition, type VacancyPage } from './api';
-import { openedText, rowCountryText } from './format';
+import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
+import { dateText, openedText, rowCountryText, statusText } from './format';
 import { PageSize, Pager } from './Pager';
+
+/**
+ * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «Found N · new M»,
+ * плашка «New», объяснение пустого списка по условиям; у остальных — свой пустой текст и своя последняя колонка.
+ */
+export type ListKind = 'results' | 'responses' | 'notInterested';
 
 interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
   title?: string;
+  kind: ListKind;
   load: (page: number, size: number) => Promise<VacancyPage>;
-  /** Список отмеченных «Не интересно»: пустой объясняется иначе, условия не спрашиваются, число не показывается. */
-  marked: boolean;
   /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
   poll: boolean;
-  /** Счётчик перечитываний: изменился — перечитать текущую страницу (отметка поставлена или снята). */
+  /** Счётчик перечитываний: изменился — перечитать текущую страницу (статус вакансии изменился в сведениях). */
   reload: number;
   onOpen: (id: number) => void;
 }
+
+/** Последняя колонка списка: заголовок и значение строки. */
+const LAST_COLUMN: Record<ListKind, { head: string; value: (item: VacancyItem) => string }> = {
+  results: { head: 'Opened', value: (item) => openedText(item.timeline.opened) },
+  responses: { head: 'Status', value: (item) => statusText(item.timeline.status) },
+  notInterested: { head: 'Marked', value: (item) => dateText(item.timeline.status.at) },
+};
+
+/** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
+const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, string> = {
+  responses: 'Vacancies you work with will appear here',
+  notInterested: 'Vacancies you mark as not interested will appear here',
+};
 
 /** Пустой накопленный список перечитывается: первая порция новой версии условий приходит в течение ~30 с (§120). */
 const REFRESH_MS = 5000;
@@ -27,18 +45,20 @@ const DEFAULT_SIZE = 20;
 const SIZE_KEY = 'roleorienta.pageSize';
 
 /**
- * Список вакансий страницами по номеру (§151) строками-колонками «Company · Position · Country · Opened» (агентство —
- * только в сведениях; на телефоне строка — плитка в две строчки, §147, §152): накопленный список (открытые позже сверху, дата открытия — §127; над
- * списком — «Found N») или отмеченные «Не интересно». Внизу — номера страниц и выбор размера страницы; выбор
+ * Список вакансий страницами по номеру (§151) строками-колонками «Company · Position · Country · …» (агентство —
+ * только в сведениях; на телефоне строка — плитка в две строчки, §147, §152): результаты поиска (открытые позже
+ * сверху, дата открытия — §127; над списком — «Found N · new M», у новых — плашка «New», §156), «Мои отклики»
+ * (последняя колонка — статус и дата, у закрытой — «closed») или «Не интересно» (дата отметки и «Return» в строке:
+ * вакансия возвращается к прежнему статусу, §156). Внизу — номера страниц и выбор размера страницы; выбор
  * запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку; недоступно —
  * размер по умолчанию). Пустой накопленный список объясняется: что искать не задано — задать выше; задано —
  * подходящих вакансий пока нет. Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые
  * 5 с в течение 2 минут — первая порция выдаётся в течение ~30 с (§120); следующий запрос — только после ответа на
- * предыдущий (аудит §121). Перечитывание ({@code reload}) показывает ту же страницу; если она опустела (снята
- * последняя отметка на последней странице) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
+ * предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же страницу; если она опустела
+ * (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
  * страницы во время загрузки не меняется (аудит §154).
  */
-export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props) {
+export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
   const [data, setData] = useState<VacancyPage | null>(null);
   const [size, setSize] = useState(storedSize);
   const [hasConditions, setHasConditions] = useState(true);
@@ -55,7 +75,7 @@ export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props
         next = await load(Math.ceil(next.total / rows), rows);
       }
       setData(next);
-      if (next.total === 0 && !marked) {
+      if (next.total === 0 && kind === 'results') {
         setHasConditions((await searchCondition()) !== null);
       }
     } catch (failure) {
@@ -63,6 +83,17 @@ export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props
     } finally {
       setLoading(false);
     }
+  }
+
+  /** «Return» в строке «Не интересно»: вакансия уходит к прежнему статусу, страница перечитывается. */
+  async function giveBack(id: number) {
+    try {
+      await setStatus(id, 'RETURNED');
+    } catch (failure) {
+      setMessage((failure as Error).message);
+      return;
+    }
+    show(data?.page ?? 1, size);
   }
 
   function resize(rows: number) {
@@ -96,30 +127,44 @@ export function VacancyList({ title, load, marked, poll, reload, onOpen }: Props
   if (data === null) {
     return <p>Loading…</p>;
   }
+  const results = kind === 'results';
+  const actions = kind === 'notInterested';
+  const column = LAST_COLUMN[kind];
   return (
     <section>
       {title !== undefined && <h2>{title}</h2>}
-      {!marked && data.total > 0 && <p className="count">Found {data.total}</p>}
-      {data.total === 0 && marked && <Empty text="Vacancies you mark as not interested will appear here" />}
-      {data.total === 0 && !marked && !hasConditions && <Empty text="No results yet" />}
-      {data.total === 0 && !marked && hasConditions && (
+      {results && data.total > 0 && <p className="count">Found {data.total} · new {data.newCount}</p>}
+      {data.total === 0 && kind !== 'results' && <Empty text={EMPTY_TEXT[kind]} />}
+      {data.total === 0 && results && !hasConditions && <Empty text="No results yet" />}
+      {data.total === 0 && results && hasConditions && (
         <Empty text={poll && refreshes < REFRESH_TIMES ? 'Searching…'
           : 'No matching vacancies yet. New vacancies are added to the list every hour.'} />
       )}
       {data.total > 0 && (
         <div className="rows">
-          <div className="row head" aria-hidden="true">
-            <span>Company</span><span>Position</span><span>Country</span><span>Opened</span>
+          <div className={actions ? 'actionable' : undefined} aria-hidden="true">
+            <div className="row head">
+              <span>Company</span><span>Position</span><span>Country</span><span>{column.head}</span>
+            </div>
+            {actions && <span className="row-action placeholder">Return</span>}
           </div>
           <ul>
             {data.items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className={actions ? 'actionable' : undefined}>
                 <button type="button" className="row" onClick={() => onOpen(item.id)}>
                   <span className="company">{item.parties.employer ?? 'Employer not specified'}</span>
-                  <span className="position">{item.position}</span>
+                  <span className="position">
+                    {results && item.timeline.status.code === 'NEW' && <span className="badge">New</span>}
+                    {item.position}
+                  </span>
                   <span className="country">{rowCountryText(item.work)}</span>
-                  <span className="opened">{openedText(item.timeline.opened)}</span>
+                  <span className="last">{column.value(item)}</span>
                 </button>
+                {actions && (
+                  <button type="button" className="row-action" disabled={loading} onClick={() => giveBack(item.id)}>
+                    Return
+                  </button>
+                )}
               </li>
             ))}
           </ul>

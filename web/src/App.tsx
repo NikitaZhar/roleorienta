@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Account, currentAccount, logout, unsuitableVacancies, vacancies } from './api';
+import { type Account, currentAccount, logout, responses, unsuitableVacancies, vacancies } from './api';
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
 import { LoginPage } from './LoginPage';
 import { Logo } from './Logo';
-import { Empty, VacancyList } from './VacancyList';
+import { VacancyList } from './VacancyList';
 import { VacancyPage } from './VacancyPage';
 
 type View = 'list' | 'applications' | 'marked' | 'companies';
@@ -17,18 +17,26 @@ const SECTIONS: { view: View; label: string }[] = [
   { view: 'companies', label: 'Companies' },
 ];
 
+/** Подпись возврата из сведений о вакансии к разделу (§147). */
+const BACK_LABELS: Record<View, string> = {
+  list: '← Back to results',
+  applications: '← Back to applications',
+  marked: '← Back to Not interested',
+  companies: '← Back',
+};
+
 /** Размер эмблемы в панели, px. */
 const LOGO_SIZE = 24;
 
 /**
  * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — панель с эмблемой и
- * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними накопленный список; «My
- * applications» — вакансии со статусами пользователя (пока пустое состояние: статусы — срез 4, стенограмма §150);
- * «Not interested» — отмеченные «Не интересно»; «Companies». Справа — меню учётной записи. Вакансия открывается
+ * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними результаты; «My applications» —
+ * вакансии с откликом (§156); «Not interested»; «Companies». Справа — меню учётной записи. Вакансия открывается
  * вместо раздела, а раздел не снимается, а скрывается ({@code hidden}): после «Back» видна та же страница списка и
- * те же условия без новых запросов, прокрутка — та же, что была до открытия (аудит §154). Отметка или её снятие возвращает к разделу и перечитывает ту же
- * страницу ({@code reloads}); новые условия начинают список заново с первой страницы ({@code searches} — ключ
- * списка). Выход сбрасывает раздел и открытую вакансию.
+ * те же условия, прокрутка — та же, что была до открытия (аудит §154). Если статус вакансии менялся (и «Viewed» при
+ * открытии новой), возврат перечитывает ту же страницу ({@code reloads}): ушедшая в другой раздел вакансия пропадает,
+ * плашка «New» снимается. Новые условия начинают список заново с первой страницы ({@code searches} — ключ списка).
+ * Выход сбрасывает раздел и открытую вакансию.
  */
 export function App() {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -78,10 +86,13 @@ export function App() {
     setView(next);
   }
 
-  function marked() {
+  /** Возврат из сведений; {@code changed} — статус менялся, список перечитывается. */
+  function closeVacancy(changed: boolean) {
     setOpened(null);
-    setFresh(false);
-    setReloads((count) => count + 1);
+    if (changed) {
+      setFresh(false);
+      setReloads((count) => count + 1);
+    }
   }
 
   /** Условия сохранены; {@code changed} — создана новая версия условий (список начинается заново). */
@@ -122,24 +133,22 @@ export function App() {
       </header>
       <main className="page">
         {notice !== null && <p className="error">{notice}</p>}
-        {opened !== null && <VacancyPage id={opened} onBack={() => setOpened(null)} onMarked={marked} />}
+        {opened !== null && <VacancyPage id={opened} backLabel={BACK_LABELS[view]} onBack={closeVacancy} />}
         <div hidden={opened !== null}>
           {view === 'list' && (
             <>
               <ConditionsPage onSaved={searched} />
-              <VacancyList key={searches} load={vacancies} marked={false} poll={fresh} reload={reloads}
+              <VacancyList key={searches} kind="results" load={vacancies} poll={fresh} reload={reloads}
                 onOpen={open} />
             </>
           )}
           {view === 'applications' && (
-            <section>
-              <h2>My applications</h2>
-              <Empty text="Vacancies you work with will appear here" />
-            </section>
+            <VacancyList title="My applications" kind="responses" load={responses} poll={false} reload={reloads}
+              onOpen={open} />
           )}
           {view === 'marked' && (
-            <VacancyList title="Not interested" load={unsuitableVacancies} marked poll={false} reload={reloads}
-              onOpen={open} />
+            <VacancyList title="Not interested" kind="notInterested" load={unsuitableVacancies} poll={false}
+              reload={reloads} onOpen={open} />
           )}
           {view === 'companies' && <CompaniesPage />}
         </div>
