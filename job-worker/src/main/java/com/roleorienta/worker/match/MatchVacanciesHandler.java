@@ -1,5 +1,6 @@
 package com.roleorienta.worker.match;
 
+import com.roleorienta.worker.match.MatchRepository.StoredDictionary;
 import com.roleorienta.worker.match.MatchRepository.VacancyText;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Component;
 /**
  * Задание {@code MATCH_VACANCIES}: предрасчёт соответствия вакансий позициям словаря и сведений о
  * стране и формате работы и требований к языку (технический документ §6 «Соответствие», «Нормализация»; подэтап
- * 1.4; §158). Версия сопоставления — версии словаря позиций и регионов, размер справочника городов, версия правил
+ * 1.4; §158). Словарь позиций читается из БД в начале каждого задания (§159). Версия сопоставления — версия словаря
+ * позиций ({@code d<номер>}), версия регионов, размер справочника городов, версия правил
  * распознавания мест ({@code LocationResolver.VERSION}) и слов языков ({@code languages.json}): любая смена
  * пересчитывает все вакансии. Страна не
  * определилась по местам, а вакансия пришла с государственного портала — страна портала (§149). Берутся незакрытые вакансии, не сопоставленные по текущей
@@ -40,22 +42,19 @@ public class MatchVacanciesHandler implements TaskHandler {
     private static final int BATCH = 500;
     private static final Logger LOG = LoggerFactory.getLogger(MatchVacanciesHandler.class);
 
-    private final PositionDictionary dictionary;
     private final RemoteRegions regions;
     private final LanguageRequirements languages;
     private final MatchRepository repository;
     private final TaskService taskService;
 
     /**
-     * @param dictionary  словарь позиций
      * @param regions     регионы удалённой работы
      * @param languages   требования к языку в тексте
      * @param repository  позиции, соответствия, города
      * @param taskService постановка следующего задания
      */
-    public MatchVacanciesHandler(PositionDictionary dictionary, RemoteRegions regions, LanguageRequirements languages,
-            MatchRepository repository, TaskService taskService) {
-        this.dictionary = dictionary;
+    public MatchVacanciesHandler(RemoteRegions regions, LanguageRequirements languages, MatchRepository repository,
+            TaskService taskService) {
         this.regions = regions;
         this.languages = languages;
         this.repository = repository;
@@ -84,7 +83,9 @@ public class MatchVacanciesHandler implements TaskHandler {
 
     @Override
     public TaskOutcome handle(TaskRecord task) {
-        Map<String, Long> positionIds = repository.syncPositions(dictionary);
+        StoredDictionary stored = repository.dictionary();
+        PositionDictionary dictionary = stored.words();
+        Map<String, Long> positionIds = stored.positionIds();
         Map<String, String> cities = repository.cities();
         LocationResolver resolver = new LocationResolver(cities, regions);
         String version = version(dictionary.version(), regions.version(), languages.version(), cities.size());

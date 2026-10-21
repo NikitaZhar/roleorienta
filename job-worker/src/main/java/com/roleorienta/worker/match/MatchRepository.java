@@ -3,20 +3,27 @@ package com.roleorienta.worker.match;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import java.sql.Array;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Позиции словаря и предрасчитанные соответствия вакансий (JDBC).
+ * Словарь позиций и предрасчитанные соответствия вакансий (JDBC).
  */
 @Repository
 public class MatchRepository {
+
+    /** Версия словаря в версии сопоставления: {@code d<номер>} (§159). */
+    static final String VERSION_PREFIX = "d";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -28,21 +35,43 @@ public class MatchRepository {
     }
 
     /**
-     * Позиции словаря в таблице {@code position}: новые добавляются, названия обновляются.
+     * Словарь позиций из БД одним снимком данных (уровень {@code REPEATABLE READ}: правка администратора между
+     * запросами не смешивает версии; стенограмма §159). Позиция без названий в словаре не участвует — ей нечем
+     * совпасть.
      *
-     * @param dictionary словарь
-     * @return id позиций по коду
+     * @return словарь и id его позиций по коду
+     * @throws IllegalStateException нет строки настроек словаря ({@code position_dictionary})
      */
-    @Transactional
-    public Map<String, Long> syncPositions(PositionDictionary dictionary) {
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public StoredDictionary dictionary() {
+        Settings settings = jdbcTemplate.query(
+                "SELECT version, content_hits, other_specializations FROM position_dictionary WHERE id = 1",
+                (row, number) -> new Settings(row.getInt("version"), row.getInt("content_hits"),
+                        strings(row.getArray("other_specializations")))).stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("Position dictionary settings are missing"));
+        Map<Long, PositionTerms> byId = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                SELECT p.id, p.code, p.name, t.kind, t.term FROM position p JOIN position_term t ON t.position_id = p.id
+                ORDER BY p.id, t.id
+                """, row -> {
+                    String code = row.getString("code");
+                    String name = row.getString("name");
+                    TermKind kind = TermKind.valueOf(row.getString("kind"));
+                    PositionDictionary.Term term = PositionDictionary.term(row.getString("term"));
+                    byId.computeIfAbsent(row.getLong("id"),
+                            id -> new PositionTerms(code, name, new EnumMap<>(TermKind.class)))
+                            .terms().computeIfAbsent(kind, any -> new ArrayList<>()).add(term);
+                });
+        List<PositionDictionary.Position> positions = new ArrayList<>();
         Map<String, Long> ids = new HashMap<>();
-        for (PositionDictionary.Position position : dictionary.positions()) {
-            ids.put(position.code(), jdbcTemplate.queryForObject("""
-                    INSERT INTO position (code, name) VALUES (?, ?)
-                    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name RETURNING id
-                    """, Long.class, position.code(), position.name()));
-        }
-        return ids;
+        byId.forEach((id, position) -> {
+            ids.put(position.code(), id);
+            positions.add(new PositionDictionary.Position(position.code(), position.name(),
+                    position.of(TermKind.TITLE), new PositionDictionary.Specialization(position.of(TermKind.ROLE),
+                            position.of(TermKind.KEYWORD)), position.of(TermKind.EXCLUDE)));
+        });
+        return new StoredDictionary(new PositionDictionary(VERSION_PREFIX + settings.version(), settings.contentHits(),
+                settings.others().stream().map(PositionDictionary::term).toList(), positions), Map.copyOf(ids));
     }
 
     /**
@@ -136,5 +165,29 @@ public class MatchRepository {
      * @param portalCountry страна государственного портала, если вакансия пришла и с него; иначе {@code null}
      */
     public record Places(List<String> locations, String portalCountry) {
+    }
+
+    /**
+     * Словарь из БД и id его позиций.
+     *
+     * @param words       словарь
+     * @param positionIds id позиции по коду
+     */
+    public record StoredDictionary(PositionDictionary words, Map<String, Long> positionIds) {
+    }
+
+    /** Вид названия позиции ({@code position_term.kind}). */
+    private enum TermKind { TITLE, ROLE, KEYWORD, EXCLUDE }
+
+    /** Общие настройки словаря. */
+    private record Settings(int version, int contentHits, List<String> others) {
+    }
+
+    /** Позиция и её названия по видам, пока строки читаются. */
+    private record PositionTerms(String code, String name, Map<TermKind, List<PositionDictionary.Term>> terms) {
+
+        List<PositionDictionary.Term> of(TermKind kind) {
+            return terms.getOrDefault(kind, List.of());
+        }
     }
 }

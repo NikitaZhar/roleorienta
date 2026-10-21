@@ -1,27 +1,20 @@
 package com.roleorienta.worker.match;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.text.Normalizer;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
-import org.springframework.stereotype.Component;
 
 /**
- * Словарь позиций — данные с версией (файл {@code positions.json} приложения; технический документ
- * §6, §16.13): для каждой позиции эквивалентные названия, роли и признаки специализации,
- * исключающие слова. Словарь ведётся как данные: новая позиция или синоним — правка файла и
- * версии, код не меняется; смена версии пересчитывает соответствия всех вакансий.
+ * Словарь позиций (технический документ §6, §16.13): для каждой позиции эквивалентные названия, роли и признаки
+ * специализации, исключающие слова; общие настройки — сколько раз признак должен встретиться в тексте и признаки
+ * специализаций вне словаря. Словарь хранится в БД ({@code position}, {@code position_term},
+ * {@code position_dictionary}; стенограмма §159) и читается воркером в начале каждого задания сопоставления
+ * ({@code MatchRepository.dictionary}); номер его версии растёт при каждом изменении и входит в версию
+ * сопоставления — изменение пересчитывает соответствия всех вакансий.
  */
-@Component
 public class PositionDictionary {
 
-    private static final String RESOURCE = "/positions.json";
     private static final Pattern MARKS = Pattern.compile("\\p{M}+");
     private static final Pattern DASHES = Pattern.compile("[\\p{Pd}/|,()\\[\\]:;]+");
     /** Граница слова: до термина нет буквы, цифры, {@code +}, {@code #} (C++, C#). */
@@ -35,27 +28,17 @@ public class PositionDictionary {
     private final List<Position> positions;
 
     /**
-     * Загружает словарь из ресурса приложения.
+     * @param version              версия словаря ({@code d<номер>})
+     * @param contentHits          сколько раз признак специализации должен встретиться в тексте при роли в названии
+     * @param otherSpecializations признаки специализаций вне словаря
+     * @param positions            позиции
      */
-    public PositionDictionary() {
-        this(readResource());
-    }
-
-    /**
-     * @param dictionary словарь в формате {@code positions.json}
-     */
-    PositionDictionary(JsonNode dictionary) {
-        this.version = dictionary.path("version").asText();
-        this.contentHits = dictionary.path("contentHits").asInt();
-        this.otherSpecializations = terms(dictionary.path("otherSpecializations"));
-        List<Position> loaded = new ArrayList<>();
-        for (JsonNode position : dictionary.path("positions")) {
-            loaded.add(new Position(position.path("code").asText(), position.path("name").asText(),
-                    terms(position.path("titles")),
-                    new Specialization(terms(position.path("roles")), terms(position.path("keywords"))),
-                    terms(position.path("exclude"))));
-        }
-        this.positions = List.copyOf(loaded);
+    public PositionDictionary(String version, int contentHits, List<Term> otherSpecializations,
+            List<Position> positions) {
+        this.version = version;
+        this.contentHits = contentHits;
+        this.otherSpecializations = List.copyOf(otherSpecializations);
+        this.positions = List.copyOf(positions);
     }
 
     public String version() {
@@ -88,22 +71,12 @@ public class PositionDictionary {
         return DASHES.matcher(MARKS.matcher(decomposed).replaceAll("")).replaceAll(" ");
     }
 
-    private static List<Term> terms(JsonNode values) {
-        List<Term> terms = new ArrayList<>();
-        values.forEach(value -> terms.add(new Term(value.asText(), Pattern.compile(BEFORE
-                + Pattern.quote(normalize(value.asText()).strip()) + AFTER))));
-        return List.copyOf(terms);
-    }
-
-    private static JsonNode readResource() {
-        try (InputStream input = PositionDictionary.class.getResourceAsStream(RESOURCE)) {
-            if (input == null) {
-                throw new IllegalStateException("Position dictionary " + RESOURCE + " is missing");
-            }
-            return new ObjectMapper().readTree(input);
-        } catch (IOException exception) {
-            throw new UncheckedIOException("Position dictionary " + RESOURCE + " is not readable", exception);
-        }
+    /**
+     * @param text слово или словосочетание, как записано в словаре
+     * @return термин с шаблоном поиска в нормализованном тексте
+     */
+    public static Term term(String text) {
+        return new Term(text, Pattern.compile(BEFORE + Pattern.quote(normalize(text).strip()) + AFTER));
     }
 
     /**

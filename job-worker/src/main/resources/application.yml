@@ -190,7 +190,7 @@ app:
     profesia-sitemap-url: https://www.profesia.sk/sitemap.php  # список работодателей profesia.sk (§83)
     profesia-sitemap-max-bytes: 16777216  # потолок только для карты сайта profesia.sk (≈ 7 МБ; аудит §84)
     profesia-task-time-budget: 3m        # задание PROFESIA_SITE/LIST не дольше — укладывается в аренду (10m; аудит §84)
-  match:                     # предрасчёт соответствия вакансий позициям (словарь positions.json)
+  match:                     # предрасчёт соответствия вакансий позициям (словарь позиций — в БД, §159)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки
   delivery:                  # выдача порциями (технический документ §7)

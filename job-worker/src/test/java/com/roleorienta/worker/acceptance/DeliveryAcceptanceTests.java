@@ -50,8 +50,8 @@ class DeliveryAcceptanceTests {
     private static final Instant FIRST_WINDOW = Instant.parse("2026-01-01T00:00:00Z");
     private static final String[] TABLES = {"delivered_vacancy", "pass_run", "vacancy_status_history",
         "vacancy_user_status", "search_condition", "user_account", "vacancy_language", "vacancy_position_match",
-        "position", "source_snapshot", "vacancy_revision", "crawl_run", "job_posting", "vacancy", "company_source",
-        "source", "outbox_event", "task"};
+        "position_term", "position", "source_snapshot", "vacancy_revision", "crawl_run", "job_posting", "vacancy",
+        "company_source", "source", "outbox_event", "task"};
 
     @Autowired
     private PassPlanner planner;

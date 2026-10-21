@@ -39,9 +39,6 @@ class MatchVacanciesTests {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private PositionDictionary dictionary;
-
-    @Autowired
     private MatchRepository repository;
 
     private int run;
@@ -51,10 +48,11 @@ class MatchVacanciesTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"vacancy_language", "vacancy_position_match", "position", "source_snapshot",
+        for (String table : new String[] {"vacancy_language", "vacancy_position_match", "position_term", "position", "source_snapshot",
                 "vacancy_revision", "crawl_run", "job_posting", "vacancy", "company_source", "source", "outbox_event", "task"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
+        TestDictionary.store(jdbcTemplate);
         jdbcTemplate.update("INSERT INTO source (provider, board) VALUES ('greenhouse', 'acme')");
         vacancy("Software Engineer", "ACTIVE", "&lt;p&gt;Java, Java, Java&lt;/p&gt;", "Remote - EU");
         vacancy("Účtovník", "NEEDS_RECHECK", null, null);
@@ -74,7 +72,8 @@ class MatchVacanciesTests {
                 """, String.class)).containsExactly("Software Engineer:java-developer:title: engineer; text: java x3",
                 "Účtovník:accountant:title: uctovnik");
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM vacancy WHERE match_version LIKE ?", Integer.class, dictionary.version() + "/%"))
+                "SELECT count(*) FROM vacancy WHERE match_version LIKE ?", Integer.class,
+                MatchRepository.VERSION_PREFIX + TestDictionary.VERSION + "/%"))
                 .isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT 'SK' = ANY (work_countries) AND work_format = 'REMOTE'

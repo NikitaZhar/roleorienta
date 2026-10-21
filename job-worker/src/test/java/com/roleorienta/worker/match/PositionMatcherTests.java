@@ -6,12 +6,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Соответствие позициям по словарю приложения ({@code positions.json}): эквивалентные названия,
+ * Соответствие позициям по словарю тестов ({@code positions.json} тестовых ресурсов, §159): эквивалентные названия,
  * роль и признак в названии, признак в тексте, исключения, границы слов, диакритика.
  */
 class PositionMatcherTests {
 
-    private final PositionDictionary dictionary = new PositionDictionary();
+    private final PositionDictionary dictionary = TestDictionary.fromFile();
 
     /**
      * Роль и специализация в названии: «Backend Engineer — Java» — Java developer (бизнес-описание §4.4).

@@ -44,7 +44,8 @@ class AccountConditionAcceptanceTests {
     void setUp() {
         for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
                 "search_condition",
-                "user_account", "vacancy_position_match", "job_posting", "vacancy", "position", "spring_session_attributes", "spring_session"}) {
+                "user_account", "vacancy_position_match", "job_posting", "vacancy", "position_term", "position",
+                "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("INSERT INTO position (code, name) VALUES ('java-developer', 'Java developer'), "

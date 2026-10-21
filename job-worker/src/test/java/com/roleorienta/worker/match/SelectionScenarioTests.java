@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
  * смысловое совпадение позиции включается, другая специализация — нет; другая страна и только «*» (удалённо «весь
  * мир») исключаются, страна не определена — включение с пометкой (решения владельца 2026-10-20, §148); места с
  * тире и скобками и начала названий (§149) распознаются; явное несоответствие формата исключает, неясный формат —
- * включение с пометкой. Словарь позиций и регионы —
+ * включение с пометкой. Словарь позиций — словарь тестов ({@code positions.json} тестовых ресурсов, §159), регионы —
  * настоящие; города — небольшой набор вместо GeoNames. Каждое расхождение с разметкой перечисляется.
  */
 class SelectionScenarioTests {
@@ -27,7 +27,7 @@ class SelectionScenarioTests {
             "vienna", "AT", "berlin", "DE", "prague", "CZ", "cairo", "EG", "manila", "PH", "bengaluru", "IN",
             "hyderabad", "IN");
 
-    private final PositionDictionary dictionary = new PositionDictionary();
+    private final PositionDictionary dictionary = TestDictionary.fromFile();
     private final LocationResolver resolver = new LocationResolver(CITIES, new RemoteRegions());
 
     /**
