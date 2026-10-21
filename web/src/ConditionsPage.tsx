@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import {
   ApiError, type CatalogItem, countries, positions, saveSearchCondition, searchCondition, type WorkFormat,
 } from './api';
@@ -18,89 +18,68 @@ const FORMATS: { value: WorkFormat | ''; label: MessageKey }[] = [
 
 /** Позиций в условиях не больше (§126; как в API). */
 const MAX_POSITIONS = 10;
-/** Позиций в подписи фильтра: остальные — «+N». */
-const NAMED_IN_CHIP = 2;
-
-/** Позиция в условиях; {@code retired} — выключена администратором, остаётся в условиях (§160). */
-interface Chosen {
-  code: string;
-  name: string;
-  retired: boolean;
-}
-
-/** Выбор условий: страны, позиции, формат ('' — любой). */
-interface Selection {
-  countries: string[];
-  positions: Chosen[];
-  format: WorkFormat | '';
-}
-
-const NOTHING: Selection = { countries: [], positions: [], format: '' };
-
-/** Открытый выбор фильтра; {@code null} — ни один. */
-type Panel = 'countries' | 'positions' | 'format' | null;
 
 /**
- * Условия поиска (бизнес-описание §3, §7.2; новый облик — стенограмма §171): строка фильтров-чипов «страны · позиции ·
- * формат» над результатами; чип открывает свой выбор во всплывающем окне, «Apply» сохраняет условия. Смена стран,
- * позиций или формата создаёт новую версию условий — список собирается заново, поэтому в окне предупреждение (решение
- * владельца 2026-10-21, вариант «A»). Позиции — из словаря (до 10, §126), выключенная администратором остаётся в
- * условиях зачёркнутой (§160); гибрида нет — гибридные вакансии выдаются при любом формате (§125). Условий нет —
- * «Set up your search»: выбор копится в окнах («Done») и сохраняется кнопкой «Search». Условия сменились в другом окне
- * ({@code 412}) — условия перечитываются, сообщение, список под ними начинается заново (аудит §154). «Suggest a
- * position» открывает окно предложения позиции (§161). Окно выбора закрывается щелчком мимо и клавишей Escape; при
- * сохранённых условиях несохранённый выбор при этом забывается. Версия условий — ETag; сохранение передаёт её в
- * If-Match. Лимита порции на экране нет (§120).
+ * Условия поиска (бизнес-описание §3, §7.2): страны, позиции словаря (одна или несколько — вакансия подходит к любой из
+ * них; выбранные — метками с «×», §126), формат работы (Any — все форматы; гибрида нет —
+ * гибридные вакансии выдаются при любом формате, §125). Экран — по согласованному макету (§147, §152): условия
+ * заданы — свёрнуты в строку меток с «Edit»; «Edit» раскрывает форму с «Cancel»; после «Search» форма снова
+ * свёрнута. Нет условий — «No search criteria yet», форма раскрыта, ни одна страна не отмечена (решение владельца
+ * 2026-10-20). Условия сменились в другом окне ({@code 412}) — форма остаётся раскрытой с перечитанными условиями и
+ * сообщением, список под ней начинается заново по новым условиям (аудит §154). Новая версия условий — когда выбор
+ * (страны, позиции, формат) отличается от сохранённого: так же решает сервер (ETag меняется и от лимита порции, которого
+ * на экране нет). Версия условий — ETag; сохранение передаёт её в If-Match. Смена стран, набора позиций или формата
+ * создаёт новую версию условий: список начинается заново и сразу получает все подходящие вакансии.
+ * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
   const { locale, t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [saved, setSaved] = useState<Selection | null>(null);
-  const [etag, setEtag] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Selection>(NOTHING);
-  const [panel, setPanel] = useState<Panel>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [chosen, setChosen] = useState<CatalogItem[]>([]);
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<CatalogItem[]>([]);
+  const [format, setFormat] = useState<WorkFormat | ''>('');
+  const [etag, setEtag] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
-  const bar = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
+  /** Выбор сохранённых условий; {@code null} — условий нет. Сравнение с ним показывает, создана ли новая версия. */
+  const [savedSelection, setSavedSelection] = useState<string | null>(null);
 
   async function load() {
     const [all, current] = await Promise.all([countries(), searchCondition()]);
     setCatalog(all);
     setEtag(current?.etag ?? null);
+    setQuery('');
     if (current === null) {
-      setSaved(null);
-      setDraft(NOTHING);
+      setSelected([]);
+      setChosen([]);
+      setFormat('');
+      setSavedSelection(null);
+      setEditing(true);
     } else {
       const condition = current.data;
-      const selection: Selection = {
-        countries: condition.countries,
-        positions: condition.positions.map((item) => ({ code: item.code, name: item.name, retired: !item.active })),
-        format: condition.format ?? '',
-      };
-      setSaved(selection);
-      setDraft(selection);
+      setSavedSelection(selectionKey(condition.countries, condition.positions.map((item) => item.code),
+        condition.format ?? ''));
+      setSelected(condition.countries);
+      setFormat(condition.format ?? '');
+      // Выключенная администратором позиция остаётся в условиях названием с пометкой (§160, аудит §165).
+      setChosen(condition.positions.map((item) => ({ code: item.code,
+        name: item.active ? item.name : t('conditions.retired', { name: item.name }) })));
+      setEditing(false);
     }
     setLoaded(true);
+  }
+
+  function cancel() {
+    setMessage(null);
+    load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }
 
   useEffect(() => {
     load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
-
-  /** Щелчок мимо строки фильтров закрывает окно выбора. */
-  useEffect(() => {
-    function closeOutside(event: MouseEvent) {
-      if (bar.current !== null && !bar.current.contains(event.target as Node)) {
-        close();
-      }
-    }
-    document.addEventListener('mousedown', closeOutside);
-    return () => document.removeEventListener('mousedown', closeOutside);
-  }, [saved]);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -125,94 +104,40 @@ export function ConditionsPage({ onSaved }: Props) {
     };
   }, [query]);
 
-  /** Открыть выбор (повторное нажатие — закрыть); при сохранённых условиях выбор начинается с них. */
-  function toggle(next: Panel) {
-    if (panel === next) {
-      close();
-      return;
-    }
-    if (saved !== null) {
-      setDraft(saved);
-    }
-    setQuery('');
-    setPanel(next);
+  function toggle(code: string) {
+    setSelected((current) => current.includes(code)
+      ? current.filter((item) => item !== code) : [...current, code]);
   }
 
-  /** Закрыть выбор: при сохранённых условиях несохранённое забывается; без условий — копится до «Search». */
-  function close() {
-    setPanel(null);
-    setQuery('');
-    if (saved !== null) {
-      setDraft(saved);
-    }
-  }
-
-  function onKey(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') {
-      close();
-    }
-  }
-
-  function toggleCountry(code: string) {
-    setDraft((current) => ({
-      ...current,
-      countries: current.countries.includes(code)
-        ? current.countries.filter((item) => item !== code) : [...current.countries, code],
-    }));
-  }
-
-  function togglePosition(item: Chosen) {
-    setDraft((current) => {
-      if (current.positions.some((other) => other.code === item.code)) {
-        return { ...current, positions: current.positions.filter((other) => other.code !== item.code) };
-      }
-      return current.positions.length >= MAX_POSITIONS ? current
-        : { ...current, positions: [...current.positions, item] };
-    });
-  }
-
-  /** «Apply»: при сохранённых условиях — сохранить; без условий («Done») — выбор копится до «Search». */
-  function apply() {
-    if (saved === null) {
-      setPanel(null);
-      setQuery('');
-      return;
-    }
-    submit(draft);
-  }
-
-  async function submit(selection: Selection) {
-    if (selection.countries.length === 0 || selection.positions.length === 0) {
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (selected.length === 0 || chosen.length === 0) {
       setMessage(t('conditions.chooseBoth'));
       return;
     }
-    setBusy(true);
     try {
-      const result = await saveSearchCondition({
-        countries: selection.countries,
-        positions: selection.positions.map((item) => item.code),
-        format: selection.format === '' ? null : selection.format,
+      const saved = await saveSearchCondition({
+        countries: selected,
+        positions: chosen.map((item) => item.code),
+        format: format === '' ? null : format,
         portionLimit: null,
       }, etag);
-      const changed = saved === null || selectionKey(selection) !== selectionKey(saved);
-      setSaved(selection);
-      setDraft(selection);
-      setEtag(result.etag);
+      const submitted = selectionKey(selected, chosen.map((item) => item.code), format);
+      const changed = submitted !== savedSelection;
+      setSavedSelection(submitted);
+      setEtag(saved.etag);
       setMessage(null);
-      setPanel(null);
-      setQuery('');
+      setEditing(false);
       onSaved(changed);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
-        setPanel(null);
-        await load().catch((reload: unknown) => setMessage(errorText(reload, t)));
         setMessage(t('conditions.changedElsewhere'));
+        await load().catch((reload: unknown) => setMessage(errorText(reload, t)));
+        setEditing(true);
         onSaved(true);
         return;
       }
       setMessage(errorText(failure, t));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -222,136 +147,94 @@ export function ConditionsPage({ onSaved }: Props) {
       ?? catalog.find((item) => item.code === code)?.name ?? code;
   }
 
-  function positionName(item: Chosen): string {
-    return item.retired ? t('conditions.retired', { name: item.name }) : item.name;
-  }
-
   if (!loaded) {
-    return message === null ? <p className="muted">{t('app.loading')}</p> : <p className="error">{message}</p>;
+    return message === null ? <p>{t('app.loading')}</p> : <p className="error">{message}</p>;
   }
-
-  const shown = panel === null && saved !== null ? saved : draft;
-  const countriesLabel = shown.countries.length === 0 ? t('conditions.country')
-    : shown.countries.map(countryName).join(', ');
-  const positionsLabel = shown.positions.length === 0 ? t('conditions.position')
-    : shown.positions.slice(0, NAMED_IN_CHIP).map(positionName).join(', ');
-  const morePositions = shown.positions.length - NAMED_IN_CHIP;
-  const formatLabel = t(FORMATS.find((item) => item.value === shown.format)?.label ?? 'format.any');
-  const warning = saved !== null && <p className="popover-note">{t('conditions.rebuildWarning')}</p>;
-  const footer = (note?: string) => (
-    <div className="popover-foot">
-      <span className="muted">{note}</span>
-      <button type="button" className="primary" disabled={busy} onClick={apply}>
-        {saved === null ? t('conditions.done') : t('conditions.apply')}
-      </button>
-    </div>
-  );
-  const chevron = (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-  );
-
+  if (!editing) {
+    return (
+      <div className="filters-summary">
+        <dl className="criteria" aria-label={t('nav.search')}>
+          <div>
+            <dt>{selected.length > 1 ? t('conditions.countries') : t('conditions.country')}</dt>
+            <dd><ul className="chips">
+              {selected.map((code) => <li key={code}>{countryName(code)}</li>)}
+            </ul></dd>
+          </div>
+          <div>
+            <dt>{chosen.length > 1 ? t('conditions.positions') : t('conditions.position')}</dt>
+            <dd><ul className="chips">{chosen.map((item) => <li key={item.code}>{item.name}</li>)}</ul></dd>
+          </div>
+          <div>
+            <dt>{t('conditions.format')}</dt>
+            <dd><ul className="chips"><li>{t(FORMATS.find((item) => item.value === format)?.label ?? 'format.any')}</li></ul></dd>
+          </div>
+        </dl>
+        <button type="button" onClick={() => setEditing(true)}>{t('conditions.edit')}</button>
+      </div>
+    );
+  }
   return (
-    <div className={saved === null ? 'conditions setup' : 'conditions'}>
-      {saved === null && (
-        <>
-          <h1>{t('conditions.setUpTitle')}</h1>
-          <p className="muted">{t('conditions.setUpText')}</p>
-        </>
-      )}
-      <div className="filter-bar" ref={bar} onKeyDown={onKey}>
-        <div className="filter">
-          <button type="button" className="chip" aria-expanded={panel === 'countries'} aria-haspopup="dialog"
-            onClick={() => toggle('countries')}>
-            <span className="chip-text">{countriesLabel}</span>{chevron}
-          </button>
-          {panel === 'countries' && (
-            <div className="popover" role="dialog" aria-label={t('conditions.countries')}>
-              <div className="options">
-                {catalog.map((country) => (
-                  <label key={country.code} className="option">
-                    <input type="checkbox" checked={draft.countries.includes(country.code)}
-                      onChange={() => toggleCountry(country.code)} />
-                    {countryName(country.code)}
-                  </label>
-                ))}
-              </div>
-              {warning}
-              {footer()}
-            </div>
+    <form className="filters" onSubmit={save}>
+      {etag === null && <p className="lead">{t('conditions.empty')}</p>}
+      <div className="filters-row">
+        <fieldset>
+          <legend>{t('conditions.countries')}</legend>
+          {catalog.map((country) => (
+            <label key={country.code} className="inline">
+              <input type="checkbox" checked={selected.includes(country.code)}
+                onChange={() => toggle(country.code)} />
+              {countryName(country.code)}
+            </label>
+          ))}
+        </fieldset>
+        <div className="positions">
+          <label>
+            {t('conditions.lookFor')}
+            <input type="search" placeholder={t('conditions.typeLetters')} value={query}
+              disabled={chosen.length >= MAX_POSITIONS} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          {chosen.length > 0 && (
+            <ul className="chips">
+              {chosen.map((item) => (
+                <li key={item.code}>
+                  {item.name}
+                  <button type="button" aria-label={t('conditions.remove', { name: item.name })}
+                    onClick={() => setChosen((current) => current.filter((other) => other.code !== item.code))}>×</button>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-
-        <div className="filter">
-          <button type="button" className="chip" aria-expanded={panel === 'positions'} aria-haspopup="dialog"
-            onClick={() => toggle('positions')}>
-            <span className="chip-text">{positionsLabel}</span>
-            {morePositions > 0 && <span className="muted">+{morePositions}</span>}
-            {chevron}
-          </button>
-          {panel === 'positions' && (
-            <div className="popover" role="dialog" aria-label={t('conditions.positions')}>
-              <input type="search" autoFocus aria-label={t('conditions.lookFor')}
-                placeholder={t('conditions.typeLetters')} value={query} onChange={(event) => setQuery(event.target.value)} />
-              <div className="options">
-                {draft.positions.map((item) => (
-                  <label key={item.code} className="option">
-                    <input type="checkbox" checked onChange={() => togglePosition(item)} />
-                    <span className={item.retired ? 'retired' : undefined}>{item.name}</span>
-                    {item.retired && <span className="muted">{t('conditions.retiredMark')}</span>}
-                  </label>
-                ))}
-                {found.filter((item) => !draft.positions.some((other) => other.code === item.code)).map((item) => (
-                  <label key={item.code} className="option">
-                    <input type="checkbox" checked={false} disabled={draft.positions.length >= MAX_POSITIONS}
-                      onChange={() => togglePosition({ code: item.code, name: item.name, retired: false })} />
-                    {item.name}
-                  </label>
-                ))}
-              </div>
-              {warning}
-              {footer(t('conditions.chosen', { count: draft.positions.length, max: MAX_POSITIONS }))}
-            </div>
+          {found.length > 0 && (
+            <ul className="choices">
+              {found.filter((item) => !chosen.some((other) => other.code === item.code)).map((item) => (
+                <li key={item.code}>
+                  <button type="button" onClick={() => {
+                    setChosen((current) => current.length >= MAX_POSITIONS ? current : [...current, item]);
+                    setQuery('');
+                  }}>{item.name}</button>
+                </li>
+              ))}
+            </ul>
           )}
+          <PositionSuggestions />
         </div>
-
-        <div className="filter">
-          <button type="button" className="chip" aria-expanded={panel === 'format'} aria-haspopup="dialog"
-            onClick={() => toggle('format')}>
-            <span className="chip-text">{formatLabel}</span>{chevron}
-          </button>
-          {panel === 'format' && (
-            <div className="popover small" role="dialog" aria-label={t('conditions.workFormat')}>
-              <div className="options">
-                {FORMATS.map((item) => (
-                  <label key={item.value} className="option">
-                    <input type="radio" name="format" checked={draft.format === item.value}
-                      onChange={() => setDraft((current) => ({ ...current, format: item.value }))} />
-                    {t(item.label)}
-                  </label>
-                ))}
-              </div>
-              {warning}
-              {footer()}
-            </div>
-          )}
-        </div>
-
-        {saved === null && (
-          <button type="button" className="primary" disabled={busy} onClick={() => submit(draft)}>
-            {t('conditions.search')}
-          </button>
-        )}
-        <button type="button" className="link" onClick={() => setSuggesting(true)}>{t('suggest.link')}</button>
+        <label>
+          {t('conditions.workFormat')}
+          <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
+            {FORMATS.map((item) => <option key={item.value} value={item.value}>{t(item.label)}</option>)}
+          </select>
+        </label>
       </div>
       {message !== null && <p className="error" role="status">{message}</p>}
-      {suggesting && <PositionSuggestions onClose={() => setSuggesting(false)} />}
-    </div>
+      <div className="actions">
+        <button type="submit" className="primary">{t('conditions.search')}</button>
+        {etag !== null && <button type="button" onClick={cancel}>{t('conditions.cancel')}</button>}
+      </div>
+    </form>
   );
 }
 
 /** Выбор условий одной строкой для сравнения: порядок стран и позиций не важен. */
-function selectionKey(selection: Selection): string {
-  return [...selection.countries].sort().join(',') + '|'
-    + selection.positions.map((item) => item.code).sort().join(',') + '|' + selection.format;
+function selectionKey(countryCodes: string[], positionCodes: string[], format: WorkFormat | ''): string {
+  return [...countryCodes].sort().join(',') + '|' + [...positionCodes].sort().join(',') + '|' + format;
 }
