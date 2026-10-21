@@ -6,8 +6,6 @@ import com.roleorienta.api.account.AccountDtos.Settings;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import java.time.DateTimeException;
-import java.time.ZoneId;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -18,7 +16,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Регистрация, вход и текущий пользователь (технический документ §8). Выход —
@@ -53,7 +50,7 @@ public class AccountController {
     @ResponseStatus(HttpStatus.CREATED)
     public Account register(@Valid @RequestBody Credentials credentials) {
         return Account.of(accounts.register(credentials.email(), credentials.password(), credentials.language(),
-                zone(credentials.timeZone())));
+                credentials.timeZone()));
     }
 
     /**
@@ -93,26 +90,6 @@ public class AccountController {
      */
     @PutMapping("/api/v1/me/settings")
     public Account settings(Authentication authentication, @Valid @RequestBody Settings settings) {
-        zone(settings.timeZone());
         return Account.of(accounts.updateSettings(authentication.getName(), settings));
-    }
-
-    /**
-     * Проверка входа: часовой пояс — известное название IANA ({@code ZoneId}).
-     *
-     * @param timeZone часовой пояс; {@code null} — не передан
-     * @return он же
-     * @throws ResponseStatusException {@code 400} — неизвестный часовой пояс
-     */
-    private static String zone(String timeZone) {
-        if (timeZone == null) {
-            return null;
-        }
-        try {
-            ZoneId.of(timeZone);
-            return timeZone;
-        } catch (DateTimeException unknown) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown time zone: " + timeZone);
-        }
     }
 }

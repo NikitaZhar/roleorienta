@@ -1,5 +1,6 @@
 package com.roleorienta.api.vacancy;
 
+import com.roleorienta.api.account.UserAccountRepository;
 import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.vacancy.StatusRules.Change;
 import com.roleorienta.api.vacancy.StatusRules.Line;
@@ -72,14 +73,18 @@ public class VacancyService {
 
     private final VacancyRepository repository;
     private final VacancyProperties properties;
+    private final UserAccountRepository accounts;
 
     /**
      * @param repository данные списков и статусов
      * @param properties срок без подтверждения
+     * @param accounts   блокировка строки пользователя
      */
-    public VacancyService(VacancyRepository repository, VacancyProperties properties) {
+    public VacancyService(VacancyRepository repository, VacancyProperties properties,
+            UserAccountRepository accounts) {
         this.repository = repository;
         this.properties = properties;
+        this.accounts = accounts;
     }
 
     /**
@@ -164,7 +169,7 @@ public class VacancyService {
     @Transactional
     public boolean setStatus(long userId, long vacancyId, StatusEvent requested, String zone) {
         LocalDate today = LocalDate.now(zone(zone));
-        repository.lockUser(userId);
+        accounts.lock(userId);
         if (!repository.isAccessible(userId, vacancyId)) {
             return false;
         }

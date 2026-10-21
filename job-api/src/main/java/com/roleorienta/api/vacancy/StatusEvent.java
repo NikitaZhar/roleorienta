@@ -9,7 +9,7 @@ public enum StatusEvent {
     /** «Просмотрена» — ставит приложение, когда пользователь открыл сведения новой вакансии. */
     VIEWED(false),
     /** «Не интересно» — вакансия уходит в раздел «Не интересно». */
-    NOT_INTERESTED(true),
+    NOT_INTERESTED(false),
     /** «Резюме отправлено» — в «Мои отклики». */
     APPLIED(true),
     /** «Собеседование» — в «Мои отклики». */
@@ -19,17 +19,18 @@ public enum StatusEvent {
     /** «Возвращена» из «Не интересно»: строка истории, текущим не бывает. */
     RETURNED(false);
 
-    private final boolean chosenByUser;
+    private final boolean response;
 
-    StatusEvent(boolean chosenByUser) {
-        this.chosenByUser = chosenByUser;
+    StatusEvent(boolean response) {
+        this.response = response;
     }
 
     /**
-     * @return {@code true} — статус из списка пользователя: в тот же день заменяет такой же выбор (исправление
-     *         ошибочного нажатия, решение владельца 2026-10-21)
+     * @return {@code true} — статус отклика («Мои отклики»): в тот же день заменяет статус отклика (исправление
+     *         ошибочного нажатия, решение владельца 2026-10-21). «Не интересно» не заменяет и не заменяется — иначе
+     *         «Вернуть» не нашло бы в истории прежний статус (аудит §165)
      */
-    public boolean chosenByUser() {
-        return chosenByUser;
+    public boolean response() {
+        return response;
     }
 }

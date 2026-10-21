@@ -34,7 +34,7 @@ export function LoginPage({ onSignedIn }: Props) {
       onSignedIn(await login(email, password));
     } catch (failure) {
       setMessage(failure instanceof ApiError && failure.status === 409 ? t('error.emailTaken')
-        : errorText(failure, t));
+        : failure instanceof ApiError && failure.status === 401 ? t('error.signIn') : errorText(failure, t));
     } finally {
       setBusy(false);
     }

@@ -15,7 +15,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Данные сводки на почту (JDBC; стенограмма §164): кому пора, новые вакансии пользователя, отметка отправленного.
+ * Данные сводки на почту (JDBC; стенограмма §164, аудит §165): кому пора, новые вакансии пользователя с отметкой
+ * попавших в письмо, отметка отработанного дня.
  */
 @Repository
 public class DigestRepository {
@@ -27,16 +28,26 @@ public class DigestRepository {
     private static final String LOCAL_NOW = "(CAST(? AS timestamptz) AT TIME ZONE u.time_zone)";
 
     /**
-     * Новые вакансии пользователя: выданы по его активным условиям после прошлой сводки и сейчас в результатах — не
-     * закрыты и не в «Моих откликах» или «Не интересно» (§156). Параметры — пользователь и граница прошлой сводки
-     * ({@code NULL} — сводок не было).
+     * Новые вакансии пользователя для письма: выданы по его активным условиям, видны в результатах и ещё не были в
+     * письме ({@code digest_vacancy}). «Видны» — те же правила, что у списка job-api ({@code VacancyRepository.VISIBLE},
+     * меняются вместе): не закрыта, подтверждена не раньше срока, подходит хотя бы к одной позиции условий, стране и
+     * формату, статус пользователя — «Новая» или «Просмотрена» (аудит §165). Параметры — пользователь и срок
+     * подтверждения.
      */
-    private static final String NEW_FROM = """
+    private static final String FRESH_FROM = """
              FROM search_condition c JOIN delivered_vacancy d ON d.search_condition_id = c.id
             JOIN vacancy v ON v.id = d.vacancy_id
             LEFT JOIN vacancy_user_status st ON st.user_id = c.user_id AND st.vacancy_id = v.id
-            WHERE c.user_id = ? AND c.active AND d.delivered_at > coalesce(CAST(? AS timestamptz), '-infinity')
-              AND v.state <> 'CLOSED' AND (st.status IS NULL OR st.status = 'VIEWED')""";
+            WHERE c.user_id = ? AND c.active
+              AND v.state <> 'CLOSED' AND v.last_confirmed_at >= ?
+              AND EXISTS (SELECT 1 FROM vacancy_position_match m
+                          JOIN search_condition_position sp ON sp.position_id = m.position_id
+                          WHERE m.vacancy_id = v.id AND sp.search_condition_id = c.id)
+              AND (v.work_countries && c.countries OR cardinality(v.work_countries) = 0)
+              AND (c.work_format IS NULL OR v.work_format IS NULL
+                   OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))
+              AND (st.status IS NULL OR st.status = 'VIEWED')
+              AND NOT EXISTS (SELECT 1 FROM digest_vacancy dv WHERE dv.user_id = c.user_id AND dv.vacancy_id = v.id)""";
 
     /** Работодатель вакансии — как в списке job-api ({@code VacancyRepository}): компания источника, иначе название у системы найма. */
     private static final String EMPLOYER = """
@@ -87,40 +98,50 @@ public class DigestRepository {
      */
     public Optional<Recipient> lockRecipient(long userId) {
         return jdbcTemplate.query("""
-                SELECT email, language, digest_sent_until, digest_day FROM user_account WHERE id = ? FOR UPDATE
+                SELECT email, language, digest_frequency, digest_day FROM user_account WHERE id = ? FOR UPDATE
                 """, (row, number) -> new Recipient(row.getString("email"), row.getString("language"),
-                instant(row, "digest_sent_until"), row.getObject("digest_day", LocalDate.class)), userId)
+                row.getString("digest_frequency"), row.getObject("digest_day", LocalDate.class)), userId)
                 .stream().findFirst();
     }
 
     /**
-     * @param userId    пользователь
-     * @param sentUntil граница прошлой сводки; {@code null} — сводок не было
-     * @param limit     строк не больше
-     * @return сколько новых вакансий, граница выдачи по ним и первые строки — открытые позже сверху
+     * Отбирает новые вакансии письма и сразу отмечает их попавшими в письмо — одним запросом: изменяющий
+     * {@code WITH … INSERT … RETURNING} работает на одном снимке данных, поэтому число и строки письма совпадают, а
+     * выдача, зафиксированная позже, уйдёт в следующее письмо, а не потеряется (аудит §165). Отметка откатывается
+     * вместе с транзакцией, если письмо не ушло. Число — по всем отобранным ({@code count(*) OVER ()} считается до
+     * {@code LIMIT}); строки — открытые позже сверху.
+     * https://www.postgresql.org/docs/16/queries-with.html#QUERIES-WITH-MODIFYING
+     *
+     * @param userId       пользователь
+     * @param visibleSince подтверждены не раньше (срок без подтверждения)
+     * @param now          момент письма — {@code mailed_at}
+     * @param limit        строк не больше
+     * @return сколько новых вакансий и первые строки; нет новых — 0 и пусто
      */
-    public Fresh fresh(long userId, Instant sentUntil, int limit) {
-        OffsetDateTime after = sentUntil == null ? null : sentUntil.atOffset(ZoneOffset.UTC);
-        Totals totals = jdbcTemplate.queryForObject("SELECT count(*), max(d.delivered_at)" + NEW_FROM,
-                (row, number) -> new Totals(row.getLong(1), instant(row, "max")), userId, after);
-        List<Line> lines = jdbcTemplate.query("SELECT v.title, v.work_countries, v.posted_at, v.first_seen_at, "
-                + EMPLOYER + " AS employer" + NEW_FROM
-                + " ORDER BY coalesce(v.posted_at, v.first_seen_at) DESC, v.id DESC LIMIT ?",
-                (row, number) -> line(row), userId, after, limit);
-        return new Fresh(totals.count(), totals.until(), lines);
+    public Fresh takeFresh(long userId, Instant visibleSince, Instant now, int limit) {
+        List<Counted> rows = jdbcTemplate.query("WITH fresh AS (INSERT INTO digest_vacancy (user_id, vacancy_id, "
+                + "mailed_at) SELECT DISTINCT c.user_id, v.id, CAST(? AS timestamptz)" + FRESH_FROM
+                + " ON CONFLICT DO NOTHING RETURNING vacancy_id) "
+                + "SELECT v.title, v.work_countries, v.posted_at, v.first_seen_at, " + EMPLOYER + " AS employer, "
+                + "count(*) OVER () AS total FROM fresh f JOIN vacancy v ON v.id = f.vacancy_id "
+                + "ORDER BY coalesce(v.posted_at, v.first_seen_at) DESC, v.id DESC LIMIT ?",
+                (row, number) -> new Counted(row.getLong("total"), line(row)), utc(now), userId, utc(visibleSince),
+                limit);
+        return new Fresh(rows.isEmpty() ? 0 : rows.getFirst().total(), rows.stream().map(Counted::line).toList());
     }
 
     /**
-     * Сводка за день отработана; граница сдвигается, только если вакансии были в письме.
+     * Сводка за день отработана (письмо ушло или новых нет).
      *
-     * @param userId    пользователь
-     * @param day       день по часам пользователя
-     * @param sentUntil новая граница; {@code null} — прежняя
+     * @param userId пользователь
+     * @param day    день по часам пользователя
      */
-    public void markDone(long userId, LocalDate day, Instant sentUntil) {
-        jdbcTemplate.update("UPDATE user_account SET digest_day = ?, "
-                + "digest_sent_until = coalesce(CAST(? AS timestamptz), digest_sent_until) WHERE id = ?", day,
-                sentUntil == null ? null : sentUntil.atOffset(ZoneOffset.UTC), userId);
+    public void markDone(long userId, LocalDate day) {
+        jdbcTemplate.update("UPDATE user_account SET digest_day = ? WHERE id = ?", day, userId);
+    }
+
+    private static OffsetDateTime utc(Instant instant) {
+        return instant.atOffset(ZoneOffset.UTC);
     }
 
     private static Line line(ResultSet row) throws SQLException {
@@ -150,20 +171,20 @@ public class DigestRepository {
      *
      * @param email     адрес
      * @param language  язык письма: {@code en} или {@code ru}
-     * @param sentUntil граница прошлой сводки; {@code null} — сводок не было
+     * @param frequency частота сводки сейчас: {@code NEVER} — письмо не отправляется, даже если задание уже стоит
+     *                  (аудит §165)
      * @param day       день, за который сводка уже отработана; {@code null} — ни разу
      */
-    public record Recipient(String email, String language, Instant sentUntil, LocalDate day) {
+    public record Recipient(String email, String language, String frequency, LocalDate day) {
     }
 
     /**
      * Новые вакансии.
      *
      * @param count сколько всего
-     * @param until граница выдачи по ним — момент выдачи последней
      * @param lines первые строки письма
      */
-    public record Fresh(long count, Instant until, List<Line> lines) {
+    public record Fresh(long count, List<Line> lines) {
     }
 
     /**
@@ -179,7 +200,7 @@ public class DigestRepository {
             boolean byEmployer) {
     }
 
-    /** Число и граница новых вакансий. */
-    private record Totals(long count, Instant until) {
+    /** Строка письма и число всех отобранных. */
+    private record Counted(long total, Line line) {
     }
 }

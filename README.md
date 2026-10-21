@@ -102,4 +102,4 @@ ops/restore.sh backups/<файл>.dump --replace    # рабочая база и
 переменная для job-api и job-worker; сводка новых вакансий на почту (job-worker) — `DIGEST_ENABLED=true` и SMTP
 `MAIL_HOST`, `MAIL_PORT` (587), `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, ссылка в письме — `APP_URL`; для Brevo —
 `smtp-relay.brevo.com`, логин и ключ SMTP из кабинета Brevo, отправитель — подтверждённый в нём адрес; без
-`DIGEST_ENABLED` сводки не отправляются); значения по умолчанию совпадают с `docker-compose.yml`.
+`DIGEST_ENABLED` сводки не отправляются, и `/actuator/health` воркера почтовый сервер не проверяет); значения по умолчанию совпадают с `docker-compose.yml`.

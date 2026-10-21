@@ -192,7 +192,8 @@ export function CompaniesPage() {
               {hidden.map((item) => (
                 <tr key={item.id}>
                   <td>{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
-                  <td><GroupBadge item={item} /></td>
+                  <td><GroupBadge item={item}
+                    reason={item.check.reason === null ? undefined : reasonText(item.check.reason, t)} /></td>
                   <td className="row-actions">
                     <button type="button" onClick={() => unhide(item)}>{t('companies.showAgain')}</button>
                   </td>

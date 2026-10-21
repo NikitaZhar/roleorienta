@@ -41,7 +41,8 @@ class DictionaryAcceptanceTests {
     @BeforeEach
     void setUp() {
         for (String table : new String[] {"position_suggestion", "delivered_vacancy", "pass_run", "vacancy_status_history",
-                "vacancy_user_status", "search_condition", "user_account", "spring_session_attributes",
+                "vacancy_user_status", "search_condition", "digest_vacancy",
+                "user_account", "spring_session_attributes",
                 "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
@@ -98,6 +99,10 @@ class DictionaryAcceptanceTests {
         assertThat(admin.send("PUT", "/api/v1/admin/positions/999999999", "{\"name\":\"X\",\"active\":true,"
                 + "\"terms\":{\"titles\":[\"x\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}").status())
                 .isEqualTo(404);
+        // Без «active» позиция не выключается молча — неверный запрос (аудит §165).
+        assertThat(admin.send("PUT", "/api/v1/admin/positions/" + id, "{\"name\":\"Rust engineer\","
+                + "\"terms\":{\"titles\":[\"rust engineer\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}")
+                .status()).isEqualTo(400);
 
         ApiTestClient.Response settings = admin.send("PUT", "/api/v1/admin/dictionary",
                 "{\"contentHits\":2,\"otherSpecializations\":[\"ruby\",\"Ruby\",\"php\"]}");
@@ -130,7 +135,9 @@ class DictionaryAcceptanceTests {
         assertThat(chosen.send("GET", "/api/v1/positions?query=test-rust", null).body()).isEqualTo("[]");
         chosen.ifMatch = chosen.send("GET", "/api/v1/me/search-condition", null).etag();
         String remote = RUST_CONDITION.replace("]}", "],\"format\":\"REMOTE\"}");
-        assertThat(chosen.send("PUT", "/api/v1/me/search-condition", remote).status()).isEqualTo(200);
+        ApiTestClient.Response kept = chosen.send("PUT", "/api/v1/me/search-condition", remote);
+        assertThat(kept.status()).isEqualTo(200);
+        assertThat(kept.body()).contains("{\"code\":\"test-rust\",\"name\":\"Rust developer\",\"active\":false}");
         ApiTestClient other = ApiTestClient.signedIn(port(), "other@example.com");
         assertThat(other.send("PUT", "/api/v1/me/search-condition", RUST_CONDITION).body())
                 .contains("\"pointer\":\"/positions\"", "Retired positions: [test-rust]");

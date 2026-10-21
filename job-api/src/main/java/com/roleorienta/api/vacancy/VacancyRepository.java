@@ -53,7 +53,8 @@ public class VacancyRepository {
     private static final String OPENED = "coalesce(v.posted_at, v.first_seen_at)";
 
     /**
-     * Вакансия видна в результатах версии условий (те же правила, что у выдачи job-worker): не закрыта,
+     * Вакансия видна в результатах версии условий (те же правила, что у выдачи и сводки на почту job-worker —
+     * {@code DeliveryRepository.PORTION}, {@code DigestRepository.FRESH_FROM}; меняются вместе): не закрыта,
      * подтверждена не раньше срока, подходит хотя бы к одной позиции условий (§126), стране (среди определённых стран
      * вакансии есть страна условий или страна не определена — стран нет; только «*», удалённо «весь мир», и не
      * рассчитанные страны — нет; решения владельца 2026-10-20, §148) и формату текущих условий (гибрид — при любом
@@ -192,17 +193,6 @@ public class VacancyRepository {
     public List<LanguageRequirement> languages(long vacancyId) {
         return jdbcTemplate.query("SELECT language, required FROM vacancy_language WHERE vacancy_id = ? ORDER BY 1",
                 (row, number) -> new LanguageRequirement(row.getString(1), row.getBoolean(2)), vacancyId);
-    }
-
-    /**
-     * Блокирует строку пользователя до конца транзакции: смены статусов одного пользователя идут по одной, и
-     * чтение «текущий статус и история → запись» не гоняется с параллельным запросом (контракт §3.5). Одна
-     * блокировка на запрос — взаимной блокировки нет.
-     *
-     * @param userId пользователь
-     */
-    public void lockUser(long userId) {
-        jdbcTemplate.queryForList("SELECT id FROM user_account WHERE id = ? FOR UPDATE", Long.class, userId);
     }
 
     /**

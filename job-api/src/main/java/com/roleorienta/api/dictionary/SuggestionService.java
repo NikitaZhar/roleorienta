@@ -1,5 +1,6 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.account.UserAccountRepository;
 import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.dictionary.SuggestionDtos.AdminSuggestionItem;
 import com.roleorienta.api.dictionary.SuggestionDtos.DecisionRequest;
@@ -23,12 +24,15 @@ public class SuggestionService {
     static final int DAILY_LIMIT = 10;
 
     private final SuggestionRepository repository;
+    private final UserAccountRepository accounts;
 
     /**
      * @param repository предложения
+     * @param accounts   блокировка строки пользователя
      */
-    public SuggestionService(SuggestionRepository repository) {
+    public SuggestionService(SuggestionRepository repository, UserAccountRepository accounts) {
         this.repository = repository;
+        this.accounts = accounts;
     }
 
     /**
@@ -40,7 +44,7 @@ public class SuggestionService {
      */
     @Transactional
     public Optional<SuggestionItem> suggest(long userId, String text) {
-        repository.lockUser(userId);
+        accounts.lock(userId);
         if (repository.countLastDay(userId) >= DAILY_LIMIT) {
             return Optional.empty();
         }

@@ -11,7 +11,8 @@ spring:
       # затем временный отказ.
       maximum-pool-size: 20
   # Почта для сводки (§164): SMTP Brevo — smtp-relay.brevo.com:587, логин и ключ SMTP из кабинета Brevo; STARTTLS —
-  # шифрование соединения после приветствия сервера. Без MAIL_HOST письма не отправляются (сводки выключены).
+  # шифрование соединения после приветствия сервера. Сводки включает DIGEST_ENABLED (app.digest.enabled); без MAIL_HOST
+  # или MAIL_FROM письмо не уходит — задание сводки завершается ошибкой «Mail is not configured» (аудит §165).
   mail:
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}
@@ -268,3 +269,8 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    mail:
+      # Проверка почтового сервера в /actuator/health — только когда сводки включены: стенд без SMTP не показывает
+      # DOWN из-за почты (аудит §165).
+      enabled: ${DIGEST_ENABLED:false}

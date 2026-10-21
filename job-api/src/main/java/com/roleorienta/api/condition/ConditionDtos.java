@@ -35,12 +35,23 @@ public final class ConditionDtos {
      * Условия поиска в ответе.
      *
      * @param countries    страны
-     * @param positions    коды позиций, по коду
+     * @param positions    позиции, по коду: с названием и признаком «включена» — выключенная остаётся в условиях
+     *                     (§160) и показывается названием с пометкой, а не кодом (аудит §165)
      * @param format       формат; {@code null} — не задан
      * @param portionLimit лимит порции
      */
-    public record ConditionResponse(List<String> countries, List<String> positions, WorkFormat format,
+    public record ConditionResponse(List<String> countries, List<ChosenPosition> positions, WorkFormat format,
             int portionLimit) {
+    }
+
+    /**
+     * Позиция в условиях.
+     *
+     * @param code   код
+     * @param name   название
+     * @param active включена; {@code false} — выключена администратором (§160)
+     */
+    public record ChosenPosition(String code, String name, boolean active) {
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.roleorienta.api.account;
 
+import com.roleorienta.api.condition.InvalidFieldException;
 import java.util.Locale;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,7 +39,8 @@ public class AccountService {
      * @param email    email
      * @param password пароль
      * @param language язык интерфейса; {@code null} — английский
-     * @param timeZone часовой пояс (проверенный); {@code null} — UTC
+     * @param timeZone часовой пояс браузера (IANA); {@code null} или неизвестный PostgreSQL — UTC: регистрация из-за
+     *                 пояса не отказывает, его поправит сверка при следующем открытии приложения (аудит §165)
      * @return новая учётная запись
      * @throws EmailTakenException email уже зарегистрирован (в том числе одновременной регистрацией)
      */
@@ -51,7 +53,7 @@ public class AccountService {
         try {
             return accounts.saveAndFlush(new UserAccount(normalized, passwordEncoder.encode(password),
                     language == null ? AccountDtos.DEFAULT_LANGUAGE : language,
-                    timeZone == null ? AccountDtos.DEFAULT_TIME_ZONE : timeZone));
+                    timeZone == null || !accounts.knownTimeZone(timeZone) ? AccountDtos.DEFAULT_TIME_ZONE : timeZone));
         } catch (DataIntegrityViolationException duplicate) {
             throw new EmailTakenException();
         }
@@ -72,11 +74,13 @@ public class AccountService {
      * Настройки пользователя: меняются только переданные поля.
      *
      * @param email    email вошедшего пользователя
-     * @param settings язык, частота сводки, часовой пояс (проверенный); {@code null} — без изменения
+     * @param settings язык, частота сводки, часовой пояс браузера (IANA); {@code null} — без изменения
      * @return учётная запись с новыми настройками
+     * @throws InvalidFieldException часовой пояс неизвестен ({@code 400}, поле {@code /timeZone})
      */
     @Transactional
     public UserAccount updateSettings(String email, AccountDtos.Settings settings) {
+        checkTimeZone(settings.timeZone());
         UserAccount account = byEmail(email);
         if (settings.language() != null) {
             account.setLanguage(settings.language());
@@ -88,5 +92,15 @@ public class AccountService {
             account.setTimeZone(settings.timeZone());
         }
         return account;
+    }
+
+    /**
+     * Часовой пояс — название, известное PostgreSQL ({@link UserAccountRepository#knownTimeZone}); {@code null} — не
+     * передан.
+     */
+    private void checkTimeZone(String timeZone) {
+        if (timeZone != null && !accounts.knownTimeZone(timeZone)) {
+            throw new InvalidFieldException("/timeZone", "Unknown time zone");
+        }
     }
 }

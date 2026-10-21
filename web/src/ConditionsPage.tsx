@@ -60,14 +60,13 @@ export function ConditionsPage({ onSaved }: Props) {
       setEditing(true);
     } else {
       const condition = current.data;
-      setSavedSelection(selectionKey(condition.countries, condition.positions, condition.format ?? ''));
+      setSavedSelection(selectionKey(condition.countries, condition.positions.map((item) => item.code),
+        condition.format ?? ''));
       setSelected(condition.countries);
       setFormat(condition.format ?? '');
-      setChosen(await Promise.all(condition.positions.map(async (code) => {
-        const matches = await positions(code);
-        // Нет среди предлагаемых — позиция выключена администратором (§160): остаётся в условиях с пометкой.
-        return matches.find((item) => item.code === code) ?? { code, name: t('conditions.retired', { name: code }) };
-      })));
+      // Выключенная администратором позиция остаётся в условиях названием с пометкой (§160, аудит §165).
+      setChosen(condition.positions.map((item) => ({ code: item.code,
+        name: item.active ? item.name : t('conditions.retired', { name: item.name }) })));
       setEditing(false);
     }
     setLoaded(true);

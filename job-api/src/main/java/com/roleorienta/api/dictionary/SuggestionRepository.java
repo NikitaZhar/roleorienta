@@ -34,16 +34,6 @@ public class SuggestionRepository {
     }
 
     /**
-     * Блокирует строку пользователя до конца транзакции: проверка лимита и запись не гоняются с параллельным
-     * предложением того же пользователя (контракт §3.5).
-     *
-     * @param userId пользователь
-     */
-    public void lockUser(long userId) {
-        jdbcTemplate.queryForList("SELECT id FROM user_account WHERE id = ? FOR UPDATE", Long.class, userId);
-    }
-
-    /**
      * @param userId пользователь
      * @return сколько предложений за последние сутки
      */

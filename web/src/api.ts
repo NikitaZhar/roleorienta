@@ -31,6 +31,8 @@ export interface Account {
   language: 'en' | 'ru';
   /** Частота сводки на почту (§164). */
   digestFrequency: DigestFrequency;
+  /** Часовой пояс сводки (IANA): при открытии приложения сверяется с поясом браузера (аудит §165). */
+  timeZone: string;
 }
 
 /** Частота сводки на почту (§164): каждый день, по будням, раз в неделю (понедельник), не присылать. */
@@ -169,10 +171,17 @@ export type WorkFormat = 'OFFICE' | 'REMOTE';
 /** Условия поиска (технический документ §8; бизнес-описание §7.2). */
 export interface SearchCondition {
   countries: string[];
-  /** Коды позиций (от 1 до 10, §126). */
-  positions: string[];
+  /** Позиции (от 1 до 10, §126); выключенная администратором остаётся в условиях (§160). */
+  positions: ChosenPosition[];
   format: WorkFormat | null;
   portionLimit: number;
+}
+
+/** Позиция в условиях: код, название, включена ли (выключенная — с пометкой, аудит §165). */
+export interface ChosenPosition {
+  code: string;
+  name: string;
+  active: boolean;
 }
 
 /** Условия к сохранению: лимит null — значение по умолчанию сервера. */

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Правила смены статуса без БД (бизнес-описание §6; решения владельца 2026-10-21, стенограмма §156): «Просмотрена» —
- * только у новой; статус пользователя того же дня заменяет последнюю строку, если она — такой же выбор; «Вернуть» —
- * только из «Не интересно», к прежнему статусу.
+ * только у новой; статус отклика того же дня заменяет последнюю строку, если она — статус отклика; «Не интересно»
+ * всегда добавляется; «Вернуть» — только из «Не интересно», к прежнему статусу (аудит §165).
  */
 class StatusRulesTests {
 
@@ -63,6 +63,21 @@ class StatusRulesTests {
 
         assertThat(StatusRules.change(StatusEvent.NOT_INTERESTED, history, StatusEvent.RETURNED, TODAY))
                 .isEqualTo(new Change(StatusEvent.RETURNED, null, StatusEvent.APPLIED));
+    }
+
+    /** Аудит §165: «Не интересно» в день отклика не стирает отклик — «Вернуть» возвращает в «Мои отклики». */
+    @Test
+    void notInterestedTheSameDayKeepsResponseForReturn() {
+        List<Line> history = List.of(line(1, StatusEvent.VIEWED, TODAY), line(2, StatusEvent.APPLIED, TODAY));
+
+        assertThat(StatusRules.change(StatusEvent.APPLIED, history, StatusEvent.NOT_INTERESTED, TODAY))
+                .isEqualTo(new Change(StatusEvent.NOT_INTERESTED, null, StatusEvent.NOT_INTERESTED));
+        List<Line> marked = List.of(line(1, StatusEvent.VIEWED, TODAY), line(2, StatusEvent.APPLIED, TODAY),
+                line(3, StatusEvent.NOT_INTERESTED, TODAY));
+        assertThat(StatusRules.change(StatusEvent.NOT_INTERESTED, marked, StatusEvent.APPLIED, TODAY))
+                .isEqualTo(new Change(StatusEvent.APPLIED, null, StatusEvent.APPLIED));
+        assertThat(StatusRules.change(StatusEvent.NOT_INTERESTED, marked, StatusEvent.RETURNED, TODAY).current())
+                .isEqualTo(StatusEvent.APPLIED);
     }
 
     @Test

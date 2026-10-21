@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 /**
  * Учётная запись (бизнес-описание §6): email — имя для входа, хранится в нижнем регистре; пароль —
  * только хеш; язык интерфейса — {@code en} или {@code ru} (§162); частота сводки на почту и часовой пояс (§164).
- * Отметки отправленных сводок ({@code digest_sent_until}, {@code digest_day}) пишет job-worker — здесь их нет.
+ * Отметку отработанной сводки ({@code digest_day}) и вакансии, попавшие в письмо ({@code digest_vacancy}), пишет
+ * job-worker — здесь их нет.
  */
 @Entity
 @Table(name = "user_account")

@@ -31,7 +31,7 @@ public final class AccountDtos {
      * @param language язык интерфейса, выбранный на экране входа, — только при регистрации; {@code null} —
      *                 английский; при входе не учитывается (язык — из учётной записи)
      * @param timeZone часовой пояс браузера (IANA) — только при регистрации: время сводки на почту (§164); {@code null}
-     *                 — UTC
+     *                 или неизвестный PostgreSQL — UTC
      */
     public record Credentials(@NotBlank @Email String email, @NotBlank @Size(min = 8, max = 100) String password,
             @Pattern(regexp = LANGUAGES) String language, @Size(max = MAX_TIME_ZONE) String timeZone) {
@@ -42,7 +42,8 @@ public final class AccountDtos {
      *
      * @param language        язык интерфейса: {@code en} или {@code ru}
      * @param digestFrequency частота сводки: {@code DAILY}, {@code WEEKDAYS}, {@code WEEKLY}, {@code NEVER}
-     * @param timeZone        часовой пояс браузера (IANA): письмо приходит в 8:00 по нему
+     * @param timeZone        часовой пояс браузера (IANA): письмо приходит в 8:00 по нему; неизвестный PostgreSQL —
+     *                        {@code 400}, поле {@code /timeZone}
      */
     public record Settings(@Pattern(regexp = LANGUAGES) String language,
             @Pattern(regexp = FREQUENCIES) String digestFrequency, @Size(max = MAX_TIME_ZONE) String timeZone) {
@@ -55,12 +56,14 @@ public final class AccountDtos {
      * @param email           email
      * @param language        язык интерфейса: {@code en} или {@code ru}
      * @param digestFrequency частота сводки на почту (§164)
+     * @param timeZone        часовой пояс сводки (IANA): SPA сверяет его с поясом браузера и записывает новый (аудит
+     *                        §165)
      */
-    public record Account(long id, String email, String language, String digestFrequency) {
+    public record Account(long id, String email, String language, String digestFrequency, String timeZone) {
 
         static Account of(UserAccount account) {
             return new Account(account.getId(), account.getEmail(), account.getLanguage(),
-                    account.getDigestFrequency());
+                    account.getDigestFrequency(), account.getTimeZone());
         }
     }
 }

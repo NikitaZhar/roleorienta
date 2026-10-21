@@ -77,10 +77,11 @@ public final class DictionaryDtos {
      * Изменение позиции (код не меняется).
      *
      * @param name   название
-     * @param active включена
+     * @param active включена — обязательно: без поля позиция не выключается молча (аудит §165)
      * @param terms  названия по видам — заменяют прежние
      */
-    public record PositionChange(@NotBlank @Size(max = 200) String name, boolean active, @NotNull @Valid Terms terms) {
+    public record PositionChange(@NotBlank @Size(max = 200) String name, @NotNull Boolean active,
+            @NotNull @Valid Terms terms) {
     }
 
     /**

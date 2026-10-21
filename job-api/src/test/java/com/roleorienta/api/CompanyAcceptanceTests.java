@@ -53,7 +53,7 @@ class CompanyAcceptanceTests {
         jdbcTemplate.update("DELETE FROM company WHERE registration_number LIKE '9901%'");
         for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
                 "search_condition",
-                "user_account", "spring_session_attributes", "spring_session"}) {
+                "digest_vacancy", "user_account", "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         alfa = company("99010001", "Qwalfa s.r.o.", null);

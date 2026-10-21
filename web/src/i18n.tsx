@@ -31,6 +31,7 @@ const EN = {
   'error.fields': 'Check the fields: {fields}',
   'error.signIn': 'Wrong email or password',
   'error.emailTaken': 'This email is already registered',
+  'error.sessionExpired': 'You are signed out — reload the page and sign in again',
   'error.tooMany': 'Too many requests today, try again tomorrow',
   'error.notFound': 'Not found',
   'settings.title': 'Settings',
@@ -47,7 +48,7 @@ const EN = {
   'back.applications': '← Back to applications',
   'back.notInterested': '← Back to Not interested',
   'back.default': '← Back',
-  'conditions.empty': 'No search criteria yet. Choose a country and a vacancy.',
+  'conditions.empty': 'No search criteria yet. Choose a country and a position.',
   'conditions.country': 'Country',
   'conditions.countries': 'Countries',
   'conditions.position': 'Position',
@@ -110,6 +111,7 @@ const EN = {
   'vacancy.found': 'found {date}',
   'vacancy.countryNotSpecified': 'Country not specified',
   'vacancy.anyCountry': 'any country',
+  'vacancy.eu': 'EU',
   'vacancy.formatNotSpecified': 'Not specified',
   'vacancy.onlyOffice': 'Only office',
   'vacancy.onlyRemote': 'Only remote',
@@ -212,6 +214,7 @@ const RU: Record<MessageKey, string> = {
   'error.fields': 'Проверьте поля: {fields}',
   'error.signIn': 'Неверная почта или пароль',
   'error.emailTaken': 'Эта почта уже зарегистрирована',
+  'error.sessionExpired': 'Вход завершён — обновите страницу и войдите снова',
   'error.tooMany': 'Слишком много запросов за сутки, попробуйте завтра',
   'error.notFound': 'Не найдено',
   'settings.title': 'Настройки',
@@ -228,7 +231,7 @@ const RU: Record<MessageKey, string> = {
   'back.applications': '← К откликам',
   'back.notInterested': '← К «Не интересно»',
   'back.default': '← Назад',
-  'conditions.empty': 'Критерии поиска не заданы. Выберите страну и вакансию.',
+  'conditions.empty': 'Критерии поиска не заданы. Выберите страну и позицию.',
   'conditions.country': 'Страна',
   'conditions.countries': 'Страны',
   'conditions.position': 'Позиция',
@@ -291,11 +294,12 @@ const RU: Record<MessageKey, string> = {
   'vacancy.found': 'найдена {date}',
   'vacancy.countryNotSpecified': 'Страна не указана',
   'vacancy.anyCountry': 'любая страна',
+  'vacancy.eu': 'ЕС',
   'vacancy.formatNotSpecified': 'Не указан',
   'vacancy.onlyOffice': 'Только офис',
   'vacancy.onlyRemote': 'Только удалённо',
   'vacancy.hybrid': 'Смешанный',
-  'vacancy.from': '{format} — из {territory}',
+  'vacancy.from': '{format}: {territory}',
   'vacancy.required': 'обязателен',
   'vacancy.preferred': 'желателен',
   'vacancy.closed': 'закрыта',
@@ -446,9 +450,10 @@ export function useI18n(): I18n {
 
 /**
  * Текст ошибки ответа сервера на языке экрана (решение владельца 2026-10-21: экран называет ошибку по коду ответа,
- * тексты сервера не переводятся): неверные поля — какие; 401 — неверная почта или пароль; 409 — почта занята
- * (единственный 409 на экранах пользователя, где ошибка показывается этим способом, — регистрация); 429 — лимит за
- * сутки; 404 — не найдено; остальное — текст ответа как есть.
+ * тексты сервера не переводятся): неверные поля — какие; 401 — вход завершён (сессия истекла или выход в другом
+ * окне); 429 — лимит за сутки; 404 — не найдено; остальное, в том числе 409, — текст ответа как есть: у 409 разный
+ * смысл (адрес уже проверяется, одновременное изменение), «почта занята» и «неверная почта или пароль» называет
+ * экран входа сам (аудит §165).
  */
 export function errorText(failure: unknown, t: Translate): string {
   if (failure instanceof ApiError) {
@@ -456,10 +461,7 @@ export function errorText(failure: unknown, t: Translate): string {
       return t('error.fields', { fields: failure.fields.map((field) => field.pointer.substring(1)).join(', ') });
     }
     if (failure.status === 401) {
-      return t('error.signIn');
-    }
-    if (failure.status === 409) {
-      return t('error.emailTaken');
+      return t('error.sessionExpired');
     }
     if (failure.status === 429) {
       return t('error.tooMany');

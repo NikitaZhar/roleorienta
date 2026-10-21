@@ -130,9 +130,14 @@ public class DictionaryRepository {
         insertTerms(id, TermKind.EXCLUDE, terms.exclude());
     }
 
+    /**
+     * Повтор без учёта регистра пропускается по уникальному индексу {@code (position_id, kind, lower(term))}: решает
+     * {@code lower} PostgreSQL, а не Java ({@code ON CONFLICT DO NOTHING}; аудит §165) — на редких буквах (например,
+     * «İ») правила регистра расходятся, и повтор не становится ошибкой.
+     */
     private void insertTerms(long id, TermKind kind, List<String> terms) {
-        terms.forEach(term -> jdbcTemplate.update(
-                "INSERT INTO position_term (position_id, kind, term) VALUES (?, ?, ?)", id, kind.name(), term));
+        terms.forEach(term -> jdbcTemplate.update("INSERT INTO position_term (position_id, kind, term) VALUES (?, ?, ?) "
+                + "ON CONFLICT DO NOTHING", id, kind.name(), term));
     }
 
     private static List<String> strings(Array array) throws SQLException {

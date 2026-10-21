@@ -1,7 +1,9 @@
 package com.roleorienta.api.condition;
 
+import com.roleorienta.api.condition.ConditionDtos.ChosenPosition;
 import com.roleorienta.api.condition.ConditionDtos.ConditionRequest;
 import com.roleorienta.api.condition.ConditionDtos.ConditionResponse;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -126,9 +128,10 @@ public class ConditionService {
     }
 
     private Saved saved(SearchCondition condition) {
-        List<String> codes = positions.findAllById(condition.getPositionIds()).stream().map(Position::getCode)
-                .sorted().toList();
-        return new Saved(new ConditionResponse(condition.getCountries(), codes, condition.getWorkFormat(),
+        List<ChosenPosition> chosen = positions.findAllById(condition.getPositionIds()).stream()
+                .map(position -> new ChosenPosition(position.getCode(), position.getName(), position.isActive()))
+                .sorted(Comparator.comparing(ChosenPosition::code)).toList();
+        return new Saved(new ConditionResponse(condition.getCountries(), chosen, condition.getWorkFormat(),
                 condition.getPortionLimit()), condition.etag());
     }
 }

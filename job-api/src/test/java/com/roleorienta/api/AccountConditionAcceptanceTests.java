@@ -45,6 +45,7 @@ class AccountConditionAcceptanceTests {
     void setUp() {
         for (String table : new String[] {"delivered_vacancy", "pass_run", "vacancy_status_history", "vacancy_user_status",
                 "search_condition",
+                "digest_vacancy",
                 "user_account", "vacancy_position_match", "job_posting", "vacancy", "position_term", "position",
                 "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
@@ -91,6 +92,10 @@ class AccountConditionAcceptanceTests {
                 .isEqualTo(400);
         assertThat(client.send("PUT", "/api/v1/me/settings", "{\"timeZone\":\"Mars/Olympus\"}").status())
                 .isEqualTo(400);
+        // Смещение вместо названия: PostgreSQL прочёл бы его со знаком наоборот (аудит §165).
+        assertThat(client.send("PUT", "/api/v1/me/settings", "{\"timeZone\":\"+02:00\"}").body())
+                .contains("\"pointer\":\"/timeZone\"");
+        assertThat(client.send("GET", "/api/v1/me", null).body()).contains("\"timeZone\":\"Europe/Bratislava\"");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM spring_session", Integer.class)).isPositive();
 
         assertThat(client.send("POST", "/api/v1/auth/logout", null).status()).isEqualTo(204);
@@ -136,7 +141,8 @@ class AccountConditionAcceptanceTests {
         ApiTestClient.Response first = client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
         assertThat(first.status()).isEqualTo(200);
         assertThat(first.body()).isEqualTo(
-                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\"],\"format\":null,\"portionLimit\":20}");
+                "{\"countries\":[\"SK\"],\"positions\":[{\"code\":\"java-developer\",\"name\":\"Java developer\","
+                + "\"active\":true}],\"format\":null,\"portionLimit\":20}");
         long firstVersion = activeVersion();
         long vacancyId = deliveredAndMarked(firstVersion);
 
@@ -174,7 +180,8 @@ class AccountConditionAcceptanceTests {
         client.ifMatch = null;
         ApiTestClient.Response current = client.send("GET", "/api/v1/me/search-condition", null);
         assertThat(current.etag()).isEqualTo(changed.etag());
-        assertThat(current.body()).contains("\"positions\":[\"devops-engineer\"]", "\"format\":\"REMOTE\"");
+        assertThat(current.body()).contains("\"positions\":[{\"code\":\"devops-engineer\",\"name\":\"DevOps engineer\","
+                + "\"active\":true}]", "\"format\":\"REMOTE\"");
 
         client.ifMatch = current.etag();
         ApiTestClient.Response hybrid = client.send("PUT", "/api/v1/me/search-condition",
@@ -185,7 +192,7 @@ class AccountConditionAcceptanceTests {
         client.ifMatch = hybrid.etag();
         ApiTestClient.Response two = client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\",\"devops-engineer\"]}");
-        assertThat(two.body()).contains("\"positions\":[\"devops-engineer\",\"java-developer\"]");
+        assertThat(two.body()).contains("\"positions\":[{\"code\":\"devops-engineer\",", "},{\"code\":\"java-developer\",");
         long twoPositions = activeVersion();
         client.ifMatch = two.etag();
         assertThat(client.send("PUT", "/api/v1/me/search-condition",

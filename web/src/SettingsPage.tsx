@@ -1,5 +1,5 @@
-import { type FormEvent, useState } from 'react';
-import { type Account, browserTimeZone, type DigestFrequency, saveSettings } from './api';
+import { type FormEvent, useEffect, useState } from 'react';
+import { type Account, type DigestFrequency, saveSettings } from './api';
 import { errorText, type Language, type MessageKey, useI18n } from './i18n';
 
 /** Языки на выбор: подпись — на самом языке, чтобы её узнал тот, кто им владеет. */
@@ -24,8 +24,9 @@ interface Props {
 
 /**
  * «Settings» из меню учётной записи (макет §147; стенограмма §162, §164): частота сводки на почту (переключатель из
- * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>», язык интерфейса. «Save» записывает выбор и
- * часовой пояс браузера в учётную запись и сразу переключает язык экрана.
+ * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>», язык интерфейса. «Save» записывает выбор в
+ * учётную запись и сразу переключает язык экрана. Часовой пояс браузера записывает сверка при открытии приложения
+ * ({@code App}): пояс, которого не знает PostgreSQL, не мешает сохранить язык и частоту (аудит §165).
  */
 export function SettingsPage({ account, onSaved }: Props) {
   const { language, setLanguage, t } = useI18n();
@@ -35,12 +36,15 @@ export function SettingsPage({ account, onSaved }: Props) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  /** Язык сменили переключателем в панели, пока страница открыта: выбор следует за ним (аудит §165). */
+  useEffect(() => setChoice(language), [language]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setMessage(null);
     try {
-      const updated = await saveSettings({ language: choice, digestFrequency: frequency, timeZone: browserTimeZone() });
+      const updated = await saveSettings({ language: choice, digestFrequency: frequency });
       setLanguage(updated.language);
       onSaved(updated);
       setSaved(true);

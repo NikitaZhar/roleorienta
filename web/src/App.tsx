@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Account, currentAccount, logout, responses, saveSettings, unsuitableVacancies, vacancies } from './api';
+import {
+  type Account, browserTimeZone, currentAccount, logout, responses, saveSettings, unsuitableVacancies, vacancies,
+} from './api';
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
 import { errorText, type Language, LanguageSwitch, type MessageKey, useI18n } from './i18n';
@@ -61,10 +63,18 @@ export function App() {
     currentAccount().then(signedIn, (failure: Error) => setError(failure.message));
   }, []);
 
-  /** Учётная запись получена (загрузка или вход): язык экрана — из неё. */
+  /**
+   * Учётная запись получена (загрузка или вход): язык экрана — из неё. Часовой пояс сводки отличается от пояса браузера
+   * (учётная запись до §164, переезд) — записывается пояс браузера, письмо приходит в 8:00 по нему (аудит §165). Отказ
+   * не мешает работе: сверка повторится при следующем открытии.
+   */
   function signedIn(next: Account | null) {
     if (next !== null) {
       setLanguage(next.language);
+      const zone = browserTimeZone();
+      if (next.timeZone !== zone) {
+        saveSettings({ timeZone: zone }).then(setAccount, () => undefined);
+      }
     }
     setAccount(next);
   }

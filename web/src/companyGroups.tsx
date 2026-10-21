@@ -27,14 +27,16 @@ export function GroupLegend({ items }: { items: CompanyItem[] }) {
     return null;
   }
   return (
-    <dl className="legend" aria-label={t('legend.title')}>
-      {shown.map((group) => (
-        <div key={group}>
-          <dt><span className={'badge badge-' + group.toLowerCase()}>{t(('group.' + group) as MessageKey)}</span></dt>
-          <dd>{t(('legend.' + group) as MessageKey)}</dd>
-        </div>
-      ))}
+    <>
+      <dl className="legend" aria-label={t('legend.title')}>
+        {shown.map((group) => (
+          <div key={group}>
+            <dt><span className={'badge badge-' + group.toLowerCase()}>{t(('group.' + group) as MessageKey)}</span></dt>
+            <dd>{t(('legend.' + group) as MessageKey)}</dd>
+          </div>
+        ))}
+      </dl>
       {items.some((item) => item.check.reason !== null) && <p className="muted">{t('legend.reason')}</p>}
-    </dl>
+    </>
   );
 }

@@ -8,8 +8,25 @@ export function rowCountryText(work: Work, i18n: I18n): string {
 
 /** Страны работы (сведения о вакансии, где есть подпись «Country»): не определена — «not specified»; «*» — любая. */
 export function countriesText(work: Work, i18n: I18n): string {
-  return work.countryUncertain ? i18n.t('vacancy.notSpecified')
-    : work.countries.map((country) => (country === '*' ? i18n.t('vacancy.anyCountry') : country)).join(', ');
+  return work.countryUncertain ? i18n.t('vacancy.notSpecified') : countryNames(work.countries, i18n);
+}
+
+/**
+ * Страны названиями на языке интерфейса (Intl.DisplayNames браузера, §162; аудит §165): «*» — любая страна; код,
+ * которого браузер не знает, — как есть.
+ */
+function countryNames(codes: string[], i18n: I18n): string {
+  const names = new Intl.DisplayNames([i18n.locale], { type: 'region', fallback: 'code' });
+  return codes.map((code) => (code === '*' ? i18n.t('vacancy.anyCountry') : regionName(names, code))).join(', ');
+}
+
+/** Название страны; код не по форме ISO 3166 ({@code of} бросает RangeError) — как есть. */
+function regionName(names: Intl.DisplayNames, code: string): string {
+  try {
+    return names.of(code) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 /**
@@ -54,7 +71,7 @@ const FORMAT_KEYS: Record<NonNullable<Work['format']>, MessageKey> = {
   HYBRID: 'vacancy.hybrid',
 };
 
-/** Формат работы в сведениях: удалённо — с территорией, если она есть («Only remote — from EU»). */
+/** Формат работы в сведениях: удалённо — с территорией, если она есть («Only remote — from EU», «Только удалённо: ЕС»). */
 export function formatText(work: Work, i18n: I18n): string {
   if (work.format === null) {
     return i18n.t('vacancy.formatNotSpecified');
@@ -65,8 +82,7 @@ export function formatText(work: Work, i18n: I18n): string {
     return format;
   }
   const eu = territory.length === EU.length && EU.every((country) => territory.includes(country));
-  return i18n.t('vacancy.from', { format, territory: eu ? 'EU'
-    : territory.map((country) => (country === '*' ? i18n.t('vacancy.anyCountry') : country)).join(', ') });
+  return i18n.t('vacancy.from', { format, territory: eu ? i18n.t('vacancy.eu') : countryNames(territory, i18n) });
 }
 
 /**
