@@ -54,21 +54,23 @@ public class ConditionService {
      * Сохраняет условия одной транзакцией под блокировкой активной версии. Условий нет — первая
      * версия (без {@code If-Match}). Есть — нужна текущая версия: изменились страны, набор позиций или
      * формат — прежняя версия гасится и создаётся новая с пустым накопленным списком; изменился только
-     * лимит — меняется в той же версии, список не сбрасывается. Отметки «не подходит» не затрагиваются.
+     * лимит — меняется в той же версии, список не сбрасывается. Статусы вакансий не затрагиваются.
      *
      * @param userId  пользователь
      * @param request условия
      * @param ifMatch версия из {@code If-Match}; {@code null} — не указана
      * @return сохранённые условия
-     * @throws InvalidFieldException      неподдерживаемая страна или неизвестная позиция ({@code /positions})
+     * @throws InvalidFieldException      неподдерживаемая страна, неизвестная позиция или выключенная позиция, которой нет
+     *                                    в текущих условиях ({@code /positions})
      * @throws ConditionVersionException  версия не указана ({@code 428}) или не та ({@code 412})
      */
     @Transactional
     public Saved save(long userId, ConditionRequest request, String ifMatch) {
         List<String> countries = countries(request.countries());
-        Set<Long> positionIds = positionIds(request.positions());
         int limit = request.portionLimit() == null ? properties.defaultPortionLimit() : request.portionLimit();
         Optional<SearchCondition> active = conditions.findActiveForUpdate(userId);
+        Set<Long> positionIds = positionIds(request.positions(),
+                active.map(SearchCondition::getPositionIds).orElse(Set.of()));
         if (active.isEmpty()) {
             if (ifMatch != null) {
                 throw new ConditionVersionException(false);
@@ -92,15 +94,21 @@ public class ConditionService {
     }
 
     /**
-     * Позиции по кодам (без повторов); каждая — из словаря.
+     * Позиции по кодам (без повторов); каждая — из словаря и включена, кроме уже выбранных в текущих условиях:
+     * выключенная позиция остаётся у тех, кто её выбрал, но заново не выбирается (§160).
      */
-    private Set<Long> positionIds(List<String> codes) {
+    private Set<Long> positionIds(List<String> codes, Set<Long> kept) {
         Set<String> requested = codes.stream().map(String::strip).collect(Collectors.toSet());
         List<Position> found = positions.findByCodeIn(requested);
         if (found.size() != requested.size()) {
             Set<String> known = found.stream().map(Position::getCode).collect(Collectors.toSet());
             throw new InvalidFieldException("/positions", "Unknown positions: "
                     + requested.stream().filter(code -> !known.contains(code)).sorted().toList());
+        }
+        List<String> retired = found.stream().filter(position -> !position.isActive() && !kept.contains(position.getId()))
+                .map(Position::getCode).sorted().toList();
+        if (!retired.isEmpty()) {
+            throw new InvalidFieldException("/positions", "Retired positions: " + retired);
         }
         return found.stream().map(Position::getId).collect(Collectors.toSet());
     }

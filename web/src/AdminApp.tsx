@@ -4,6 +4,7 @@ import {
   metrics, type MetricRow, type MetricsTable, setNotEmployer,
 } from './api';
 import { GroupBadge } from './companyGroups';
+import { DictionaryAdmin } from './DictionaryAdmin';
 
 /** Сколько последних дней показывать. */
 const DAYS = 14;
@@ -42,7 +43,7 @@ function countryLabel(code: string): string {
  * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
  * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель»
  * (§138) — общая для всех: не в сомнительных, сайт и кадровая страница не ищутся, адрес не вводится; подключённые
- * источники читаются дальше. При ошибке загрузки блока — «Retry» (§143).
+ * источники читаются дальше; словарь позиций (§160). При ошибке загрузки блока — «Retry» (§143).
  */
 export function AdminApp() {
   const [admin, setAdmin] = useState<Admin | null | undefined>(undefined);
@@ -81,6 +82,7 @@ export function AdminApp() {
         <StatusView />
         <MetricsView />
         <NotEmployerView />
+        <DictionaryAdmin />
       </main>
     </>
   );

@@ -60,7 +60,7 @@ final class TestDictionary {
         for (JsonNode position : file.path("positions")) {
             long id = jdbcTemplate.queryForObject("""
                     INSERT INTO position (code, name) VALUES (?, ?)
-                    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name RETURNING id
+                    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, active = true RETURNING id
                     """, Long.class, position.path("code").asText(), position.path("name").asText());
             KINDS.forEach((field, kind) -> position.path(field).forEach(term -> jdbcTemplate.update(
                     "INSERT INTO position_term (position_id, kind, term) VALUES (?, ?, ?)", id, kind, term.asText())));

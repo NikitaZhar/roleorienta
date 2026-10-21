@@ -37,7 +37,7 @@ public class MatchRepository {
     /**
      * Словарь позиций из БД одним снимком данных (уровень {@code REPEATABLE READ}: правка администратора между
      * запросами не смешивает версии; стенограмма §159). Позиция без названий в словаре не участвует — ей нечем
-     * совпасть.
+     * совпасть; выключенная администратором — тоже (§160): её соответствия при пересчёте удаляются.
      *
      * @return словарь и id его позиций по коду
      * @throws IllegalStateException нет строки настроек словаря ({@code position_dictionary})
@@ -52,7 +52,7 @@ public class MatchRepository {
         Map<Long, PositionTerms> byId = new LinkedHashMap<>();
         jdbcTemplate.query("""
                 SELECT p.id, p.code, p.name, t.kind, t.term FROM position p JOIN position_term t ON t.position_id = p.id
-                ORDER BY p.id, t.id
+                WHERE p.active ORDER BY p.id, t.id
                 """, row -> {
                     String code = row.getString("code");
                     String name = row.getString("name");

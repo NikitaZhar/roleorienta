@@ -5,8 +5,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * Позиция словаря (технический документ §6); таблицу заполняет job-worker из словаря с версией,
- * здесь — только чтение.
+ * Позиция словаря (технический документ §6) для условий поиска — только чтение; словарь правит администратор
+ * ({@code DictionaryService}, §160). Выключенная позиция не предлагается при выборе, но остаётся в условиях, где её
+ * уже выбрали.
  */
 @Entity
 @Table(name = "position")
@@ -18,6 +19,8 @@ public class Position {
     private String code;
 
     private String name;
+
+    private boolean active;
 
     /**
      * Для JPA.
@@ -35,5 +38,9 @@ public class Position {
 
     public String getName() {
         return name;
+    }
+
+    public boolean isActive() {
+        return active;
     }
 }

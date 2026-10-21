@@ -85,7 +85,8 @@ public class ConditionController {
      */
     @GetMapping("/api/v1/positions")
     public List<CatalogItem> positions(@RequestParam(defaultValue = "") String query) {
-        return positions.findTop20ByNameContainingIgnoreCaseOrCodeContainingIgnoreCaseOrderByName(query, query)
+        return positions.findTop20ByActiveTrueAndNameContainingIgnoreCaseOrActiveTrueAndCodeContainingIgnoreCaseOrderByName(
+                query, query)
                 .stream().map(position -> new CatalogItem(position.getCode(), position.getName())).toList();
     }
 

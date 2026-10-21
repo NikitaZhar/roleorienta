@@ -78,7 +78,7 @@ SPA в разработке (после `mvn verify`; job-api запущен н�
 mvn -pl web frontend:npm -Dfrontend.npm.arguments="run dev"   # http://localhost:5173, /api — на job-api
 ```
 
-Состояние ядра (работает ли сбор сейчас) и показатели по дням для администратора — `http://localhost:5173/admin`,
+Состояние ядра (работает ли сбор сейчас), показатели по дням и словарь позиций для администратора — `http://localhost:5173/admin`,
 имя `admin`; вход включается паролем в
 переменной окружения job-api:
 

@@ -828,3 +828,44 @@ section {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Форма словаря позиций для администратора (§160): поля одно под другим, многострочные — во всю ширину. */
+.dictionary-form {
+  display: grid;
+  gap: 10px;
+  max-width: 720px;
+  margin: 16px 0;
+}
+
+.dictionary-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.dictionary-form label.check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dictionary-form textarea {
+  font: inherit;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+/* Таблица словаря: слова не рвутся по буквам (overflow-wrap: anywhere у table.companies); короткие колонки — в одну
+   строку, широкую таблицу на телефоне прокручивает обёртка .scroll. */
+table.dictionary th,
+table.dictionary td {
+  overflow-wrap: normal;
+}
+
+table.dictionary .nowrap {
+  white-space: nowrap;
+}

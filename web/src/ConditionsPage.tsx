@@ -62,7 +62,8 @@ export function ConditionsPage({ onSaved }: Props) {
       setFormat(condition.format ?? '');
       setChosen(await Promise.all(condition.positions.map(async (code) => {
         const matches = await positions(code);
-        return matches.find((item) => item.code === code) ?? { code, name: code };
+        // Нет среди предлагаемых — позиция выключена администратором (§160): остаётся в условиях с пометкой.
+        return matches.find((item) => item.code === code) ?? { code, name: code + ' (retired)' };
       })));
       setEditing(false);
     }

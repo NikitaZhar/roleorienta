@@ -462,3 +462,48 @@ export interface CoreStatus {
 export function coreStatus(): Promise<CoreStatus> {
   return request<CoreStatus>('GET', '/api/v1/admin/status');
 }
+
+/** Названия позиции словаря по видам (§160): по одному слову или словосочетанию. */
+export interface PositionTerms {
+  titles: string[];
+  roles: string[];
+  keywords: string[];
+  exclude: string[];
+}
+
+/** Позиция словаря для администратора; код не меняется, выключенная не сопоставляется и не предлагается. */
+export interface DictionaryPosition {
+  id: number;
+  code: string;
+  name: string;
+  active: boolean;
+  terms: PositionTerms;
+}
+
+/** Словарь позиций целиком: номер версии растёт при каждом изменении (§160). */
+export interface Dictionary {
+  version: number;
+  contentHits: number;
+  otherSpecializations: string[];
+  positions: DictionaryPosition[];
+}
+
+/** Словарь позиций для администратора. */
+export function dictionary(): Promise<Dictionary> {
+  return request<Dictionary>('GET', '/api/v1/admin/dictionary');
+}
+
+/** Новая позиция словаря: 409 — код уже есть. */
+export function addPosition(code: string, name: string, terms: PositionTerms): Promise<Dictionary> {
+  return request<Dictionary>('POST', '/api/v1/admin/positions', { code, name, terms });
+}
+
+/** Изменение позиции словаря (название, включена ли, названия по видам). */
+export function changePosition(id: number, name: string, active: boolean, terms: PositionTerms): Promise<Dictionary> {
+  return request<Dictionary>('PUT', '/api/v1/admin/positions/' + id, { name, active, terms });
+}
+
+/** Общие настройки словаря. */
+export function changeDictionarySettings(contentHits: number, otherSpecializations: string[]): Promise<Dictionary> {
+  return request<Dictionary>('PUT', '/api/v1/admin/dictionary', { contentHits, otherSpecializations });
+}

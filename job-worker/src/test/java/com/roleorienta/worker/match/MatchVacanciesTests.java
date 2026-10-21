@@ -115,6 +115,23 @@ class MatchVacanciesTests {
     }
 
     /**
+     * Выключенная администратором позиция (§160) не сопоставляется: после пересчёта по новой версии словаря её
+     * соответствий нет.
+     */
+    @Test
+    void retiredPositionIsNotMatched() {
+        runMatch();
+        jdbcTemplate.update("UPDATE position SET active = false WHERE code = 'java-developer'");
+        jdbcTemplate.update("UPDATE position_dictionary SET version = version + 1");
+
+        runMatch();
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT p.code FROM vacancy_position_match m JOIN position p ON p.id = m.position_id ORDER BY 1
+                """, String.class)).containsExactly("accountant");
+    }
+
+    /**
      * Требования к языку записываются вместе с сопоставлением (§158): пункты списка — отдельные части текста.
      */
     @Test
