@@ -58,6 +58,18 @@ public class CompanyRepository {
                    OR EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'))
             """;
 
+    /**
+     * Порядок сомнительных (решение владельца 2026-10-22, §177): сначала приоритетные (эталон — известные крупные
+     * работодатели), затем крупнее по RÚZ (размер неизвестен — в конце), при равном размере — с найденным сайтом (адрес
+     * страницы вакансий найти легче), затем по названию; {@code c.id} — однозначный порядок при равных названиях, чтобы
+     * страницы не повторяли и не теряли компании.
+     */
+    private static final String DOUBTFUL_ORDER = """
+             ORDER BY c.priority DESC, c.employees_min DESC NULLS LAST,
+                      EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND') DESC,
+                      c.name, c.id
+            """;
+
     /** Пространство ключей advisory-lock ввода адресов (первое число пары). */
     static final int REQUEST_LOCK_SPACE = 143;
 
@@ -110,10 +122,11 @@ public class CompanyRepository {
      * только поиском (решение владельца 2026-10-19).
      *
      * @param page страница: пользователь (его скрытые не показываются), смещение, сколько, порог сотрудников
-     * @return компании по id; без отметки «не работодатель»
+     * @return компании в порядке {@link #DOUBTFUL_ORDER} — приоритетные, крупные, с сайтом первыми; без отметки
+     *         «не работодатель»
      */
     public List<CompanyItem> doubtful(DoubtfulPage page) {
-        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + DOUBTFUL + " ORDER BY c.id LIMIT ? OFFSET ?",
+        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + DOUBTFUL + DOUBTFUL_ORDER + " LIMIT ? OFFSET ?",
                 CompanyRepository::company, page.userId(), page.minEmployees(), page.limit(), page.offset());
     }
 

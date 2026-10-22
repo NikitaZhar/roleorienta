@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
-import { dateText, openedText, rowCountryText, statusLabel } from './format';
+import { dateText, rowCountryText, rowMarkedText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
@@ -23,18 +23,18 @@ interface Props {
 }
 
 /**
- * Значение справа в строке: дата открытия; в «Мои отклики» — статус пилюлей своего цвета и под ней дата (срез 4
- * нового облика); в «Не интересно» — дата отметки.
+ * Значение справа в строке: дата открытия с подписью «Posted» / «Found» (§179); в «Мои отклики» — статус пилюлей своего цвета и под ней дата (срез 4
+ * нового облика); в «Не интересно» — дата отметки с подписью «Marked» (§180).
  */
 const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode> = {
-  results: (item, i18n) => openedText(item.timeline.opened, i18n),
+  results: (item, i18n) => rowOpenedText(item.timeline.opened, i18n),
   responses: (item, i18n) => (
     <>
       <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
       <span>{dateText(item.timeline.status.at, i18n)}</span>
     </>
   ),
-  notInterested: (item, i18n) => dateText(item.timeline.status.at, i18n),
+  notInterested: (item, i18n) => rowMarkedText(item.timeline.status.at, i18n),
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */

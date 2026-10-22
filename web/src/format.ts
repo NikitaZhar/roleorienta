@@ -39,6 +39,33 @@ export function openedText(opened: Opened, i18n: I18n): string {
     : i18n.t('vacancy.found', { date: date.toLocaleDateString(i18n.locale) });
 }
 
+/**
+ * Короткая дата в строке списка (§179, §180): «14 Oct» — месяц словом, год — только если не текущий.
+ *
+ * @param zone часовой пояс показа; нет — пояс браузера
+ */
+function shortDate(at: string, i18n: I18n, zone?: string): string {
+  const date = new Date(at);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(i18n.locale,
+    { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric', timeZone: zone });
+}
+
+/**
+ * Дата в строке списка результатов (§179): у списка нет шапки, поэтому дата подписана — «Posted 14 Oct» (дата
+ * размещения работодателем или площадкой, день UTC) или «Found 14 Oct» (даты размещения нигде нет — день первого
+ * обнаружения).
+ */
+export function rowOpenedText(opened: Opened, i18n: I18n): string {
+  return i18n.t(opened.byEmployer ? 'list.posted' : 'list.found',
+    { date: shortDate(opened.at, i18n, opened.byEmployer ? 'UTC' : undefined) });
+}
+
+/** Дата отметки в строке «Not interested» (§180): «Marked 14 Oct»; нет даты — пусто. */
+export function rowMarkedText(at: string | null, i18n: I18n): string {
+  return at === null ? '' : i18n.t('list.marked', { date: shortDate(at, i18n) });
+}
+
 /** Дата события по языку интерфейса; нет даты — пусто. */
 export function dateText(at: string | null, i18n: I18n): string {
   return at === null ? '' : new Date(at).toLocaleDateString(i18n.locale);

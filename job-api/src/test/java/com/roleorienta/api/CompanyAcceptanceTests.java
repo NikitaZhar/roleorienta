@@ -123,6 +123,37 @@ class CompanyAcceptanceTests {
     }
 
     /**
+     * Порядок сомнительных (§177): приоритетная — первой; при равном размере — с найденным сайтом выше; размер
+     * неизвестен — ниже известного. Qwzeta — приоритетная без сайта и размера; Qweta — 50+ сотрудников и найденный
+     * сайт; Qwdelta — 50+ без сайта; Qwbeta — сайт без размера. Чужие компании общей БД могут стоять между ними —
+     * сравнивается взаимный порядок.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void doubtfulPutsPriorityThenLargerThenWithSiteFirst() throws Exception {
+        long zeta = company("99010007", "Qwzeta s.r.o.", null);
+        long eta = company("99010008", "Qweta s.r.o.", 50);
+        jdbcTemplate.update("UPDATE company SET priority = TRUE WHERE id = ?", zeta);
+        jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
+                + "VALUES (?, 'SITE_NOT_FOUND', now(), now()), (?, 'FORMAT_UNSUPPORTED', now(), now())", zeta, eta);
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, status, proof) "
+                + "VALUES (?, 'qweta.sk', 'https://qweta.sk/', 'NAME', 'FOUND', 'BRAND')", eta);
+        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
+
+        String list = user.send("GET", "/api/v1/companies/doubtful?size=100", null).body();
+
+        int first = list.indexOf("\"id\":" + zeta + ",");
+        int second = list.indexOf("\"id\":" + eta + ",");
+        int third = list.indexOf("\"id\":" + delta + ",");
+        int fourth = list.indexOf("\"id\":" + beta + ",");
+        assertThat(first).isNotNegative();
+        assertThat(first).isLessThan(second);
+        assertThat(second).isLessThan(third);
+        assertThat(third).isLessThan(fourth);
+    }
+
+    /**
      * Ввод адреса: подключённая — {@code 409}, не http(s) — {@code 400}, принят — {@code 201} «в обработке»; запросы
      * видит только их автор; третий адрес за сутки — {@code 429}.
      *
