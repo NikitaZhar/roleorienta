@@ -435,6 +435,8 @@ class CareerScanTests {
         PAGES.put("/", "<a href=\"/kariera\">Kariéra</a>");
         PAGES.put("/kariera", "<h1>Voľné pracovné pozície</h1><ul><li><a href=\"/kariera/casnik\">Čašník</a></li>"
                 + "<li><a href=\"/kariera/kuchar\">Kuchár</a></li></ul>");
+        PAGES.put("/kariera/casnik", "<h1>Čašník</h1><p>Požiadavky: prax. Ponúkame stravné lístky.</p>");
+        PAGES.put("/kariera/kuchar", "<h1>Kuchár</h1><p>Náplň práce: príprava jedál. Nástup ihneď.</p>");
 
         runScan();
 

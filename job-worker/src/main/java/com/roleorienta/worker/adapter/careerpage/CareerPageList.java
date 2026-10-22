@@ -4,12 +4,15 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -24,8 +27,12 @@ import org.jsoup.nodes.Element;
  *       {@code header}, {@code nav}, {@code footer}; не файл ({@code .pdf} …), не сама страница; текст — от 1 до
  *       {@value #MAX_TITLE_WORDS} слов и не пункт меню ({@link #NOT_TITLE}).</li>
  *   <li>Ссылки группируются по родительскому пути ({@code /kariera/casnik} → {@code /kariera/}); корень и пути
- *       страниц списка ({@code /page/2/}) не в счёт. Список — самая большая группа: не меньше двух ссылок или одна,
- *       если в родительском пути кадровое слово ({@link #CAREER_PATH}).</li>
+ *       страниц списка ({@code /page/2/}) не в счёт. Список — самая большая группа с кадровым словом в родительском
+ *       пути ({@link #CAREER_PATH}; §183: без этого условия самой большой группой часто оказывались товары, меню и
+ *       новости сайта).</li>
+ *   <li>Список подтверждается текстом ({@link #confirmed}, §183): из первых {@value #VACANCY_SAMPLE} страниц вакансий
+ *       хотя бы половина открывшихся — с признаками текста вакансии ({@link #JOB_TEXT}). Проверку делают те, кто
+ *       открывает страницы: чтение источника и проверка сайта.</li>
  *   <li>Место — текст карточки вакансии без текста ссылок (название, кнопки): самый большой родитель ссылки, в
  *       котором нет других вакансий и не больше {@value #MAX_CARD} символов.</li>
  *   <li>Следующая страница списка — {@code rel="next"} или ссылка «Ďalej», «Ďalšia», «Next», «»».</li>
@@ -36,6 +43,9 @@ public final class CareerPageList {
 
     /** Слов в названии вакансии не больше. */
     static final int MAX_TITLE_WORDS = 15;
+
+    /** Сколько первых страниц вакансий списка открывается для подтверждения текстом (§183). */
+    static final int VACANCY_SAMPLE = 3;
 
     /** Символов в тексте карточки вакансии не больше. */
     static final int MAX_CARD = 400;
@@ -55,11 +65,19 @@ public final class CareerPageList {
             + "volne (pracovne )?(pozicie|miesta)|pracovne (ponuky|pozicie|miesta)|ponuka prace|ponuky prace|"
             + "o nas|kontakt|kontakty|domov|home|viac|viac info|viac informacii|detail|detaily|zobrazit|"
             + "zobrazit viac|citat viac|read more|more|apply|uchadzat sa|prihlasit sa|reagovat|dalej|spat|back|"
-            + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|\\d+)$");
+            + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|pracovne prilezitosti|\\d+)$");
 
-    /** Кадровое слово в родительском пути: одна ссылка — уже список. */
+    /** Кадровое слово в родительском пути: группа ссылок под ним может быть списком (§183: «karriere» — тоже). */
     private static final Pattern CAREER_PATH = Pattern.compile(
-            "(?i)kari[eé]r|career|job|pr[aá]c|pozic|ponuk|profesi|vacanc|stellen|nabor");
+            "(?i)kar{1,2}i[eé]r|career|job|pr[aá]c|pozic|ponuk|profesi|vacanc|stellen|nabor");
+
+    /**
+     * Признаки текста вакансии (без диакритики, нижний регистр; §183, замер {@code target/careerpage-nonvacancy.sql}):
+     * требования, обязанности, условия, зарплата, начало работы — по-словацки, по-чешски, по-английски, по-немецки.
+     */
+    private static final Pattern JOB_TEXT = Pattern.compile("poziadavk|napln prace|ponukame|mzd[ay]|nastup|"
+            + "pracovn[yeo] pomer|uvazok|zivotopis|requirement|responsibilit|qualification|we offer|salary|"
+            + "your profile|job description|pozadavk|nabizime|anforderung|aufgaben|wir bieten|ihr profil");
 
     private static final Pattern NEXT_TEXT = Pattern.compile("^(dalej|dalsia|dalsie|next|»|›|>)\\s*(»|›|>)?$");
 
@@ -111,9 +129,9 @@ public final class CareerPageList {
             }
         }
         Optional<Map.Entry<String, Map<String, Element>>> largest = groups.entrySet().stream()
-                .max((first, second) -> Integer.compare(first.getValue().size(), second.getValue().size()));
-        if (largest.isEmpty() || largest.get().getValue().size() < 2
-                && !CAREER_PATH.matcher(largest.get().getKey()).find()) {
+                .filter(group -> CAREER_PATH.matcher(group.getKey()).find())
+                .max(Comparator.comparingInt(group -> group.getValue().size()));
+        if (largest.isEmpty()) {
             return List.of();
         }
         Map<String, Element> links = largest.get().getValue();
@@ -122,6 +140,30 @@ public final class CareerPageList {
             items.add(new Item(url, anchor.text().strip(), card(anchor, links)));
         });
         return items;
+    }
+
+    /**
+     * Подтверждение списка текстом (§183): открываются первые {@value #VACANCY_SAMPLE} страницы вакансий; список
+     * подтверждён, если хотя бы половина открывшихся — с признаками текста вакансии ({@link #JOB_TEXT}). Ни одна не
+     * открылась или список пуст — не подтверждён.
+     *
+     * @param urls адреса вакансий списка в порядке страницы
+     * @param open открывает страницу; пусто — не открылась
+     * @return {@code true} — ссылки списка ведут на вакансии
+     */
+    public static boolean confirmed(List<String> urls, Function<URI, Optional<Document>> open) {
+        List<Boolean> checks = urls.stream().limit(VACANCY_SAMPLE).map(CareerPageList::uri).filter(Objects::nonNull)
+                .map(open).flatMap(Optional::stream).map(page -> looksLikeVacancy(page.text())).toList();
+        long vacancies = checks.stream().filter(Boolean::booleanValue).count();
+        return !checks.isEmpty() && 2 * vacancies >= checks.size();
+    }
+
+    /**
+     * @param text видимый текст страницы
+     * @return в начале текста ({@value #TEXT_LIMIT} символов) есть признак текста вакансии
+     */
+    static boolean looksLikeVacancy(String text) {
+        return JOB_TEXT.matcher(plain(text.substring(0, Math.min(text.length(), TEXT_LIMIT)))).find();
     }
 
     /**

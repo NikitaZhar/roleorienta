@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.careerpage.CareerPageList.Item;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
@@ -78,6 +82,40 @@ class CareerPageListTests {
     }
 
     /**
+     * Группа без кадрового слова в пути — не список, даже самая большая (§183: товары, разделы сайта): берётся меньшая
+     * группа под кадровым путём («karriere» — тоже кадровый); кадровой нет — списка нет.
+     */
+    @Test
+    void largestGroupMustBeUnderCareerPath() {
+        String products = "<a href=\"/produkty/kombajny\">Kombajny</a>"
+                + "<a href=\"/produkty/postrekovace\">Postrekovače</a><a href=\"/produkty/traktory\">Traktory</a>";
+
+        assertThat(CareerPageList.vacancies(page(products + "<a href=\"/kariera/mechanik\">Mechanik</a>")))
+                .extracting(Item::title).containsExactly("Mechanik");
+        assertThat(CareerPageList.vacancies(page(products + "<a href=\"/karriere/mechaniker\">Mechaniker</a>")))
+                .extracting(Item::title).containsExactly("Mechaniker");
+        assertThat(CareerPageList.vacancies(page(products))).isEmpty();
+    }
+
+    /**
+     * Список подтверждается текстом (§183): из первых трёх открывшихся страниц хотя бы половина — с признаками
+     * вакансии; страницы о товаре или новости — нет; ни одна не открылась или список пуст — не подтверждён.
+     */
+    @Test
+    void listIsConfirmedByVacancyText() {
+        Map<String, String> texts = Map.of(
+                LIST + "a", "<h1>Mechanik</h1><p>Požiadavky: vodičský preukaz. Ponúkame stabilnú prácu.</p>",
+                LIST + "b", "<h1>Skladník</h1><p>We offer flexible hours. Requirements: forklift licence.</p>",
+                LIST + "c", "<h1>Kombajn X9</h1><p>Výkon 500 kW, zásobník 14 000 l.</p>",
+                LIST + "d", "<h1>Novinky</h1><p>Otvorili sme novú prevádzku.</p>");
+
+        assertThat(CareerPageList.confirmed(List.of(LIST + "a", LIST + "c"), open(texts))).isTrue();
+        assertThat(CareerPageList.confirmed(List.of(LIST + "c", LIST + "d", LIST + "a"), open(texts))).isFalse();
+        assertThat(CareerPageList.confirmed(List.of(LIST + "x", LIST + "y"), open(texts))).isFalse();
+        assertThat(CareerPageList.confirmed(List.of(), open(texts))).isFalse();
+    }
+
+    /**
      * Фраза «вакансий нет» — с диакритикой и без; обычный текст — нет.
      */
     @Test
@@ -87,6 +125,11 @@ class CareerPageListTests {
         assertThat(CareerPageList.saysNoVacancies(page("<p>Momentálne nie sú voľné pracovné miesta.</p>"))).isTrue();
         assertThat(CareerPageList.saysNoVacancies(page("<p>Currently no open positions.</p>"))).isTrue();
         assertThat(CareerPageList.saysNoVacancies(page("<p>Pošlite nám životopis.</p>"))).isFalse();
+    }
+
+    /** Страница по адресу из {@code texts}; нет адреса — не открылась. */
+    private static Function<URI, Optional<Document>> open(Map<String, String> texts) {
+        return uri -> Optional.ofNullable(texts.get(uri.toString())).map(body -> Jsoup.parse(body, uri.toString()));
     }
 
     private static Document page(String body) {

@@ -25,6 +25,9 @@ import org.junit.jupiter.api.Test;
  */
 class CareerPageAdapterTests {
 
+    /** Страница вакансии с признаками текста вакансии (§183). */
+    private static final String VACANCY = "<h1>Pozícia</h1><p>Požiadavky: prax. Ponúkame stabilnú prácu.</p>";
+
     private final ExternalHttpClient httpClient = TestHttpClients.forLocalStub();
     /** Страница по пути: тело; нет — 404. */
     private final Map<String, String> pages = new HashMap<>();
@@ -65,6 +68,8 @@ class CareerPageAdapterTests {
      */
     @Test
     void readsListPagesWithPlacesAndCountryOfCompany() {
+        pages.put("/kariera/casnik", VACANCY);
+        pages.put("/kariera/kuchar", VACANCY);
         pages.put("/kariera/", "<ul><li><a href=\"/kariera/casnik\">Čašník</a> Piešťany</li>"
                 + "<li><a href=\"/kariera/kuchar\">Kuchár</a></li></ul><a href=\"/kariera/2\">Ďalej</a>");
         pages.put("/kariera/2", "<p>Koniec zoznamu</p>");
@@ -82,6 +87,7 @@ class CareerPageAdapterTests {
      */
     @Test
     void pageLimitGivesPartialRead() {
+        pages.put("/kariera/a1", VACANCY);
         pages.put("/kariera/", list("a") + "<a href=\"/strana2\">Ďalej</a>");
         pages.put("/strana2", list("b") + "<a href=\"/strana3\">Ďalej</a>");
         pages.put("/strana3", list("c"));
@@ -107,6 +113,23 @@ class CareerPageAdapterTests {
         assertThat(none.complete()).isTrue();
         assertThat(none.postings()).isEmpty();
         assertThat(adapter.read(url("/chyba/"), "SK")).isInstanceOf(SourceReadResult.Unavailable.class);
+    }
+
+    /**
+     * Ссылки списка ведут не на вакансии (страницы товаров, §183) — не подтверждены: вакансий нет, чтение неполное
+     * ({@link PartialReason#LIST_NOT_RECOGNIZED}), следующие страницы не открываются.
+     */
+    @Test
+    void unconfirmedListIsNotRecognized() {
+        pages.put("/kariera/", list("a") + "<a href=\"/strana2\">Ďalej</a>");
+        pages.put("/kariera/a1", "<h1>Kombajn X9</h1><p>Výkon 500 kW</p>");
+        pages.put("/kariera/a2", "<h1>Postrekovač</h1><p>Záber 24 m</p>");
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(url("/kariera/"), "SK");
+
+        assertThat(read.partialReason()).isEqualTo(PartialReason.LIST_NOT_RECOGNIZED);
+        assertThat(read.postings()).isEmpty();
+        assertThat(read.responses()).hasSize(1);
     }
 
     /**

@@ -6,6 +6,7 @@ import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import java.net.URI;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.jsoup.Jsoup;
@@ -57,7 +58,7 @@ public class CareerPages {
      * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
      * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
      * кадровой ссылке ({@code deeper}); ничего и там — сама страница как источник {@code careerpage}, если на ней
-     * распознан список вакансий или фраза «вакансий нет» (§136). Хост и путь кадровой страницы — по её конечному
+     * распознан и подтверждён текстом вакансий список (§136, §183) или фраза «вакансий нет». Хост и путь кадровой страницы — по её конечному
      * адресу после переадресаций (аудит §66).
      *
      * @param careerPage открытая кадровая страница
@@ -82,7 +83,8 @@ public class CareerPages {
         if (!deeperBoards.isEmpty()) {
             return deeperBoards;
         }
-        return actual.toString().length() <= MAX_BOARD && (!CareerPageList.vacancies(careerPage).isEmpty()
+        List<String> listed = CareerPageList.vacancies(careerPage).stream().map(CareerPageList.Item::url).toList();
+        return actual.toString().length() <= MAX_BOARD && (CareerPageList.confirmed(listed, this::page)
                 || CareerPageList.saysNoVacancies(careerPage))
                 ? Set.of(new Board(CareerPageAdapter.PROVIDER, actual.toString())) : Set.of();
     }

@@ -89,6 +89,18 @@ class StatePortalAdapterTests {
     }
 
     /**
+     * Внешний id объявления profesia.sk (аудит §182): только адрес на её хосте; «profesia.sk/…» в параметре чужого
+     * адреса — объявление другой площадки, id — адрес как есть.
+     */
+    @Test
+    void profesiaIdOnlyForProfesiaHost() {
+        assertThat(StatePortalAdapter.externalId("https://www.profesia.sk/praca/firma/O123456"))
+                .isEqualTo("profesia:123456");
+        assertThat(StatePortalAdapter.externalId("https://x.example/?r=profesia.sk/O1"))
+                .isEqualTo("https://x.example/?r=profesia.sk/O1");
+    }
+
+    /**
      * Дата размещения со страницы объявления (§168): своя вакансия портала — «Dátum a čas vytvorenia»; объявление
      * profesia.sk — {@code itemprop="datePosted"}; без даты на странице и объявление другой площадки — даты нет.
      */

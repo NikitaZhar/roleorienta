@@ -48,7 +48,9 @@ public class StatePortalAdapter implements SourceAdapter {
 
     private static final Pattern REGISTRATION_NUMBER = Pattern.compile("\\d{8}");
     private static final Pattern PORTAL_OFFER = Pattern.compile("/pracovne-ponuky/([0-9a-f]{8}-[0-9a-f-]{27})");
-    private static final Pattern PROFESIA_OFFER = Pattern.compile("profesia\\.sk/(?:.*/)?O(\\d+)");
+    /** Объявление profesia.sk: адрес начинается с её хоста; «profesia.sk/…» в параметре чужого адреса — нет (§182). */
+    private static final Pattern PROFESIA_OFFER =
+            Pattern.compile("(?i)^https?://(?:www\\.)?profesia\\.sk/(?:.*/)?O(\\d+)");
     private static final Pattern EMPLOYER_NUMBER = Pattern.compile("IČO:\\s*(\\d{8})");
     /** Внешний id своей вакансии портала — uuid. */
     private static final Pattern OFFER_UUID = Pattern.compile("[0-9a-f]{8}-[0-9a-f-]{27}");
@@ -318,7 +320,7 @@ public class StatePortalAdapter implements SourceAdapter {
         }
         Matcher profesia = PROFESIA_OFFER.matcher(url);
         if (profesia.find()) {
-            return "profesia:" + profesia.group(1);
+            return PROFESIA_ID + profesia.group(1);
         }
         return url.isBlank() || url.length() > MAX_EXTERNAL_ID ? null : url;
     }

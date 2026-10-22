@@ -31,6 +31,8 @@ import org.springframework.stereotype.Component;
  *       2026-10-19): вакансия собственной страницы словацкой фирмы без указанного города — в Словакии.</li>
  *   <li>Следующие страницы списка — не больше {@link CareerPageProperties#maxPages()}; упор — неполное чтение
  *       ({@link PartialReason#PAGE_LIMIT}), отказ следующей страницы — {@link PartialReason#PAGE_FAILED}.</li>
+ *   <li>Ссылки первой страницы списка не подтверждены текстом ({@link CareerPageList#confirmed}, §183) — вакансий не
+ *       найдено: это не список вакансий (товары, меню, новости сайта).</li>
  *   <li>Вакансий не найдено: фраза «вакансий нет» — полное пустое чтение (прежние вакансии закрываются по общим
  *       правилам); иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): сбой разбора, а не закрытие.</li>
  *   <li>Отказ первой страницы — источник недоступен.</li>
@@ -87,6 +89,11 @@ public class CareerPageAdapter implements SourceAdapter {
                 postings.putIfAbsent(item.url(), new FetchedPosting(item.url(), item.title(), item.url(),
                         location(item.card(), country), null));
             }
+            if (number == 1 && !postings.isEmpty()
+                    && !CareerPageList.confirmed(List.copyOf(postings.keySet()), this::open)) {
+                postings.clear();
+                break;
+            }
             Optional<URI> next = CareerPageList.nextPage(page, visited);
             if (next.isEmpty()) {
                 break;
@@ -130,6 +137,14 @@ public class CareerPageAdapter implements SourceAdapter {
         String text = (main != null ? main : page.body()).text();
         return new FetchedPosting(externalId, page.title(), externalId, null,
                 text.length() > properties.maxContent() ? text.substring(0, properties.maxContent()) : text);
+    }
+
+    /**
+     * @return открывшаяся страница с конечным адресом; пусто — не открылась
+     */
+    private Optional<Document> open(URI uri) {
+        return httpClient.get(uri) instanceof HttpResult.Success success
+                ? Optional.of(Jsoup.parse(success.body(), success.locationOr(uri).toString())) : Optional.empty();
     }
 
     /**
