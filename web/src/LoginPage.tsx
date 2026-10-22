@@ -15,7 +15,8 @@ const LOGO_SIZE = 34;
  * макету (технический документ §15, шаг 2): эмблема и название, строка о приложении, почта, пароль, «Sign in» —
  * главное действие, «Create account» — действие-ссылка; переключатель EN | RU в правом верхнем углу (§162): выбор
  * запоминается в браузере и записывается в учётную запись при регистрации. Ошибки — на языке экрана: неверные поля
- * (400), занятая почта (409), неверный пароль (401).
+ * (400), занятая почта (409), неверный пароль (401). Новый облик (§175): название и строка о приложении над светлой
+ * карточкой с формой, как карточка условий поиска.
  */
 export function LoginPage({ onSignedIn }: Props) {
   const { language, t } = useI18n();
@@ -46,7 +47,7 @@ export function LoginPage({ onSignedIn }: Props) {
       <div className="login-card">
         <h1><Logo size={LOGO_SIZE} />roleorienta</h1>
         <p className="tagline">{t('app.tagline')}</p>
-        <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
+        <form className="login-form" onSubmit={(event: FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           submit(false);
         }}>

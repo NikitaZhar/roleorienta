@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { type Account, type DigestFrequency, saveSettings } from './api';
 import { errorText, type Language, type MessageKey, useI18n } from './i18n';
 
@@ -24,31 +24,35 @@ interface Props {
 
 /**
  * «Settings» из меню учётной записи (макет §147; стенограмма §162, §164): частота сводки на почту (переключатель из
- * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>», язык интерфейса. «Save» записывает выбор в
- * учётную запись и сразу переключает язык экрана. Часовой пояс браузера записывает сверка при открытии приложения
- * ({@code App}): пояс, которого не знает PostgreSQL, не мешает сохранить язык и частоту (аудит §165).
+ * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>», язык интерфейса. Новый облик (§175, макет
+ * §170): кнопки «Save» нет — выбор записывается в учётную запись сразу, язык экрана переключается сразу; язык — тем же
+ * переключателем на выбор, что и частота; заголовок — как у остальных разделов. Часовой пояс браузера записывает
+ * сверка при открытии приложения ({@code App}): пояс, которого не знает PostgreSQL, не мешает сохранить язык и
+ * частоту (аудит §165).
  */
 export function SettingsPage({ account, onSaved }: Props) {
   const { language, setLanguage, t } = useI18n();
-  const [choice, setChoice] = useState<Language>(language);
   const [frequency, setFrequency] = useState<DigestFrequency>(account.digestFrequency);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  /** Язык сменили переключателем в панели, пока страница открыта: выбор следует за ним (аудит §165). */
-  useEffect(() => setChoice(language), [language]);
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /**
+   * Выбор записывается сразу (макет §170): язык экрана переключается сразу; ошибка — сообщением, частота на экране
+   * возвращается к записанной в учётной записи.
+   */
+  async function save(change: { language?: Language; digestFrequency?: DigestFrequency }) {
     setBusy(true);
     setMessage(null);
+    setSaved(false);
     try {
-      const updated = await saveSettings({ language: choice, digestFrequency: frequency });
+      const updated = await saveSettings(change);
       setLanguage(updated.language);
+      setFrequency(updated.digestFrequency);
       onSaved(updated);
       setSaved(true);
     } catch (failure) {
+      setFrequency(account.digestFrequency);
       setMessage(errorText(failure, t));
     } finally {
       setBusy(false);
@@ -56,40 +60,38 @@ export function SettingsPage({ account, onSaved }: Props) {
   }
 
   return (
-    <section>
-      <h2>{t('settings.title')}</h2>
-      <form className="settings" onSubmit={save}>
-        <fieldset>
-          <legend>{t('settings.digest')}</legend>
-          <div className="segmented" role="radiogroup" aria-label={t('settings.digest')}>
-            {FREQUENCIES.map((item) => (
-              <label key={item.value} className={item.value === frequency ? 'current' : ''}>
-                <input type="radio" name="frequency" value={item.value} checked={item.value === frequency}
-                  onChange={() => {
-                    setFrequency(item.value);
-                    setSaved(false);
-                  }} />
-                {t(item.label)}
-              </label>
-            ))}
-          </div>
-          <p className="muted">{t('settings.digestNote', { email: account.email })}</p>
-        </fieldset>
-        <label>
-          {t('settings.language')}
-          <select value={choice} onChange={(event) => {
-            setChoice(event.target.value as Language);
-            setSaved(false);
-          }}>
-            {LANGUAGES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-        {message !== null && <p className="error" role="alert">{message}</p>}
-        <div className="actions">
-          <button type="submit" className="primary" disabled={busy}>{t('settings.save')}</button>
-          {saved && <span className="muted" role="status">{t('settings.saved')}</span>}
+    <section className="settings">
+      <h1>{t('settings.title')}</h1>
+      <fieldset disabled={busy}>
+        <legend>{t('settings.digest')}</legend>
+        <div className="segmented" role="radiogroup" aria-label={t('settings.digest')}>
+          {FREQUENCIES.map((item) => (
+            <label key={item.value} className={item.value === frequency ? 'current' : ''}>
+              <input type="radio" name="frequency" value={item.value} checked={item.value === frequency}
+                onChange={() => {
+                  setFrequency(item.value);
+                  void save({ digestFrequency: item.value });
+                }} />
+              {t(item.label)}
+            </label>
+          ))}
         </div>
-      </form>
+        <p className="muted">{t('settings.digestNote', { email: account.email })}</p>
+      </fieldset>
+      <fieldset disabled={busy}>
+        <legend>{t('settings.language')}</legend>
+        <div className="segmented" role="radiogroup" aria-label={t('settings.language')}>
+          {LANGUAGES.map((item) => (
+            <label key={item.value} className={item.value === language ? 'current' : ''}>
+              <input type="radio" name="language" value={item.value} checked={item.value === language}
+                onChange={() => void save({ language: item.value })} />
+              {item.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {message !== null && <p className="error" role="alert">{message}</p>}
+      {saved && <p className="muted" role="status">{t('settings.saved')}</p>}
     </section>
   );
 }

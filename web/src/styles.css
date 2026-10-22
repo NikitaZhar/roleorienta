@@ -504,6 +504,14 @@ nav .current,
   color: var(--muted);
 }
 
+/* Форма входа — светлой карточкой (§175). */
+.login-form {
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
 /* Условия поиска (§152; новый облик — §171): свёрнутые — строка меток с «Edit»; «Edit» раскрывает весь набор фильтров
    с «Search / Cancel». Оба вида — светлая карточка с тонкой линией. */
 .filters,
@@ -657,7 +665,8 @@ nav .current,
   }
 }
 
-/* Пилюли: короткая метка состояния; цвет дополняет текст. */
+/* Метка состояния (класс .pill, в стенограмме — «пилюля»): маленький закруглённый овал с одним-двумя словами
+   («New», «CV sent», «closed»); цвет дополняет текст. */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -988,16 +997,21 @@ table.metrics tr.part th[scope='row'] {
   margin: 8px 0;
 }
 
+/* Таблицы раздела «Companies» (новый облик, §175): без белой подложки — строки разделяют тонкие линии, как в списке
+   вакансий; название компании — плотнее, действия — ссылками. */
 table.companies {
   border-collapse: collapse;
   width: 100%;
   margin: 8px 0;
-  background: var(--surface);
+}
+
+table.companies .company {
+  font-weight: 500;
 }
 
 table.companies th,
 table.companies td {
-  padding: 6px 8px;
+  padding: 10px 8px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
@@ -1017,7 +1031,43 @@ table.companies td.row-actions {
 }
 
 table.companies td.row-actions button + button {
-  margin-left: 6px;
+  margin-left: 2px;
+}
+
+.company-search input {
+  flex: 1;
+  max-width: 420px;
+}
+
+/* Вкладки раздела «Companies» (§175): как разделы в панели — текст, текущая — акцентом и линией снизу; под ними —
+   одна строка пояснения текущей вкладки (§176). */
+.tab-note {
+  margin: 0 0 4px;
+}
+/* Вкладки раздела «Companies» (§175): как разделы в панели — текст, текущая — акцентом и линией снизу. */
+.tabs {
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.tabs button {
+  height: 40px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+}
+
+.tabs button:hover {
+  background: none;
+  color: var(--ink);
+}
+
+.tabs button.current {
+  border-bottom-color: var(--accent);
 }
 
 .nowrap {
@@ -1170,32 +1220,14 @@ table.dictionary .nowrap {
   gap: 4px;
 }
 
-/* Метка группы компании — в одну строку; расшифровка меток под таблицей компаний (§163). */
+/* Метка группы компании — в одну строку (§163). */
 .badge {
   white-space: nowrap;
 }
 
-.legend {
-  display: grid;
-  gap: 4px;
-  margin: 8px 0 16px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.legend div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.legend dt,
-.legend dd {
-  margin: 0;
-}
-
-/* Частота сводки (§164): переключатель из четырёх — подписи-кнопки, выбранная — акцентом. */
+/* Частота сводки и язык в «Settings» (§164; новый облик — §175): переключатель на выбор, как EN | RU в панели —
+   подложка, выбранный вариант — светлый. Сам кружок выбора скрыт; рамка фокуса — у подписи (:has — «содержит»).
+   https://developer.mozilla.org/en-US/docs/Web/CSS/:has */
 .settings fieldset {
   display: grid;
   gap: 6px;
@@ -1205,26 +1237,134 @@ table.dictionary .nowrap {
 }
 
 .segmented {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
+  padding: 2px;
+  justify-self: start;
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .segmented label {
   display: inline-flex;
-  padding: 6px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: var(--muted);
   cursor: pointer;
 }
 
 .segmented label.current {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(20, 20, 20, 0.08);
+}
+
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .segmented input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
+}
+
+/* Телефон (новый облик, срез 7 — §175; макет §170): поля страницы 16 px; разделы — нижней панелью во всю ширину
+   (position: fixed — закреплена у нижнего края окна), текущий — акцентом и линией сверху; сведения о вакансии —
+   подпись над значением; таблицы «Companies» — карточкой на строку (заголовок таблицы скрыт, ячейки — одна под
+   другой). https://developer.mozilla.org/en-US/docs/Web/CSS/position#fixed */
+@media (max-width: 640px) {
+  .page {
+    padding: 20px 16px 88px;
+  }
+
+  .bar-inner {
+    padding: 0 16px;
+    gap: 12px;
+    min-height: 52px;
+  }
+
+  .brand {
+    margin-right: auto;
+  }
+
+  .bar nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-wrap: nowrap;
+    gap: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+  }
+
+  .bar nav button {
+    flex: 1;
+    min-width: 0;
+    height: 56px;
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1.2;
+    border-top-color: transparent;
+    border-bottom: 0;
+  }
+
+  .bar nav button.current {
+    border-top-color: var(--accent);
+  }
+
+  .details dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .details dd {
+    margin-bottom: 8px;
+  }
+
+  .company-search input {
+    max-width: none;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 16px;
+  }
+
+  .tabs button {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  table.companies thead {
+    display: none;
+  }
+
+  table.companies tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.companies td {
+    display: block;
+    padding: 2px 0;
+    border: 0;
+  }
+
+  table.companies td.row-actions {
+    text-align: left;
+    margin-left: -8px;
+  }
+
+  .login-form {
+    padding: 16px;
+  }
 }
