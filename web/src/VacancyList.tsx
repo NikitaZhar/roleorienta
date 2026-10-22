@@ -5,7 +5,7 @@ import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
- * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «Found N · new M»,
+ * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «N vacancies · M new»,
  * плашка «New», объяснение пустого списка по условиям; у остальных — свой пустой текст и своя последняя колонка.
  */
 export type ListKind = 'results' | 'responses' | 'notInterested';
@@ -217,7 +217,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
 }
 
 /** Пустой раздел — одинаково во всех разделах (§152): строка-заголовок и, если есть, пояснение; без рамки (§171). */
-export function Empty({ title, text }: { title: string; text?: string }) {
+function Empty({ title, text }: { title: string; text?: string }) {
   return (
     <div className="empty">
       <p className="lead">{title}</p>

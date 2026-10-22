@@ -168,7 +168,7 @@ export function CompaniesPage() {
     }
   }
 
-  /** Подпись вкладки: «Doubtful · 12»; без числа — только название. */
+  /** Подпись вкладки: «No vacancies collected · 12»; без числа — только название. */
   function tabLabel(item: { tab: Tab; label: MessageKey }): string {
     const count = tabCount(item.tab);
     return count === null ? t(item.label) : t(item.label) + ' · ' + count;

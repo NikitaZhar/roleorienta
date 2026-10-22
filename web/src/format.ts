@@ -46,7 +46,8 @@ export function openedText(opened: Opened, i18n: I18n): string {
  */
 function shortDate(at: string, i18n: I18n, zone?: string): string {
   const date = new Date(at);
-  const sameYear = date.getFullYear() === new Date().getFullYear();
+  const year = (moment: Date) => (zone === 'UTC' ? moment.getUTCFullYear() : moment.getFullYear());
+  const sameYear = year(date) === year(new Date());
   return date.toLocaleDateString(i18n.locale,
     { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric', timeZone: zone });
 }

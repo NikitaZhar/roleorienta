@@ -475,8 +475,9 @@ nav .current,
   color: var(--ink);
 }
 
-/* Вход. */
+/* Вход; position: relative — переключатель языка ставится в угол экрана входа. */
 .login {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -1044,7 +1045,7 @@ table.companies td.row-actions button + button {
 .tab-note {
   margin: 0 0 4px;
 }
-/* Вкладки раздела «Companies» (§175): как разделы в панели — текст, текущая — акцентом и линией снизу. */
+
 .tabs {
   gap: 20px;
   border-bottom: 1px solid var(--border);
@@ -1078,9 +1079,10 @@ section {
   margin: 24px 0;
 }
 
-/* Группа компании: цвет дополняет подпись (§143). */
+/* Группа компании: цвет дополняет подпись (§143); метка — в одну строку (§163). */
 .badge {
   display: inline-block;
+  white-space: nowrap;
   padding: 1px 8px;
   border-radius: 999px;
   font-size: 0.85em;
@@ -1198,10 +1200,6 @@ table.dictionary .nowrap {
   box-shadow: 0 1px 2px rgba(20, 20, 20, 0.08);
 }
 
-.login {
-  position: relative;
-}
-
 .login-language {
   position: absolute;
   top: 16px;
@@ -1218,11 +1216,6 @@ table.dictionary .nowrap {
 .settings label {
   display: grid;
   gap: 4px;
-}
-
-/* Метка группы компании — в одну строку (§163). */
-.badge {
-  white-space: nowrap;
 }
 
 /* Частота сводки и язык в «Settings» (§164; новый облик — §175): переключатель на выбор, как EN | RU в панели —

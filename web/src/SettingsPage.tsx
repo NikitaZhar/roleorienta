@@ -38,8 +38,9 @@ export function SettingsPage({ account, onSaved }: Props) {
   const [saved, setSaved] = useState(false);
 
   /**
-   * Выбор записывается сразу (макет §170): язык экрана переключается сразу; ошибка — сообщением, частота на экране
-   * возвращается к записанной в учётной записи.
+   * Выбор записывается сразу (макет §170): выбранный язык экрана переключается сразу; смена частоты язык экрана не
+   * трогает (аудит §182: язык из панели мог не записаться в учётную запись — экран не переключается назад); ошибка —
+   * сообщением, частота на экране возвращается к записанной в учётной записи.
    */
   async function save(change: { language?: Language; digestFrequency?: DigestFrequency }) {
     setBusy(true);
@@ -47,7 +48,9 @@ export function SettingsPage({ account, onSaved }: Props) {
     setSaved(false);
     try {
       const updated = await saveSettings(change);
-      setLanguage(updated.language);
+      if (change.language !== undefined) {
+        setLanguage(updated.language);
+      }
       setFrequency(updated.digestFrequency);
       onSaved(updated);
       setSaved(true);
