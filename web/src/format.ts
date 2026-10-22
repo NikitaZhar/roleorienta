@@ -54,12 +54,6 @@ export function historyLabel(event: HistoryLine['event'], i18n: I18n): string {
   return i18n.t(('history.' + event) as MessageKey);
 }
 
-/** Статус в строке «Мои отклики»: «статус · дата», у закрытой работодателем — «· closed» (§147). */
-export function statusText(status: UserStatus, i18n: I18n): string {
-  return [statusLabel(status.code, i18n), dateText(status.at, i18n), status.closed ? i18n.t('vacancy.closed') : '']
-    .filter((part) => part !== '').join(' · ');
-}
-
 /** Страны Европейского союза (как регион «EU» в regions.json воркера): такая территория — «from EU» (§158). */
 const EU = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU',
   'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'];

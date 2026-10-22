@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
-import { dateText, openedText, rowCountryText, statusText } from './format';
+import { dateText, openedText, rowCountryText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
@@ -22,11 +22,19 @@ interface Props {
   onOpen: (id: number) => void;
 }
 
-/** Значение справа в строке: дата открытия, статус с датой или дата отметки «Не интересно». */
-const LAST_COLUMN: Record<ListKind, { value: (item: VacancyItem, i18n: I18n) => string }> = {
-  results: { value: (item, i18n) => openedText(item.timeline.opened, i18n) },
-  responses: { value: (item, i18n) => statusText(item.timeline.status, i18n) },
-  notInterested: { value: (item, i18n) => dateText(item.timeline.status.at, i18n) },
+/**
+ * Значение справа в строке: дата открытия; в «Мои отклики» — статус пилюлей своего цвета и под ней дата (срез 4
+ * нового облика); в «Не интересно» — дата отметки.
+ */
+const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode> = {
+  results: (item, i18n) => openedText(item.timeline.opened, i18n),
+  responses: (item, i18n) => (
+    <>
+      <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
+      <span>{dateText(item.timeline.status.at, i18n)}</span>
+    </>
+  ),
+  notInterested: (item, i18n) => dateText(item.timeline.status.at, i18n),
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
@@ -46,9 +54,10 @@ const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
  * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция; под ней
  * «работодатель · страна»; справа — дата или статус (агентство — только в сведениях). Результаты поиска (открытые позже
  * сверху, дата открытия — §127; над списком — «N vacancies · M new · Updated hourly», у новых — пилюля «New»,
- * просмотренные — светлее, §156), «Мои отклики»
- * (последняя колонка — статус и дата, у закрытой — «closed») или «Не интересно» (дата отметки и «Return» в строке:
- * вакансия возвращается к прежнему статусу, §156). Внизу — номера страниц и выбор размера страницы; выбор
+ * просмотренные — светлее, §156). «Мои отклики» и «Не интересно» (срез 4 нового облика): заголовок раздела и рядом
+ * число вакансий; в «Мои отклики» справа — статус пилюлей и дата, у закрытой работодателем — пилюля «closed» рядом с
+ * позицией; в «Не интересно» строки светлее, справа — дата отметки и «Return»: вакансия возвращается к прежнему
+ * статусу (§156). Внизу — номера страниц и выбор размера страницы; выбор
  * запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку; недоступно —
  * размер по умолчанию). Условий нет — список не показывается (выше — «Set up your search»); задано, а вакансий нет —
  * «пока нет». Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые 5 с в течение
@@ -130,7 +139,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   }
   const results = kind === 'results';
   const actions = kind === 'notInterested';
-  const column = LAST_COLUMN[kind];
+  const side = LAST_COLUMN[kind];
   if (results && data.total === 0 && !hasConditions) {
     return null;
   }
@@ -143,7 +152,14 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
-      ) : title !== undefined && <h1>{title}</h1>}
+      ) : title !== undefined && (
+        <div className="list-head">
+          <h1>{title}</h1>
+          {data.total > 0 && (
+            <span className="muted">· {data.total === 1 ? t('list.countOne') : t('list.count', { total: data.total })}</span>
+          )}
+        </div>
+      )}
       {data.total === 0 && kind !== 'results' && <Empty title={t(EMPTY_TEXT[kind])} />}
       {collecting && (
         <div className="collecting" role="status">
@@ -163,19 +179,21 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         <ul className="rows">
           {data.items.map((item) => {
             const fresh = results && item.timeline.status.code === 'NEW';
+            const seen = (results && !fresh) || actions;
             return (
               <li key={item.id} className={actions ? 'actionable' : undefined}>
-                <button type="button" className={results && !fresh ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
+                <button type="button" className={seen ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
                   <span className="row-main">
                     <span className="row-title">
                       {fresh && <span className="pill pill-fresh">{t('list.new')}</span>}
                       <span className="position">{item.position}</span>
+                      {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
                     </span>
                     <span className="row-meta">
                       {(item.parties.employer ?? t('list.noEmployer')) + ' · ' + rowCountryText(item.work, i18n)}
                     </span>
                   </span>
-                  <span className="row-side">{column.value(item, i18n)}</span>
+                  <span className="row-side">{side(item, i18n)}</span>
                 </button>
                 {actions && (
                   <button type="button" className="link row-action" disabled={loading} onClick={() => giveBack(item.id)}>

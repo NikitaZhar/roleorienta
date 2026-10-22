@@ -775,9 +775,29 @@ nav .current,
 
 .row-side {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
   font-size: 13px;
   color: var(--muted);
   text-align: right;
+}
+
+/* Статус в «Мои отклики» (срез 4 нового облика): цвет пилюли дополняет подпись — отправлено резюме — акцент,
+   собеседование — бирюзовый, отказ — приглушённый. */
+.pill.status-APPLIED {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.pill.status-INTERVIEW {
+  background: var(--info-soft);
+  color: var(--info-ink);
+}
+
+.pill.status-REJECTED {
+  color: var(--muted);
 }
 
 /* Строка с действием («Return» в «Не интересно»): строка-кнопка и действие рядом. */
