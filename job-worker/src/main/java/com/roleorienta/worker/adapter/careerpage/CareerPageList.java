@@ -27,11 +27,13 @@ import org.jsoup.nodes.Element;
  *       {@code header}, {@code nav}, {@code footer}; не файл ({@code .pdf} …), не сама страница; текст — от 1 до
  *       {@value #MAX_TITLE_WORDS} слов и не пункт меню ({@link #NOT_TITLE}).</li>
  *   <li>Ссылки группируются по родительскому пути ({@code /kariera/casnik} → {@code /kariera/}); корень и пути
- *       страниц списка ({@code /page/2/}) не в счёт. Список — самая большая группа с кадровым словом в родительском
- *       пути ({@link #CAREER_PATH}; §183: без этого условия самой большой группой часто оказывались товары, меню и
- *       новости сайта).</li>
- *   <li>Список подтверждается текстом ({@link #confirmed}, §183): из первых {@value #VACANCY_SAMPLE} страниц вакансий
- *       хотя бы половина открывшихся — с признаками текста вакансии ({@link #JOB_TEXT}). Проверку делают те, кто
+ *       страниц списка ({@code /page/2/}) не в счёт. Список — самая большая группа с кадровым словом
+ *       ({@link #CAREER_PATH}) в родительском пути или в хосте ссылок ({@code careers.firma.com}; §183: без этого
+ *       условия самой большой группой часто оказывались товары, меню и новости сайта; §186: только путь терял
+ *       отдельные кадровые сайты).</li>
+ *   <li>Список подтверждается текстом ({@link #confirmed}, §183, §186): из первых {@value #VACANCY_SAMPLE} страниц
+ *       вакансий хотя бы одна открывшаяся — с признаком текста вакансии ({@link #JOB_TEXT}) в основном тексте
+ *       ({@code main}, иначе {@code body} без {@code header}, {@code nav}, {@code footer}). Проверку делают те, кто
  *       открывает страницы: чтение источника и проверка сайта.</li>
  *   <li>Место — текст карточки вакансии без текста ссылок (название, кнопки): самый большой родитель ссылки, в
  *       котором нет других вакансий и не больше {@value #MAX_CARD} символов.</li>
@@ -67,7 +69,10 @@ public final class CareerPageList {
             + "zobrazit viac|citat viac|read more|more|apply|uchadzat sa|prihlasit sa|reagovat|dalej|spat|back|"
             + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|pracovne prilezitosti|\\d+)$");
 
-    /** Кадровое слово в родительском пути: группа ссылок под ним может быть списком (§183: «karriere» — тоже). */
+    /**
+     * Кадровое слово в родительском пути или хосте: группа ссылок под ним может быть списком (§183: «karriere» —
+     * тоже; §186: хост — тоже).
+     */
     private static final Pattern CAREER_PATH = Pattern.compile(
             "(?i)kar{1,2}i[eé]r|career|job|pr[aá]c|pozic|ponuk|profesi|vacanc|stellen|nabor");
 
@@ -129,7 +134,7 @@ public final class CareerPageList {
             }
         }
         Optional<Map.Entry<String, Map<String, Element>>> largest = groups.entrySet().stream()
-                .filter(group -> CAREER_PATH.matcher(group.getKey()).find())
+                .filter(group -> underCareer(group.getKey(), group.getValue().keySet()))
                 .max(Comparator.comparingInt(group -> group.getValue().size()));
         if (largest.isEmpty()) {
             return List.of();
@@ -143,19 +148,32 @@ public final class CareerPageList {
     }
 
     /**
-     * Подтверждение списка текстом (§183): открываются первые {@value #VACANCY_SAMPLE} страницы вакансий; список
-     * подтверждён, если хотя бы половина открывшихся — с признаками текста вакансии ({@link #JOB_TEXT}). Ни одна не
-     * открылась или список пуст — не подтверждён.
+     * Подтверждение списка текстом (§183; §186 — порог ниже: лучше лишние страницы, чем потерянные вакансии):
+     * открываются первые {@value #VACANCY_SAMPLE} страницы вакансий; список подтверждён, если хотя бы одна из
+     * открывшихся — с признаком текста вакансии ({@link #JOB_TEXT}) в основном тексте ({@link #mainText}). Ни одна не
+     * открылась, ни в одной нет признака или список пуст — не подтверждён.
      *
      * @param urls адреса вакансий списка в порядке страницы
      * @param open открывает страницу; пусто — не открылась
      * @return {@code true} — ссылки списка ведут на вакансии
      */
     public static boolean confirmed(List<String> urls, Function<URI, Optional<Document>> open) {
-        List<Boolean> checks = urls.stream().limit(VACANCY_SAMPLE).map(CareerPageList::uri).filter(Objects::nonNull)
-                .map(open).flatMap(Optional::stream).map(page -> looksLikeVacancy(page.text())).toList();
-        long vacancies = checks.stream().filter(Boolean::booleanValue).count();
-        return !checks.isEmpty() && 2 * vacancies >= checks.size();
+        return urls.stream().limit(VACANCY_SAMPLE).map(CareerPageList::uri).filter(Objects::nonNull)
+                .map(open).flatMap(Optional::stream).anyMatch(page -> looksLikeVacancy(mainText(page)));
+    }
+
+    /**
+     * Основной текст страницы (§186): {@code main}; нет — {@code body} без {@code header}, {@code nav},
+     * {@code footer} — признаки вакансии в меню и подвале сайта (ссылка «Kariéra», «Pošlite životopis») не в счёт.
+     */
+    static String mainText(Document page) {
+        Element main = page.selectFirst("main");
+        if (main != null) {
+            return main.text();
+        }
+        Element body = page.body().clone();
+        body.select(String.join(",", LAYOUT_TAGS)).remove();
+        return body.text();
     }
 
     /**
@@ -195,6 +213,16 @@ public final class CareerPageList {
     public static boolean saysNoVacancies(Document page) {
         String text = page.text();
         return NO_VACANCIES.matcher(plain(text.substring(0, Math.min(text.length(), TEXT_LIMIT)))).find();
+    }
+
+    /**
+     * @param parent родительский путь группы ссылок
+     * @param urls   адреса ссылок группы
+     * @return кадровое слово в родительском пути или в хосте хотя бы одной ссылки группы
+     */
+    private static boolean underCareer(String parent, Set<String> urls) {
+        return CAREER_PATH.matcher(parent).find() || urls.stream().map(CareerPageList::uri).filter(Objects::nonNull)
+                .anyMatch(link -> CAREER_PATH.matcher(link.getHost()).find());
     }
 
     /**

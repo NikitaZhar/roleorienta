@@ -98,8 +98,19 @@ class CareerPageListTests {
     }
 
     /**
-     * Список подтверждается текстом (§183): из первых трёх открывшихся страниц хотя бы половина — с признаками
-     * вакансии; страницы о товаре или новости — нет; ни одна не открылась или список пуст — не подтверждён.
+     * Кадровое слово в хосте ссылок — тоже кадровый путь (§186: careers.priva.com — вакансии под {@code /o/}).
+     */
+    @Test
+    void careerHostCountsAsCareerPath() {
+        assertThat(CareerPageList.vacancies(page("<a href=\"https://careers.firma.sk/o/mechanik\">Mechanik</a>"
+                + "<a href=\"https://careers.firma.sk/o/skladnik\">Skladník</a>")))
+                .extracting(Item::title).containsExactly("Mechanik", "Skladník");
+    }
+
+    /**
+     * Список подтверждается текстом (§183, §186): из первых трёх открывшихся страниц хотя бы одна — с признаком
+     * вакансии в основном тексте; признак только в меню или подвале — не в счёт; страницы о товаре или новости — нет;
+     * ни одна не открылась или список пуст — не подтверждён.
      */
     @Test
     void listIsConfirmedByVacancyText() {
@@ -107,10 +118,14 @@ class CareerPageListTests {
                 LIST + "a", "<h1>Mechanik</h1><p>Požiadavky: vodičský preukaz. Ponúkame stabilnú prácu.</p>",
                 LIST + "b", "<h1>Skladník</h1><p>We offer flexible hours. Requirements: forklift licence.</p>",
                 LIST + "c", "<h1>Kombajn X9</h1><p>Výkon 500 kW, zásobník 14 000 l.</p>",
-                LIST + "d", "<h1>Novinky</h1><p>Otvorili sme novú prevádzku.</p>");
+                LIST + "d", "<h1>Novinky</h1><p>Otvorili sme novú prevádzku.</p>",
+                LIST + "e", "<nav>Kariéra: pošlite životopis</nav><h1>Blog</h1><footer>We offer jobs</footer>",
+                LIST + "f", "<nav>Ponúkame</nav><main><h1>Blog</h1><p>Nový článok.</p></main>");
 
         assertThat(CareerPageList.confirmed(List.of(LIST + "a", LIST + "c"), open(texts))).isTrue();
-        assertThat(CareerPageList.confirmed(List.of(LIST + "c", LIST + "d", LIST + "a"), open(texts))).isFalse();
+        assertThat(CareerPageList.confirmed(List.of(LIST + "c", LIST + "d", LIST + "a"), open(texts))).isTrue();
+        assertThat(CareerPageList.confirmed(List.of(LIST + "c", LIST + "d"), open(texts))).isFalse();
+        assertThat(CareerPageList.confirmed(List.of(LIST + "e", LIST + "f"), open(texts))).isFalse();
         assertThat(CareerPageList.confirmed(List.of(LIST + "x", LIST + "y"), open(texts))).isFalse();
         assertThat(CareerPageList.confirmed(List.of(), open(texts))).isFalse();
     }
