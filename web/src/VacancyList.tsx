@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
-  type PositionCount, resultPositions, searchCondition, setStatus, type VacancyItem, type VacancyPage,
+  type PositionCount, type ResultFilter, resultFilters, searchCondition, setStatus, type VacancyItem, type VacancyPage,
 } from './api';
 import { dateText, rowMarkedText, rowMetaText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
@@ -17,8 +17,8 @@ interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
   title?: string;
   kind: ListKind;
-  /** Страница списка; {@code position} — код позиции условий для отбора (§194, только у результатов). */
-  load: (page: number, size: number, position?: string) => Promise<VacancyPage>;
+  /** Страница списка; {@code filter} — отбор внутри результатов (§194, §200; только у результатов). */
+  load: (page: number, size: number, filter?: ResultFilter) => Promise<VacancyPage>;
   /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
   poll: boolean;
   /** Счётчик перечитываний: изменился — перечитать текущую страницу (статус вакансии изменился в сведениях). */
@@ -98,7 +98,7 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
  *
  * <p>Результаты поиска: открытые позже сверху (дата открытия — §127); над списком «N vacancies · M not opened · Updated
  * hourly», у не открытых — пилюля «Not opened», открытые — светлее (§156, §191). Строка — ссылка на первичную
- * публикацию в новой вкладке («↗» у позиции), открытие ставит «Viewed» (§193); в строке «✓» — откликнулся (CV sent,
+ * публикацию в новой вкладке («↗» у позиции), открытие ставит «Viewed» (§193); в строке «✓» — откликнулся (Applied,
  * уходит в «Мои отклики») и «×» — не интересна: строка сразу скрывается, на {@value UNDO_MS} мс внизу «Moved to … ·
  * Undo»; отметка уходит на сервер только по истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк
  * истории); новая отметка, уход из списка или выход — ожидающая уходит сразу ({@link flushMarks}); закрытая вкладка
@@ -130,29 +130,38 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const pending = useRef<{ id: number; mark: RowMark; timer: number } | null>(null);
   /** Позиции условий с числами (метки отбора, §194) и выбранная; одна позиция — меток нет. */
   const [positions, setPositions] = useState<PositionCount[]>([]);
-  const [position, setPosition] = useState<string | undefined>(undefined);
+  /** Сколько пришло после прошлого захода (§200): больше нуля — метка «New since last visit», число не показывается. */
+  const [recent, setRecent] = useState(0);
+  /** Выбранный отбор: позиция и (или) «после прошлого захода». */
+  const [filter, setFilter] = useState<ResultFilter>({});
+  /** Полоса «Returned to search results» после «Return» (§199). */
+  const [returned, setReturned] = useState(false);
   /** «Employer declined» под «Моими откликами» (§196): свёрнуто, пока не раскрыли. */
   const [expanded, setExpanded] = useState(false);
   /**
    * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
    * создана при нажатии и видела бы значения того времени.
    */
-  const view = useRef({ page: 1, size, position });
+  const view = useRef({ page: 1, size, filter });
   useEffect(() => {
-    view.current = { page: data?.page ?? 1, size, position };
+    view.current = { page: data?.page ?? 1, size, filter };
   });
 
-  async function show(page: number, rows: number, chosen: string | undefined = position) {
+  async function show(page: number, rows: number, chosen: ResultFilter = filter) {
     setLoading(true);
     setMessage(null);
     try {
       let target = chosen;
       if (kind === 'results') {
-        const counts = await resultPositions();
-        setPositions(counts);
-        if (target !== undefined && !counts.some((item) => item.code === target)) {
-          target = undefined;
-          setPosition(undefined);
+        const labels = await resultFilters();
+        setPositions(labels.positions);
+        setRecent(labels.sinceLastVisit);
+        const position = target.position !== undefined
+          && labels.positions.some((item) => item.code === target.position) ? target.position : undefined;
+        const sinceLastVisit = target.sinceLastVisit === true && labels.sinceLastVisit > 0 ? true : undefined;
+        if (position !== target.position || sinceLastVisit !== target.sinceLastVisit) {
+          target = { position, sinceLastVisit };
+          setFilter(target);
         }
       }
       let next = await load(page, rows, target);
@@ -170,7 +179,10 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     }
   }
 
-  /** «Return» в строке «Не интересно»: вакансия уходит к прежнему статусу, страница перечитывается. */
+  /**
+   * «Return» в строке «Не интересно»: вакансия уходит к прежнему статусу, страница перечитывается; внизу на
+   * {@value UNDO_MS} мс «Returned to search results» (§199) — вакансия не пропадает молча.
+   */
   async function giveBack(id: number) {
     try {
       await setStatus(id, 'RETURNED');
@@ -178,6 +190,8 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       setMessage(errorText(failure, t));
       return;
     }
+    setReturned(true);
+    window.setTimeout(() => setReturned(false), UNDO_MS);
     show(data?.page ?? 1, size);
   }
 
@@ -195,7 +209,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       setMessage(errorText(failure, t));
       return;
     }
-    await show(view.current.page, view.current.size, view.current.position);
+    await show(view.current.page, view.current.size, view.current.filter);
     setDismissed((ids) => ids.filter((other) => other !== id));
   }
 
@@ -261,11 +275,13 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     };
   }, []);
 
-  /** Метка позиции (§194): выбор — только её вакансии с первой страницы; повторное нажатие — снова все. */
-  function choosePosition(code: string) {
-    const chosen = position === code ? undefined : code;
-    setPosition(chosen);
-    show(1, size, chosen);
+  /**
+   * Метка позиции (§194) или «New since last visit» (§200): выбор — только эти вакансии с первой страницы; повторное
+   * нажатие — снимает отбор; позиция и «после прошлого захода» сочетаются.
+   */
+  function choose(next: ResultFilter) {
+    setFilter(next);
+    show(1, size, next);
   }
 
   function resize(rows: number) {
@@ -328,13 +344,20 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           )}
         </div>
       )}
-      {results && positions.length > 1 && (
+      {results && (positions.length > 1 || recent > 0 || filter.sinceLastVisit === true) && (
         <div className="position-filter" role="group" aria-label={t('list.byPosition')}>
-          {positions.map((item) => (
-            <button key={item.code} type="button" aria-pressed={position === item.code}
-              className={position === item.code ? 'chip current' : 'chip'}
-              disabled={loading || (item.count === 0 && position !== item.code)}
-              onClick={() => choosePosition(item.code)}>
+          {(recent > 0 || filter.sinceLastVisit === true) && (
+            <button type="button" aria-pressed={filter.sinceLastVisit === true}
+              className={filter.sinceLastVisit === true ? 'chip current' : 'chip'} disabled={loading}
+              onClick={() => choose({ ...filter, sinceLastVisit: filter.sinceLastVisit === true ? undefined : true })}>
+              <span className="dot" aria-hidden="true" /> {t('list.sinceLastVisitFilter')}
+            </button>
+          )}
+          {positions.length > 1 && positions.map((item) => (
+            <button key={item.code} type="button" aria-pressed={filter.position === item.code}
+              className={filter.position === item.code ? 'chip current' : 'chip'}
+              disabled={loading || (item.count === 0 && filter.position !== item.code)}
+              onClick={() => choose({ ...filter, position: filter.position === item.code ? undefined : item.code })}>
               {item.name} <span className="chip-count">{item.count}</span>
             </button>
           ))}
@@ -401,6 +424,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           })}
         </ul>
       )}
+      {returned && waiting === null && (
+        <div className="undo-bar" role="status"><span>{t('list.returned')}</span></div>
+      )}
       {waiting !== null && (
         <div className="undo-bar" role="status">
           <span>{t(MARK_MOVED[waiting])}</span>
@@ -421,7 +447,8 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
 /**
  * Содержимое строки (§171): позиция с пометками, «работодатель · страна», справа — дата или статус. {@code link} —
  * строка ведёт в публикацию (§193): у позиции «↗». {@code matches} — к каким позициям условий подошла (§194; при
- * нескольких позициях в условиях) — перед «работодатель · страна».
+ * нескольких позициях в условиях) — после «работодатель · страна», плашками того же вида, что метки над списком, без
+ * числа (решение владельца 2026-10-26).
  */
 function RowContent({ item, fresh, side, link = false, matches = [] }: { item: VacancyItem; fresh: boolean;
   side: ReactNode; link?: boolean; matches?: string[] }) {
@@ -440,9 +467,8 @@ function RowContent({ item, fresh, side, link = false, matches = [] }: { item: V
           {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
         </span>
         <span className="row-meta">
-          {matches.length > 0 && <span className="row-match">{matches.join(', ')}</span>}
-          {matches.length > 0 && meta !== '' && ' · '}
           {meta}
+          {matches.map((name) => <span key={name} className="row-match">{name}</span>)}
         </span>
       </span>
       <span className="row-side">{side}</span>

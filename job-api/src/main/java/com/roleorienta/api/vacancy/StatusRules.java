@@ -12,8 +12,10 @@ import java.util.List;
  *   <li>Статус пользователя, равный текущему, — ничего (повтор запроса). Иначе он становится текущим; строка
  *       истории заменяет последнюю, если обе — статусы отклика ({@link StatusEvent#response()}) и последняя того же
  *       дня, иначе добавляется: «Не интересно» всегда добавляется и не заменяется (аудит §165).</li>
- *   <li>«Вернуть» — только из «Не интересно»: добавляется строка «Возвращена», текущим становится последний статус
- *       истории до «Не интересно» (кроме «Не интересно» и «Возвращена»); такого нет — «Просмотрена».</li>
+ *   <li>«Вернуть» из «Не интересно»: добавляется строка «Возвращена», текущим становится последний статус истории до
+ *       «Не интересно» (кроме «Не интересно» и «Возвращена»); такого нет — «Просмотрена».</li>
+ *   <li>«Вернуть» из «Отклик отправлен» (§200: ошибочный «✓» — отклик без собеседования и отказа): добавляется строка
+ *       «Возвращена», текущим становится «Просмотрена» — вакансия снова в результатах. Из других статусов — ничего.</li>
  * </ul>
  */
 final class StatusRules {
@@ -33,8 +35,11 @@ final class StatusRules {
             return current == null ? new Change(StatusEvent.VIEWED, null, StatusEvent.VIEWED) : Change.NONE;
         }
         if (requested == StatusEvent.RETURNED) {
-            return current == StatusEvent.NOT_INTERESTED
-                    ? new Change(StatusEvent.RETURNED, null, beforeNotInterested(history)) : Change.NONE;
+            if (current == StatusEvent.NOT_INTERESTED) {
+                return new Change(StatusEvent.RETURNED, null, beforeNotInterested(history));
+            }
+            return current == StatusEvent.APPLIED
+                    ? new Change(StatusEvent.RETURNED, null, StatusEvent.VIEWED) : Change.NONE;
         }
         if (requested == current) {
             return Change.NONE;

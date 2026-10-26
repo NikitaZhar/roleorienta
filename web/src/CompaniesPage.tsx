@@ -27,6 +27,9 @@ const TABS: { tab: Tab; label: MessageKey; note: MessageKey }[] = [
   { tab: 'addresses', label: 'companies.tabAddresses', note: 'companies.noteAdded' },
 ];
 
+/** Компаний в ответе поиска не больше (как {@code CompanyRepository.SEARCH_LIMIT}): столько — подсказка уточнить. */
+const SEARCH_LIMIT = 50;
+
 /** Пока есть адреса «в проверке», их состояние обновляется само с таким промежутком. */
 const REQUEST_POLL_MS = 15000;
 
@@ -106,6 +109,9 @@ export function CompaniesPage() {
           </form>
           {found !== null && (found.length === 0 ? <p className="muted">{t('companies.noneFound')}</p>
             : <CompanyTable items={found} onAdded={added} />)}
+          {found !== null && found.length >= SEARCH_LIMIT && (
+            <p className="muted">{t('companies.firstOnly', { count: SEARCH_LIMIT })}</p>
+          )}
         </section>
       )}
       {tab === 'addresses' && (

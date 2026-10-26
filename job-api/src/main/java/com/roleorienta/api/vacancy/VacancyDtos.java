@@ -48,6 +48,25 @@ public final class VacancyDtos {
     }
 
     /**
+     * Метки отбора над результатами (§194, §200).
+     *
+     * @param positions      позиции условий с числом видимых вакансий, больше — первыми
+     * @param sinceLastVisit сколько видимых вакансий впервые получено после прошлого захода (метка «New since last
+     *                       visit» показывается, если больше нуля; число на экране не показывается)
+     */
+    public record ResultFilters(List<PositionCount> positions, long sinceLastVisit) {
+    }
+
+    /**
+     * Отбор внутри результатов.
+     *
+     * @param position       код позиции условий (§194); {@code null} — все
+     * @param sinceLastVisit только вакансии, впервые полученные после прошлого захода (§200)
+     */
+    public record ResultFilter(String position, boolean sinceLastVisit) {
+    }
+
+    /**
      * Когда вакансия открыта и её статус у пользователя (§156).
      *
      * @param opened         когда открыта: дата размещения работодателем или «найдена» (§127)
@@ -153,7 +172,7 @@ public final class VacancyDtos {
      * Строка истории работы с вакансией (§156).
      *
      * @param event {@code RECEIVED} — «Получена» (первая выдача), {@code CLOSED} — «Закрыта работодателем», иначе
-     *              статус {@link StatusEvent} ({@code RETURNED} — «Возвращена» из «Не интересно»)
+     *              статус {@link StatusEvent} ({@code RETURNED} — «Возвращена» из «Не интересно» или из отклика, §200)
      * @param at    когда
      */
     public record HistoryLine(String event, Instant at) {
@@ -163,7 +182,7 @@ public final class VacancyDtos {
      * Запрос смены статуса (§156).
      *
      * @param status статус; {@code VIEWED} ставит экран при открытии публикации из результатов (§193),
-     *               {@code RETURNED} — «Вернуть» из «Не интересно»
+     *               {@code RETURNED} — «Вернуть» из «Не интересно» или из «Отклик отправлен» (§200)
      * @param zone   часовой пояс браузера (IANA, например {@code Europe/Bratislava}): по нему определяется день —
      *               статус того же дня заменяет прежний выбор этого дня (решение владельца 2026-10-21)
      */

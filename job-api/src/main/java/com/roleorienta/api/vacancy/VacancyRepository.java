@@ -93,6 +93,16 @@ public class VacancyRepository {
                                                     JOIN position pp ON pp.id = pm.position_id
                                                     WHERE pm.vacancy_id = v.id AND pp.code = ?))""";
 
+    /**
+     * Отбор «после прошлого захода» внутри результатов (§200): вакансия впервые получена пользователем (первая выдача по
+     * любой версии его условий) позже границы захода; параметр — граница дважды; {@code null} — без отбора.
+     */
+    private static final String SINCE_VISIT = """
+             AND (CAST(? AS TIMESTAMPTZ) IS NULL
+                  OR (SELECT min(dd.delivered_at) FROM delivered_vacancy dd
+                      JOIN search_condition cc ON cc.id = dd.search_condition_id
+                      WHERE dd.vacancy_id = v.id AND cc.user_id = c.user_id) > ?)""";
+
     /** Вакансии пользователя с текущим статусом из списка ({@code %1$s}); параметр — пользователь. */
     private static final String STATUS_FROM = """
              FROM vacancy_user_status st JOIN vacancy v ON v.id = st.vacancy_id
@@ -159,26 +169,32 @@ public class VacancyRepository {
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param page         смещение и размер страницы
      * @param position     код позиции условий — только подходящие к ней (§194); {@code null} — все
+     * @param recentFrom   только впервые полученные позже (§200: «после прошлого захода»); {@code null} — все
      * @return вакансии страницы
      */
-    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, String position) {
+    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, String position,
+            Instant recentFrom) {
+        OffsetDateTime recent = recentFrom == null ? null : utc(recentFrom);
         return jdbcTemplate.query("SELECT " + COLUMNS.formatted("c.user_id") + DELIVERED_FROM + ONE_POSITION
-                + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), condition, utc(visibleSince), position, position, page.size(),
-                page.offset());
+                + SINCE_VISIT + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row), condition, utc(visibleSince), position, position, recent, recent,
+                page.size(), page.offset());
     }
 
     /**
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param position     код позиции условий (§194); {@code null} — все
+     * @param recentFrom   только впервые полученные позже (§200); {@code null} — все
      * @return сколько вакансий в видимой части накопленного списка (те же условия, что у {@link #delivered}) и
      *         сколько из них новых (статуса пользователя нет)
      */
-    public Counts countDelivered(long condition, Instant visibleSince, String position) {
+    public Counts countDelivered(long condition, Instant visibleSince, String position, Instant recentFrom) {
+        OffsetDateTime recent = recentFrom == null ? null : utc(recentFrom);
         return jdbcTemplate.queryForObject("SELECT count(*), count(*) FILTER (WHERE st.status IS NULL)"
-                + DELIVERED_FROM + ONE_POSITION, (row, number) -> new Counts(row.getLong(1), row.getLong(2)),
-                condition, utc(visibleSince), position, position);
+                + DELIVERED_FROM + ONE_POSITION + SINCE_VISIT,
+                (row, number) -> new Counts(row.getLong(1), row.getLong(2)),
+                condition, utc(visibleSince), position, position, recent, recent);
     }
 
     /**

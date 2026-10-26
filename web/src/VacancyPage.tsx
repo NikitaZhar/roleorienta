@@ -23,9 +23,9 @@ const RESPONSES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
  * («Only office», «Only remote — from …», «Hybrid»), требования к языку (§158), дата открытия («found …», если
  * работодатель даты не дал, §127); чего нет, той строки нет (§192, принцип владельца: нет информации — показываем то,
  * что есть); затем ссылка на первичную публикацию; затем — вместе — текущий статус с датой и выбором (§195: у отклика —
- * «CV sent», «Interview», «Employer declined»; у «Не интересно» вместо выбора — «Return», вакансия возвращается в
- * результаты и карточка закрывается) и история с датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
- * перечитывается; при возврате список перечитывается — вакансия, ушедшая в другой раздел, из него пропадает.
+ * «Applied», «Interview», «Employer declined», у «Applied» ещё «Return to results» — ошибочный «✓» (§200); у «Не
+ * интересно» вместо выбора — «Return»; вакансия возвращается в результаты и карточка закрывается) и история с датами, раньше сверху. После смены статуса — сразу возврат к списку
+ * (§199), список перечитывается: новая метка статуса или вакансия, ушедшая в свёрнутые отказы, видны там.
  * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146). Открываются только из «Моих
  * откликов» и «Не интересно» (§193): «Viewed» здесь не ставится — его ставит открытие публикации из результатов.
  */
@@ -42,20 +42,22 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
     vacancy(id).then(setDetails, (failure: unknown) => setMessage(errorText(failure, t)));
   }, [id]);
 
+  /** Смена статуса отклика (§199): сразу возврат к списку — изменение видно там (метка или свёрнутые отказы). */
   async function choose(status: StatusEvent) {
     setBusy(true);
     try {
       await setStatus(id, status);
-      changed.current = true;
-      setDetails(await vacancy(id));
+      onBack(true);
     } catch (failure) {
       setMessage(errorText(failure, t));
-    } finally {
       setBusy(false);
     }
   }
 
-  /** «Return» у «Не интересно» (§195): вакансия возвращается к прежнему статусу, карточка закрывается. */
+  /**
+   * «Return» у «Не интересно» (§195) и «Return to results» у «Applied» (§200): вакансия возвращается в результаты,
+   * карточка закрывается.
+   */
   async function giveBack() {
     setBusy(true);
     try {
@@ -111,6 +113,9 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
                 {RESPONSES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
               </select>
             </label>
+          )}
+          {status.code === 'APPLIED' && (
+            <button type="button" disabled={busy} onClick={giveBack}>{t('vacancy.returnToResults')}</button>
           )}
           <span className="muted">{[dateText(status.at, i18n), status.closed ? t('vacancy.closedByEmployer') : '']
             .filter((part) => part !== '').join(' · ')}</span>

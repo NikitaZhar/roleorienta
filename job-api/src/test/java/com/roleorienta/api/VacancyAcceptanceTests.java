@@ -295,6 +295,12 @@ class VacancyAcceptanceTests {
 
         String again = client.send("GET", "/api/v1/me/vacancies", null).body();
         assertThat(sinceLastVisit(again, "Fresh")).isTrue();
+
+        // §200: метка-отбор «New since last visit» — число для метки и отбор только пришедших после прошлого захода.
+        assertThat(client.send("GET", "/api/v1/me/vacancies/filters", null).body()).endsWith("\"sinceLastVisit\":1}");
+        String recent = client.send("GET", "/api/v1/me/vacancies?since=true", null).body();
+        assertThat(titles(recent)).isEqualTo("Fresh");
+        assertThat(recent).contains("\"total\":1,");
     }
 
     /**
@@ -316,9 +322,10 @@ class VacancyAcceptanceTests {
                 SELECT ?, id, 'test', 'title' FROM position WHERE code = 'devops-engineer'
                 """, both);
 
-        assertThat(client.send("GET", "/api/v1/me/vacancies/positions", null).body()).isEqualTo(
-                "[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"count\":2},"
-                        + "{\"code\":\"devops-engineer\",\"name\":\"DevOps engineer\",\"count\":1}]");
+        assertThat(client.send("GET", "/api/v1/me/vacancies/filters", null).body()).isEqualTo(
+                "{\"positions\":[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"count\":2},"
+                        + "{\"code\":\"devops-engineer\",\"name\":\"DevOps engineer\",\"count\":1}],"
+                        + "\"sinceLastVisit\":0}");
         String devops = client.send("GET", "/api/v1/me/vacancies?position=devops-engineer", null).body();
         assertThat(titles(devops)).isEqualTo("JavaAndDevops");
         assertThat(devops).contains("\"total\":1,", "\"matches\":[\"DevOps engineer\",\"Java developer\"]");

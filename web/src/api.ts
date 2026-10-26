@@ -332,14 +332,23 @@ function listPage(path: string, page: number, size: number): Promise<VacancyPage
   return request<VacancyPage>('GET', path + '?page=' + page + '&size=' + size);
 }
 
+/** Отбор внутри результатов: позиция условий (§194) и «после прошлого захода» (§200). */
+export interface ResultFilter {
+  position?: string;
+  sinceLastVisit?: boolean;
+}
+
 /**
- * @param position код позиции условий — только подходящие к ней (§194); нет — все
+ * @param filter отбор внутри результатов; нет — все
  * @returns страница накопленного списка: номер с 1, строк на странице
  */
-export function vacancies(page: number, size: number, position?: string): Promise<VacancyPage> {
+export function vacancies(page: number, size: number, filter: ResultFilter = {}): Promise<VacancyPage> {
   const query = new URLSearchParams({ page: String(page), size: String(size) });
-  if (position !== undefined) {
-    query.set('position', position);
+  if (filter.position !== undefined) {
+    query.set('position', filter.position);
+  }
+  if (filter.sinceLastVisit === true) {
+    query.set('since', 'true');
   }
   return request<VacancyPage>('GET', '/api/v1/me/vacancies?' + query.toString());
 }
@@ -351,9 +360,18 @@ export interface PositionCount {
   count: number;
 }
 
-/** @returns позиции текущих условий с числом видимых вакансий; условия не заданы — пусто */
-export function resultPositions(): Promise<PositionCount[]> {
-  return request<PositionCount[]>('GET', '/api/v1/me/vacancies/positions');
+/**
+ * Метки отбора над результатами: позиции условий с числами (§194) и сколько пришло после прошлого захода (§200;
+ * число на экране не показывается — только метка, если больше нуля).
+ */
+export interface ResultFilters {
+  positions: PositionCount[];
+  sinceLastVisit: number;
+}
+
+/** @returns метки отбора над результатами; условия не заданы — пусто */
+export function resultFilters(): Promise<ResultFilters> {
+  return request<ResultFilters>('GET', '/api/v1/me/vacancies/filters');
 }
 
 /** @returns страница отмеченных «Не интересно» */

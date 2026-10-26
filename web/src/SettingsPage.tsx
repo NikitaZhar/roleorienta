@@ -1,12 +1,6 @@
 import { useState } from 'react';
 import { type Account, type DigestFrequency, saveSettings } from './api';
-import { errorText, type Language, type MessageKey, useI18n } from './i18n';
-
-/** Языки на выбор: подпись — на самом языке, чтобы её узнал тот, кто им владеет. */
-const LANGUAGES: { value: Language; label: string }[] = [
-  { value: 'en', label: 'English' },
-  { value: 'ru', label: 'Русский' },
-];
+import { errorText, type MessageKey, useI18n } from './i18n';
 
 /** Частота сводки на почту (бизнес-описание §6, макет §147, §164): переключатель из четырёх. */
 const FREQUENCIES: { value: DigestFrequency; label: MessageKey }[] = [
@@ -24,33 +18,30 @@ interface Props {
 
 /**
  * «Settings» из меню учётной записи (макет §147; стенограмма §162, §164): частота сводки на почту (переключатель из
- * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>», язык интерфейса. Новый облик (§175, макет
- * §170): кнопки «Save» нет — выбор записывается в учётную запись сразу, язык экрана переключается сразу; язык — тем же
- * переключателем на выбор, что и частота; заголовок — как у остальных разделов. Часовой пояс браузера записывает
- * сверка при открытии приложения ({@code App}): пояс, которого не знает PostgreSQL, не мешает сохранить язык и
- * частоту (аудит §165).
+ * четырёх), строка «письмо приходит в 8:00 по вашему времени на <почта>». Язык интерфейса — только переключателем EN |
+ * RU в панели (§200, аудит §197: два места для одного выбора). Новый облик (§175, макет §170): кнопки «Save» нет — выбор
+ * записывается в учётную запись сразу; заголовок — как у остальных разделов. Часовой пояс браузера записывает сверка
+ * при открытии приложения ({@code App}): пояс, которого не знает PostgreSQL, не мешает сохранить частоту (аудит
+ * §165).
  */
 export function SettingsPage({ account, onSaved }: Props) {
-  const { language, setLanguage, t } = useI18n();
+  const { t } = useI18n();
   const [frequency, setFrequency] = useState<DigestFrequency>(account.digestFrequency);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
   /**
-   * Выбор записывается сразу (макет §170): выбранный язык экрана переключается сразу; смена частоты язык экрана не
-   * трогает (аудит §182: язык из панели мог не записаться в учётную запись — экран не переключается назад); ошибка —
-   * сообщением, частота на экране возвращается к записанной в учётной записи.
+   * Выбор записывается сразу (макет §170); язык экрана не трогается (аудит §182: язык из панели мог не записаться в
+   * учётную запись — экран не переключается назад); ошибка — сообщением, частота на экране возвращается к записанной
+   * в учётной записи.
    */
-  async function save(change: { language?: Language; digestFrequency?: DigestFrequency }) {
+  async function save(digestFrequency: DigestFrequency) {
     setBusy(true);
     setMessage(null);
     setSaved(false);
     try {
-      const updated = await saveSettings(change);
-      if (change.language !== undefined) {
-        setLanguage(updated.language);
-      }
+      const updated = await saveSettings({ digestFrequency });
       setFrequency(updated.digestFrequency);
       onSaved(updated);
       setSaved(true);
@@ -73,25 +64,13 @@ export function SettingsPage({ account, onSaved }: Props) {
               <input type="radio" name="frequency" value={item.value} checked={item.value === frequency}
                 onChange={() => {
                   setFrequency(item.value);
-                  void save({ digestFrequency: item.value });
+                  void save(item.value);
                 }} />
               {t(item.label)}
             </label>
           ))}
         </div>
         <p className="muted">{t('settings.digestNote', { email: account.email })}</p>
-      </fieldset>
-      <fieldset disabled={busy}>
-        <legend>{t('settings.language')}</legend>
-        <div className="segmented" role="radiogroup" aria-label={t('settings.language')}>
-          {LANGUAGES.map((item) => (
-            <label key={item.value} className={item.value === language ? 'current' : ''}>
-              <input type="radio" name="language" value={item.value} checked={item.value === language}
-                onChange={() => void save({ language: item.value })} />
-              {item.label}
-            </label>
-          ))}
-        </div>
       </fieldset>
       {message !== null && <p className="error" role="alert">{message}</p>}
       {saved && <p className="muted" role="status">{t('settings.saved')}</p>}

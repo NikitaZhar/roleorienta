@@ -97,9 +97,16 @@ class StatusRulesTests {
                         new Change(StatusEvent.RETURNED, null, StatusEvent.VIEWED));
     }
 
+    /** «Вернуть» из «Отклик отправлен» (§200) — снова «Просмотрена»; из собеседования, отказа, просмотренной — ничего. */
     @Test
-    void returnOnlyFromNotInterested() {
+    void returnFromAppliedGivesViewedOtherwiseNothing() {
         assertThat(StatusRules.change(StatusEvent.APPLIED, List.of(), StatusEvent.RETURNED, TODAY))
+                .isEqualTo(new Change(StatusEvent.RETURNED, null, StatusEvent.VIEWED));
+        assertThat(StatusRules.change(StatusEvent.INTERVIEW, List.of(), StatusEvent.RETURNED, TODAY))
+                .isEqualTo(Change.NONE);
+        assertThat(StatusRules.change(StatusEvent.REJECTED, List.of(), StatusEvent.RETURNED, TODAY))
+                .isEqualTo(Change.NONE);
+        assertThat(StatusRules.change(StatusEvent.VIEWED, List.of(), StatusEvent.RETURNED, TODAY))
                 .isEqualTo(Change.NONE);
     }
 
