@@ -14,17 +14,19 @@ import org.springframework.transaction.annotation.Transactional;
 public interface SourceRepository extends JpaRepository<Source, Long> {
 
     /**
-     * Один канал на компанию (общая часть запросов): все источники, кроме источника канала ниже кадровой страницы
-     * (государственный портал, {@code ?1}), если у его компании есть другой источник — у компании читается один канал
-     * (бизнес-описание §4.1); кадровый сайт группы (роль {@code GROUP}, §81) портал не отключает.
+     * Один канал на компанию (общая часть запросов): все незакрытые источники (закрывает администратор, §206), кроме
+     * источника канала ниже кадровой страницы (государственный портал, {@code ?1}), если у его компании есть другой
+     * незакрытый источник — у компании читается один канал (бизнес-описание §4.1); кадровый сайт группы (роль
+     * {@code GROUP}, §81) портал не отключает.
      */
     String ONE_CHANNEL = """
             SELECT s.* FROM source s
-            WHERE (s.provider <> ?1
+            WHERE s.closed_at IS NULL
+              AND (s.provider <> ?1
                    OR NOT EXISTS (SELECT 1 FROM company_source own
                                   JOIN company_source other ON other.company_id = own.company_id
                                                                AND other.role <> 'GROUP'
-                                  JOIN source o ON o.id = other.source_id
+                                  JOIN source o ON o.id = other.source_id AND o.closed_at IS NULL
                                   WHERE own.source_id = s.id AND o.provider <> ?1))
             """;
 

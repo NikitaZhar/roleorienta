@@ -81,4 +81,16 @@ public final class AdminDtos {
      */
     public record TaskStats(long queued, Instant oldestQueuedAt, long failedLastDay) {
     }
+
+    /**
+     * Источник вакансий без компании (§206, «Sources without company»): по нему администратор решает, закрыть ли его.
+     *
+     * @param id           источник
+     * @param provider     провайдер ({@code careerpage}, {@code greenhouse} …)
+     * @param board        доска: адрес страницы или код у системы найма
+     * @param openPostings открытых публикаций
+     * @param titles       до 5 названий открытых публикаций — видно, вакансии ли это
+     */
+    public record UnlinkedSource(long id, String provider, String board, long openPostings, List<String> titles) {
+    }
 }

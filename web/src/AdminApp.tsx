@@ -1,11 +1,43 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   type Admin, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
-  metrics, type MetricRow, type MetricsTable, setNotEmployer,
+  metrics, type MetricRow, type MetricsTable, searchMisses, setNotEmployer,
 } from './api';
 import { GroupBadge } from './companyGroups';
+import { CareerRequestsAdmin, UnlinkedSourcesAdmin } from './CompaniesAdmin';
 import { DictionaryAdmin } from './DictionaryAdmin';
 import { SearchMissesAdmin } from './SearchMissesAdmin';
+
+/** Разделы страницы — по задачам администратора (§206): ядро работает, растёт ли охват, находят ли пользователи
+ * нужное, ошибки по компаниям. */
+type Tab = 'status' | 'metrics' | 'positions' | 'companies';
+
+const TABS: { tab: Tab; label: string; note: string }[] = [
+  { tab: 'status', label: 'Status', note: 'Is the core working right now?' },
+  { tab: 'metrics', label: 'Metrics', note: 'Are there more vacancies day by day?' },
+  { tab: 'positions', label: 'Positions', note: 'Do users find what they look for?' },
+  { tab: 'companies', label: 'Companies', note: 'Fix what the application got wrong about a company.' },
+];
+
+/** Ключ выбранной вкладки в хранилище вкладки браузера: перезагрузка страницы не сбрасывает раздел. */
+const TAB_KEY = 'roleorienta.admin.tab';
+
+function storedTab(): Tab {
+  try {
+    const value = sessionStorage.getItem(TAB_KEY);
+    return TABS.some((item) => item.tab === value) ? value as Tab : 'status';
+  } catch {
+    return 'status';
+  }
+}
+
+function storeTab(tab: Tab) {
+  try {
+    sessionStorage.setItem(TAB_KEY, tab);
+  } catch {
+    // Хранилище недоступно: вкладка запоминается до перезагрузки.
+  }
+}
 
 /** Сколько последних дней показывать. */
 const DAYS = 14;
@@ -20,6 +52,7 @@ const LABELS: Record<string, string> = {
   companies_failed: 'Channel not found',
   vacancies_active: 'Vacancies active',
   vacancies_recheck: 'Vacancies needing recheck',
+  vacancies_recognized: 'Vacancies with recognized profession',
   vacancies_new: 'Vacancies new',
   vacancies_closed: 'Vacancies closed',
   sources: 'Sources',
@@ -27,6 +60,59 @@ const LABELS: Record<string, string> = {
   sources_overdue: 'Sources with overdue read',
   operations_failed: 'Operations failed after all retries',
 };
+
+/** Сравнение сводки — с днём неделей раньше (дни — новые первыми); данных меньше — с самым старым днём. */
+const WEEK = 7;
+
+/** Итог показателя по дням (разрез «»); нет — пустой. */
+function totals(table: MetricsTable, metric: string): (number | null)[] {
+  return table.rows.find((row) => row.metric === metric && row.dimension === '')?.values ?? [];
+}
+
+/** Доля распознанной профессии среди открытых (актуальные и на перепроверке), %, по дням. */
+function recognizedShare(table: MetricsTable): (number | null)[] {
+  const recognized = totals(table, 'vacancies_recognized');
+  const active = totals(table, 'vacancies_active');
+  const recheck = totals(table, 'vacancies_recheck');
+  return table.days.map((_, index) => {
+    const open = (active[index] ?? 0) + (recheck[index] ?? 0);
+    const value = recognized[index];
+    return value === null || value === undefined || open === 0 ? null : Math.round((value * 100) / open);
+  });
+}
+
+/**
+ * Сводка над таблицей (§206): пять чисел последнего дня и изменение за неделю — «вакансий становится больше?».
+ * У просроченных чтений и сбоев рост — плохо: стрелка та же, вывод за администратором.
+ */
+function MetricsSummary({ table }: { table: MetricsTable }) {
+  const items: { label: string; values: (number | null)[]; unit?: string }[] = [
+    { label: 'Open vacancies', values: totals(table, 'vacancies_active') },
+    { label: 'With recognized profession', values: recognizedShare(table), unit: ' %' },
+    { label: 'Companies with channel', values: totals(table, 'companies_connected') },
+    { label: 'Sources read overdue', values: totals(table, 'sources_overdue') },
+    { label: 'Operations failed', values: totals(table, 'operations_failed') },
+  ];
+  const before = Math.min(WEEK, table.days.length - 1);
+  return (
+    <ul className="metric-summary">
+      {items.map((item) => {
+        const now = item.values[0] ?? null;
+        const then = before > 0 ? item.values[before] ?? null : null;
+        const change = now !== null && then !== null ? now - then : null;
+        return (
+          <li key={item.label}>
+            <span className="muted">{item.label}</span>
+            <strong>{now === null ? '–' : now + (item.unit ?? '')}</strong>
+            {change !== null && change !== 0 && (
+              <span className="muted">{change > 0 ? '↑' : '↓'} {Math.abs(change)}{item.unit ?? ''} since {table.days[before]}</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 /** Показатели с долей от «обработано». */
 const SHARE_OF_PROCESSED = new Set(['companies_with_site', 'companies_connected']);
@@ -40,15 +126,40 @@ function countryLabel(code: string): string {
 }
 
 /**
- * Экран администратора (/admin, §132): отдельный вход (имя admin) и показатели ядра по дням (бизнес-описание §7.3):
- * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
- * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель»
- * (§138) — общая для всех: сайт и кадровая страница не ищутся, адрес не вводится; подключённые
- * источники читаются дальше; предложения позиций (§161) и словарь позиций (§160). При ошибке загрузки блока — «Retry» (§143).
+ * Экран администратора (/admin, §132): отдельный вход (имя admin); разделы вкладками по задачам администратора (§206),
+ * открыт один, под вкладками — строка «на какой вопрос отвечает». Status — состояние ядра сейчас с тревогами (§142);
+ * тревога видна точкой у вкладки из любого раздела. Metrics — показатели ядра по дням (бизнес-описание §7.3): строки —
+ * показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от «обработано».
+ * Positions — запросы без результата (§205) и словарь позиций (§160). Companies — отметка «не работодатель» (§138),
+ * общая для всех: сайт и кадровая страница не ищутся, адрес не вводится; подключённые источники читаются дальше. При
+ * ошибке загрузки блока — «Retry» (§143).
  */
 export function AdminApp() {
   const [admin, setAdmin] = useState<Admin | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(storedTab);
+  const [status, setStatus] = useState<CoreStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [missCount, setMissCount] = useState(0);
+  const [adding, setAdding] = useState<string | null>(null);
+
+  /** Состояние ядра — на уровне страницы: тревога видна точкой у вкладки Status из любого раздела. */
+  function loadStatus() {
+    setStatusError(null);
+    coreStatus().then(setStatus, (failure: Error) => setStatusError(failure.message));
+  }
+
+  useEffect(() => {
+    if (admin) {
+      loadStatus();
+      searchMisses().then((items) => setMissCount(items.length), () => setMissCount(0));
+    }
+  }, [admin]);
+
+  function choose(next: Tab) {
+    setTab(next);
+    storeTab(next);
+  }
 
   useEffect(() => {
     currentAdmin().then(setAdmin, (failure: Error) => setError(failure.message));
@@ -82,11 +193,28 @@ export function AdminApp() {
       </header>
       <main className="page wide">
         <h1 className="sr-only">Administration</h1>
-        <StatusView />
-        <MetricsView />
-        <NotEmployerView />
-        <SearchMissesAdmin />
-        <DictionaryAdmin />
+        <nav className="tabs" aria-label="Administration">
+          {TABS.map((item) => (
+            <button key={item.tab} type="button" className={tab === item.tab ? 'current' : ''}
+              aria-current={tab === item.tab ? 'page' : undefined} onClick={() => choose(item.tab)}>
+              {item.label}
+              {item.tab === 'positions' && missCount > 0 && ` · ${missCount}`}
+              {item.tab === 'status' && status !== null && status.warnings.length > 0 && (
+                <span className="tab-alert" aria-label="warning" />
+              )}
+            </button>
+          ))}
+        </nav>
+        <p className="muted tab-note">{TABS.find((item) => item.tab === tab)!.note}</p>
+        {tab === 'status' && <StatusView status={status} message={statusError} onRefresh={loadStatus} />}
+        {tab === 'metrics' && <MetricsView />}
+        {tab === 'positions' && (
+          <>
+            <SearchMissesAdmin onAdd={setAdding} onCount={setMissCount} />
+            <DictionaryAdmin adding={adding} onAdding={setAdding} />
+          </>
+        )}
+        {tab === 'companies' && <><NotEmployerView /><CareerRequestsAdmin /><UnlinkedSourcesAdmin /></>}
       </main>
     </>
   );
@@ -172,6 +300,10 @@ function MetricsView() {
       {table.days.length === 0
         ? <p>No metrics yet: they are computed for each past day shortly after midnight.</p>
         : (
+          <>
+          <MetricsSummary table={table} />
+          <details>
+          <summary>Details</summary>
           <div className="scroll">
             <table className="metrics">
               <thead>
@@ -187,6 +319,8 @@ function MetricsView() {
               </tbody>
             </table>
           </div>
+          </details>
+          </>
         )}
     </section>
   );
@@ -239,8 +373,9 @@ function NotEmployerView() {
 
   return (
     <section>
-      <h2>Not an employer</h2>
-      <p className="muted">A trade union, an association, an owners' community: the mark is shared by all users. The
+      <h2>Find a company</h2>
+      <p className="muted">The collection channel of a company, and the mark «not an employer» — for a trade union, an
+        association, an owners' community: the mark is shared by all users. The
         company's site and career page are no longer searched by name and on its sites, and users cannot add its
         career page address. Vacancies of sources already connected are still
         read.</p>
@@ -293,17 +428,11 @@ function ago(at: string | null, now: string): string {
   return minutes < 120 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
 }
 
-function StatusView() {
-  const [status, setStatus] = useState<CoreStatus | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  function load() {
-    setMessage(null);
-    coreStatus().then(setStatus, (failure: Error) => setMessage(failure.message));
-  }
-
-  useEffect(load, []);
-
+function StatusView({ status, message, onRefresh }: {
+  status: CoreStatus | null;
+  message: string | null;
+  onRefresh: () => void;
+}) {
   if (message !== null || status === null) {
     return (
       <section>
@@ -311,7 +440,7 @@ function StatusView() {
         {message === null ? <p className="muted">Loading…</p> : (
           <>
             <p className="error" role="alert">{message}</p>
-            <button type="button" onClick={load}>Retry</button>
+            <button type="button" onClick={onRefresh}>Retry</button>
           </>
         )}
       </section>
@@ -337,7 +466,7 @@ function StatusView() {
           <tr><th scope="row">Tasks failed after all retries, last 24 h</th><td>{tasks.failedLastDay}</td></tr>
         </tbody>
       </table>
-      <button type="button" onClick={load}>Refresh</button>
+      <button type="button" onClick={onRefresh}>Refresh</button>
     </section>
   );
 }

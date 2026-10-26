@@ -518,6 +518,30 @@ export interface CareerRequest {
   status: { state: 'PENDING' | 'CONNECTED' | 'NOT_CONNECTED'; reason: string | null; createdAt: string };
 }
 
+/** @returns кадровые страницы, добавленные всеми пользователями, новые первыми (для администратора, §206) */
+export function adminCareerRequests(): Promise<CareerRequest[]> {
+  return request<CareerRequest[]>('GET', '/api/v1/admin/career-requests');
+}
+
+/** Источник вакансий без компании (§206): по названиям публикаций видно, вакансии ли это. */
+export interface UnlinkedSource {
+  id: number;
+  provider: string;
+  board: string;
+  openPostings: number;
+  titles: string[];
+}
+
+/** @returns незакрытые источники без компании, больше публикаций — первыми */
+export function unlinkedSources(): Promise<UnlinkedSource[]> {
+  return request<UnlinkedSource[]>('GET', '/api/v1/admin/sources/unlinked');
+}
+
+/** Закрыть источник: не читается, его публикации и вакансии без других публикаций закрываются. */
+export function closeSource(id: number): Promise<void> {
+  return request<void>('POST', '/api/v1/admin/sources/' + id + '/close');
+}
+
 /** Поиск компании по названию или IČO. */
 export function searchCompanies(query: string): Promise<CompanyItem[]> {
   return request<CompanyItem[]>('GET', '/api/v1/companies?query=' + encodeURIComponent(query));

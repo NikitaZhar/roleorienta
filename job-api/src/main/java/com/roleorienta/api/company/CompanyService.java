@@ -109,6 +109,14 @@ public class CompanyService {
     }
 
     /**
+     * @return запросы всех пользователей для администратора (§206), новые первыми
+     */
+    @Transactional(readOnly = true)
+    public List<CareerRequestItem> allRequests() {
+        return repository.allRequests(REQUESTS_SHOWN);
+    }
+
+    /**
      * Отметка администратора «не работодатель» (§138): общая для всех.
      *
      * @param companyId   компания

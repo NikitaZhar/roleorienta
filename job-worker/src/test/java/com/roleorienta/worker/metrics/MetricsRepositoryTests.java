@@ -50,6 +50,7 @@ class MetricsRepositoryTests {
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("DELETE FROM core_metric_daily");
+        jdbcTemplate.update("DELETE FROM job_posting WHERE external_id = 'qq-coded'");
         jdbcTemplate.update("DELETE FROM crawl_run WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qq-%')");
         jdbcTemplate.update(
                 "DELETE FROM company_source WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qq-%')");
@@ -88,6 +89,11 @@ class MetricsRepositoryTests {
         vacancy("CLOSED", "ARRAY['QQ', '*']", "2026-10-01T00:00:00Z", "2026-10-18T09:00:00Z");
         vacancy("NEEDS_RECHECK", "NULL", "2026-10-01T00:00:00Z", null);
         jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at,
+                                         occupation_code)
+                SELECT ?, id, 'qq-coded', title, primary_url, now(), now(), '2512' FROM vacancy
+                WHERE primary_url = ? AND state = 'ACTIVE' ORDER BY id LIMIT 1""", sourceA, VACANCY_URL);
+        jdbcTemplate.update("""
                 INSERT INTO task (type, task_key, payload, state, updated_at)
                 VALUES (?, 'metrics-test:failed', '{}', 'FAILED', ?)""", TASK_TYPE, at("2026-10-18T05:00:00Z"));
     }
@@ -112,6 +118,7 @@ class MetricsRepositoryTests {
         assertThat(value(COUNTRY, "companies_failed", "")).isEqualTo(1);
         assertThat(value(COUNTRY, "companies_failed", "SITE_NOT_FOUND")).isEqualTo(1);
         assertThat(value(COUNTRY, "vacancies_active", "")).isEqualTo(2);
+        assertThat(value(COUNTRY, "vacancies_recognized", "")).isEqualTo(1);
         assertThat(value(COUNTRY, "vacancies_new", "")).isEqualTo(1);
         assertThat(value(COUNTRY, "vacancies_closed", "")).isEqualTo(1);
         assertThat(value("*", "vacancies_closed", "")).isPositive();

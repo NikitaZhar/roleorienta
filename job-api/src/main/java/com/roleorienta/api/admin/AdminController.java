@@ -6,6 +6,7 @@ import com.roleorienta.api.admin.AdminDtos.Admin;
 import com.roleorienta.api.admin.AdminDtos.AdminCredentials;
 import com.roleorienta.api.admin.AdminDtos.CoreStatus;
 import com.roleorienta.api.admin.AdminDtos.MetricsTable;
+import com.roleorienta.api.company.CompanyDtos.CareerRequestItem;
 import com.roleorienta.api.company.CompanyDtos.CompanyItem;
 import com.roleorienta.api.company.CompanyService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -109,6 +110,14 @@ public class AdminController {
     @GetMapping("/api/v1/admin/companies")
     public List<CompanyItem> searchCompanies(@RequestParam(required = false) String query) {
         return companies.search(query);
+    }
+
+    /**
+     * @return кадровые страницы, добавленные пользователями (§206), с состоянием проверки, новые первыми (до 100)
+     */
+    @GetMapping("/api/v1/admin/career-requests")
+    public List<CareerRequestItem> careerRequests() {
+        return companies.allRequests();
     }
 
     /**

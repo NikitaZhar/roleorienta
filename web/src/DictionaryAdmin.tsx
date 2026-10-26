@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
-  addPosition, changeDictionarySettings, changePosition, dictionary, type Dictionary, type DictionaryPosition,
-  type PositionTerms,
+  addPosition, type CatalogItem, changeDictionarySettings, changePosition, dictionary, type Dictionary,
+  type DictionaryPosition, occupations, type PositionTerms,
 } from './api';
 
 /** Поля названий по видам: ключ, подпись, подсказка. */
@@ -33,8 +33,13 @@ interface Draft {
  * вакансии пересчитываются на следующем такте сопоставления (до часа); номер версии словаря — справочно. Регистр и диакритика при
  * сопоставлении не важны, повторы убирает сервер.
  */
-export function DictionaryAdmin() {
+export function DictionaryAdmin({ adding, onAdding }: {
+  /** Название новой позиции из «Searched, not found» (§206): форма открывается с ним; null — нет. */
+  adding: string | null;
+  onAdding: (name: string | null) => void;
+}) {
   const [data, setData] = useState<Dictionary | null>(null);
+  const [groups, setGroups] = useState<CatalogItem[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,6 +50,30 @@ export function DictionaryAdmin() {
   }
 
   useEffect(load, []);
+
+  /** Группы ISCO-08 (4 цифры) для подписи и выбора по названию: каталог позиций (§204), по-английски. */
+  useEffect(() => {
+    occupations().then((directions) => setGroups(directions.flatMap((direction) => direction.groups)
+      .map((group) => ({ code: group.code, name: group.name }))), () => setGroups([]));
+  }, []);
+
+  useEffect(() => {
+    if (adding !== null) {
+      setDraft({ ...newDraft(), name: adding, terms: { ...newDraft().terms, titles: adding } });
+      onAdding(null);
+      // Форма — под таблицей словаря: прокрутить к ней после отрисовки.
+      setTimeout(() => document.getElementById('position-form')?.scrollIntoView({ behavior: 'smooth' }), 0);
+    }
+  }, [adding]);
+
+  /** Группа подписью «2512 Software developers»; названия нет — код; не задана — «not set». */
+  function groupText(code: string | null): string {
+    if (code === null) {
+      return 'not set';
+    }
+    const group = groups.find((item) => item.code === code);
+    return group === undefined ? code : code + ' ' + group.name;
+  }
 
   async function save(action: () => Promise<Dictionary>, after: () => void) {
     setBusy(true);
@@ -65,7 +94,8 @@ export function DictionaryAdmin() {
       return;
     }
     const terms = parse(draft.terms);
-    const group = draft.group.trim();
+    // Из списка группа приходит подписью «2512 Software developers»: в запрос — 4 цифры.
+    const group = draft.group.trim().substring(0, 4);
     save(() => (draft.id === null ? addPosition(draft.code.trim(), draft.name, group, terms)
       : changePosition(draft.id, draft.name, draft.active, group, terms)), () => setDraft(null));
   }
@@ -99,7 +129,7 @@ export function DictionaryAdmin() {
             <tr key={position.id}>
               <td>{position.name}</td>
               <td className="muted nowrap">{position.code}</td>
-              <td className="nowrap">{position.placement.group ?? 'not set'}</td>
+              <td>{groupText(position.placement.group)}</td>
               <td>{position.terms.titles.join(', ')}</td>
               <td className="nowrap">{position.placement.active ? 'active' : 'retired'}</td>
               <td className="row-actions nowrap">
@@ -113,7 +143,7 @@ export function DictionaryAdmin() {
       {draft === null ? (
         <button type="button" disabled={busy} onClick={() => setDraft(newDraft())}>New position</button>
       ) : (
-        <form className="dictionary-form" onSubmit={submit}>
+        <form id="position-form" className="dictionary-form" onSubmit={submit}>
           <h3>{draft.id === null ? 'New position' : 'Edit ' + draft.code}</h3>
           {draft.id === null && (
             <label>Code <span className="muted">(lowercase letters, digits and hyphens; cannot be changed later)</span>
@@ -124,10 +154,13 @@ export function DictionaryAdmin() {
           <label>Name
             <input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </label>
-          <label>ISCO group <span className="muted">— 4 digits of ISCO-08 (2512 — software developers). Users see the
-            position inside this group; its vacancies count for the whole group.</span>
-            <input required value={draft.group} pattern="[0-9]{4}" inputMode="numeric"
+          <label>ISCO group <span className="muted">— type a name or 4 digits and choose from the list (2512 Software
+            developers). Users see the position inside this group; its vacancies count for the whole group.</span>
+            <input required value={draft.group} list="isco-groups" pattern="[0-9]{4}.*"
               onChange={(event) => setDraft({ ...draft, group: event.target.value })} />
+            <datalist id="isco-groups">
+              {groups.map((group) => <option key={group.code} value={group.code + ' ' + group.name} />)}
+            </datalist>
           </label>
           {draft.id !== null && (
             <label className="check">
@@ -149,8 +182,11 @@ export function DictionaryAdmin() {
           </div>
         </form>
       )}
-      <SettingsForm data={data} busy={busy}
-        onSave={(contentHits, others) => save(() => changeDictionarySettings(contentHits, others), () => undefined)} />
+      <details>
+        <summary>General settings</summary>
+        <SettingsForm data={data} busy={busy}
+          onSave={(contentHits, others) => save(() => changeDictionarySettings(contentHits, others), () => undefined)} />
+      </details>
     </section>
   );
 }
@@ -171,7 +207,6 @@ function SettingsForm({ data, busy, onSave }: {
 
   return (
     <form className="dictionary-form" onSubmit={submit}>
-      <h3>General settings</h3>
       <label>Keyword occurrences in the text <span className="muted">— with a role in the title, a specialization
         keyword must occur in the text at least this many times</span>
         <input type="number" min={1} max={100} required value={contentHits}

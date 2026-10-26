@@ -157,6 +157,17 @@ public class CompanyRepository {
                 WHERE r.user_id = ? ORDER BY r.id DESC LIMIT ?""", CompanyRepository::request, userId, limit);
     }
 
+    /**
+     * @param limit сколько показать
+     * @return запросы всех пользователей, новые первыми
+     */
+    public List<CareerRequestItem> allRequests(int limit) {
+        return jdbcTemplate.query("""
+                SELECT r.id, c.name, r.career_url, r.state, r.reason, r.created_at
+                FROM company_request r JOIN company c ON c.id = r.company_id
+                ORDER BY r.id DESC LIMIT ?""", CompanyRepository::request, limit);
+    }
+
     private static CompanyItem company(ResultSet row, int number) throws SQLException {
         return new CompanyItem(row.getLong("id"), row.getString("name"), row.getString("registration_number"),
                 new Check(row.getString("company_group"), row.getString("reason"), row.getString("site"),

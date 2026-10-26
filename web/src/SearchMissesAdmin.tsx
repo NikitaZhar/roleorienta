@@ -3,17 +3,22 @@ import { forgetSearchMiss, type SearchMiss, searchMisses } from './api';
 
 /**
  * Что искали и не нашли (§205), в нынешнем виде страницы /admin: запросы подсказки позиции без результата — чаще
- * первыми. Нужна точная позиция — администратор добавляет её в «Position dictionary» ниже (с группой ISCO-08); затем
- * «Done» убирает запрос из списка (повторится — появится снова).
+ * первыми. «Add position» открывает форму новой позиции словаря ниже с этим названием (§206; с группой ISCO-08);
+ * «Done» убирает запрос из списка (повторится — появится снова). Число запросов — у вкладки Positions.
  */
-export function SearchMissesAdmin() {
+export function SearchMissesAdmin({ onAdd, onCount }: {
+  onAdd: (query: string) => void;
+  onCount: (count: number) => void;
+}) {
   const [items, setItems] = useState<SearchMiss[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   async function load() {
     setMessage(null);
     try {
-      setItems(await searchMisses());
+      const loaded = await searchMisses();
+      setItems(loaded);
+      onCount(loaded.length);
     } catch (failure) {
       setMessage((failure as Error).message);
     }
@@ -27,7 +32,9 @@ export function SearchMissesAdmin() {
     setMessage(null);
     try {
       await forgetSearchMiss(query);
-      setItems((current) => current?.filter((item) => item.query !== query) ?? null);
+      const left = (items ?? []).filter((item) => item.query !== query);
+      setItems(left);
+      onCount(left.length);
     } catch (failure) {
       setMessage((failure as Error).message);
     }
@@ -36,8 +43,8 @@ export function SearchMissesAdmin() {
   return (
     <section>
       <h2>Searched, not found</h2>
-      <p className="muted">Position searches that found nothing. If a position is needed, add it to the dictionary
-        below, then press Done.</p>
+      <p className="muted">Position searches that found nothing. If a position is needed, press Add position; when
+        it is added or not needed, press Done.</p>
       {message !== null && <p className="error" role="alert">{message}</p>}
       {items !== null && (items.length === 0 ? <p className="muted">Nothing yet.</p> : (
         <div className="scroll">
@@ -52,6 +59,7 @@ export function SearchMissesAdmin() {
                   <td>{item.misses}</td>
                   <td className="nowrap">{new Date(item.lastAt).toLocaleDateString('en-GB')}</td>
                   <td className="row-actions nowrap">
+                    <button type="button" onClick={() => onAdd(item.query)}>Add position</button>
                     <button type="button" onClick={() => forget(item.query)}>Done</button>
                   </td>
                 </tr>

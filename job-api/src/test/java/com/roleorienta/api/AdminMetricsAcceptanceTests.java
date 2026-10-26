@@ -124,6 +124,67 @@ class AdminMetricsAcceptanceTests {
                 "\"failedLastHour\":1", "\"queued\":1", "\"warnings\":[]");
     }
 
+    /**
+     * Раздел Companies (§206): источник без компании — в списке с числом открытых публикаций и названиями; закрытие —
+     * публикации закрыты, вакансия без других публикаций закрыта, с открытой публикацией другого источника — нет;
+     * повторное закрытие — {@code 404}; кадровые страницы, добавленные пользователями, — в списке администратора.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void administratorClosesSourceWithoutCompanyAndSeesRequests() throws Exception {
+        jdbcTemplate.update("DELETE FROM job_posting WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qw-src-%')");
+        jdbcTemplate.update("DELETE FROM vacancy WHERE primary_url LIKE 'https://qw-src.example/%'");
+        jdbcTemplate.update("DELETE FROM source WHERE board LIKE 'qw-src-%'");
+        jdbcTemplate.update("DELETE FROM company WHERE registration_number = '99900077'");
+        long blog = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES ('careerpage', "
+                + "'qw-src-blog') RETURNING id", Long.class);
+        long other = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES ('greenhouse', "
+                + "'qw-src-other') RETURNING id", Long.class);
+        long onlyBlog = vacancyWithPosting(blog, "Our new blog post");
+        long shared = vacancyWithPosting(blog, "Java developer");
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, 'qw-other', 'Java developer', 'https://qw-src.example/other', now(), now())""",
+                other, shared);
+        ApiTestClient client = new ApiTestClient(port());
+        assertThat(client.send("POST", "/api/v1/admin/login", admin(ADMIN_PASSWORD)).status()).isEqualTo(200);
+
+        assertThat(client.send("GET", "/api/v1/admin/sources/unlinked", null).body()).contains("\"id\":" + blog
+                + ",\"provider\":\"careerpage\",\"board\":\"qw-src-blog\",\"openPostings\":2,\"titles\":[\"Our new blog post\","
+                + "\"Java developer\"]");
+        assertThat(client.send("POST", "/api/v1/admin/sources/" + blog + "/close", null).status()).isEqualTo(204);
+        assertThat(client.send("POST", "/api/v1/admin/sources/" + blog + "/close", null).status()).isEqualTo(404);
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM vacancy WHERE id = ?", String.class, onlyBlog))
+                .isEqualTo("CLOSED");
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM vacancy WHERE id = ?", String.class, shared))
+                .isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM job_posting WHERE source_id = ? "
+                + "AND closed_at IS NULL", Integer.class, blog)).isZero();
+        assertThat(client.send("GET", "/api/v1/admin/sources/unlinked", null).body()).doesNotContain("qw-src-blog");
+
+        long user = jdbcTemplate.queryForObject("INSERT INTO user_account (email, password_hash) VALUES "
+                + "('qw@example.com', '-') RETURNING id", Long.class);
+        long company = jdbcTemplate.queryForObject("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', '99900077', 'Request Ltd', 'RPO') RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO company_request (user_id, company_id, career_url) VALUES (?, ?, "
+                + "'https://request.example/careers')", user, company);
+        assertThat(client.send("GET", "/api/v1/admin/career-requests", null).body()).contains(
+                "\"companyName\":\"Request Ltd\",\"url\":\"https://request.example/careers\",\"status\":{\"state\":\"PENDING\"");
+    }
+
+    private long vacancyWithPosting(long source, String title) {
+        long vacancy = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
+                VALUES ('ACTIVE', ?, ?, now(), now()) RETURNING id""", Long.class, title,
+                "https://qw-src.example/" + title.hashCode());
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, ?, ?, ?, now(), now())""", source, vacancy, "qw-" + vacancy, title,
+                "https://qw-src.example/" + vacancy);
+        return vacancy;
+    }
+
     private static String admin(String password) {
         return "{\"username\":\"admin\",\"password\":\"" + password + "\"}";
     }
