@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
+import {
+  type PositionCount, resultPositions, searchCondition, setStatus, type VacancyItem, type VacancyPage,
+} from './api';
 import { dateText, rowMarkedText, rowMetaText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
@@ -9,13 +11,14 @@ import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
  * opened», плашка «Not opened», точка «после прошлого захода», крестик «Not interested», объяснение пустого списка по
  * условиям; у остальных — свой пустой текст и своя последняя колонка.
  */
-export type ListKind = 'results' | 'responses' | 'notInterested';
+export type ListKind = 'results' | 'responses' | 'declined' | 'notInterested';
 
 interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
   title?: string;
   kind: ListKind;
-  load: (page: number, size: number) => Promise<VacancyPage>;
+  /** Страница списка; {@code position} — код позиции условий для отбора (§194, только у результатов). */
+  load: (page: number, size: number, position?: string) => Promise<VacancyPage>;
   /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
   poll: boolean;
   /** Счётчик перечитываний: изменился — перечитать текущую страницу (статус вакансии изменился в сведениях). */
@@ -42,11 +45,17 @@ const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode
       <span>{dateText(item.timeline.status.at, i18n)}</span>
     </>
   ),
+  declined: (item, i18n) => (
+    <>
+      <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
+      <span>{dateText(item.timeline.status.at, i18n)}</span>
+    </>
+  ),
   notInterested: (item, i18n) => rowMarkedText(item.timeline.status.at, i18n),
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
-const EMPTY_TEXT: Record<Exclude<ListKind, 'results'>, MessageKey> = {
+const EMPTY_TEXT: Record<Exclude<ListKind, 'results' | 'declined'>, MessageKey> = {
   responses: 'list.emptyResponses',
   notInterested: 'list.emptyNotInterested',
 };
@@ -72,7 +81,11 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
  * показывается, §192); справа — дата или статус (агентство — только в сведениях). Результаты (§193): строка — ссылка на
  * первичную публикацию в новой вкладке («↗» у позиции — подсказка), открытие снимает «Not opened» («Viewed»); в строке
  * «✓» — откликнулся (CV sent, уходит в «Мои отклики») и «×» — не интересна; сведения из результатов не открываются.
- * «Мои отклики» и «Не интересно»: строка открывает сведения (статус и история), «↗» рядом — публикация. Результаты поиска (открытые позже
+ * «Мои отклики» и «Не интересно»: строка открывает сведения (статус и история), «↗» рядом — публикация. Если в условиях
+ * несколько позиций (§194): над результатами — метки позиций с числом вакансий, нажатие оставляет одну позицию (с
+ * первой страницы), повторное — снова все; в строке — к каким позициям подошла. «Employer declined» (§196) — под
+ * действующими откликами, свёрнутой строкой «Employer declined · N»; раскрытие показывает их строками, как в «Моих
+ * откликах» (светлее); нет таких — ничего. Результаты поиска (открытые позже
  * сверху, дата открытия — §127; над списком — «N vacancies · M new · Updated hourly», у новых — пилюля «New»,
  * просмотренные — светлее, §156). «Мои отклики» и «Не интересно» (срез 4 нового облика): заголовок раздела и рядом
  * число вакансий; в «Мои отклики» справа — статус пилюлей и дата, у закрытой работодателем — пилюля «closed» рядом с
@@ -104,16 +117,24 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   /** Отметка, ждущая «Undo» (для подписи полосы); ref — вакансия, отметка и таймер, доступны и при уходе из списка. */
   const [waiting, setWaiting] = useState<RowMark | null>(null);
   const pending = useRef<{ id: number; mark: RowMark; timer: number } | null>(null);
+  /** Позиции условий с числами (метки отбора, §194) и выбранная; одна позиция — меток нет. */
+  const [positions, setPositions] = useState<PositionCount[]>([]);
+  const [position, setPosition] = useState<string | undefined>(undefined);
+  /** «Employer declined» под «Моими откликами» (§196): свёрнуто, пока не раскрыли. */
+  const [expanded, setExpanded] = useState(false);
 
-  async function show(page: number, rows: number) {
+  async function show(page: number, rows: number, chosen: string | undefined = position) {
     setLoading(true);
     setMessage(null);
     try {
-      let next = await load(page, rows);
+      let next = await load(page, rows, chosen);
       if (next.items.length === 0 && next.total > 0 && page > 1) {
-        next = await load(Math.ceil(next.total / rows), rows);
+        next = await load(Math.ceil(next.total / rows), rows, chosen);
       }
       setData(next);
+      if (kind === 'results') {
+        setPositions(await resultPositions());
+      }
       if (next.total === 0 && kind === 'results') {
         setHasConditions((await searchCondition()) !== null);
       }
@@ -202,6 +223,13 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     }
   }, []);
 
+  /** Метка позиции (§194): выбор — только её вакансии с первой страницы; повторное нажатие — снова все. */
+  function choosePosition(code: string) {
+    const chosen = position === code ? undefined : code;
+    setPosition(chosen);
+    show(1, size, chosen);
+  }
+
   function resize(rows: number) {
     setSize(rows);
     storeSize(rows);
@@ -235,10 +263,12 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   }
   const results = kind === 'results';
   const actions = kind === 'notInterested';
+  const declined = kind === 'declined';
   const side = LAST_COLUMN[kind];
-  if (results && data.total === 0 && !hasConditions) {
+  if ((results && data.total === 0 && !hasConditions) || (declined && data.total === 0)) {
     return null;
   }
+  const rowsShown = !declined || expanded;
   const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
   return (
     <section className="list">
@@ -248,6 +278,10 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
+      ) : declined ? (
+        <button type="button" className="list-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {t('status.REJECTED')} · {data.total} <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+        </button>
       ) : title !== undefined && (
         <div className="list-head">
           <h1>{title}</h1>
@@ -256,7 +290,19 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           )}
         </div>
       )}
-      {data.total === 0 && kind !== 'results' && <Empty title={t(EMPTY_TEXT[kind])} />}
+      {results && positions.length > 1 && (
+        <div className="position-filter" role="group" aria-label={t('list.byPosition')}>
+          {positions.map((item) => (
+            <button key={item.code} type="button" aria-pressed={position === item.code}
+              className={position === item.code ? 'chip current' : 'chip'}
+              disabled={loading || (item.count === 0 && position !== item.code)}
+              onClick={() => choosePosition(item.code)}>
+              {item.name} <span className="chip-count">{item.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {data.total === 0 && kind !== 'results' && kind !== 'declined' && <Empty title={t(EMPTY_TEXT[kind])} />}
       {collecting && (
         <div className="collecting" role="status">
           <p className="muted">{t('list.collecting')}</p>
@@ -271,17 +317,18 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       {results && data.total === 0 && !collecting && (
         <Empty title={t('list.nothingYetTitle')} text={t('list.nothingYetText')} />
       )}
-      {data.total > 0 && (
+      {data.total > 0 && rowsShown && (
         <ul className="rows">
           {data.items.filter((item) => !dismissed.includes(item.id)).map((item) => {
             const fresh = results && item.timeline.status.code === 'NEW';
-            const seen = (results && !fresh) || actions;
+            const seen = (results && !fresh) || actions || declined;
             return (
               <li key={item.id} className="actionable">
                 {results ? (
                   <a className={seen ? 'row seen' : 'row'} href={item.posting.url} target="_blank"
-                    rel="noopener noreferrer" title={t('vacancy.openPosting')} onClick={() => opened(item)}>
-                    <RowContent item={item} fresh={fresh} side={side(item, i18n)} link />
+                    rel="noopener noreferrer" onClick={() => opened(item)}>
+                    <RowContent item={item} fresh={fresh} side={side(item, i18n)} link
+                      matches={positions.length > 1 ? item.posting.matches : []} />
                   </a>
                 ) : (
                   <button type="button" className={seen ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
@@ -322,7 +369,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           <button type="button" className="link" onClick={undo}>{t('list.undo')}</button>
         </div>
       )}
-      {data.total > 0 && (
+      {data.total > 0 && rowsShown && (
         <div className="list-footer">
           <Pager page={data.page} pages={Math.ceil(data.total / data.size)} busy={loading}
             onPage={(page) => show(page, size)} />
@@ -335,24 +382,30 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
 
 /**
  * Содержимое строки (§171): позиция с пометками, «работодатель · страна», справа — дата или статус. {@code link} —
- * строка ведёт в публикацию (§193): у позиции «↗».
+ * строка ведёт в публикацию (§193): у позиции «↗». {@code matches} — к каким позициям условий подошла (§194; при
+ * нескольких позициях в условиях) — перед «работодатель · страна».
  */
-function RowContent({ item, fresh, side, link = false }: { item: VacancyItem; fresh: boolean; side: ReactNode;
-  link?: boolean }) {
+function RowContent({ item, fresh, side, link = false, matches = [] }: { item: VacancyItem; fresh: boolean;
+  side: ReactNode; link?: boolean; matches?: string[] }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const meta = rowMetaText(item.parties.employer, item.work, i18n);
   return (
     <>
       <span className="row-main">
         <span className="row-title">
           {fresh && <span className="pill pill-fresh">{t('list.new')}</span>}
           <span className="position">{item.posting.position}</span>
-          {link && <span className="row-link" aria-hidden="true">↗</span>}
+          {link && <span className="row-link" title={t('vacancy.openPosting')} aria-hidden="true">↗</span>}
           {item.work.format === 'OFFICE' && <span className="pill pill-muted">{t('format.office')}</span>}
           {item.work.format === 'REMOTE' && <span className="pill pill-muted">{t('format.remote')}</span>}
           {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
         </span>
-        <span className="row-meta">{rowMetaText(item.parties.employer, item.work, i18n)}</span>
+        <span className="row-meta">
+          {matches.length > 0 && <span className="row-match">{matches.join(', ')}</span>}
+          {matches.length > 0 && meta !== '' && ' · '}
+          {meta}
+        </span>
       </span>
       <span className="row-side">{side}</span>
     </>

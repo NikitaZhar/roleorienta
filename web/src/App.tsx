@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  type Account, browserTimeZone, currentAccount, logout, responses, saveSettings, unsuitableVacancies, vacancies,
+  type Account, browserTimeZone, currentAccount, declinedResponses, logout, responses, saveSettings,
+  unsuitableVacancies, vacancies,
 } from './api';
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
@@ -194,8 +195,11 @@ export function App() {
             </>
           )}
           {view === 'applications' && (
-            <VacancyList title={t('nav.applications')} kind="responses" load={responses} poll={false} reload={reloads}
-              onOpen={open} />
+            <>
+              <VacancyList title={t('nav.applications')} kind="responses" load={responses} poll={false}
+                reload={reloads} onOpen={open} />
+              <VacancyList kind="declined" load={declinedResponses} poll={false} reload={reloads} onOpen={open} />
+            </>
           )}
           {view === 'marked' && (
             <VacancyList title={t('nav.notInterested')} kind="notInterested" load={unsuitableVacancies} poll={false}

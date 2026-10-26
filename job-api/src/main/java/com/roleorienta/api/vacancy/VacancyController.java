@@ -1,10 +1,12 @@
 package com.roleorienta.api.vacancy;
 
 import com.roleorienta.api.account.AccountService;
+import com.roleorienta.api.vacancy.VacancyDtos.PositionCount;
 import com.roleorienta.api.vacancy.VacancyDtos.StatusRequest;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -42,15 +44,27 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
+     * @param position       код позиции условий — только подходящие к ней (§194); нет — все
      * @return страница результатов по текущим условиям (новые и просмотренные), открытые позже сверху, общее число и
      *         число новых; условия не заданы — пусто. Открытие записывается как заход в список (§191)
      */
     @GetMapping("/api/v1/me/vacancies")
     public VacancyPage list(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
-            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
+            @RequestParam(required = false) String position) {
         long userId = userId(authentication);
-        return vacancies.delivered(userId, page, size, vacancies.visit(userId));
+        return vacancies.delivered(userId, page, size, vacancies.visit(userId), position);
+    }
+
+    /**
+     * @param authentication вошедший пользователь
+     * @return позиции текущих условий с числом видимых вакансий (§194: метки отбора над результатами); условия не
+     *         заданы — пустой список
+     */
+    @GetMapping("/api/v1/me/vacancies/positions")
+    public List<PositionCount> positions(Authentication authentication) {
+        return vacancies.positions(userId(authentication));
     }
 
     /**
@@ -84,13 +98,16 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
+     * @param declined       {@code true} — только «Employer declined»; нет или {@code false} — действующие отклики
+     *                       («CV sent», «Interview»; §196)
      * @return «Мои отклики»: статус изменён позже сверху, и общее число
      */
     @GetMapping("/api/v1/me/responses")
     public VacancyPage responses(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
-            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
-        return vacancies.responses(userId(authentication), page, size);
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
+            @RequestParam(defaultValue = "false") boolean declined) {
+        return vacancies.responses(userId(authentication), page, size, declined);
     }
 
     /**

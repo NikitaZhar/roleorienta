@@ -3,6 +3,7 @@ package com.roleorienta.api.vacancy;
 import com.roleorienta.api.vacancy.VacancyDtos.LanguageRequirement;
 import com.roleorienta.api.vacancy.VacancyDtos.Opened;
 import com.roleorienta.api.vacancy.VacancyDtos.Parties;
+import com.roleorienta.api.vacancy.VacancyDtos.PositionCount;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -11,7 +12,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -80,6 +84,15 @@ public class VacancyRepository {
             LEFT JOIN vacancy_user_status st ON st.user_id = c.user_id AND st.vacancy_id = v.id
             WHERE d.search_condition_id = ?""" + " AND " + VISIBLE;
 
+    /**
+     * Отбор по одной позиции условий внутри результатов (§194): параметр — код позиции дважды; {@code null} — все
+     * позиции условий.
+     */
+    private static final String ONE_POSITION = """
+             AND (CAST(? AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM vacancy_position_match pm
+                                                    JOIN position pp ON pp.id = pm.position_id
+                                                    WHERE pm.vacancy_id = v.id AND pp.code = ?))""";
+
     /** Вакансии пользователя с текущим статусом из списка ({@code %1$s}); параметр — пользователь. */
     private static final String STATUS_FROM = """
              FROM vacancy_user_status st JOIN vacancy v ON v.id = st.vacancy_id
@@ -145,24 +158,65 @@ public class VacancyRepository {
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param page         смещение и размер страницы
+     * @param position     код позиции условий — только подходящие к ней (§194); {@code null} — все
      * @return вакансии страницы
      */
-    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page) {
-        return jdbcTemplate.query("SELECT " + COLUMNS.formatted("c.user_id") + DELIVERED_FROM
+    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, String position) {
+        return jdbcTemplate.query("SELECT " + COLUMNS.formatted("c.user_id") + DELIVERED_FROM + ONE_POSITION
                 + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), condition, utc(visibleSince), page.size(), page.offset());
+                (row, number) -> vacancy(row), condition, utc(visibleSince), position, position, page.size(),
+                page.offset());
     }
 
     /**
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
+     * @param position     код позиции условий (§194); {@code null} — все
      * @return сколько вакансий в видимой части накопленного списка (те же условия, что у {@link #delivered}) и
      *         сколько из них новых (статуса пользователя нет)
      */
-    public Counts countDelivered(long condition, Instant visibleSince) {
+    public Counts countDelivered(long condition, Instant visibleSince, String position) {
         return jdbcTemplate.queryForObject("SELECT count(*), count(*) FILTER (WHERE st.status IS NULL)"
-                + DELIVERED_FROM, (row, number) -> new Counts(row.getLong(1), row.getLong(2)), condition,
-                utc(visibleSince));
+                + DELIVERED_FROM + ONE_POSITION, (row, number) -> new Counts(row.getLong(1), row.getLong(2)),
+                condition, utc(visibleSince), position, position);
+    }
+
+    /**
+     * Позиции условий с числом видимых вакансий каждой (§194: метки отбора над результатами); одна вакансия может
+     * подходить к нескольким позициям. Видимость — как у {@link #delivered}.
+     *
+     * @param condition    версия условий
+     * @param visibleSince не подтверждённые с этого момента не считаются
+     * @return позиции условий, больше вакансий — первыми, при равном числе — по названию
+     */
+    public List<PositionCount> positionCounts(long condition, Instant visibleSince) {
+        return jdbcTemplate.query("""
+                SELECT p.code, p.name, (SELECT count(*)""" + DELIVERED_FROM + """
+                     AND EXISTS (SELECT 1 FROM vacancy_position_match pm
+                                 WHERE pm.vacancy_id = v.id AND pm.position_id = p.id)) AS total
+                FROM search_condition_position s JOIN position p ON p.id = s.position_id
+                WHERE s.search_condition_id = ?
+                ORDER BY total DESC, p.name
+                """, (row, number) -> new PositionCount(row.getString(1), row.getString(2), row.getLong(3)),
+                condition, utc(visibleSince), condition);
+    }
+
+    /**
+     * @param condition версия условий
+     * @param vacancies вакансии страницы
+     * @return к каким позициям условий подошла каждая вакансия (§194): вакансия → названия позиций по алфавиту
+     */
+    public Map<Long, List<String>> matchedPositions(long condition, List<Long> vacancies) {
+        Map<Long, List<String>> matched = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT m.vacancy_id, p.name FROM vacancy_position_match m
+                JOIN search_condition_position s ON s.position_id = m.position_id AND s.search_condition_id = ?
+                JOIN position p ON p.id = m.position_id
+                WHERE m.vacancy_id = ANY(?) ORDER BY p.name
+                """, row -> {
+                    matched.computeIfAbsent(row.getLong(1), any -> new ArrayList<>()).add(row.getString(2));
+                }, condition, vacancies.toArray(Long[]::new));
+        return matched;
     }
 
     /**

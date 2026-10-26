@@ -31,8 +31,20 @@ public final class VacancyDtos {
      *
      * @param position позиция (название публикации)
      * @param url      адрес первичной публикации
+     * @param matches  к каким позициям условий подошла (§194; названия по алфавиту); в «Моих откликах» и «Не
+     *                 интересно» — пусто
      */
-    public record Posting(String position, String url) {
+    public record Posting(String position, String url, List<String> matches) {
+    }
+
+    /**
+     * Позиция условий и сколько видимых вакансий к ней подходит (§194: метки отбора над результатами).
+     *
+     * @param code  код позиции
+     * @param name  название
+     * @param count сколько вакансий
+     */
+    public record PositionCount(String code, String name, long count) {
     }
 
     /**

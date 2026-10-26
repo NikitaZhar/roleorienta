@@ -83,7 +83,7 @@ class VacancyAcceptanceTests {
         assertThat(page.status()).isEqualTo(200);
         assertThat(titles(page.body())).isEqualTo("Third,Second");
         assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3,\"newCount\":3",
-                "\"posting\":{\"position\":\"Third\",\"url\":\"https://example.com/Third\"}");
+                "\"posting\":{\"position\":\"Third\",\"url\":\"https://example.com/Third\",");
         ApiTestClient.Response next = client.send("GET", "/api/v1/me/vacancies?page=2&size=2", null);
         assertThat(titles(next.body())).isEqualTo("First");
         assertThat(next.body()).contains("\"page\":2,\"size\":2,\"total\":3");
@@ -173,6 +173,12 @@ class VacancyAcceptanceTests {
         assertThat(client.send("GET", "/api/v1/me/responses", null).body()).contains("\"closed\":true");
         assertThat(events(client.send("GET", "/api/v1/me/vacancies/" + applied, null).body()))
                 .isEqualTo("RECEIVED,VIEWED,INTERVIEW,CLOSED");
+
+        // §196: «Employer declined» — не среди действующих откликов, а отдельно.
+        assertThat(status(client, applied, "REJECTED")).isEqualTo(204);
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEmpty();
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?declined=true", null).body()))
+                .isEqualTo("Applied");
     }
 
     /**
@@ -289,6 +295,35 @@ class VacancyAcceptanceTests {
 
         String again = client.send("GET", "/api/v1/me/vacancies", null).body();
         assertThat(sinceLastVisit(again, "Fresh")).isTrue();
+    }
+
+    /**
+     * Отбор по позиции внутри результатов (§194): метки — позиции условий с числом видимых вакансий; отбор по коду
+     * оставляет подходящие к позиции, общее число — по ним; у строки — к каким позициям условий она подошла.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void filtersResultsByConditionPosition() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\",\"devops-engineer\"]}");
+        long condition = activeCondition();
+        delivered(condition, "JavaOnly", "ACTIVE", 0, 3);
+        long both = delivered(condition, "JavaAndDevops", "ACTIVE", 0, 2);
+        jdbcTemplate.update("""
+                INSERT INTO vacancy_position_match (vacancy_id, position_id, dictionary_version, explanation)
+                SELECT ?, id, 'test', 'title' FROM position WHERE code = 'devops-engineer'
+                """, both);
+
+        assertThat(client.send("GET", "/api/v1/me/vacancies/positions", null).body()).isEqualTo(
+                "[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"count\":2},"
+                        + "{\"code\":\"devops-engineer\",\"name\":\"DevOps engineer\",\"count\":1}]");
+        String devops = client.send("GET", "/api/v1/me/vacancies?position=devops-engineer", null).body();
+        assertThat(titles(devops)).isEqualTo("JavaAndDevops");
+        assertThat(devops).contains("\"total\":1,", "\"matches\":[\"DevOps engineer\",\"Java developer\"]");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body()))
+                .isEqualTo("JavaAndDevops,JavaOnly");
     }
 
     /** Признак «после прошлого захода» у вакансии списка с этим названием (поля вакансии — до следующей). */

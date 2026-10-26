@@ -5,6 +5,7 @@ import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.vacancy.StatusRules.Change;
 import com.roleorienta.api.vacancy.StatusRules.Line;
 import com.roleorienta.api.vacancy.VacancyDtos.HistoryLine;
+import com.roleorienta.api.vacancy.VacancyDtos.PositionCount;
 import com.roleorienta.api.vacancy.VacancyDtos.Posting;
 import com.roleorienta.api.vacancy.VacancyDtos.Publication;
 import com.roleorienta.api.vacancy.VacancyDtos.Timeline;
@@ -27,6 +28,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -40,7 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Результаты — вакансии, выданные по активной версии условий и видимые сейчас (не закрыта, подтверждена не
  *       раньше {@link VacancyProperties#hideAfter()}, подходит по текущим условиям), со статусом «Новая» или
  *       «Просмотрена»; открытые позже сверху. Условия не заданы — пусто.</li>
- *   <li>«Мои отклики» — статусы {@link #RESPONSES}, «Не интересно» — {@link StatusEvent#NOT_INTERESTED}, по любым
+ *   <li>«Мои отклики» — статусы {@link #ACTIVE_RESPONSES}, ниже отдельно — {@link #DECLINED} (§196), «Не интересно» —
+ *       {@link StatusEvent#NOT_INTERESTED}, по любым
  *       условиям, и закрытые работодателем; статус изменён позже сверху.</li>
  *   <li>Списки — страницами по номеру с общим числом (решение владельца 2026-10-20, §151): номер меньше 1 —
  *       первая страница, размер обрезается до 1…{@value #MAX_SIZE}; страница за концом списка — пустая, с общим
@@ -58,9 +61,10 @@ public class VacancyService {
     /** Первая страница. */
     static final int FIRST_PAGE = 1;
 
-    /** Статусы раздела «Мои отклики» (бизнес-описание §6). */
-    static final List<StatusEvent> RESPONSES = List.of(StatusEvent.APPLIED, StatusEvent.INTERVIEW,
-            StatusEvent.REJECTED);
+    /** Действующие отклики раздела «Мои отклики» (бизнес-описание §6; §196): сверху. */
+    private static final List<StatusEvent> ACTIVE_RESPONSES = List.of(StatusEvent.APPLIED, StatusEvent.INTERVIEW);
+    /** Завершённые отклики (§196): «Работодатель отказал» — ниже, свёрнуто. */
+    private static final List<StatusEvent> DECLINED = List.of(StatusEvent.REJECTED);
     private static final List<StatusEvent> NOT_INTERESTED = List.of(StatusEvent.NOT_INTERESTED);
 
     /** Код «Новая» — статуса пользователя ещё нет. */
@@ -111,10 +115,12 @@ public class VacancyService {
      * @param size      строк на странице
      * @param visitFrom граница текущего захода ({@link #visit}): вакансии, полученные позже, — с точкой (§191);
      *                  {@code null} — без точек
+     * @param position  код позиции условий — только подходящие к ней, общее число и число новых — по ним (§194);
+     *                  {@code null} или неизвестный код условий — как есть: неизвестный даёт пустую страницу
      * @return страница результатов, общее число и число новых; условия не заданы — пусто
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage delivered(long userId, int page, int size, Instant visitFrom) {
+    public VacancyPage delivered(long userId, int page, int size, Instant visitFrom, String position) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         Optional<ActiveCondition> condition = repository.activeCondition(userId);
@@ -123,23 +129,41 @@ public class VacancyService {
         }
         Instant visibleSince = Instant.now().minus(properties.hideAfter());
         long conditionId = condition.get().id();
-        List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows));
-        Counts counts = repository.countDelivered(conditionId, visibleSince);
-        return new VacancyPage(items(shown, condition.get().workFormat(), visitFrom), number, rows, counts.total(),
-                counts.fresh());
+        List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows), position);
+        Counts counts = repository.countDelivered(conditionId, visibleSince, position);
+        Map<Long, List<String>> matched = repository.matchedPositions(conditionId,
+                shown.stream().map(VacancyRow::id).toList());
+        return new VacancyPage(items(shown, condition.get().workFormat(), visitFrom, matched), number, rows,
+                counts.total(), counts.fresh());
+    }
+
+    /**
+     * Метки отбора над результатами (§194): позиции текущих условий с числом видимых вакансий.
+     *
+     * @param userId пользователь
+     * @return позиции условий, больше вакансий — первыми; условия не заданы — пусто
+     */
+    @Transactional(readOnly = true)
+    public List<PositionCount> positions(long userId) {
+        return repository.activeCondition(userId)
+                .map(condition -> repository.positionCounts(condition.id(),
+                        Instant.now().minus(properties.hideAfter())))
+                .orElse(List.of());
     }
 
     /**
      * «Мои отклики»; страница и число — одним снимком данных, как в {@link #delivered}.
      *
-     * @param userId пользователь
-     * @param page   номер страницы, с 1
-     * @param size   строк на странице
-     * @return страница вакансий со статусами {@link #RESPONSES} и общее число
+     * @param userId   пользователь
+     * @param page     номер страницы, с 1
+     * @param size     строк на странице
+     * @param declined {@code false} — действующие отклики («CV sent», «Interview»); {@code true} — «Employer
+     *                 declined» (§196: завершённые — ниже действующих, свёрнуто)
+     * @return страница вакансий с этими статусами и общее число
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage responses(long userId, int page, int size) {
-        return byStatus(userId, RESPONSES, page, size);
+    public VacancyPage responses(long userId, int page, int size, boolean declined) {
+        return byStatus(userId, declined ? DECLINED : ACTIVE_RESPONSES, page, size);
     }
 
     /**
@@ -210,7 +234,7 @@ public class VacancyService {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         List<VacancyRow> shown = repository.byStatus(userId, statuses, window(number, rows));
-        return new VacancyPage(items(shown, conditionFormat(userId), null), number, rows,
+        return new VacancyPage(items(shown, conditionFormat(userId), null, Map.of()), number, rows,
                 repository.countByStatus(userId, statuses), 0);
     }
 
@@ -233,10 +257,13 @@ public class VacancyService {
 
     /**
      * @param visitFrom граница текущего захода в результаты (§191); {@code null} — точки не ставятся
+     * @param matched   к каким позициям условий подошла вакансия (§194); нет вакансии — пусто
      */
-    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat, Instant visitFrom) {
+    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat, Instant visitFrom,
+            Map<Long, List<String>> matched) {
         return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(),
-                new Posting(vacancy.title(), vacancy.state().url()), vacancy.parties(),
+                new Posting(vacancy.title(), vacancy.state().url(), matched.getOrDefault(vacancy.id(), List.of())),
+                vacancy.parties(),
                 work(vacancy.work(), conditionFormat), timeline(vacancy.state(), visitFrom))).toList();
     }
 

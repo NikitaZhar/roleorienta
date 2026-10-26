@@ -715,6 +715,59 @@ nav .current,
   font-size: 13px;
 }
 
+/* «Employer declined · N ▸» под «Моими откликами» (§196): свёрнутая строка-переключатель, тихая. */
+.list-toggle {
+  margin: 16px 0 8px;
+  padding: 0;
+  height: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.list-toggle:hover {
+  color: var(--ink);
+}
+
+/* Метки позиций над результатами (§194): позиция и число вакансий; выбранная — акцентом. */
+.position-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.position-filter .chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.position-filter .chip.current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.position-filter .chip-count {
+  color: var(--muted);
+}
+
+.position-filter .chip.current .chip-count {
+  color: inherit;
+}
+
+/* К каким позициям условий подошла вакансия (§194), перед «работодатель · страна». */
+.row-match {
+  color: var(--ink-soft);
+}
+
 /* Строка вакансии в две строчки (§171): позиция; «работодатель · страна»; справа — дата или статус. Между строками —
    тонкая линия; при наведении — подложка. Просмотренная — светлее, как посещённая ссылка. */
 .rows {

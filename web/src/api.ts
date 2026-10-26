@@ -242,8 +242,11 @@ export interface Work {
 /** Вакансия в списке. */
 export interface VacancyItem {
   id: number;
-  /** Позиция и адрес первичной публикации — открывается прямо из строки (§192). */
-  posting: { position: string; url: string };
+  /**
+   * Позиция и адрес первичной публикации — открывается прямо из строки (§192); matches — к каким позициям условий
+   * подошла (§194; в «Моих откликах» и «Не интересно» — пусто).
+   */
+  posting: { position: string; url: string; matches: string[] };
   parties: Parties;
   work: Work;
   timeline: Timeline;
@@ -330,9 +333,28 @@ function listPage(path: string, page: number, size: number): Promise<VacancyPage
   return request<VacancyPage>('GET', path + '?page=' + page + '&size=' + size);
 }
 
-/** @returns страница накопленного списка: номер с 1, строк на странице */
-export function vacancies(page: number, size: number): Promise<VacancyPage> {
-  return listPage('/api/v1/me/vacancies', page, size);
+/**
+ * @param position код позиции условий — только подходящие к ней (§194); нет — все
+ * @returns страница накопленного списка: номер с 1, строк на странице
+ */
+export function vacancies(page: number, size: number, position?: string): Promise<VacancyPage> {
+  const query = new URLSearchParams({ page: String(page), size: String(size) });
+  if (position !== undefined) {
+    query.set('position', position);
+  }
+  return request<VacancyPage>('GET', '/api/v1/me/vacancies?' + query.toString());
+}
+
+/** Позиция условий и число видимых вакансий (§194: метки отбора над результатами). */
+export interface PositionCount {
+  code: string;
+  name: string;
+  count: number;
+}
+
+/** @returns позиции текущих условий с числом видимых вакансий; условия не заданы — пусто */
+export function resultPositions(): Promise<PositionCount[]> {
+  return request<PositionCount[]>('GET', '/api/v1/me/vacancies/positions');
 }
 
 /** @returns страница отмеченных «Не интересно» */
@@ -343,6 +365,11 @@ export function unsuitableVacancies(page: number, size: number): Promise<Vacancy
 /** @returns страница «Мои отклики» (§156) */
 export function responses(page: number, size: number): Promise<VacancyPage> {
   return listPage('/api/v1/me/responses', page, size);
+}
+
+/** @returns страница «Employer declined» — завершённые отклики, под действующими (§196) */
+export function declinedResponses(page: number, size: number): Promise<VacancyPage> {
+  return request<VacancyPage>('GET', '/api/v1/me/responses?declined=true&page=' + page + '&size=' + size);
 }
 
 /** @returns сведения о вакансии */
