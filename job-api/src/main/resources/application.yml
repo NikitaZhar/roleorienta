@@ -22,7 +22,6 @@ app:
   default-portion-limit: 20  # лимит порции, если пользователь его не задал (технический документ §17)
   company-requests:
     daily-limit: 20          # адресов кадровых страниц от пользователя за сутки (§137)
-    hiring-min-employees: ${HIRING_MIN_EMPLOYEES:10}  # признак найма без сайта; то же значение у job-worker (§143)
   admin:
     password: ${ADMIN_PASSWORD:}  # пароль входа администратора (§132); не задан — вход администратора выключен
   delivery:

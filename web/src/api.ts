@@ -429,14 +429,6 @@ export interface CompanyItem {
   check: CompanyCheck;
 }
 
-/** Страница сомнительных компаний по номеру с общим числом (§163). */
-export interface CompanyPage {
-  items: CompanyItem[];
-  page: number;
-  size: number;
-  total: number;
-}
-
 /** Адрес кадровой страницы, введённый пользователем, и его состояние. */
 export interface CareerRequest {
   id: number;
@@ -450,11 +442,6 @@ export function searchCompanies(query: string): Promise<CompanyItem[]> {
   return request<CompanyItem[]>('GET', '/api/v1/companies?query=' + encodeURIComponent(query));
 }
 
-/** Сомнительные компании: «может быть» и «нет» с признаком найма. */
-export function doubtfulCompanies(page: number, size: number): Promise<CompanyPage> {
-  return request<CompanyPage>('GET', '/api/v1/companies/doubtful?page=' + page + '&size=' + size);
-}
-
 /** Ввод адреса кадровой страницы компании. */
 export function addCareerPage(companyId: number, url: string): Promise<CareerRequest> {
   return request<CareerRequest>('POST', '/api/v1/companies/' + companyId + '/career-page', { url });
@@ -463,16 +450,6 @@ export function addCareerPage(companyId: number, url: string): Promise<CareerReq
 /** Адреса, введённые пользователем, новые первыми. */
 export function careerRequests(): Promise<CareerRequest[]> {
   return request<CareerRequest[]>('GET', '/api/v1/me/career-requests');
-}
-
-/** Личное скрытие компании (§138): пропадает из поиска и сомнительных только у этого пользователя. */
-export function setCompanyHidden(companyId: number, hidden: boolean): Promise<void> {
-  return request<void>(hidden ? 'PUT' : 'DELETE', '/api/v1/me/hidden-companies/' + companyId);
-}
-
-/** Компании, скрытые пользователем. */
-export function hiddenCompanies(): Promise<CompanyItem[]> {
-  return request<CompanyItem[]>('GET', '/api/v1/me/hidden-companies');
 }
 
 /** Поиск компании администратором. */

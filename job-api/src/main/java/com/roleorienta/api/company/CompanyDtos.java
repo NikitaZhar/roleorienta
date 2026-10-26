@@ -3,7 +3,6 @@ package com.roleorienta.api.company;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import java.util.List;
 
 /**
  * Данные запросов и ответов о компаниях и адресах кадровых страниц (§137; бизнес-описание §4.2, §5).
@@ -37,17 +36,6 @@ public final class CompanyDtos {
      * @param careerUrl адрес найденной кадровой страницы; {@code null} — нет
      */
     public record Check(String group, String reason, String site, String careerUrl) {
-    }
-
-    /**
-     * Страница списка компаний по номеру (§163).
-     *
-     * @param items компании
-     * @param page  номер страницы, с 1
-     * @param size  строк на странице
-     * @param total сколько компаний во всём списке
-     */
-    public record CompanyPage(List<CompanyItem> items, int page, int size, long total) {
     }
 
     /**

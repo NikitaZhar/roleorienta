@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
  * <p>Группа: {@code NOT_EMPLOYER} — отметка администратора «не работодатель» (§138); {@code YES} — итог проверки
  * «подключена» и есть свой источник (кадровая страница или система найма); {@code PORTAL} — «подключена» только
  * вакансиями государственного портала (§143); {@code MAYBE} — найден сайт; {@code NO} — сайта нет. Только действующие
- * компании; скрытые пользователем ({@code company_hidden}) — не в его поиске и сомнительных.</p>
+ * компании.</p>
  */
 @Repository
 public class CompanyRepository {
@@ -41,33 +41,6 @@ public class CompanyRepository {
                     ORDER BY s.id LIMIT 1) AS career_url
             FROM company c LEFT JOIN company_check ch ON ch.company_id = c.id
             WHERE c.terminated_on IS NULL
-            """;
-
-    /** Не скрыта пользователем (параметр — пользователь). */
-    private static final String NOT_HIDDEN = """
-              AND NOT EXISTS (SELECT 1 FROM company_hidden h WHERE h.company_id = c.id AND h.user_id = ?)
-            """;
-
-    /**
-     * Сомнительная компания: нет вакансий (итог проверки не «подключена»), не отмечена «не работодатель»; найден сайт
-     * или признак найма — приоритетная или сотрудников не меньше порога (параметр).
-     */
-    private static final String DOUBTFUL = """
-              AND ch.result IS DISTINCT FROM 'CONNECTED' AND NOT c.not_employer
-              AND (c.priority OR c.employees_min >= ?
-                   OR EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'))
-            """;
-
-    /**
-     * Порядок сомнительных (решение владельца 2026-10-22, §177): сначала приоритетные (эталон — известные крупные
-     * работодатели), затем крупнее по RÚZ (размер неизвестен — в конце), при равном размере — с найденным сайтом (адрес
-     * страницы вакансий найти легче), затем по названию; {@code c.id} — однозначный порядок при равных названиях, чтобы
-     * страницы не повторяли и не теряли компании.
-     */
-    private static final String DOUBTFUL_ORDER = """
-             ORDER BY c.priority DESC, c.employees_min DESC NULLS LAST,
-                      EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND') DESC,
-                      c.name, c.id
             """;
 
     /** Пространство ключей advisory-lock ввода адресов (первое число пары). */
@@ -93,79 +66,14 @@ public class CompanyRepository {
             LIMIT ?""";
 
     /**
-     * @param userId пользователь — его скрытые компании не ищутся
      * @param number регистрационный номер (точно)
      * @param slug   часть названия в виде {@code company.name_slug} (без диакритики, через дефис)
      * @return компании с этим номером или с этой частью названия: с вакансиями (кадровая страница или портал)
      *         первыми, затем приоритетные, по названию; не больше {@value #SEARCH_LIMIT}
      */
-    public List<CompanyItem> search(long userId, String number, String slug) {
-        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + MATCHING, CompanyRepository::company, userId, number,
-                "%" + slug + "%", SEARCH_LIMIT);
-    }
-
-    /**
-     * Поиск администратора: личные скрытия пользователей не учитываются.
-     *
-     * @param number регистрационный номер (точно)
-     * @param slug   часть названия в виде {@code company.name_slug}
-     * @return как {@link #search}
-     */
-    public List<CompanyItem> searchAll(String number, String slug) {
+    public List<CompanyItem> search(String number, String slug) {
         return jdbcTemplate.query(COMPANY + MATCHING, CompanyRepository::company, number, "%" + slug + "%",
                 SEARCH_LIMIT);
-    }
-
-    /**
-     * Сомнительные компании (бизнес-описание §5): без вакансий (ни кадровой страницы, ни портала) — с найденным сайтом
-     * или, без сайта, с признаком найма (приоритетная — эталон, или сотрудников не меньше порога по RÚZ); остальные —
-     * только поиском (решение владельца 2026-10-19).
-     *
-     * @param page страница: пользователь (его скрытые не показываются), смещение, сколько, порог сотрудников
-     * @return компании в порядке {@link #DOUBTFUL_ORDER} — приоритетные, крупные, с сайтом первыми; без отметки
-     *         «не работодатель»
-     */
-    public List<CompanyItem> doubtful(DoubtfulPage page) {
-        return jdbcTemplate.query(COMPANY + NOT_HIDDEN + DOUBTFUL + DOUBTFUL_ORDER + " LIMIT ? OFFSET ?",
-                CompanyRepository::company, page.userId(), page.minEmployees(), page.limit(), page.offset());
-    }
-
-    /**
-     * @param page пользователь и порог сотрудников (смещение и размер не учитываются)
-     * @return сколько сомнительных компаний всего — те же условия, что у {@link #doubtful}
-     */
-    public long countDoubtful(DoubtfulPage page) {
-        return jdbcTemplate.queryForObject("SELECT count(*) FROM (" + COMPANY + NOT_HIDDEN + DOUBTFUL + ") doubtful",
-                Long.class, page.userId(), page.minEmployees());
-    }
-
-    /**
-     * @param userId пользователь
-     * @return компании, скрытые пользователем, последние скрытые первыми
-     */
-    public List<CompanyItem> hidden(long userId) {
-        return jdbcTemplate.query(COMPANY + """
-                  AND EXISTS (SELECT 1 FROM company_hidden h WHERE h.company_id = c.id AND h.user_id = ?)
-                ORDER BY (SELECT h.created_at FROM company_hidden h WHERE h.company_id = c.id AND h.user_id = ?) DESC
-                """, CompanyRepository::company, userId, userId);
-    }
-
-    /**
-     * @param userId    пользователь
-     * @param companyId компания
-     */
-    public void hide(long userId, long companyId) {
-        jdbcTemplate.update("""
-                INSERT INTO company_hidden (user_id, company_id) VALUES (?, ?) ON CONFLICT DO NOTHING""",
-                userId, companyId);
-    }
-
-    /**
-     * @param userId    пользователь
-     * @param companyId компания
-     */
-    public void unhide(long userId, long companyId) {
-        jdbcTemplate.update("DELETE FROM company_hidden WHERE user_id = ? AND company_id = ?", userId, companyId);
     }
 
     /**
@@ -258,16 +166,5 @@ public class CompanyRepository {
     private static CareerRequestItem request(ResultSet row, int number) throws SQLException {
         return new CareerRequestItem(row.getLong(1), row.getString(2), row.getString(3), new Status(row.getString(4),
                 row.getString(5), row.getObject(6, OffsetDateTime.class).toInstant()));
-    }
-
-    /**
-     * Страница сомнительных компаний.
-     *
-     * @param userId       пользователь — его скрытые компании не показываются
-     * @param offset       сколько строк пропустить
-     * @param limit        сколько
-     * @param minEmployees признак найма без сайта: сотрудников не меньше
-     */
-    public record DoubtfulPage(long userId, long offset, int limit, int minEmployees) {
     }
 }

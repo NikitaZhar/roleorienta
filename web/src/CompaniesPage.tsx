@@ -1,12 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import {
-  addCareerPage, type CareerRequest, careerRequests, type CompanyItem, type CompanyPage, doubtfulCompanies,
-  hiddenCompanies,
-  searchCompanies, setCompanyHidden,
-} from './api';
+import { addCareerPage, type CareerRequest, careerRequests, type CompanyItem, searchCompanies } from './api';
 import { GroupBadge } from './companyGroups';
 import { errorText, type MessageKey, type Translate, useI18n } from './i18n';
-import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /** Подпись причины итога проверки и запроса на языке интерфейса (§162); неизвестная — код как есть. */
 function reasonText(reason: string, t: Translate): string {
@@ -21,83 +16,44 @@ const REQUEST_BADGES: Record<CareerRequest['status']['state'], string> = {
 };
 
 /**
- * Вкладки раздела в порядке показа (решение владельца 2026-10-22, §176): первая и открытая при входе — компании, чьи
- * вакансии не собираются (ради них раздел и нужен), затем поиск, добавленные пользователем адреса, скрытые. У каждой —
- * одна строка пояснения под вкладками: что здесь и что можно сделать.
+ * Вкладки раздела в порядке показа (§189, решение владельца 2026-10-26 по аудиту логики и удобства): первая и
+ * открытая при входе — поиск компании, затем добавленные пользователем адреса. Списка компаний без вакансий и
+ * скрытых у пользователя нет: охват компаний — задача администратора. У каждой вкладки — одна строка пояснения.
  */
-type Tab = 'doubtful' | 'find' | 'addresses' | 'hidden';
+type Tab = 'find' | 'addresses';
 
 const TABS: { tab: Tab; label: MessageKey; note: MessageKey }[] = [
-  { tab: 'doubtful', label: 'companies.tabDoubtful', note: 'companies.noteDoubtful' },
   { tab: 'find', label: 'companies.tabFind', note: 'companies.noteFind' },
   { tab: 'addresses', label: 'companies.tabAddresses', note: 'companies.noteAdded' },
-  { tab: 'hidden', label: 'companies.tabHidden', note: 'companies.noteHidden' },
 ];
 
 /** Пока есть адреса «в проверке», их состояние обновляется само с таким промежутком. */
 const REQUEST_POLL_MS = 15000;
 
-
 /**
- * Компании (бизнес-описание §4.2, §5; §137, §138, §143): поиск по названию или IČO, сомнительные компании (без
- * вакансий: «может быть» и «нет» с признаком найма) с причиной, сайтом и адресом; у компании без своей читаемой
- * кадровой страницы (и у «только портал») — ввод её адреса по кнопке (адрес общий для всех пользователей, проверяется
- * в течение минут); свои адреса и их состояние — обновляются сами, пока идёт проверка. Личное «скрыть»: компания
- * пропадает из поиска и сомнительных только у этого пользователя, «Show again» возвращает её в списки. Новый облик
- * (§175, §176): вкладки «No vacancies collected · Find · Added by me · Hidden» с числом записей (данные всех вкладок
- * загружаются при открытии раздела, как раньше) и строкой пояснения; поиск — главное действие вкладки «Find»;
- * состояние своего адреса — цветной меткой; причина, по которой страница вакансий не найдена, — серым в строке;
- * действия в строках — ссылками.
+ * Компании (бизнес-описание §4.2, §5; §137, §138, §143, §189): поиск по названию или IČO; у найденной компании без
+ * своей читаемой кадровой страницы (и у «только портал») — ввод её адреса по кнопке (адрес общий для всех
+ * пользователей, проверяется в течение минут); свои адреса и их состояние — обновляются сами, пока идёт проверка. Новый облик (§175,
+ * §176): вкладки «Find · Added by me» (у «Added by me» — число адресов) и строка пояснения; поиск — главное действие
+ * вкладки «Find»; состояние своего адреса — цветной меткой; причина, по которой страница вакансий не найдена, — серым в
+ * строке; действия в строках — ссылками.
  */
 export function CompaniesPage() {
   const { locale, t } = useI18n();
   const problem = (failure: unknown) => errorText(failure, t);
   const [query, setQuery] = useState('');
-  const [searched, setSearched] = useState<string | null>(null);
   const [found, setFound] = useState<CompanyItem[] | null>(null);
-  const [doubtful, setDoubtful] = useState<CompanyPage | null>(null);
-  const [size, setSize] = useState(storedSize);
-  const [loadingPage, setLoadingPage] = useState(false);
   const [requests, setRequests] = useState<CareerRequest[]>([]);
-  const [hidden, setHidden] = useState<CompanyItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('doubtful');
+  const [tab, setTab] = useState<Tab>('find');
 
   const loadRequests = useCallback(() => {
     careerRequests().then(setRequests, (failure: unknown) => setMessage(errorText(failure, t)));
   }, []);
 
-  const loadHidden = useCallback(() => {
-    hiddenCompanies().then(setHidden, (failure: unknown) => setMessage(errorText(failure, t)));
-  }, []);
-
-  /** Страница сомнительных; опустела (скрыта последняя компания последней страницы) — последняя непустая. */
-  const loadDoubtful = useCallback(async (page: number, rows: number) => {
-    setLoadingPage(true);
-    try {
-      let next = await doubtfulCompanies(page, rows);
-      if (next.items.length === 0 && next.total > 0 && page > 1) {
-        next = await doubtfulCompanies(Math.ceil(next.total / rows), rows);
-      }
-      setDoubtful(next);
-    } catch (failure) {
-      setMessage(errorText(failure, t));
-    } finally {
-      setLoadingPage(false);
-    }
-  }, []);
-
   useEffect(() => {
-    loadDoubtful(1, size);
     loadRequests();
-    loadHidden();
-  }, [loadDoubtful, loadRequests, loadHidden]);
-
-  function resize(rows: number) {
-    setSize(rows);
-    storeSize(rows);
-    loadDoubtful(1, rows);
-  }
+  }, [loadRequests]);
 
   const checking = requests.some((item) => item.status.state === 'PENDING');
   useEffect(() => {
@@ -108,42 +64,11 @@ export function CompaniesPage() {
     return () => window.clearInterval(timer);
   }, [checking, loadRequests]);
 
-  async function runSearch(text: string) {
-    setMessage(null);
-    try {
-      setFound(await searchCompanies(text));
-      setSearched(text);
-    } catch (failure) {
-      setMessage(problem(failure));
-    }
-  }
-
-  function search(event: FormEvent<HTMLFormElement>) {
+  async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void runSearch(query);
-  }
-
-  async function hide(item: CompanyItem) {
     setMessage(null);
     try {
-      await setCompanyHidden(item.id, true);
-      setFound((current) => current === null ? null : current.filter((other) => other.id !== item.id));
-      await loadDoubtful(doubtful?.page ?? 1, size);
-      loadHidden();
-    } catch (failure) {
-      setMessage(problem(failure));
-    }
-  }
-
-  async function unhide(item: CompanyItem) {
-    setMessage(null);
-    try {
-      await setCompanyHidden(item.id, false);
-      setHidden((current) => current.filter((other) => other.id !== item.id));
-      await loadDoubtful(doubtful?.page ?? 1, size);
-      if (searched !== null) {
-        await runSearch(searched);
-      }
+      setFound(await searchCompanies(query));
     } catch (failure) {
       setMessage(problem(failure));
     }
@@ -154,24 +79,9 @@ export function CompaniesPage() {
     loadRequests();
   }
 
-  /** Число записей вкладки; у «Find» и пока не загружено — нет. */
-  function tabCount(item: Tab): number | null {
-    switch (item) {
-      case 'addresses':
-        return requests.length;
-      case 'doubtful':
-        return doubtful?.total ?? null;
-      case 'hidden':
-        return hidden.length;
-      default:
-        return null;
-    }
-  }
-
-  /** Подпись вкладки: «No vacancies collected · 12»; без числа — только название. */
+  /** Подпись вкладки: «Added by me · 2»; у «Find» — только название. */
   function tabLabel(item: { tab: Tab; label: MessageKey }): string {
-    const count = tabCount(item.tab);
-    return count === null ? t(item.label) : t(item.label) + ' · ' + count;
+    return item.tab === 'addresses' ? t(item.label) + ' · ' + requests.length : t(item.label);
   }
 
   return (
@@ -195,7 +105,7 @@ export function CompaniesPage() {
             <button type="submit" className="primary">{t('companies.search')}</button>
           </form>
           {found !== null && (found.length === 0 ? <p className="muted">{t('companies.noneFound')}</p>
-            : <CompanyTable items={found} onAdded={added} onHide={hide} />)}
+            : <CompanyTable items={found} onAdded={added} />)}
         </section>
       )}
       {tab === 'addresses' && (
@@ -227,41 +137,6 @@ export function CompaniesPage() {
           )}
         </section>
       )}
-      {tab === 'doubtful' && (
-        <section>
-          {doubtful === null ? <p className="muted">{t('app.loading')}</p>
-            : doubtful.total === 0 ? <p className="muted">{t('companies.noDoubtful')}</p>
-              : <CompanyTable items={doubtful.items} onAdded={added} onHide={hide} />}
-          {doubtful !== null && doubtful.total > 0 && (
-            <div className="list-footer">
-              <Pager page={doubtful.page} pages={Math.ceil(doubtful.total / doubtful.size)} busy={loadingPage}
-                onPage={(page) => loadDoubtful(page, size)} />
-              <PageSize size={size} sizes={PAGE_SIZES} busy={loadingPage} onSize={resize} />
-            </div>
-          )}
-        </section>
-      )}
-      {tab === 'hidden' && (
-        <section>
-          {hidden.length === 0 ? <p className="muted">{t('companies.noHidden')}</p> : (
-            <table className="companies">
-              <tbody>
-                {hidden.map((item) => (
-                  <tr key={item.id}>
-                    <td className="company">{item.name}<br /><span className="muted">IČO {item.registrationNumber}</span></td>
-                    <td><Group item={item} /></td>
-                    <td className="row-actions">
-                      <button type="button" className="link" onClick={() => unhide(item)}>
-                        {t('companies.showAgain')}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
     </>
   );
 }
@@ -269,10 +144,9 @@ export function CompaniesPage() {
 interface TableProps {
   items: CompanyItem[];
   onAdded: () => void;
-  onHide: (item: CompanyItem) => void;
 }
 
-function CompanyTable({ items, onAdded, onHide }: TableProps) {
+function CompanyTable({ items, onAdded }: TableProps) {
   const { t } = useI18n();
   return (
     <table className="companies">
@@ -283,7 +157,7 @@ function CompanyTable({ items, onAdded, onHide }: TableProps) {
         </tr>
       </thead>
       <tbody>
-        {items.map((item) => <CompanyRow key={item.id} item={item} onAdded={onAdded} onHide={onHide} />)}
+        {items.map((item) => <CompanyRow key={item.id} item={item} onAdded={onAdded} />)}
       </tbody>
     </table>
   );
@@ -305,8 +179,7 @@ function acceptsAddress(item: CompanyItem): boolean {
   return item.check.group !== 'YES' && item.check.group !== 'NOT_EMPLOYER';
 }
 
-function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () => void;
-  onHide: (item: CompanyItem) => void }) {
+function CompanyRow({ item, onAdded }: { item: CompanyItem; onAdded: () => void }) {
   const [adding, setAdding] = useState(false);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -355,9 +228,6 @@ function CompanyRow({ item, onAdded, onHide }: { item: CompanyItem; onAdded: () 
             {t('companies.addAddress')}
           </button>
         )}
-        <button type="button" className="link" title={t('companies.hideOnlyForMe')} onClick={() => onHide(item)}>
-          {t('companies.hide')}
-        </button>
       </td>
     </tr>
   );

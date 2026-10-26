@@ -43,7 +43,7 @@ function countryLabel(code: string): string {
  * Экран администратора (/admin, §132): отдельный вход (имя admin) и показатели ядра по дням (бизнес-описание §7.3):
  * строки — показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от
  * «обработано»; состояние ядра сейчас с тревогой «ядро остановилось» (§142); отметка компании «не работодатель»
- * (§138) — общая для всех: не в сомнительных, сайт и кадровая страница не ищутся, адрес не вводится; подключённые
+ * (§138) — общая для всех: сайт и кадровая страница не ищутся, адрес не вводится; подключённые
  * источники читаются дальше; предложения позиций (§161) и словарь позиций (§160). При ошибке загрузки блока — «Retry» (§143).
  */
 export function AdminApp() {
@@ -241,8 +241,8 @@ function NotEmployerView() {
     <section>
       <h2>Not an employer</h2>
       <p className="muted">A trade union, an association, an owners' community: the mark is shared by all users. The
-        company is no longer offered as doubtful, its site and career page are no longer searched by name and on its
-        sites, and users cannot add its career page address. Vacancies of sources already connected are still
+        company's site and career page are no longer searched by name and on its sites, and users cannot add its
+        career page address. Vacancies of sources already connected are still
         read.</p>
       <form className="inline-form" onSubmit={search} role="search">
         <input aria-label="Company name or IČO" placeholder="Company name or IČO" value={query}

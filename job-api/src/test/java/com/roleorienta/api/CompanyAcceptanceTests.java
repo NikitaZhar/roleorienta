@@ -11,10 +11,10 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Группы компаний, сомнительные компании и адрес кадровой страницы, введённый пользователем (§137; бизнес-описание
- * §4.2, §5, сценарий 12 — ввод и состояние запроса; проверку адреса делает job-worker), личное «скрыть» и отметка
- * администратора «не работодатель» (§138) через настоящий HTTP. Компании теста — с номерами {@code 9901xxxx};
- * ограничение частоты в тесте — 2 адреса в сутки.
+ * Группы компаний и адрес кадровой страницы, введённый пользователем (§137; бизнес-описание §4.2, §5, сценарий 12 —
+ * ввод и состояние запроса; проверку адреса делает job-worker), отметка администратора «не работодатель» (§138) через
+ * настоящий HTTP; списка компаний без вакансий и личного «скрыть» у пользователя нет (§189). Компании теста — с
+ * номерами {@code 9901xxxx}; ограничение частоты в тесте — 2 адреса в сутки.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"app.company-requests.daily-limit=2", "app.admin.password=" + CompanyAcceptanceTests.ADMIN})
@@ -38,7 +38,7 @@ class CompanyAcceptanceTests {
 
     /**
      * Qwalfa — подключена своей системой найма (YES); Qwbeta — сайт найден, страница не читается (MAYBE); Qwgama — сайта
-     * нет, мелкая (NO, только поиском); Qwdelta — сайта нет, 50+ сотрудников (NO, в сомнительных); Qwepsi — подключена
+     * нет, мелкая (NO); Qwdelta — сайта нет, 50+ сотрудников (NO); Qwepsi — подключена
      * только порталом (PORTAL, §143).
      */
     @BeforeEach
@@ -101,59 +101,6 @@ class CompanyAcceptanceTests {
     }
 
     /**
-     * Сомнительные: «может быть» и «нет» с признаком найма; подключённая и мелкая без сайта — нет; страницы по номеру
-     * с общим числом (§163).
-     *
-     * @throws Exception ошибка HTTP
-     */
-    @Test
-    void doubtfulListsMaybeAndHiringCompaniesWithoutSite() throws Exception {
-        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
-
-        String list = user.send("GET", "/api/v1/companies/doubtful?size=100", null).body();
-
-        assertThat(list).contains("\"id\":" + beta + ",", "\"id\":" + delta + ",")
-                .doesNotContain("\"id\":" + alfa + ",", "\"id\":" + gama + ",");
-        long total = Long.parseLong(list.replaceAll(".*\"total\":(\\d+).*", "$1"));
-        assertThat(total).isGreaterThanOrEqualTo(2);
-        String first = user.send("GET", "/api/v1/companies/doubtful?page=1&size=1", null).body();
-        String second = user.send("GET", "/api/v1/companies/doubtful?page=2&size=1", null).body();
-        assertThat(first).contains("\"page\":1,\"size\":1,\"total\":" + total);
-        assertThat(second).contains("\"page\":2,\"size\":1,\"total\":" + total).isNotEqualTo(first);
-    }
-
-    /**
-     * Порядок сомнительных (§177): приоритетная — первой; при равном размере — с найденным сайтом выше; размер
-     * неизвестен — ниже известного. Qwzeta — приоритетная без сайта и размера; Qweta — 50+ сотрудников и найденный
-     * сайт; Qwdelta — 50+ без сайта; Qwbeta — сайт без размера. Чужие компании общей БД могут стоять между ними —
-     * сравнивается взаимный порядок.
-     *
-     * @throws Exception ошибка HTTP
-     */
-    @Test
-    void doubtfulPutsPriorityThenLargerThenWithSiteFirst() throws Exception {
-        long zeta = company("99010007", "Qwzeta s.r.o.", null);
-        long eta = company("99010008", "Qweta s.r.o.", 50);
-        jdbcTemplate.update("UPDATE company SET priority = TRUE WHERE id = ?", zeta);
-        jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
-                + "VALUES (?, 'SITE_NOT_FOUND', now(), now()), (?, 'FORMAT_UNSUPPORTED', now(), now())", zeta, eta);
-        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, status, proof) "
-                + "VALUES (?, 'qweta.sk', 'https://qweta.sk/', 'NAME', 'FOUND', 'BRAND')", eta);
-        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
-
-        String list = user.send("GET", "/api/v1/companies/doubtful?size=100", null).body();
-
-        int first = list.indexOf("\"id\":" + zeta + ",");
-        int second = list.indexOf("\"id\":" + eta + ",");
-        int third = list.indexOf("\"id\":" + delta + ",");
-        int fourth = list.indexOf("\"id\":" + beta + ",");
-        assertThat(first).isNotNegative();
-        assertThat(first).isLessThan(second);
-        assertThat(second).isLessThan(third);
-        assertThat(third).isLessThan(fourth);
-    }
-
-    /**
      * Ввод адреса: подключённая — {@code 409}, не http(s) — {@code 400}, принят — {@code 201} «в обработке»; запросы
      * видит только их автор; третий адрес за сутки — {@code 429}.
      *
@@ -198,36 +145,8 @@ class CompanyAcceptanceTests {
     }
 
     /**
-     * Скрытая компания пропадает из поиска и сомнительных только у скрывшего, видна в его списке скрытых и
-     * возвращается; неизвестная компания — {@code 404}.
-     *
-     * @throws Exception ошибка HTTP
-     */
-    @Test
-    void hiddenCompanyDisappearsOnlyForThatUser() throws Exception {
-        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
-        ApiTestClient other = ApiTestClient.signedIn(port(), "other@example.com");
-
-        assertThat(user.send("PUT", "/api/v1/me/hidden-companies/" + beta, null).status()).isEqualTo(204);
-        assertThat(user.send("PUT", "/api/v1/me/hidden-companies/" + beta, null).status()).isEqualTo(204);
-        assertThat(user.send("PUT", "/api/v1/me/hidden-companies/-1", null).status()).isEqualTo(404);
-
-        assertThat(user.send("GET", "/api/v1/companies?query=qwbeta", null).body()).isEqualTo("[]");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
-                .doesNotContain("\"id\":" + beta + ",");
-        assertThat(user.send("GET", "/api/v1/me/hidden-companies", null).body()).contains("\"id\":" + beta + ",");
-        assertThat(other.send("GET", "/api/v1/companies?query=qwbeta", null).body()).contains("\"id\":" + beta + ",");
-        assertThat(other.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
-                .contains("\"id\":" + beta + ",");
-
-        assertThat(user.send("DELETE", "/api/v1/me/hidden-companies/" + beta, null).status()).isEqualTo(204);
-        assertThat(user.send("GET", "/api/v1/companies?query=qwbeta", null).body()).contains("\"id\":" + beta + ",");
-        assertThat(user.send("GET", "/api/v1/me/hidden-companies", null).body()).isEqualTo("[]");
-    }
-
-    /**
-     * Отметка «не работодатель» — только администратор; компания получает группу NOT_EMPLOYER у всех, уходит из
-     * сомнительных, ввод адреса — {@code 409}; снятие отметки возвращает её.
+     * Отметка «не работодатель» — только администратор; компания получает группу NOT_EMPLOYER у всех, ввод адреса —
+     * {@code 409}; снятие отметки возвращает прежнюю группу.
      *
      * @throws Exception ошибка HTTP
      */
@@ -248,20 +167,17 @@ class CompanyAcceptanceTests {
                 .contains("\"group\":\"NOT_EMPLOYER\"");
         assertThat(user.send("GET", "/api/v1/companies?query=qwdelta", null).body())
                 .contains("\"group\":\"NOT_EMPLOYER\"", "\"reason\":null");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
-                .doesNotContain("\"id\":" + delta + ",");
         assertThat(user.send("POST", "/api/v1/companies/" + delta + "/career-page",
                 "{\"url\":\"https://qwdelta.sk/praca\"}").status()).isEqualTo(409);
 
         assertThat(admin.send("DELETE", "/api/v1/admin/companies/" + delta + "/not-employer", null).status())
                 .isEqualTo(204);
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
-                .contains("\"id\":" + delta + ",");
+        assertThat(user.send("GET", "/api/v1/companies?query=qwdelta", null).body()).contains("\"group\":\"NO\"");
     }
 
     /**
-     * «Только портал» (§143): своя группа, нет в сомнительных, адрес кадровой страницы принимается; тот же адрес, пока
-     * проверяется, — {@code 409}; поиск администратора не учитывает личные скрытия.
+     * «Только портал» (§143): своя группа, адрес кадровой страницы принимается; тот же адрес, пока проверяется, —
+     * {@code 409}; поиск администратора находит компанию.
      *
      * @throws Exception ошибка HTTP
      */
@@ -272,12 +188,9 @@ class CompanyAcceptanceTests {
 
         assertThat(user.send("GET", "/api/v1/companies?query=qwepsi", null).body())
                 .contains("\"group\":\"PORTAL\"", "\"reason\":null");
-        assertThat(user.send("GET", "/api/v1/companies/doubtful?size=100", null).body())
-                .doesNotContain("\"id\":" + epsi + ",");
         assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(201);
         assertThat(user.send("POST", "/api/v1/companies/" + epsi + "/career-page", page).status()).isEqualTo(409);
 
-        assertThat(user.send("PUT", "/api/v1/me/hidden-companies/" + epsi, null).status()).isEqualTo(204);
         ApiTestClient admin = new ApiTestClient(port());
         assertThat(admin.send("POST", "/api/v1/admin/login",
                 "{\"username\":\"admin\",\"password\":\"" + ADMIN + "\"}").status()).isEqualTo(200);
