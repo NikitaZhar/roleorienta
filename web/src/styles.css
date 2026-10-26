@@ -824,12 +824,49 @@ nav .current,
   margin-right: 0;
 }
 
+/* Строка результатов — ссылка на публикацию (§193): вид строки-кнопки; «↗» у позиции — подсказка «откроется публикация». */
+a.row {
+  color: inherit;
+  text-decoration: none;
+}
+
+.row-link {
+  flex: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .row-action {
   flex: none;
 }
 
-/* Крестик «Not interested» в строке результатов (§191): тихий, заметнее при наведении. */
-.row-dismiss {
+/* «↗» — первичная публикация из строки «Мои отклики» и «Не интересно» (§192, §193); тот же тихий вид. */
+.row-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 18px;
+  text-decoration: none;
+}
+
+.row-open:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* Пояснение под полем условий (§192: под форматом). */
+.field-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+/* «✓» и «×» в строке результатов (§191, §193): тихие, заметнее при наведении. */
+.row-mark {
   flex: none;
   width: 32px;
   height: 32px;
@@ -843,7 +880,7 @@ nav .current,
   cursor: pointer;
 }
 
-.row-dismiss:hover {
+.row-mark:hover {
   background: var(--surface);
   color: var(--ink);
 }

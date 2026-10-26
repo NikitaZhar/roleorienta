@@ -18,12 +18,21 @@ public final class VacancyDtos {
      * Вакансия в списке.
      *
      * @param id       вакансия
-     * @param position позиция (название публикации)
+     * @param posting  позиция и адрес первичной публикации (§192: публикация открывается прямо из строки)
      * @param parties  работодатель и агентство
      * @param work     страна и формат работы
      * @param timeline когда вакансия открыта и её статус у пользователя
      */
-    public record VacancyItem(long id, String position, Parties parties, Work work, Timeline timeline) {
+    public record VacancyItem(long id, Posting posting, Parties parties, Work work, Timeline timeline) {
+    }
+
+    /**
+     * Публикация вакансии в строке списка (§192).
+     *
+     * @param position позиция (название публикации)
+     * @param url      адрес первичной публикации
+     */
+    public record Posting(String position, String url) {
     }
 
     /**

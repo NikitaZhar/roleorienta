@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
-import { dateText, rowCountryText, rowMarkedText, rowOpenedText, statusLabel } from './format';
+import { dateText, rowMarkedText, rowMetaText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
@@ -56,12 +56,23 @@ const REFRESH_MS = 5000;
 const REFRESH_TIMES = 24;
 /** Ширины строк-заготовок, пока идёт сбор (% ширины): серые полосы вместо пустоты (§171). */
 const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
-/** Сколько ждёт «Undo» после крестика «Not interested» (§191): отметка уходит на сервер только после этого. */
+/** Сколько ждёт «Undo» после «✓» или «×» (§191, §193): отметка уходит на сервер только после этого. */
 const UNDO_MS = 5000;
 
+/** Отметки из строки результатов (§193): «✓» — откликнулся, «×» — не интересна; подпись полосы «Undo». */
+type RowMark = 'APPLIED' | 'NOT_INTERESTED';
+const MARK_MOVED: Record<RowMark, MessageKey> = {
+  APPLIED: 'list.movedToApplications',
+  NOT_INTERESTED: 'list.dismissed',
+};
+
 /**
- * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция; под ней
- * «работодатель · страна»; справа — дата или статус (агентство — только в сведениях). Результаты поиска (открытые позже
+ * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция (у известного
+ * формата — метка Office / Remote, гибрид без метки, §192); под ней «работодатель · страна» (чего нет — не
+ * показывается, §192); справа — дата или статус (агентство — только в сведениях). Результаты (§193): строка — ссылка на
+ * первичную публикацию в новой вкладке («↗» у позиции — подсказка), открытие снимает «Not opened» («Viewed»); в строке
+ * «✓» — откликнулся (CV sent, уходит в «Мои отклики») и «×» — не интересна; сведения из результатов не открываются.
+ * «Мои отклики» и «Не интересно»: строка открывает сведения (статус и история), «↗» рядом — публикация. Результаты поиска (открытые позже
  * сверху, дата открытия — §127; над списком — «N vacancies · M new · Updated hourly», у новых — пилюля «New»,
  * просмотренные — светлее, §156). «Мои отклики» и «Не интересно» (срез 4 нового облика): заголовок раздела и рядом
  * число вакансий; в «Мои отклики» справа — статус пилюлей и дата, у закрытой работодателем — пилюля «closed» рядом с
@@ -73,10 +84,11 @@ const UNDO_MS = 5000;
  * 2 минут, на экране — «идёт сбор» и строки-заготовки; первая порция выдаётся в течение ~30 с (§120); следующий
  * запрос — только после ответа на предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же
  * страницу; если она опустела (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
- * страницы во время загрузки не меняется (аудит §154). В результатах (§191): крестик «Not interested» в строке — строка
- * сразу скрывается, на {@value UNDO_MS} мс внизу «Moved to Not interested · Undo»; отметка уходит на сервер только по
- * истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк истории). Новый крестик, уход со страницы
- * или из списка — ожидающая отметка уходит сразу. Закрытая вкладка браузера в эти секунды отметку теряет.
+ * страницы во время загрузки не меняется (аудит §154). В результатах (§191, §193): «✓» или «×» — строка сразу
+ * скрывается, на {@value UNDO_MS} мс внизу «Moved to My applications · Undo» или «Moved to Not interested · Undo»;
+ * отметка уходит на сервер только по истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк
+ * истории). Новая отметка, уход со страницы или из списка — ожидающая уходит сразу. Закрытая вкладка браузера в эти
+ * секунды отметку теряет.
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
   const i18n = useI18n();
@@ -89,9 +101,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [refreshes, setRefreshes] = useState(0);
   /** Вакансии, скрытые крестиком до ответа сервера (§191). */
   const [dismissed, setDismissed] = useState<number[]>([]);
-  /** Отметка, ждущая «Undo»: вакансия и таймер; ref — чтобы отправить её и при уходе из списка. */
-  const [waiting, setWaiting] = useState<number | null>(null);
-  const pending = useRef<{ id: number; timer: number } | null>(null);
+  /** Отметка, ждущая «Undo» (для подписи полосы); ref — вакансия, отметка и таймер, доступны и при уходе из списка. */
+  const [waiting, setWaiting] = useState<RowMark | null>(null);
+  const pending = useRef<{ id: number; mark: RowMark; timer: number } | null>(null);
 
   async function show(page: number, rows: number) {
     setLoading(true);
@@ -123,15 +135,15 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     show(data?.page ?? 1, size);
   }
 
-  /** Отметка «Not interested» уходит на сервер; затем страница перечитывается (вакансия уходит из результатов). */
-  async function commit(id: number) {
+  /** Отметка из строки уходит на сервер; затем страница перечитывается (вакансия уходит из результатов). */
+  async function commit(id: number, mark: RowMark) {
     if (pending.current?.id === id) {
       window.clearTimeout(pending.current.timer);
       pending.current = null;
       setWaiting(null);
     }
     try {
-      await setStatus(id, 'NOT_INTERESTED');
+      await setStatus(id, mark);
     } catch (failure) {
       setDismissed((ids) => ids.filter((other) => other !== id));
       setMessage(errorText(failure, t));
@@ -141,14 +153,32 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     setDismissed((ids) => ids.filter((other) => other !== id));
   }
 
-  /** Крестик в строке: прежняя ожидающая отметка уходит сразу, новая ждёт «Undo». */
-  function dismiss(id: number) {
+  /** «✓» или «×» в строке: прежняя ожидающая отметка уходит сразу, новая ждёт «Undo». */
+  function markRow(id: number, mark: RowMark) {
     if (pending.current !== null) {
-      void commit(pending.current.id);
+      void commit(pending.current.id, pending.current.mark);
     }
     setDismissed((ids) => [...ids, id]);
-    pending.current = { id, timer: window.setTimeout(() => void commit(id), UNDO_MS) };
-    setWaiting(id);
+    pending.current = { id, mark, timer: window.setTimeout(() => void commit(id, mark), UNDO_MS) };
+    setWaiting(mark);
+  }
+
+  /**
+   * Открытие публикации из строки результатов (§193): у не открытой — «Viewed» на сервере и сразу на экране (пилюля
+   * «Not opened» снимается, число не открытых уменьшается); ошибка записи — сообщение, публикация всё равно открыта.
+   */
+  function opened(item: VacancyItem) {
+    if (item.timeline.status.code !== 'NEW') {
+      return;
+    }
+    const viewed = 'VIEWED' as const;
+    setData((current) => current === null ? null : {
+      ...current,
+      newCount: Math.max(0, current.newCount - 1),
+      items: current.items.map((other) => other.id !== item.id ? other
+        : { ...other, timeline: { ...other.timeline, status: { ...other.timeline.status, code: viewed } } }),
+    });
+    setStatus(item.id, viewed).catch((failure: unknown) => setMessage(errorText(failure, t)));
   }
 
   /** «Undo»: на сервер ничего не уходит, строка возвращается. */
@@ -168,7 +198,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     const current = pending.current;
     if (current !== null) {
       window.clearTimeout(current.timer);
-      void setStatus(current.id, 'NOT_INTERESTED');
+      void setStatus(current.id, current.mark);
     }
   }, []);
 
@@ -247,30 +277,39 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
             const fresh = results && item.timeline.status.code === 'NEW';
             const seen = (results && !fresh) || actions;
             return (
-              <li key={item.id} className={actions || results ? 'actionable' : undefined}>
-                <button type="button" className={seen ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
-                  <span className="row-main">
-                    <span className="row-title">
-                      {fresh && <span className="pill pill-fresh">{t('list.new')}</span>}
-                      <span className="position">{item.position}</span>
-                      {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
-                    </span>
-                    <span className="row-meta">
-                      {(item.parties.employer ?? t('list.noEmployer')) + ' · ' + rowCountryText(item.work, i18n)}
-                    </span>
-                  </span>
-                  <span className="row-side">{side(item, i18n)}</span>
-                </button>
+              <li key={item.id} className="actionable">
+                {results ? (
+                  <a className={seen ? 'row seen' : 'row'} href={item.posting.url} target="_blank"
+                    rel="noopener noreferrer" title={t('vacancy.openPosting')} onClick={() => opened(item)}>
+                    <RowContent item={item} fresh={fresh} side={side(item, i18n)} link />
+                  </a>
+                ) : (
+                  <button type="button" className={seen ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
+                    <RowContent item={item} fresh={fresh} side={side(item, i18n)} />
+                  </button>
+                )}
+                {!results && (
+                  <a className="row-open" href={item.posting.url} target="_blank" rel="noopener noreferrer"
+                    aria-label={t('vacancy.openPosting')} title={t('vacancy.openPosting')}>
+                    ↗
+                  </a>
+                )}
                 {actions && (
                   <button type="button" className="link row-action" disabled={loading} onClick={() => giveBack(item.id)}>
                     {t('list.return')}
                   </button>
                 )}
                 {results && (
-                  <button type="button" className="row-dismiss" aria-label={t('list.dismiss')} title={t('list.dismiss')}
-                    onClick={() => dismiss(item.id)}>
-                    ×
-                  </button>
+                  <>
+                    <button type="button" className="row-mark" aria-label={t('list.applied')} title={t('list.applied')}
+                      onClick={() => markRow(item.id, 'APPLIED')}>
+                      ✓
+                    </button>
+                    <button type="button" className="row-mark" aria-label={t('list.dismiss')} title={t('list.dismiss')}
+                      onClick={() => markRow(item.id, 'NOT_INTERESTED')}>
+                      ×
+                    </button>
+                  </>
                 )}
               </li>
             );
@@ -279,7 +318,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       )}
       {waiting !== null && (
         <div className="undo-bar" role="status">
-          <span>{t('list.dismissed')}</span>
+          <span>{t(MARK_MOVED[waiting])}</span>
           <button type="button" className="link" onClick={undo}>{t('list.undo')}</button>
         </div>
       )}
@@ -291,6 +330,32 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Содержимое строки (§171): позиция с пометками, «работодатель · страна», справа — дата или статус. {@code link} —
+ * строка ведёт в публикацию (§193): у позиции «↗».
+ */
+function RowContent({ item, fresh, side, link = false }: { item: VacancyItem; fresh: boolean; side: ReactNode;
+  link?: boolean }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  return (
+    <>
+      <span className="row-main">
+        <span className="row-title">
+          {fresh && <span className="pill pill-fresh">{t('list.new')}</span>}
+          <span className="position">{item.posting.position}</span>
+          {link && <span className="row-link" aria-hidden="true">↗</span>}
+          {item.work.format === 'OFFICE' && <span className="pill pill-muted">{t('format.office')}</span>}
+          {item.work.format === 'REMOTE' && <span className="pill pill-muted">{t('format.remote')}</span>}
+          {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
+        </span>
+        <span className="row-meta">{rowMetaText(item.parties.employer, item.work, i18n)}</span>
+      </span>
+      <span className="row-side">{side}</span>
+    </>
   );
 }
 

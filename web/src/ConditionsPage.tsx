@@ -218,12 +218,15 @@ export function ConditionsPage({ onSaved }: Props) {
           )}
           <PositionSuggestions />
         </div>
-        <label>
-          {t('conditions.workFormat')}
-          <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
-            {FORMATS.map((item) => <option key={item.value} value={item.value}>{t(item.label)}</option>)}
-          </select>
-        </label>
+        <div>
+          <label>
+            {t('conditions.workFormat')}
+            <select value={format} onChange={(event) => setFormat(event.target.value as WorkFormat | '')}>
+              {FORMATS.map((item) => <option key={item.value} value={item.value}>{t(item.label)}</option>)}
+            </select>
+          </label>
+          {format !== '' && <p className="muted field-note">{t('conditions.formatNote')}</p>}
+        </div>
       </div>
       {message !== null && <p className="error" role="status">{message}</p>}
       <div className="actions">

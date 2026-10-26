@@ -82,7 +82,8 @@ class VacancyAcceptanceTests {
         ApiTestClient.Response page = client.send("GET", "/api/v1/me/vacancies?page=1&size=2", null);
         assertThat(page.status()).isEqualTo(200);
         assertThat(titles(page.body())).isEqualTo("Third,Second");
-        assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3,\"newCount\":3");
+        assertThat(page.body()).contains("\"page\":1,\"size\":2,\"total\":3,\"newCount\":3",
+                "\"posting\":{\"position\":\"Third\",\"url\":\"https://example.com/Third\"}");
         ApiTestClient.Response next = client.send("GET", "/api/v1/me/vacancies?page=2&size=2", null);
         assertThat(titles(next.body())).isEqualTo("First");
         assertThat(next.body()).contains("\"page\":2,\"size\":2,\"total\":3");

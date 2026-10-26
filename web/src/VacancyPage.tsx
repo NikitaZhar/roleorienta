@@ -16,10 +16,10 @@ const CHOICES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
 
 /**
  * Сведения о вакансии (бизнес-описание §6, экран §147; порядок — решение владельца 2026-10-21, §173): сначала вся
- * информация о вакансии одним списком, без кнопок между строками — позиция, работодатель и агентство, страна (не
- * определена — «not specified»), формат («Only office», «Only remote — from …», «Hybrid», «Not specified»),
- * требования к языку (§158), дата открытия («found …», если работодатель даты не дал, §127); затем ссылка на первичную
- * публикацию; затем — вместе — текущий статус с датой и выпадающим списком («Viewed» не выбирается — ставит приложение
+ * информация о вакансии одним списком, без кнопок между строками — позиция, работодатель и агентство, страна, формат
+ * («Only office», «Only remote — from …», «Hybrid»), требования к языку (§158), дата открытия («found …», если
+ * работодатель даты не дал, §127); чего нет, той строки нет (§192, принцип владельца: нет информации — показываем то,
+ * что есть); затем ссылка на первичную публикацию; затем — вместе — текущий статус с датой и выпадающим списком («Viewed» не выбирается — ставит приложение
  * при открытии новой вакансии; «CV sent», «Interview», «Rejected», за чертой «Not interested», §156) и история с
  * датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
  * перечитывается; при возврате список перечитывается — вакансия, ушедшая в другой раздел, из него пропадает.
@@ -74,15 +74,13 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       {back}
       <h2>{details.position}</h2>
       <dl>
-        <dt>{t('vacancy.employer')}</dt>
-        <dd>{parties.employer ?? t('vacancy.notSpecified')}</dd>
+        {parties.employer !== null && (<><dt>{t('vacancy.employer')}</dt><dd>{parties.employer}</dd></>)}
         {parties.agency !== null && (<><dt>{t('vacancy.agency')}</dt><dd>{parties.agency}</dd></>)}
-        <dt>{t('vacancy.country')}</dt>
-        <dd>{countriesText(work, i18n)}</dd>
-        <dt>{t('vacancy.format')}</dt>
-        <dd>{formatText(work, i18n)}</dd>
-        <dt>{t('vacancy.languages')}</dt>
-        <dd>{languagesText(publication.languages, i18n)}</dd>
+        {!work.countryUncertain && (<><dt>{t('vacancy.country')}</dt><dd>{countriesText(work, i18n)}</dd></>)}
+        {work.format !== null && (<><dt>{t('vacancy.format')}</dt><dd>{formatText(work, i18n)}</dd></>)}
+        {publication.languages.length > 0 && (
+          <><dt>{t('vacancy.languages')}</dt><dd>{languagesText(publication.languages, i18n)}</dd></>
+        )}
         <dt>{t('vacancy.opened')}</dt>
         <dd>{openedText(publication.timeline.opened, i18n)}</dd>
       </dl>

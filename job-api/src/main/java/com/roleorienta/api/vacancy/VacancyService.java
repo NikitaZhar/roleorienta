@@ -5,6 +5,7 @@ import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.vacancy.StatusRules.Change;
 import com.roleorienta.api.vacancy.StatusRules.Line;
 import com.roleorienta.api.vacancy.VacancyDtos.HistoryLine;
+import com.roleorienta.api.vacancy.VacancyDtos.Posting;
 import com.roleorienta.api.vacancy.VacancyDtos.Publication;
 import com.roleorienta.api.vacancy.VacancyDtos.Timeline;
 import com.roleorienta.api.vacancy.VacancyDtos.UserStatus;
@@ -234,7 +235,8 @@ public class VacancyService {
      * @param visitFrom граница текущего захода в результаты (§191); {@code null} — точки не ставятся
      */
     private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat, Instant visitFrom) {
-        return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(), vacancy.title(), vacancy.parties(),
+        return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(),
+                new Posting(vacancy.title(), vacancy.state().url()), vacancy.parties(),
                 work(vacancy.work(), conditionFormat), timeline(vacancy.state(), visitFrom))).toList();
     }
 

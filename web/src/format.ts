@@ -1,14 +1,18 @@
 import type { HistoryLine, LanguageRequirement, Opened, UserStatus, Work } from './api';
 import type { I18n, MessageKey } from './i18n';
 
-/** Страна в строке списка: без подписи поля, поэтому «не указано» называет, что именно (§152). */
-export function rowCountryText(work: Work, i18n: I18n): string {
-  return work.countryUncertain ? i18n.t('vacancy.countryNotSpecified') : countriesText(work, i18n);
+/**
+ * «Работодатель · страна» в строке списка; чего нет, то не показывается (§192, принцип владельца 2026-10-26: нет
+ * информации — показываем то, что есть).
+ */
+export function rowMetaText(employer: string | null, work: Work, i18n: I18n): string {
+  return [employer, work.countryUncertain ? null : countriesText(work, i18n)]
+    .filter((part) => part !== null && part !== '').join(' · ');
 }
 
-/** Страны работы (сведения о вакансии, где есть подпись «Country»): не определена — «not specified»; «*» — любая. */
+/** Страны работы названиями; «*» — любая. Не определена — не показывается (§192). */
 export function countriesText(work: Work, i18n: I18n): string {
-  return work.countryUncertain ? i18n.t('vacancy.notSpecified') : countryNames(work.countries, i18n);
+  return countryNames(work.countries, i18n);
 }
 
 /**
@@ -86,7 +90,7 @@ export function historyLabel(event: HistoryLine['event'], i18n: I18n): string {
 const EU = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU',
   'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'];
 
-/** Подписи формата работы в сведениях (бизнес-описание §6); формат не указан или противоречив — «Not specified». */
+/** Подписи формата работы в сведениях (бизнес-описание §6); формат не указан или противоречив — строки нет (§192). */
 const FORMAT_KEYS: Record<NonNullable<Work['format']>, MessageKey> = {
   OFFICE: 'vacancy.onlyOffice',
   REMOTE: 'vacancy.onlyRemote',
@@ -96,7 +100,7 @@ const FORMAT_KEYS: Record<NonNullable<Work['format']>, MessageKey> = {
 /** Формат работы в сведениях: удалённо — с территорией, если она есть («Only remote — from EU», «Только удалённо: ЕС»). */
 export function formatText(work: Work, i18n: I18n): string {
   if (work.format === null) {
-    return i18n.t('vacancy.formatNotSpecified');
+    return '';
   }
   const format = i18n.t(FORMAT_KEYS[work.format]);
   const territory = work.remoteTerritory ?? [];
@@ -108,13 +112,10 @@ export function formatText(work: Work, i18n: I18n): string {
 }
 
 /**
- * Требования к языку: «English — required, German — preferred»; не указаны — «not specified» (§158). Названия
+ * Требования к языку: «English — required, German — preferred» (§158); не указаны — строки нет (§192). Названия
  * языков — средствами браузера (Intl.DisplayNames) на языке интерфейса.
  */
 export function languagesText(languages: LanguageRequirement[], i18n: I18n): string {
-  if (languages.length === 0) {
-    return i18n.t('vacancy.notSpecified');
-  }
   const names = new Intl.DisplayNames([i18n.locale], { type: 'language' });
   return languages.map((item) => (names.of(item.language) ?? item.language) + ' — '
     + i18n.t(item.required ? 'vacancy.required' : 'vacancy.preferred')).join(', ');

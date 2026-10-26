@@ -232,7 +232,7 @@ export interface Parties {
 /** Где и как выполняется работа; countries «*» — без ограничения страны. */
 export interface Work {
   countries: string[];
-  /** Формат вакансии: в строке списка не показывается (§124), в сведениях — «Format» (§158). */
+  /** Формат вакансии: в строке списка — меткой Office / Remote, гибрид — без метки (§192); в сведениях — «Format» (§158). */
   format: 'OFFICE' | 'HYBRID' | 'REMOTE' | null;
   remoteTerritory: string[] | null;
   countryUncertain: boolean;
@@ -242,7 +242,8 @@ export interface Work {
 /** Вакансия в списке. */
 export interface VacancyItem {
   id: number;
-  position: string;
+  /** Позиция и адрес первичной публикации — открывается прямо из строки (§192). */
+  posting: { position: string; url: string };
   parties: Parties;
   work: Work;
   timeline: Timeline;
