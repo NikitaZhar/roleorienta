@@ -265,6 +265,8 @@ export interface UserStatus {
 export interface Timeline {
   opened: Opened;
   status: UserStatus;
+  /** Впервые получена после прошлого захода в результаты (§191) — точка у даты; в других списках и сведениях — false. */
+  sinceLastVisit: boolean;
 }
 
 /**

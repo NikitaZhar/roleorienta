@@ -88,17 +88,32 @@ public class VacancyService {
     }
 
     /**
+     * Открытие результатов — заход в список (§191). Своей транзакцией с уровнем по умолчанию ({@code READ
+     * COMMITTED}), до чтения страницы: при одновременных открытиях второе {@code UPDATE} строки пользователя ждёт
+     * первое и выполняется, а в {@code REPEATABLE READ} оно завершилось бы ошибкой сериализации.
+     *
+     * @param userId пользователь
+     * @return граница текущего захода; {@code null} — первый заход
+     */
+    @Transactional
+    public Instant visit(long userId) {
+        return repository.recordVisit(userId, properties.visitGap());
+    }
+
+    /**
      * Страница и числа читаются одним снимком данных: транзакция только для чтения с уровнем
      * {@code REPEATABLE READ} — выдача job-worker, добавившая порцию между двумя запросами, не разводит «Found N» и
      * строки (аудит §154). https://www.postgresql.org/docs/16/transaction-iso.html#XACT-REPEATABLE-READ
      *
-     * @param userId пользователь
-     * @param page   номер страницы, с 1
-     * @param size   строк на странице
+     * @param userId    пользователь
+     * @param page      номер страницы, с 1
+     * @param size      строк на странице
+     * @param visitFrom граница текущего захода ({@link #visit}): вакансии, полученные позже, — с точкой (§191);
+     *                  {@code null} — без точек
      * @return страница результатов, общее число и число новых; условия не заданы — пусто
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage delivered(long userId, int page, int size) {
+    public VacancyPage delivered(long userId, int page, int size, Instant visitFrom) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         Optional<ActiveCondition> condition = repository.activeCondition(userId);
@@ -109,7 +124,7 @@ public class VacancyService {
         long conditionId = condition.get().id();
         List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows));
         Counts counts = repository.countDelivered(conditionId, visibleSince);
-        return new VacancyPage(items(shown, condition.get().workFormat()), number, rows, counts.total(),
+        return new VacancyPage(items(shown, condition.get().workFormat(), visitFrom), number, rows, counts.total(),
                 counts.fresh());
     }
 
@@ -150,7 +165,7 @@ public class VacancyService {
     public Optional<VacancyDetails> details(long userId, long vacancyId) {
         String format = conditionFormat(userId);
         return repository.accessible(userId, vacancyId).map(row -> new VacancyDetails(row.id(), row.title(),
-                row.parties(), work(row.work(), format), new Publication(row.state().url(), timeline(row.state()),
+                row.parties(), work(row.work(), format), new Publication(row.state().url(), timeline(row.state(), null),
                         history(row.state(), repository.history(userId, vacancyId)),
                         repository.languages(vacancyId))));
     }
@@ -194,7 +209,7 @@ public class VacancyService {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         List<VacancyRow> shown = repository.byStatus(userId, statuses, window(number, rows));
-        return new VacancyPage(items(shown, conditionFormat(userId)), number, rows,
+        return new VacancyPage(items(shown, conditionFormat(userId), null), number, rows,
                 repository.countByStatus(userId, statuses), 0);
     }
 
@@ -215,18 +230,26 @@ public class VacancyService {
         return new PageWindow((long) (page - FIRST_PAGE) * size, size);
     }
 
-    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat) {
+    /**
+     * @param visitFrom граница текущего захода в результаты (§191); {@code null} — точки не ставятся
+     */
+    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat, Instant visitFrom) {
         return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(), vacancy.title(), vacancy.parties(),
-                work(vacancy.work(), conditionFormat), timeline(vacancy.state()))).toList();
+                work(vacancy.work(), conditionFormat), timeline(vacancy.state(), visitFrom))).toList();
     }
 
-    /** Текущий статус: нет — «Новая» с моментом первой выдачи. */
-    private static Timeline timeline(RowState state) {
+    /**
+     * Текущий статус: нет — «Новая» с моментом первой выдачи. После прошлого захода (§191) — впервые получена
+     * пользователем позже границы захода.
+     */
+    private static Timeline timeline(RowState state, Instant visitFrom) {
         UserStatus status = state.current() == null
                 ? new UserStatus(NEW, state.receivedAt(), state.closedAt() != null)
                 : new UserStatus(state.current().status().name(), state.current().changedAt(),
                         state.closedAt() != null);
-        return new Timeline(state.opened(), status);
+        boolean sinceLastVisit = visitFrom != null && state.receivedAt() != null
+                && state.receivedAt().isAfter(visitFrom);
+        return new Timeline(state.opened(), status, sinceLastVisit);
     }
 
     /**

@@ -9,7 +9,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param hideAfter срок без подтверждения (бизнес-описание §4.3): вакансия, не подтверждённая дольше, в списке не
  *                  показывается, но и не закрывается
+ * @param visitGap  перерыв (§191): открытие результатов позже, чем через столько после прошлого, — новый заход;
+ *                  вакансии, полученные после прошлого захода, отмечаются точкой
  */
 @ConfigurationProperties("app.delivery")
-public record VacancyProperties(@DefaultValue("30d") Duration hideAfter) {
+public record VacancyProperties(@DefaultValue("30d") Duration hideAfter, @DefaultValue("30m") Duration visitGap) {
 }

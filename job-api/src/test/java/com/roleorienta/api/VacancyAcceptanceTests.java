@@ -262,6 +262,41 @@ class VacancyAcceptanceTests {
         assertThat(body).contains("\"byEmployer\":true", "\"byEmployer\":false", "\"opened\":{\"at\":");
     }
 
+    /**
+     * Точка «после прошлого захода» (§191): в первый заход точек нет; заход через перерыв больше 30 минут — точка у
+     * вакансий, впервые полученных после прошлого захода; повторное открытие в том же заходе границу не меняет;
+     * «новых» (не открытых) считается как прежде.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void marksVacanciesReceivedSinceLastVisit() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        delivered(condition, "Old", "ACTIVE", 0, 5);
+
+        String first = client.send("GET", "/api/v1/me/vacancies", null).body();
+        assertThat(sinceLastVisit(first, "Old")).isFalse();
+
+        jdbcTemplate.update("UPDATE user_account SET list_seen_at = now() - interval '2 hours'");
+        delivered(condition, "Fresh", "ACTIVE", 0, 1);
+        String second = client.send("GET", "/api/v1/me/vacancies", null).body();
+        assertThat(sinceLastVisit(second, "Fresh")).isTrue();
+        assertThat(sinceLastVisit(second, "Old")).isFalse();
+        assertThat(second).contains("\"total\":2,\"newCount\":2");
+
+        String again = client.send("GET", "/api/v1/me/vacancies", null).body();
+        assertThat(sinceLastVisit(again, "Fresh")).isTrue();
+    }
+
+    /** Признак «после прошлого захода» у вакансии списка с этим названием (поля вакансии — до следующей). */
+    private static boolean sinceLastVisit(String body, String title) {
+        int start = body.indexOf("\"position\":\"" + title + "\"");
+        int end = body.indexOf("\"position\":", start + 1);
+        return body.substring(start, end < 0 ? body.length() : end).contains("\"sinceLastVisit\":true");
+    }
+
     private static int status(ApiTestClient client, long vacancy, String status) throws Exception {
         return client.send("PUT", "/api/v1/me/vacancies/" + vacancy + "/status",
                 "{\"status\":\"" + status + "\",\"zone\":\"Europe/Bratislava\"}").status();

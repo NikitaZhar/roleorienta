@@ -828,6 +828,68 @@ nav .current,
   flex: none;
 }
 
+/* Крестик «Not interested» в строке результатов (§191): тихий, заметнее при наведении. */
+.row-dismiss {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.row-dismiss:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* Дата в строке результатов и перед ней точка «пришла после прошлого захода» (§191) — цвет акцента. */
+.row-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* «Moved to Not interested · Undo» (§191): внизу окна, над нижней панелью разделов телефона. */
+.undo-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 14px;
+  z-index: 10;
+}
+
+.undo-bar .link {
+  color: var(--bg);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .undo-bar {
+    bottom: 80px;
+  }
+}
+
 /* Идёт сбор: строки-заготовки вместо пустоты. */
 .collecting > p {
   margin: 0 0 8px;

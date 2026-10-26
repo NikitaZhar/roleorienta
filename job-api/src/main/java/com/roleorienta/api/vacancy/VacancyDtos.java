@@ -29,10 +29,12 @@ public final class VacancyDtos {
     /**
      * Когда вакансия открыта и её статус у пользователя (§156).
      *
-     * @param opened когда открыта: дата размещения работодателем или «найдена» (§127)
-     * @param status текущий статус пользователя
+     * @param opened         когда открыта: дата размещения работодателем или «найдена» (§127)
+     * @param status         текущий статус пользователя
+     * @param sinceLastVisit впервые получена пользователем после его прошлого захода в результаты (§191; точка у
+     *                       даты); первый заход, другие списки и сведения о вакансии — {@code false}
      */
-    public record Timeline(Opened opened, UserStatus status) {
+    public record Timeline(Opened opened, UserStatus status, boolean sinceLastVisit) {
     }
 
     /**

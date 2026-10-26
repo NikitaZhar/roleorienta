@@ -6,11 +6,13 @@ import com.roleorienta.api.vacancy.VacancyDtos.Parties;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -110,6 +112,28 @@ public class VacancyRepository {
     public Optional<ActiveCondition> activeCondition(long userId) {
         return jdbcTemplate.query("SELECT id, work_format FROM search_condition WHERE user_id = ? AND active",
                 (row, number) -> new ActiveCondition(row.getLong(1), row.getString(2)), userId).stream().findFirst();
+    }
+
+    /**
+     * Открытие результатов — заход в список (§191): время открытия запоминается ({@code list_seen_at}); если с прошлого
+     * открытия прошло больше {@code gap}, начинается новый заход и его граница ({@code list_visit_from}) — прошлое
+     * открытие, то есть конец прошлого захода. Внутри захода граница не меняется. Одно {@code UPDATE}: выражения
+     * {@code SET} читают значения строки до изменения.
+     *
+     * @param userId пользователь
+     * @param gap    перерыв, после которого открытие — новый заход
+     * @return граница текущего захода: вакансии, впервые полученные позже, — «после прошлого захода»; {@code null} —
+     *         прошлого захода не было (первый заход)
+     */
+    public Instant recordVisit(long userId, Duration gap) {
+        return jdbcTemplate.query("""
+                UPDATE user_account SET list_visit_from = CASE
+                           WHEN list_seen_at < now() - make_interval(secs => ?) THEN list_seen_at
+                           ELSE list_visit_from END,
+                       list_seen_at = now()
+                WHERE id = ? RETURNING list_visit_from
+                """, (row, number) -> instant(row, "list_visit_from"), (double) gap.toSeconds(), userId)
+                .stream().filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     /**

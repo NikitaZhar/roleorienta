@@ -1,12 +1,13 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { searchCondition, setStatus, type VacancyItem, type VacancyPage } from './api';
 import { dateText, rowCountryText, rowMarkedText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
- * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «N vacancies · M new»,
- * плашка «New», объяснение пустого списка по условиям; у остальных — свой пустой текст и своя последняя колонка.
+ * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «N vacancies · M not
+ * opened», плашка «Not opened», точка «после прошлого захода», крестик «Not interested», объяснение пустого списка по
+ * условиям; у остальных — свой пустой текст и своя последняя колонка.
  */
 export type ListKind = 'results' | 'responses' | 'notInterested';
 
@@ -27,7 +28,14 @@ interface Props {
  * нового облика); в «Не интересно» — дата отметки с подписью «Marked» (§180).
  */
 const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode> = {
-  results: (item, i18n) => rowOpenedText(item.timeline.opened, i18n),
+  results: (item, i18n) => (
+    <span className="row-date">
+      {item.timeline.sinceLastVisit && (
+        <span className="dot" role="img" aria-label={i18n.t('list.sinceLastVisit')} title={i18n.t('list.sinceLastVisit')} />
+      )}
+      {rowOpenedText(item.timeline.opened, i18n)}
+    </span>
+  ),
   responses: (item, i18n) => (
     <>
       <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
@@ -48,7 +56,8 @@ const REFRESH_MS = 5000;
 const REFRESH_TIMES = 24;
 /** Ширины строк-заготовок, пока идёт сбор (% ширины): серые полосы вместо пустоты (§171). */
 const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
-
+/** Сколько ждёт «Undo» после крестика «Not interested» (§191): отметка уходит на сервер только после этого. */
+const UNDO_MS = 5000;
 
 /**
  * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция; под ней
@@ -64,7 +73,10 @@ const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
  * 2 минут, на экране — «идёт сбор» и строки-заготовки; первая порция выдаётся в течение ~30 с (§120); следующий
  * запрос — только после ответа на предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же
  * страницу; если она опустела (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
- * страницы во время загрузки не меняется (аудит §154).
+ * страницы во время загрузки не меняется (аудит §154). В результатах (§191): крестик «Not interested» в строке — строка
+ * сразу скрывается, на {@value UNDO_MS} мс внизу «Moved to Not interested · Undo»; отметка уходит на сервер только по
+ * истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк истории). Новый крестик, уход со страницы
+ * или из списка — ожидающая отметка уходит сразу. Закрытая вкладка браузера в эти секунды отметку теряет.
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
   const i18n = useI18n();
@@ -75,6 +87,11 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshes, setRefreshes] = useState(0);
+  /** Вакансии, скрытые крестиком до ответа сервера (§191). */
+  const [dismissed, setDismissed] = useState<number[]>([]);
+  /** Отметка, ждущая «Undo»: вакансия и таймер; ref — чтобы отправить её и при уходе из списка. */
+  const [waiting, setWaiting] = useState<number | null>(null);
+  const pending = useRef<{ id: number; timer: number } | null>(null);
 
   async function show(page: number, rows: number) {
     setLoading(true);
@@ -105,6 +122,55 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     }
     show(data?.page ?? 1, size);
   }
+
+  /** Отметка «Not interested» уходит на сервер; затем страница перечитывается (вакансия уходит из результатов). */
+  async function commit(id: number) {
+    if (pending.current?.id === id) {
+      window.clearTimeout(pending.current.timer);
+      pending.current = null;
+      setWaiting(null);
+    }
+    try {
+      await setStatus(id, 'NOT_INTERESTED');
+    } catch (failure) {
+      setDismissed((ids) => ids.filter((other) => other !== id));
+      setMessage(errorText(failure, t));
+      return;
+    }
+    await show(data?.page ?? 1, size);
+    setDismissed((ids) => ids.filter((other) => other !== id));
+  }
+
+  /** Крестик в строке: прежняя ожидающая отметка уходит сразу, новая ждёт «Undo». */
+  function dismiss(id: number) {
+    if (pending.current !== null) {
+      void commit(pending.current.id);
+    }
+    setDismissed((ids) => [...ids, id]);
+    pending.current = { id, timer: window.setTimeout(() => void commit(id), UNDO_MS) };
+    setWaiting(id);
+  }
+
+  /** «Undo»: на сервер ничего не уходит, строка возвращается. */
+  function undo() {
+    const current = pending.current;
+    if (current === null) {
+      return;
+    }
+    window.clearTimeout(current.timer);
+    pending.current = null;
+    setWaiting(null);
+    setDismissed((ids) => ids.filter((other) => other !== current.id));
+  }
+
+  /** Уход из списка (другой раздел, выход): ожидающая отметка уходит сразу. */
+  useEffect(() => () => {
+    const current = pending.current;
+    if (current !== null) {
+      window.clearTimeout(current.timer);
+      void setStatus(current.id, 'NOT_INTERESTED');
+    }
+  }, []);
 
   function resize(rows: number) {
     setSize(rows);
@@ -177,11 +243,11 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       )}
       {data.total > 0 && (
         <ul className="rows">
-          {data.items.map((item) => {
+          {data.items.filter((item) => !dismissed.includes(item.id)).map((item) => {
             const fresh = results && item.timeline.status.code === 'NEW';
             const seen = (results && !fresh) || actions;
             return (
-              <li key={item.id} className={actions ? 'actionable' : undefined}>
+              <li key={item.id} className={actions || results ? 'actionable' : undefined}>
                 <button type="button" className={seen ? 'row seen' : 'row'} onClick={() => onOpen(item.id)}>
                   <span className="row-main">
                     <span className="row-title">
@@ -200,10 +266,22 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
                     {t('list.return')}
                   </button>
                 )}
+                {results && (
+                  <button type="button" className="row-dismiss" aria-label={t('list.dismiss')} title={t('list.dismiss')}
+                    onClick={() => dismiss(item.id)}>
+                    ×
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
+      )}
+      {waiting !== null && (
+        <div className="undo-bar" role="status">
+          <span>{t('list.dismissed')}</span>
+          <button type="button" className="link" onClick={undo}>{t('list.undo')}</button>
+        </div>
       )}
       {data.total > 0 && (
         <div className="list-footer">

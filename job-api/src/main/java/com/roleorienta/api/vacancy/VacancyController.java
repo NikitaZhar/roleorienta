@@ -43,13 +43,14 @@ public class VacancyController {
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
      * @return страница результатов по текущим условиям (новые и просмотренные), открытые позже сверху, общее число и
-     *         число новых; условия не заданы — пусто
+     *         число новых; условия не заданы — пусто. Открытие записывается как заход в список (§191)
      */
     @GetMapping("/api/v1/me/vacancies")
     public VacancyPage list(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
             @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
-        return vacancies.delivered(userId(authentication), page, size);
+        long userId = userId(authentication);
+        return vacancies.delivered(userId, page, size, vacancies.visit(userId));
     }
 
     /**
