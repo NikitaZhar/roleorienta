@@ -4,6 +4,8 @@ import com.roleorienta.api.account.AccountService;
 import com.roleorienta.api.condition.ConditionDtos.CatalogItem;
 import com.roleorienta.api.condition.ConditionDtos.ConditionRequest;
 import com.roleorienta.api.condition.ConditionDtos.ConditionResponse;
+import com.roleorienta.api.condition.ConditionDtos.Direction;
+import com.roleorienta.api.condition.ConditionDtos.PositionOption;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Locale;
@@ -28,30 +30,31 @@ public class ConditionController {
 
     private final ConditionService conditions;
     private final AccountService accounts;
-    private final PositionRepository positions;
+    private final OccupationRepository occupations;
     private final ApiProperties properties;
 
     /**
-     * @param conditions условия поиска
-     * @param accounts   учётные записи
-     * @param positions  позиции словаря
-     * @param properties поддерживаемые страны
+     * @param conditions  условия поиска
+     * @param accounts    учётные записи
+     * @param occupations выбор позиций и групп
+     * @param properties  поддерживаемые страны
      */
-    public ConditionController(ConditionService conditions, AccountService accounts, PositionRepository positions,
+    public ConditionController(ConditionService conditions, AccountService accounts, OccupationRepository occupations,
             ApiProperties properties) {
         this.conditions = conditions;
         this.accounts = accounts;
-        this.positions = positions;
+        this.occupations = occupations;
         this.properties = properties;
     }
 
     /**
      * @param authentication вошедший пользователь
-     * @return условия и {@code ETag} версии; {@code 404} — условия не заданы
+     * @return условия и {@code ETag} версии (названия групп — на языке {@code Accept-Language}); {@code 404} — условия
+     *         не заданы
      */
     @GetMapping("/api/v1/me/search-condition")
     public ResponseEntity<ConditionResponse> get(Authentication authentication) {
-        ConditionService.Saved saved = conditions.current(userId(authentication))
+        ConditionService.Saved saved = conditions.current(userId(authentication), OccupationRepository.language())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search condition is not set"));
         return ResponseEntity.ok().eTag(saved.etag()).body(saved.condition());
     }
@@ -66,7 +69,8 @@ public class ConditionController {
     public ResponseEntity<ConditionResponse> put(Authentication authentication,
             @Valid @RequestBody ConditionRequest request,
             @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch) {
-        ConditionService.Saved saved = conditions.save(userId(authentication), request, ifMatch);
+        ConditionService.Saved saved = conditions.save(userId(authentication), request, ifMatch,
+                OccupationRepository.language());
         return ResponseEntity.ok().eTag(saved.etag()).body(saved.condition());
     }
 
@@ -80,14 +84,22 @@ public class ConditionController {
     }
 
     /**
-     * @param query часть названия или кода; пусто — все (не больше 20)
-     * @return позиции словаря
+     * @param query часть названия (у позиции — и кода; у группы — и синонима ESCO); пусто — первые по порядку
+     * @return подсказка при вводе (§204): позиции словаря, затем группы ISCO-08 (названия — на языке
+     *         {@code Accept-Language}); не больше 20
      */
     @GetMapping("/api/v1/positions")
-    public List<CatalogItem> positions(@RequestParam(defaultValue = "") String query) {
-        return positions.findTop20ByActiveTrueAndNameContainingIgnoreCaseOrActiveTrueAndCodeContainingIgnoreCaseOrderByName(
-                query, query)
-                .stream().map(position -> new CatalogItem(position.getCode(), position.getName())).toList();
+    public List<PositionOption> positions(@RequestParam(defaultValue = "") String query) {
+        return occupations.suggestions(query, OccupationRepository.language());
+    }
+
+    /**
+     * @return окно «Все позиции» (§204): направления → группы → позиции словаря (названия — на языке
+     *         {@code Accept-Language})
+     */
+    @GetMapping("/api/v1/occupations")
+    public List<Direction> occupations() {
+        return occupations.catalog(OccupationRepository.language());
     }
 
     private long userId(Authentication authentication) {

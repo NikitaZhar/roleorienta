@@ -56,8 +56,8 @@ class VacancyAcceptanceTests {
                 "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
-        jdbcTemplate.update("INSERT INTO position (code, name) VALUES ('java-developer', 'Java developer'), "
-                + "('devops-engineer', 'DevOps engineer')");
+        jdbcTemplate.update("INSERT INTO position (code, name, occupation_code) VALUES "
+                + "('java-developer', 'Java developer', '2512'), ('devops-engineer', 'DevOps engineer', '2512')");
         passRunId = jdbcTemplate.queryForObject("INSERT INTO pass_run (window_start) VALUES (now()) RETURNING id",
                 Long.class);
     }
@@ -331,6 +331,32 @@ class VacancyAcceptanceTests {
         assertThat(devops).contains("\"total\":1,", "\"matches\":[\"DevOps engineer\",\"Java developer\"]");
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body()))
                 .isEqualTo("JavaAndDevops,JavaOnly");
+    }
+
+    /**
+     * Группы ISCO-08 в условиях (§204): к группе подходит вакансия с кодом группы у публикации (государственный портал)
+     * и вакансия, сопоставленная позиции словаря этой группы; остальные — нет. Метки и плашки строки — названия групп.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void groupOfConditionsMatchesCodeAndPositionsOfGroup() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", "{\"countries\":[\"SK\"],\"positions\":[\"2512\",\"8332\"]}");
+        long condition = activeCondition();
+        delivered(condition, "JavaGroup", "ACTIVE", 0, 3);
+        long truck = delivered(condition, "Truck", "ACTIVE", 0, 2);
+        long unrelated = delivered(condition, "Unrelated", "ACTIVE", 0, 1);
+        jdbcTemplate.update("DELETE FROM vacancy_position_match WHERE vacancy_id IN (?, ?)", truck, unrelated);
+        jdbcTemplate.update("UPDATE job_posting SET occupation_code = '8332' WHERE vacancy_id = ?", truck);
+
+        assertThat(client.send("GET", "/api/v1/me/vacancies/filters", null).body()).isEqualTo(
+                "{\"positions\":[{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"count\":1},"
+                        + "{\"code\":\"2512\",\"name\":\"Software developers\",\"count\":1}],\"sinceLastVisit\":0}");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Truck,JavaGroup");
+        String trucks = client.send("GET", "/api/v1/me/vacancies?position=8332", null).body();
+        assertThat(titles(trucks)).isEqualTo("Truck");
+        assertThat(trucks).contains("\"total\":1,", "\"matches\":[\"Heavy truck and lorry drivers\"]");
     }
 
     /** Признак «после прошлого захода» у вакансии списка с этим названием (поля вакансии — до следующей). */

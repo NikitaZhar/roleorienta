@@ -303,6 +303,35 @@ class DeliveryAcceptanceTests {
                 """, String.class)).containsExactly("Java", "DevOps", "Java and DevOps");
     }
 
+    /**
+     * Группы ISCO-08 в условиях (§204): к группе подходит вакансия, сопоставленная позиции словаря этой группы (позиции
+     * нет в условиях), и вакансия с кодом группы у публикации (государственный портал, без позиции); вакансия с кодом
+     * другой группы — нет.
+     */
+    @Test
+    void portionCoversGroupsOfConditions() {
+        long devops = jdbcTemplate.queryForObject("""
+                INSERT INTO position (code, name, occupation_code) VALUES ('devops-engineer', 'DevOps', '2512')
+                RETURNING id""", Long.class);
+        jdbcTemplate.update("INSERT INTO search_condition_occupation (search_condition_id, code) VALUES (?, '2512'), "
+                + "(?, '8332')", conditionId, conditionId);
+        vacancy("Java", 1, "acme");
+        rematch(vacancy("DevOps", 2, "acme"), devops);
+        coded(vacancy("Truck", 3, "acme"), "8332");
+        coded(vacancy("Cook", 4, "acme"), "5120");
+
+        assertThat(runPass()).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
+                """, String.class)).containsExactly("Java", "DevOps", "Truck");
+    }
+
+    /** Вакансия без позиции словаря, у публикации — код группы ISCO-08. */
+    private void coded(long vacancyId, String group) {
+        jdbcTemplate.update("DELETE FROM vacancy_position_match WHERE vacancy_id = ?", vacancyId);
+        jdbcTemplate.update("UPDATE job_posting SET occupation_code = ? WHERE vacancy_id = ?", group, vacancyId);
+    }
+
     /** Соответствие вакансии — только другой позиции. */
     private void rematch(long vacancyId, long otherPositionId) {
         jdbcTemplate.update("UPDATE vacancy_position_match SET position_id = ? WHERE vacancy_id = ?", otherPositionId,

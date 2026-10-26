@@ -24,7 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import(TestcontainersConfiguration.class)
 class DictionaryAcceptanceTests {
 
-    private static final String RUST = "{\"code\":\"test-rust\",\"name\":\"Rust developer\",\"terms\":{"
+    private static final String RUST = "{\"code\":\"test-rust\",\"name\":\"Rust developer\",\"group\":\"2512\",\"terms\":{"
             + "\"titles\":[\"Rust developer\",\" rust developer \",\"rust engineer\"],\"roles\":[\"developer\"],"
             + "\"keywords\":[\"rust\"],\"exclude\":[]}}";
     private static final String RUST_CONDITION = "{\"countries\":[\"SK\"],\"positions\":[\"test-rust\"]}";
@@ -79,7 +79,8 @@ class DictionaryAcceptanceTests {
         ApiTestClient.Response added = admin.send("POST", "/api/v1/admin/positions", RUST);
         assertThat(added.status()).isEqualTo(201);
         assertThat(version(added.body())).isEqualTo(version + 1);
-        assertThat(added.body()).contains("\"code\":\"test-rust\",\"name\":\"Rust developer\",\"active\":true,"
+        assertThat(added.body()).contains("\"code\":\"test-rust\",\"name\":\"Rust developer\","
+                + "\"placement\":{\"group\":\"2512\",\"active\":true},"
                 + "\"terms\":{\"titles\":[\"Rust developer\",\"rust engineer\"],\"roles\":[\"developer\"],"
                 + "\"keywords\":[\"rust\"],\"exclude\":[]}");
         assertThat(admin.send("POST", "/api/v1/admin/positions", RUST).status()).isEqualTo(409);
@@ -87,21 +88,27 @@ class DictionaryAcceptanceTests {
                 .isEqualTo(400);
         assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "test-empty")
                 .replace("[\"Rust developer\",\" rust developer \",\"rust engineer\"]", "[]")).status()).isEqualTo(400);
+        // Группа ISCO-08 обязательна и должна быть в справочнике (§204).
+        assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "test-nogroup")
+                .replace("\"group\":\"2512\",", "")).status()).isEqualTo(400);
+        assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "test-nogroup")
+                .replace("2512", "0000")).status()).isEqualTo(400);
 
         long id = positionId("test-rust");
         ApiTestClient.Response changed = admin.send("PUT", "/api/v1/admin/positions/" + id, "{\"name\":\"Rust engineer\","
-                + "\"active\":true,\"terms\":{\"titles\":[\"rust engineer\"],\"roles\":[],\"keywords\":[],\"exclude\":"
-                + "[\"intern\"]}}");
+                + "\"active\":true,\"group\":\"2519\",\"terms\":{\"titles\":[\"rust engineer\"],\"roles\":[],"
+                + "\"keywords\":[],\"exclude\":[\"intern\"]}}");
         assertThat(changed.status()).isEqualTo(200);
         assertThat(version(changed.body())).isEqualTo(version + 2);
-        assertThat(changed.body()).contains("\"name\":\"Rust engineer\",\"active\":true,\"terms\":{\"titles\":"
+        assertThat(changed.body()).contains("\"name\":\"Rust engineer\",\"placement\":{\"group\":\"2519\","
+                + "\"active\":true},\"terms\":{\"titles\":"
                 + "[\"rust engineer\"],\"roles\":[],\"keywords\":[],\"exclude\":[\"intern\"]}");
         assertThat(admin.send("PUT", "/api/v1/admin/positions/999999999", "{\"name\":\"X\",\"active\":true,"
-                + "\"terms\":{\"titles\":[\"x\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}").status())
+                + "\"group\":\"2512\",\"terms\":{\"titles\":[\"x\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}").status())
                 .isEqualTo(404);
         // Без «active» позиция не выключается молча — неверный запрос (аудит §165).
         assertThat(admin.send("PUT", "/api/v1/admin/positions/" + id, "{\"name\":\"Rust engineer\","
-                + "\"terms\":{\"titles\":[\"rust engineer\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}")
+                + "\"group\":\"2512\",\"terms\":{\"titles\":[\"rust engineer\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}")
                 .status()).isEqualTo(400);
 
         ApiTestClient.Response settings = admin.send("PUT", "/api/v1/admin/dictionary",
@@ -129,8 +136,9 @@ class DictionaryAcceptanceTests {
         assertThat(chosen.send("PUT", "/api/v1/me/search-condition", RUST_CONDITION).status()).isEqualTo(200);
 
         assertThat(admin.send("PUT", "/api/v1/admin/positions/" + id, "{\"name\":\"Rust developer\",\"active\":false,"
-                + "\"terms\":{\"titles\":[\"rust developer\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}").body())
-                .contains("\"code\":\"test-rust\",\"name\":\"Rust developer\",\"active\":false");
+                + "\"group\":\"2512\",\"terms\":{\"titles\":[\"rust developer\"],\"roles\":[],\"keywords\":[],\"exclude\":[]}}").body())
+                .contains("\"code\":\"test-rust\",\"name\":\"Rust developer\",\"placement\":{\"group\":\"2512\","
+                        + "\"active\":false}");
 
         assertThat(chosen.send("GET", "/api/v1/positions?query=test-rust", null).body()).isEqualTo("[]");
         chosen.ifMatch = chosen.send("GET", "/api/v1/me/search-condition", null).etag();

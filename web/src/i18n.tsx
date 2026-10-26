@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { ApiError } from './api';
+import { ApiError, setRequestLanguage } from './api';
 
 /** Язык интерфейса пользователя (бизнес-описание §6; стенограмма §162): английский — по умолчанию. */
 export type Language = 'en' | 'ru';
@@ -9,7 +9,8 @@ const LANGUAGE_KEY = 'roleorienta.language';
 
 /**
  * Тексты экранов пользователя по-английски. {@code {name}} — место подстановки значения. Экран администратора не
- * переводится (решение владельца 2026-10-21). Названия позиций не переводятся — как в словаре.
+ * переводится (решение владельца 2026-10-21). Названия позиций словаря не переводятся — как в словаре; названия групп
+ * ISCO-08 приходят с сервера на языке интерфейса (§204).
  */
 const EN = {
   'app.tagline': 'Take a breath. New jobs will come to you.',
@@ -62,6 +63,9 @@ const EN = {
   'conditions.chooseBoth': 'Choose at least one country and a position',
   'conditions.changedElsewhere': 'Search was changed in another window; reloaded, check and search again',
   'conditions.retired': '{name} (retired)',
+  'conditions.wholeGroup': 'all jobs in the group',
+  'conditions.browse': 'Not found? All positions',
+  'conditions.browseClose': 'Hide all positions',
   'format.any': 'Any',
   'format.office': 'Office',
   'format.remote': 'Remote',
@@ -233,6 +237,9 @@ const RU: Record<MessageKey, string> = {
   'conditions.chooseBoth': 'Выберите хотя бы одну страну и позицию',
   'conditions.changedElsewhere': 'Условия изменены в другом окне; они перечитаны — проверьте и запустите поиск снова',
   'conditions.retired': '{name} (выключена)',
+  'conditions.wholeGroup': 'все вакансии группы',
+  'conditions.browse': 'Не нашли? Все позиции',
+  'conditions.browseClose': 'Скрыть все позиции',
   'format.any': 'Любой',
   'format.office': 'Офис',
   'format.remote': 'Удалённо',
@@ -398,9 +405,15 @@ function storeLanguage(language: Language) {
 /**
  * Поставщик языка экранов пользователя: начальный — сохранённый в браузере (выбор на экране входа), после входа —
  * из учётной записи (его ставит {@code App}). Смена запоминается в браузере и меняет атрибут {@code lang} страницы.
+ * Язык уходит и в запросы к API (названия групп ISCO-08, §204) — сразу, а не эффектом: эффекты дочерних экранов
+ * выполняются раньше эффектов поставщика, и первые запросы ушли бы без языка.
  */
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(storedLanguage);
+  const [language, setLanguageState] = useState<Language>(() => {
+    const initial = storedLanguage();
+    setRequestLanguage(initial);
+    return initial;
+  });
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -412,6 +425,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     locale: language,
     setLanguage: (next: Language) => {
       storeLanguage(next);
+      setRequestLanguage(next);
       setLanguageState(next);
     },
   }), [language]);

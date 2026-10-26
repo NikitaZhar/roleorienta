@@ -70,7 +70,8 @@ public class SecurityConfig {
         http.authorizeHttpRequests(requests -> requests
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                                 "/api/v1/admin/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/countries", "/api/v1/positions").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/countries", "/api/v1/positions",
+                                "/api/v1/occupations").permitAll()
                         .requestMatchers("/actuator/health/**", "/error").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole(ADMIN_ROLE)
                         .anyRequest().hasRole(USER_ROLE))

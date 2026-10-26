@@ -20,6 +20,8 @@ interface Draft {
   id: number | null;
   code: string;
   name: string;
+  /** Группа ISCO-08, 4 цифры (§204). */
+  group: string;
   active: boolean;
   terms: Record<keyof PositionTerms, string>;
 }
@@ -63,8 +65,9 @@ export function DictionaryAdmin() {
       return;
     }
     const terms = parse(draft.terms);
-    save(() => (draft.id === null ? addPosition(draft.code.trim(), draft.name, terms)
-      : changePosition(draft.id, draft.name, draft.active, terms)), () => setDraft(null));
+    const group = draft.group.trim();
+    save(() => (draft.id === null ? addPosition(draft.code.trim(), draft.name, group, terms)
+      : changePosition(draft.id, draft.name, draft.active, group, terms)), () => setDraft(null));
   }
 
   if (data === null) {
@@ -87,7 +90,7 @@ export function DictionaryAdmin() {
       <table className="companies dictionary">
         <thead>
           <tr>
-            <th>Position</th><th>Code</th><th>Titles</th><th className="nowrap">State</th>
+            <th>Position</th><th>Code</th><th>ISCO group</th><th>Titles</th><th className="nowrap">State</th>
             <th><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -96,8 +99,9 @@ export function DictionaryAdmin() {
             <tr key={position.id}>
               <td>{position.name}</td>
               <td className="muted nowrap">{position.code}</td>
+              <td className="nowrap">{position.placement.group ?? 'not set'}</td>
               <td>{position.terms.titles.join(', ')}</td>
-              <td className="nowrap">{position.active ? 'active' : 'retired'}</td>
+              <td className="nowrap">{position.placement.active ? 'active' : 'retired'}</td>
               <td className="row-actions nowrap">
                 <button type="button" disabled={busy} onClick={() => setDraft(toDraft(position))}>Edit</button>
               </td>
@@ -119,6 +123,11 @@ export function DictionaryAdmin() {
           )}
           <label>Name
             <input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          </label>
+          <label>ISCO group <span className="muted">— 4 digits of ISCO-08 (2512 — software developers). Users see the
+            position inside this group; its vacancies count for the whole group.</span>
+            <input required value={draft.group} pattern="[0-9]{4}" inputMode="numeric"
+              onChange={(event) => setDraft({ ...draft, group: event.target.value })} />
           </label>
           {draft.id !== null && (
             <label className="check">
@@ -180,7 +189,7 @@ function SettingsForm({ data, busy, onSave }: {
 }
 
 function newDraft(): Draft {
-  return toDraft({ id: -1, code: '', name: '', active: true, terms: NO_TERMS }, true);
+  return toDraft({ id: -1, code: '', name: '', placement: { group: null, active: true }, terms: NO_TERMS }, true);
 }
 
 function toDraft(position: DictionaryPosition, isNew = false): Draft {
@@ -188,7 +197,8 @@ function toDraft(position: DictionaryPosition, isNew = false): Draft {
     id: isNew ? null : position.id,
     code: position.code,
     name: position.name,
-    active: position.active,
+    group: position.placement.group ?? '',
+    active: position.placement.active,
     terms: {
       titles: position.terms.titles.join('\n'),
       roles: position.terms.roles.join('\n'),

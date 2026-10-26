@@ -39,13 +39,23 @@ public final class DictionaryDtos {
     /**
      * Позиция словаря.
      *
-     * @param id     позиция
-     * @param code   код (ссылка из условий поиска; не меняется)
-     * @param name   название
-     * @param active включена: выключенная не сопоставляется и не предлагается при выборе позиций
-     * @param terms  названия по видам
+     * @param id        позиция
+     * @param code      код (ссылка из условий поиска; не меняется)
+     * @param name      название
+     * @param placement группа ISCO-08 и включена ли
+     * @param terms     названия по видам
      */
-    public record PositionView(long id, String code, String name, boolean active, Terms terms) {
+    public record PositionView(long id, String code, String name, Placement placement, Terms terms) {
+    }
+
+    /**
+     * Место позиции среди позиций пользователя.
+     *
+     * @param group  группа ISCO-08 (4 цифры, §204): позиция видна внутри группы, её вакансии входят в группу; {@code null}
+     *               — не задана (позиция добавлена до групп)
+     * @param active включена: выключенная не сопоставляется и не предлагается при выборе позиций
+     */
+    public record Placement(String group, boolean active) {
     }
 
     /**
@@ -67,10 +77,11 @@ public final class DictionaryDtos {
      *
      * @param code  код: латиница в нижнем регистре, цифры, дефис между ними ({@code java-developer})
      * @param name  название
+     * @param group группа ISCO-08 (4 цифры справочника)
      * @param terms названия по видам
      */
     public record NewPosition(@NotBlank @Size(max = 60) @Pattern(regexp = "[a-z0-9]+(-[a-z0-9]+)*") String code,
-            @NotBlank @Size(max = 200) String name, @NotNull @Valid Terms terms) {
+            @NotBlank @Size(max = 200) String name, @NotNull @Pattern(regexp = "[0-9]{4}") String group, @NotNull @Valid Terms terms) {
     }
 
     /**
@@ -78,10 +89,11 @@ public final class DictionaryDtos {
      *
      * @param name   название
      * @param active включена — обязательно: без поля позиция не выключается молча (аудит §165)
+     * @param group  группа ISCO-08 (4 цифры справочника)
      * @param terms  названия по видам — заменяют прежние
      */
     public record PositionChange(@NotBlank @Size(max = 200) String name, @NotNull Boolean active,
-            @NotNull @Valid Terms terms) {
+            @NotNull @Pattern(regexp = "[0-9]{4}") String group, @NotNull @Valid Terms terms) {
     }
 
     /**

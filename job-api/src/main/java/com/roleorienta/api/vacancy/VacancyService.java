@@ -110,8 +110,7 @@ public class VacancyService {
      * строки (аудит §154). https://www.postgresql.org/docs/16/transaction-iso.html#XACT-REPEATABLE-READ
      *
      * @param userId    пользователь
-     * @param page      номер страницы, с 1
-     * @param size      строк на странице
+     * @param view      страница и язык названий групп
      * @param visitFrom граница текущего захода ({@link #visit}): вакансии, полученные позже, — с точкой (§191);
      *                  {@code null} — без точек
      * @param filter    отбор внутри результатов: позиция условий (§194) и «после прошлого захода» (§200; прошлого захода
@@ -119,9 +118,9 @@ public class VacancyService {
      * @return страница результатов, общее число и число новых; условия не заданы — пусто
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage delivered(long userId, int page, int size, Instant visitFrom, ResultFilter filter) {
-        int number = Math.max(FIRST_PAGE, page);
-        int rows = size(size);
+    public VacancyPage delivered(long userId, View view, Instant visitFrom, ResultFilter filter) {
+        int number = Math.max(FIRST_PAGE, view.page());
+        int rows = size(view.size());
         Optional<Long> condition = repository.activeCondition(userId);
         if (condition.isEmpty()) {
             return new VacancyPage(List.of(), number, rows, 0, 0);
@@ -133,21 +132,22 @@ public class VacancyService {
                 filter.position(), recentFrom);
         Counts counts = repository.countDelivered(conditionId, visibleSince, filter.position(), recentFrom);
         Map<Long, List<String>> matched = repository.matchedPositions(conditionId,
-                shown.stream().map(VacancyRow::id).toList());
+                shown.stream().map(VacancyRow::id).toList(), view.language());
         return new VacancyPage(items(shown, visitFrom, matched), number, rows,
                 counts.total(), counts.fresh());
     }
 
     /**
-     * Метки отбора над результатами: позиции текущих условий с числом видимых вакансий (§194) и сколько вакансий пришло
-     * после прошлого захода (§200).
+     * Метки отбора над результатами: позиции и группы текущих условий с числом видимых вакансий (§194, §204) и сколько
+     * вакансий пришло после прошлого захода (§200).
      *
      * @param userId    пользователь
      * @param visitFrom граница текущего захода ({@link #visit}); {@code null} — первый заход: после прошлого — 0
+     * @param language  язык названий групп
      * @return метки; условия не заданы — пусто и 0
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public ResultFilters filters(long userId, Instant visitFrom) {
+    public ResultFilters filters(long userId, Instant visitFrom, String language) {
         Optional<Long> condition = repository.activeCondition(userId);
         if (condition.isEmpty()) {
             return new ResultFilters(List.of(), 0);
@@ -155,7 +155,7 @@ public class VacancyService {
         Instant visibleSince = Instant.now().minus(properties.hideAfter());
         long recent = visitFrom == null ? 0
                 : repository.countDelivered(condition.get(), visibleSince, null, visitFrom).total();
-        return new ResultFilters(repository.positionCounts(condition.get(), visibleSince), recent);
+        return new ResultFilters(repository.positionCounts(condition.get(), visibleSince, language), recent);
     }
 
     /**
@@ -313,5 +313,15 @@ public class VacancyService {
 
     private static int size(int requested) {
         return Math.max(1, Math.min(MAX_SIZE, requested));
+    }
+
+    /**
+     * Как показать результаты.
+     *
+     * @param page     номер страницы, с 1 (меньше — первая)
+     * @param size     строк на странице
+     * @param language язык названий групп ISCO-08 в метках (§204)
+     */
+    public record View(int page, int size, String language) {
     }
 }

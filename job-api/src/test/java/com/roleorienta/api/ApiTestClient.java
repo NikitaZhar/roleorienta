@@ -30,6 +30,8 @@ final class ApiTestClient {
     boolean withoutCsrf;
     /** Заголовок {@code If-Match} для {@code PUT}; {@code null} — без него. */
     String ifMatch;
+    /** Заголовок {@code Accept-Language}; {@code null} — без него. */
+    String language;
 
     /**
      * @param port порт приложения теста
@@ -85,6 +87,9 @@ final class ApiTestClient {
         }
         if (ifMatch != null && "PUT".equals(method)) {
             request.header("If-Match", ifMatch);
+        }
+        if (language != null) {
+            request.header("Accept-Language", language);
         }
         HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
         for (String setCookie : response.headers().allValues("set-cookie")) {

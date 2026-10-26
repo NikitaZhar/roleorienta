@@ -1,11 +1,13 @@
 package com.roleorienta.api.vacancy;
 
 import com.roleorienta.api.account.AccountService;
+import com.roleorienta.api.condition.OccupationRepository;
 import com.roleorienta.api.vacancy.VacancyDtos.ResultFilter;
 import com.roleorienta.api.vacancy.VacancyDtos.ResultFilters;
 import com.roleorienta.api.vacancy.VacancyDtos.StatusRequest;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
+import com.roleorienta.api.vacancy.VacancyService.View;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +46,7 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @param position       код позиции условий — только подходящие к ней (§194); нет — все
+     * @param position       код позиции или группы условий — только подходящие к ней (§194, §204); нет — все
      * @param since          {@code true} — только пришедшие после прошлого захода (§200)
      * @return страница результатов по текущим условиям (новые и просмотренные), открытые позже сверху, общее число и
      *         число новых; условия не заданы — пусто. Открытие записывается как заход в список (§191) — отдельным
@@ -59,18 +61,19 @@ public class VacancyController {
             @RequestParam(required = false) String position,
             @RequestParam(defaultValue = "false") boolean since) {
         long userId = userId(authentication);
-        return vacancies.delivered(userId, page, size, vacancies.visit(userId), new ResultFilter(position, since));
+        return vacancies.delivered(userId, new View(page, size, OccupationRepository.language()),
+                vacancies.visit(userId), new ResultFilter(position, since));
     }
 
     /**
      * @param authentication вошедший пользователь
-     * @return метки отбора над результатами: позиции текущих условий с числом видимых вакансий (§194) и сколько пришло
+     * @return метки отбора над результатами: позиции и группы условий с числом видимых вакансий (§194) и сколько пришло
      *         после прошлого захода (§200); условия не заданы — пусто. Открытие записывается как заход, как у списка
      */
     @GetMapping("/api/v1/me/vacancies/filters")
     public ResultFilters filters(Authentication authentication) {
         long userId = userId(authentication);
-        return vacancies.filters(userId, vacancies.visit(userId));
+        return vacancies.filters(userId, vacancies.visit(userId), OccupationRepository.language());
     }
 
     /**

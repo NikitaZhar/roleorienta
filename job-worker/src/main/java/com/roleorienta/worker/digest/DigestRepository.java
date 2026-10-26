@@ -30,9 +30,9 @@ public class DigestRepository {
     /**
      * Новые вакансии пользователя для письма: выданы по его активным условиям, видны в результатах и ещё не были в
      * письме ({@code digest_vacancy}). «Видны» — те же правила, что у списка job-api ({@code VacancyRepository.VISIBLE},
-     * меняются вместе): не закрыта, подтверждена не раньше срока, подходит хотя бы к одной позиции условий, стране и
-     * формату, статус пользователя — «Новая» или «Просмотрена» (аудит §165). Параметры — пользователь и срок
-     * подтверждения.
+     * меняются вместе): не закрыта, подтверждена не раньше срока, подходит хотя бы к одной позиции или группе условий
+     * ({@code search_condition_match}, §204), стране и формату, статус пользователя — «Новая» или «Просмотрена» (аудит
+     * §165). Параметры — пользователь и срок подтверждения.
      */
     private static final String FRESH_FROM = """
              FROM search_condition c JOIN delivered_vacancy d ON d.search_condition_id = c.id
@@ -40,9 +40,8 @@ public class DigestRepository {
             LEFT JOIN vacancy_user_status st ON st.user_id = c.user_id AND st.vacancy_id = v.id
             WHERE c.user_id = ? AND c.active
               AND v.state <> 'CLOSED' AND v.last_confirmed_at >= ?
-              AND EXISTS (SELECT 1 FROM vacancy_position_match m
-                          JOIN search_condition_position sp ON sp.position_id = m.position_id
-                          WHERE m.vacancy_id = v.id AND sp.search_condition_id = c.id)
+              AND EXISTS (SELECT 1 FROM search_condition_match sm
+                          WHERE sm.search_condition_id = c.id AND sm.vacancy_id = v.id)
               AND (v.work_countries && c.countries OR cardinality(v.work_countries) = 0)
               AND (c.work_format IS NULL OR v.work_format IS NULL
                    OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))

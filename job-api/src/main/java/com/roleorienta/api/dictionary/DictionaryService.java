@@ -1,5 +1,6 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
@@ -49,11 +50,13 @@ public class DictionaryService {
     /**
      * @param position новая позиция
      * @return словарь после изменения; пусто — позиция с таким кодом уже есть (ничего не записано)
+     * @throws InvalidFieldException группы ISCO-08 нет в справочнике ({@code /group})
      */
     @Transactional
     public Optional<DictionaryView> add(NewPosition position) {
+        requireGroup(position.group());
         repository.lockVersion();
-        Optional<Long> id = repository.insertPosition(position.code(), position.name().strip());
+        Optional<Long> id = repository.insertPosition(position.code(), position.name().strip(), position.group());
         if (id.isEmpty()) {
             return Optional.empty();
         }
@@ -64,13 +67,15 @@ public class DictionaryService {
 
     /**
      * @param id     позиция
-     * @param change название, включена ли, названия по видам
+     * @param change название, включена ли, группа, названия по видам
      * @return словарь после изменения; пусто — позиции нет
+     * @throws InvalidFieldException группы ISCO-08 нет в справочнике ({@code /group})
      */
     @Transactional
     public Optional<DictionaryView> change(long id, PositionChange change) {
+        requireGroup(change.group());
         repository.lockVersion();
-        if (!repository.updatePosition(id, change.name().strip(), change.active())) {
+        if (!repository.updatePosition(id, change.name().strip(), change.active(), change.group())) {
             return Optional.empty();
         }
         repository.replaceTerms(id, clean(change.terms()));
@@ -88,6 +93,12 @@ public class DictionaryService {
         repository.saveSettings(new Settings(settings.contentHits(), unique(settings.otherSpecializations())));
         repository.bumpVersion();
         return dictionary();
+    }
+
+    private void requireGroup(String group) {
+        if (!repository.isGroup(group)) {
+            throw new InvalidFieldException("/group", "Unknown ISCO-08 group: " + group);
+        }
     }
 
     private static Terms clean(Terms terms) {

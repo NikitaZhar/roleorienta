@@ -48,6 +48,12 @@ public class SearchCondition {
     @Column(name = "position_id")
     private Set<Long> positionIds = new HashSet<>();
 
+    /** Группы ISCO-08 версии (4 цифры; §204) — таблица {@code search_condition_occupation}, как позиции. */
+    @ElementCollection
+    @CollectionTable(name = "search_condition_occupation", joinColumns = @JoinColumn(name = "search_condition_id"))
+    @Column(name = "code")
+    private Set<String> groups = new HashSet<>();
+
     @Enumerated(EnumType.STRING)
     private WorkFormat workFormat;
 
@@ -66,28 +72,29 @@ public class SearchCondition {
      *
      * @param userId       пользователь
      * @param countries    страны, отсортированные, без повторов
-     * @param positionIds  позиции, хотя бы одна
+     * @param selection    позиции и группы, вместе хотя бы одна
      * @param workFormat   формат; {@code null} — не задан
      * @param portionLimit лимит порции
      */
-    public SearchCondition(long userId, List<String> countries, Set<Long> positionIds, WorkFormat workFormat,
+    public SearchCondition(long userId, List<String> countries, Selection selection, WorkFormat workFormat,
             int portionLimit) {
         this.userId = userId;
         this.countries = countries;
-        this.positionIds = new HashSet<>(positionIds);
+        this.positionIds = new HashSet<>(selection.positionIds());
+        this.groups = new HashSet<>(selection.groups());
         this.workFormat = workFormat;
         this.portionLimit = portionLimit;
         this.active = true;
     }
 
     /**
-     * @param otherCountries  страны, отсортированные
-     * @param otherPositionIds позиции
-     * @param otherFormat     формат
-     * @return отбор тот же (тот же набор позиций, порядок не важен) — новая версия не нужна
+     * @param otherCountries страны, отсортированные
+     * @param other          позиции и группы
+     * @param otherFormat    формат
+     * @return отбор тот же (тот же набор позиций и групп, порядок не важен) — новая версия не нужна
      */
-    public boolean sameSelection(List<String> otherCountries, Set<Long> otherPositionIds, WorkFormat otherFormat) {
-        return countries.equals(otherCountries) && Set.copyOf(positionIds).equals(otherPositionIds)
+    public boolean sameSelection(List<String> otherCountries, Selection other, WorkFormat otherFormat) {
+        return countries.equals(otherCountries) && selection().equals(other)
                 && Objects.equals(workFormat, otherFormat);
     }
 
@@ -118,8 +125,11 @@ public class SearchCondition {
         return countries;
     }
 
-    public Set<Long> getPositionIds() {
-        return positionIds;
+    /**
+     * @return позиции и группы версии
+     */
+    public Selection selection() {
+        return new Selection(Set.copyOf(positionIds), Set.copyOf(groups));
     }
 
     public WorkFormat getWorkFormat() {
@@ -128,5 +138,14 @@ public class SearchCondition {
 
     public int getPortionLimit() {
         return portionLimit;
+    }
+
+    /**
+     * Что ищет пользователь (§204): позиции словаря (точные) и группы ISCO-08 (широкие).
+     *
+     * @param positionIds позиции словаря
+     * @param groups      коды групп ISCO-08 (4 цифры)
+     */
+    public record Selection(Set<Long> positionIds, Set<String> groups) {
     }
 }

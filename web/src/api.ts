@@ -52,8 +52,16 @@ function csrfToken(): string | undefined {
   return cookie === undefined ? undefined : decodeURIComponent(cookie.substring(CSRF_COOKIE.length + 1));
 }
 
+/** Язык интерфейса для названий групп ISCO-08 в ответах (§204): заголовок Accept-Language; ставит I18nProvider. */
+let requestLanguage = 'en';
+
+/** @param language язык интерфейса — с ним уходят следующие запросы */
+export function setRequestLanguage(language: string) {
+  requestLanguage = language;
+}
+
 async function send(method: string, path: string, body?: unknown, ifMatch?: string | null): Promise<Response> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: 'application/json', 'Accept-Language': requestLanguage };
   if (ifMatch !== undefined && ifMatch !== null) {
     headers['If-Match'] = ifMatch;
   }
@@ -171,13 +179,13 @@ export type WorkFormat = 'OFFICE' | 'REMOTE';
 /** Условия поиска (технический документ §8; бизнес-описание §7.2). */
 export interface SearchCondition {
   countries: string[];
-  /** Позиции (от 1 до 10, §126); выключенная администратором остаётся в условиях (§160). */
+  /** Позиции и группы ISCO-08 (вместе от 1 до 10, §126, §204); выключенная позиция остаётся в условиях (§160). */
   positions: ChosenPosition[];
   format: WorkFormat | null;
   portionLimit: number;
 }
 
-/** Позиция в условиях: код, название, включена ли (выключенная — с пометкой, аудит §165). */
+/** Позиция или группа в условиях: код, название, включена ли (выключенная позиция — с пометкой, аудит §165). */
 export interface ChosenPosition {
   code: string;
   name: string;
@@ -197,9 +205,35 @@ export function countries(): Promise<CatalogItem[]> {
   return request<CatalogItem[]>('GET', '/api/v1/countries');
 }
 
-/** @returns до 20 позиций словаря, в коде или названии которых есть query */
-export function positions(query: string): Promise<CatalogItem[]> {
-  return request<CatalogItem[]>('GET', '/api/v1/positions?query=' + encodeURIComponent(query));
+/** Вариант подсказки: позиция словаря или группа ISCO-08 (group — подходят все вакансии группы, §204). */
+export interface PositionOption {
+  code: string;
+  name: string;
+  group: boolean;
+}
+
+/** @returns до 20 вариантов: сначала позиции словаря, затем группы, в названии (или синониме) которых есть query */
+export function positions(query: string): Promise<PositionOption[]> {
+  return request<PositionOption[]>('GET', '/api/v1/positions?query=' + encodeURIComponent(query));
+}
+
+/** Группа ISCO-08 в окне «Все позиции»: позиции словаря внутри неё. */
+export interface GroupNode {
+  code: string;
+  name: string;
+  positions: CatalogItem[];
+}
+
+/** Направление в окне «Все позиции»: подраздел ISCO-08 с группами. */
+export interface Direction {
+  code: string;
+  name: string;
+  groups: GroupNode[];
+}
+
+/** @returns все направления с группами и позициями (§204) */
+export function occupations(): Promise<Direction[]> {
+  return request<Direction[]>('GET', '/api/v1/occupations');
 }
 
 /** @returns условия с версией; null — условия ещё не заданы (404) */
@@ -535,7 +569,8 @@ export interface DictionaryPosition {
   id: number;
   code: string;
   name: string;
-  active: boolean;
+  /** Группа ISCO-08 (4 цифры, §204; null — не задана) и включена ли. */
+  placement: { group: string | null; active: boolean };
   terms: PositionTerms;
 }
 
@@ -552,14 +587,15 @@ export function dictionary(): Promise<Dictionary> {
   return request<Dictionary>('GET', '/api/v1/admin/dictionary');
 }
 
-/** Новая позиция словаря: 409 — код уже есть. */
-export function addPosition(code: string, name: string, terms: PositionTerms): Promise<Dictionary> {
-  return request<Dictionary>('POST', '/api/v1/admin/positions', { code, name, terms });
+/** Новая позиция словаря: 409 — код уже есть; 400 — группы ISCO-08 нет в справочнике. */
+export function addPosition(code: string, name: string, group: string, terms: PositionTerms): Promise<Dictionary> {
+  return request<Dictionary>('POST', '/api/v1/admin/positions', { code, name, group, terms });
 }
 
-/** Изменение позиции словаря (название, включена ли, названия по видам). */
-export function changePosition(id: number, name: string, active: boolean, terms: PositionTerms): Promise<Dictionary> {
-  return request<Dictionary>('PUT', '/api/v1/admin/positions/' + id, { name, active, terms });
+/** Изменение позиции словаря (название, включена ли, группа ISCO-08, названия по видам). */
+export function changePosition(id: number, name: string, active: boolean, group: string,
+  terms: PositionTerms): Promise<Dictionary> {
+  return request<Dictionary>('PUT', '/api/v1/admin/positions/' + id, { name, active, group, terms });
 }
 
 /** Общие настройки словаря. */

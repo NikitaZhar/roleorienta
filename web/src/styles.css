@@ -638,6 +638,30 @@ nav .current,
   background: var(--surface-2);
 }
 
+/* Окно «Все позиции» (§204): направления ссылками, под раскрытым — группы, под группой — её позиции с отступом. */
+.catalog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.catalog .choices {
+  margin: 4px 0 8px 12px;
+}
+
+.choices.nested {
+  margin: 0 0 0 16px;
+}
+
+.choices button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
 /* «Suggest a position» в форме условий (§161): поле и свои предложения под выбором позиций. */
 .suggest {
   display: grid;

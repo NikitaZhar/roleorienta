@@ -18,8 +18,9 @@ public class DeliveryRepository {
     /**
      * Порция: все подходящие вакансии, которых ещё нет в накопленном списке версии условий, в порядке потока (дата
      * первого обнаружения, затем id). Лимита нет (решение владельца 2026-10-15, стенограмма §120): после новых
-     * условий видны сразу все подходящие вакансии, новые добавляются следующими проходами. Позиция: вакансия
-     * сопоставлена хотя бы одной позиции версии условий ({@code search_condition_position}, §126). Страна (решения
+     * условий видны сразу все подходящие вакансии, новые добавляются следующими проходами. Позиция: вакансия подходит
+     * хотя бы к одной позиции или группе ISCO-08 версии условий (§126, §204; представление
+     * {@code search_condition_match}, V77). Страна (решения
      * владельца 2026-10-20, §148): среди определённых стран вакансии есть страна пользователя или страна не определена
      * (стран нет — включается с пометкой); только «*» (удалённо «весь мир») — не выдаётся; страны не рассчитаны
      * ({@code NULL}) — не выдаётся. Логика та же, что {@code Fit.country}. Формат не подходит, если он задан в
@@ -31,9 +32,8 @@ public class DeliveryRepository {
             INSERT INTO delivered_vacancy (search_condition_id, vacancy_id, pass_run_id, delivered_at)
             SELECT c.id, v.id, ?, ?
             FROM search_condition c
-            JOIN vacancy v ON v.id IN (SELECT m.vacancy_id FROM vacancy_position_match m
-                                       JOIN search_condition_position sp ON sp.position_id = m.position_id
-                                       WHERE sp.search_condition_id = c.id)
+            JOIN vacancy v ON v.id IN (SELECT sm.vacancy_id FROM search_condition_match sm
+                                       WHERE sm.search_condition_id = c.id)
             WHERE c.id = ?
               AND v.state <> 'CLOSED'
               AND v.last_confirmed_at >= ?

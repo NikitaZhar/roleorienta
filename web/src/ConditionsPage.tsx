@@ -1,8 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
-  ApiError, type CatalogItem, countries, positions, saveSearchCondition, searchCondition, type WorkFormat,
+  ApiError, type CatalogItem, countries, type PositionOption, positions, saveSearchCondition, searchCondition,
+  type WorkFormat,
 } from './api';
 import { errorText, type MessageKey, useI18n } from './i18n';
+import { PositionCatalog } from './PositionCatalog';
 import { PositionSuggestions } from './PositionSuggestions';
 
 interface Props {
@@ -16,12 +18,15 @@ const FORMATS: { value: WorkFormat | ''; label: MessageKey }[] = [
   { value: 'REMOTE', label: 'format.remote' },
 ];
 
-/** Позиций в условиях не больше (§126; как в API). */
+/** Позиций и групп в условиях вместе не больше (§126; как в API). */
 const MAX_POSITIONS = 10;
 
 /**
- * Условия поиска (бизнес-описание §3, §7.2): страны, позиции словаря (одна или несколько — вакансия подходит к любой из
- * них; выбранные — метками с «×», §126), формат работы (Any — все форматы; гибрида нет —
+ * Условия поиска (бизнес-описание §3, §7.2): страны, позиции (одна или несколько — вакансия подходит к любой из
+ * них; выбранные — метками с «×», §126), формат работы. Позиция (§204) — точная позиция словаря («Java developer») или
+ * группа ISCO-08 («Разработчики ПО»: все вакансии группы — пометкой в подсказке). Выбор — вводом (подсказка после
+ * двух букв) или в окне «Не нашли? Все позиции» (направления → группы → позиции). Названия групп — на языке
+ * интерфейса: смена языка перечитывает условия. Формат работы (Any — все форматы; гибрида нет —
  * гибридные вакансии выдаются при любом формате, §125). Экран — по согласованному макету (§147, §152): условия
  * заданы — свёрнуты в строку меток с «Edit»; «Edit» раскрывает форму с «Cancel»; после «Search» форма снова
  * свёрнута. Нет условий — «No search criteria yet», форма раскрыта, ни одна страна не отмечена (решение владельца
@@ -33,12 +38,13 @@ const MAX_POSITIONS = 10;
  * Лимита порции на экране нет (решение владельца 2026-10-15, §120): API его принимает, выдача его не применяет.
  */
 export function ConditionsPage({ onSaved }: Props) {
-  const { locale, t } = useI18n();
+  const { language, locale, t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [chosen, setChosen] = useState<CatalogItem[]>([]);
   const [query, setQuery] = useState('');
-  const [found, setFound] = useState<CatalogItem[]>([]);
+  const [found, setFound] = useState<PositionOption[]>([]);
+  const [browsing, setBrowsing] = useState(false);
   const [format, setFormat] = useState<WorkFormat | ''>('');
   const [etag, setEtag] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -52,6 +58,7 @@ export function ConditionsPage({ onSaved }: Props) {
     setCatalog(all);
     setEtag(current?.etag ?? null);
     setQuery('');
+    setBrowsing(false);
     if (current === null) {
       setSelected([]);
       setChosen([]);
@@ -79,7 +86,13 @@ export function ConditionsPage({ onSaved }: Props) {
 
   useEffect(() => {
     load().catch((failure: unknown) => setMessage(errorText(failure, t)));
-  }, []);
+  }, [language]);
+
+  function choose(item: CatalogItem) {
+    setChosen((current) => current.length >= MAX_POSITIONS || current.some((other) => other.code === item.code)
+      ? current : [...current, { code: item.code, name: item.name }]);
+    setQuery('');
+  }
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -128,6 +141,7 @@ export function ConditionsPage({ onSaved }: Props) {
       setEtag(saved.etag);
       setMessage(null);
       setEditing(false);
+      setBrowsing(false);
       onSaved(changed);
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 412) {
@@ -208,13 +222,19 @@ export function ConditionsPage({ onSaved }: Props) {
             <ul className="choices">
               {found.filter((item) => !chosen.some((other) => other.code === item.code)).map((item) => (
                 <li key={item.code}>
-                  <button type="button" onClick={() => {
-                    setChosen((current) => current.length >= MAX_POSITIONS ? current : [...current, item]);
-                    setQuery('');
-                  }}>{item.name}</button>
+                  <button type="button" onClick={() => choose(item)}>
+                    {item.name}
+                    {item.group && <span className="muted"> · {t('conditions.wholeGroup')}</span>}
+                  </button>
                 </li>
               ))}
             </ul>
+          )}
+          <button type="button" className="link" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>
+            {t(browsing ? 'conditions.browseClose' : 'conditions.browse')}
+          </button>
+          {browsing && (
+            <PositionCatalog chosen={chosen.map((item) => item.code)} onChoose={choose} />
           )}
           <PositionSuggestions />
         </div>

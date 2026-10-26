@@ -290,9 +290,10 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     show(1, rows);
   }
 
+  /** Смена языка перечитывает страницу: названия групп ISCO-08 в метках приходят на языке интерфейса (§204). */
   useEffect(() => {
     show(data?.page ?? 1, size);
-  }, [reload]);
+  }, [reload, i18n.language]);
 
   useEffect(() => {
     if (!poll || data === null || loading || !hasConditions || data.total > 0 || refreshes >= REFRESH_TIMES) {

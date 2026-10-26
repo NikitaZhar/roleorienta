@@ -61,7 +61,8 @@ public class VacancyRepository {
     /**
      * Вакансия видна в результатах версии условий (те же правила, что у выдачи и сводки на почту job-worker —
      * {@code DeliveryRepository.PORTION}, {@code DigestRepository.FRESH_FROM}; меняются вместе): не закрыта,
-     * подтверждена не раньше срока, подходит хотя бы к одной позиции условий (§126), стране (среди определённых стран
+     * подтверждена не раньше срока, подходит хотя бы к одной позиции или группе условий (§126, §204: представление
+     * {@code search_condition_match}, V77), стране (среди определённых стран
      * вакансии есть страна условий или страна не определена — стран нет; только «*», удалённо «весь мир», и не
      * рассчитанные страны — нет; решения владельца 2026-10-20, §148) и формату текущих условий (гибрид — при любом
      * формате, §125); статус пользователя — «Новая» или «Просмотрена» (остальные — в «Моих откликах» и «Не
@@ -69,9 +70,8 @@ public class VacancyRepository {
      */
     private static final String VISIBLE = """
             v.state <> 'CLOSED' AND v.last_confirmed_at >= ?
-            AND EXISTS (SELECT 1 FROM vacancy_position_match m
-                        JOIN search_condition_position sp ON sp.position_id = m.position_id
-                        WHERE m.vacancy_id = v.id AND sp.search_condition_id = c.id)
+            AND EXISTS (SELECT 1 FROM search_condition_match sm
+                        WHERE sm.search_condition_id = c.id AND sm.vacancy_id = v.id)
             AND (v.work_countries && c.countries OR cardinality(v.work_countries) = 0)
             AND (c.work_format IS NULL OR v.work_format IS NULL
                  OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))
@@ -85,13 +85,26 @@ public class VacancyRepository {
             WHERE d.search_condition_id = ?""" + " AND " + VISIBLE;
 
     /**
-     * Отбор по одной позиции условий внутри результатов (§194): параметр — код позиции дважды; {@code null} — все
-     * позиции условий.
+     * Отбор по одной позиции или группе условий внутри результатов (§194, §204): параметр — код дважды; {@code null} —
+     * все.
      */
     private static final String ONE_POSITION = """
-             AND (CAST(? AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM vacancy_position_match pm
-                                                    JOIN position pp ON pp.id = pm.position_id
-                                                    WHERE pm.vacancy_id = v.id AND pp.code = ?))""";
+             AND (CAST(? AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM search_condition_match fm
+                                                    WHERE fm.search_condition_id = c.id AND fm.vacancy_id = v.id
+                                                      AND fm.code = ?))""";
+
+    /**
+     * Позиции и группы версии условий с названиями (у группы — на языке интерфейса, иначе английское; §204): код и
+     * название; параметры — версия условий, язык, версия условий.
+     */
+    private static final String ITEMS = """
+            (SELECT p.code, p.name FROM search_condition_position s JOIN position p ON p.id = s.position_id
+             WHERE s.search_condition_id = ?
+             UNION ALL
+             SELECT o.code, coalesce(
+                    (SELECT n.name FROM occupation_group_name n WHERE n.code = o.code AND n.language = ?),
+                    (SELECT n.name FROM occupation_group_name n WHERE n.code = o.code AND n.language = 'en'))
+             FROM search_condition_occupation o WHERE o.search_condition_id = ?)""";
 
     /**
      * Отбор «после прошлого захода» внутри результатов (§200): вакансия впервые получена пользователем (первая выдача по
@@ -168,7 +181,7 @@ public class VacancyRepository {
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param page         смещение и размер страницы
-     * @param position     код позиции условий — только подходящие к ней (§194); {@code null} — все
+     * @param position     код позиции или группы условий — только подходящие к ней (§194, §204); {@code null} — все
      * @param recentFrom   только впервые полученные позже (§200: «после прошлого захода»); {@code null} — все
      * @return вакансии страницы
      */
@@ -184,7 +197,7 @@ public class VacancyRepository {
     /**
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
-     * @param position     код позиции условий (§194); {@code null} — все
+     * @param position     код позиции или группы условий (§194, §204); {@code null} — все
      * @param recentFrom   только впервые полученные позже (§200); {@code null} — все
      * @return сколько вакансий в видимой части накопленного списка (те же условия, что у {@link #delivered}) и
      *         сколько из них новых (статуса пользователя нет)
@@ -198,40 +211,43 @@ public class VacancyRepository {
     }
 
     /**
-     * Позиции условий с числом видимых вакансий каждой (§194: метки отбора над результатами); одна вакансия может
-     * подходить к нескольким позициям. Видимость — как у {@link #delivered}.
+     * Позиции и группы условий с числом видимых вакансий каждой (§194: метки отбора над результатами; §204); одна
+     * вакансия может подходить к нескольким. Видимость — как у {@link #delivered}.
      *
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не считаются
-     * @return позиции условий, больше вакансий — первыми, при равном числе — по названию
+     * @param language     язык названий групп
+     * @return позиции и группы условий, больше вакансий — первыми, при равном числе — по названию
      */
-    public List<PositionCount> positionCounts(long condition, Instant visibleSince) {
+    public List<PositionCount> positionCounts(long condition, Instant visibleSince, String language) {
         return jdbcTemplate.query("""
-                SELECT p.code, p.name, (SELECT count(*)""" + DELIVERED_FROM + """
-                     AND EXISTS (SELECT 1 FROM vacancy_position_match pm
-                                 WHERE pm.vacancy_id = v.id AND pm.position_id = p.id)) AS total
-                FROM search_condition_position s JOIN position p ON p.id = s.position_id
-                WHERE s.search_condition_id = ?
-                ORDER BY total DESC, p.name
+                SELECT i.code, i.name, (SELECT count(*)""" + DELIVERED_FROM + """
+                     AND EXISTS (SELECT 1 FROM search_condition_match pm
+                                 WHERE pm.search_condition_id = c.id AND pm.vacancy_id = v.id
+                                   AND pm.code = i.code)) AS total
+                FROM """ + ITEMS + """
+                 i (code, name)
+                ORDER BY total DESC, i.name
                 """, (row, number) -> new PositionCount(row.getString(1), row.getString(2), row.getLong(3)),
-                condition, utc(visibleSince), condition);
+                condition, utc(visibleSince), condition, language, condition);
     }
 
     /**
      * @param condition версия условий
      * @param vacancies вакансии страницы
-     * @return к каким позициям условий подошла каждая вакансия (§194): вакансия → названия позиций по алфавиту
+     * @param language  язык названий групп
+     * @return к каким позициям и группам условий подошла каждая вакансия (§194, §204): вакансия → названия по алфавиту
      */
-    public Map<Long, List<String>> matchedPositions(long condition, List<Long> vacancies) {
+    public Map<Long, List<String>> matchedPositions(long condition, List<Long> vacancies, String language) {
         Map<Long, List<String>> matched = new HashMap<>();
         jdbcTemplate.query("""
-                SELECT m.vacancy_id, p.name FROM vacancy_position_match m
-                JOIN search_condition_position s ON s.position_id = m.position_id AND s.search_condition_id = ?
-                JOIN position p ON p.id = m.position_id
-                WHERE m.vacancy_id = ANY(?) ORDER BY p.name
+                SELECT DISTINCT m.vacancy_id, i.name FROM search_condition_match m
+                JOIN """ + ITEMS + """
+                 i (code, name) ON i.code = m.code
+                WHERE m.search_condition_id = ? AND m.vacancy_id = ANY(?) ORDER BY i.name
                 """, row -> {
                     matched.computeIfAbsent(row.getLong(1), any -> new ArrayList<>()).add(row.getString(2));
-                }, condition, vacancies.toArray(Long[]::new));
+                }, condition, language, condition, condition, vacancies.toArray(Long[]::new));
         return matched;
     }
 

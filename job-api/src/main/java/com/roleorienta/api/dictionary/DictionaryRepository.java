@@ -1,5 +1,6 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.dictionary.DictionaryDtos.Placement;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionView;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import com.roleorienta.api.dictionary.DictionaryDtos.Terms;
@@ -71,7 +72,7 @@ public class DictionaryRepository {
     public List<PositionView> positions() {
         Map<Long, Row> rows = new LinkedHashMap<>();
         jdbcTemplate.query("""
-                SELECT p.id, p.code, p.name, p.active, t.kind, t.term
+                SELECT p.id, p.code, p.name, p.active, p.occupation_code, t.kind, t.term
                 FROM position p LEFT JOIN position_term t ON t.position_id = p.id
                 ORDER BY p.name, p.id, t.id
                 """, row -> {
@@ -79,40 +80,55 @@ public class DictionaryRepository {
                     String code = row.getString("code");
                     String name = row.getString("name");
                     boolean active = row.getBoolean("active");
+                    String group = row.getString("occupation_code");
                     String kind = row.getString("kind");
                     String term = row.getString("term");
-                    Row position = rows.computeIfAbsent(id, any -> new Row(code, name, active,
+                    Row position = rows.computeIfAbsent(id, any -> new Row(code, name, group, active,
                             new EnumMap<>(TermKind.class)));
                     if (kind != null) {
                         position.terms().computeIfAbsent(TermKind.valueOf(kind), any -> new ArrayList<>()).add(term);
                     }
                 });
         List<PositionView> positions = new ArrayList<>();
-        rows.forEach((id, row) -> positions.add(new PositionView(id, row.code(), row.name(), row.active(),
+        rows.forEach((id, row) -> positions.add(new PositionView(id, row.code(), row.name(),
+                new Placement(row.group(), row.active()),
                 new Terms(row.of(TermKind.TITLE), row.of(TermKind.ROLE), row.of(TermKind.KEYWORD),
                         row.of(TermKind.EXCLUDE)))));
         return positions;
     }
 
     /**
-     * @param code код
-     * @param name название
+     * @param code  код
+     * @param name  название
+     * @param group группа ISCO-08
      * @return id новой позиции; пусто — позиция с таким кодом уже есть
      */
-    public Optional<Long> insertPosition(String code, String name) {
+    public Optional<Long> insertPosition(String code, String name, String group) {
         return jdbcTemplate.queryForList("""
-                INSERT INTO position (code, name) VALUES (?, ?) ON CONFLICT (code) DO NOTHING RETURNING id
-                """, Long.class, code, name).stream().findFirst();
+                INSERT INTO position (code, name, occupation_code) VALUES (?, ?, ?) ON CONFLICT (code) DO NOTHING
+                RETURNING id
+                """, Long.class, code, name, group).stream().findFirst();
     }
 
     /**
      * @param id     позиция
      * @param name   название
      * @param active включена
+     * @param group  группа ISCO-08
      * @return {@code false} — позиции нет
      */
-    public boolean updatePosition(long id, String name, boolean active) {
-        return jdbcTemplate.update("UPDATE position SET name = ?, active = ? WHERE id = ?", name, active, id) == 1;
+    public boolean updatePosition(long id, String name, boolean active, String group) {
+        return jdbcTemplate.update("UPDATE position SET name = ?, active = ?, occupation_code = ? WHERE id = ?", name,
+                active, group, id) == 1;
+    }
+
+    /**
+     * @param code код
+     * @return {@code true} — группа ISCO-08 (4 цифры) справочника
+     */
+    public boolean isGroup(String code) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM occupation_group WHERE level = 4 AND code = ?)", Boolean.class, code));
     }
 
     /**
@@ -158,7 +174,7 @@ public class DictionaryRepository {
     private enum TermKind { TITLE, ROLE, KEYWORD, EXCLUDE }
 
     /** Позиция, пока строки читаются. */
-    private record Row(String code, String name, boolean active, Map<TermKind, List<String>> terms) {
+    private record Row(String code, String name, String group, boolean active, Map<TermKind, List<String>> terms) {
 
         List<String> of(TermKind kind) {
             return List.copyOf(terms.getOrDefault(kind, List.of()));

@@ -3,6 +3,8 @@ package com.roleorienta.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,8 +52,8 @@ class AccountConditionAcceptanceTests {
                 "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
-        jdbcTemplate.update("INSERT INTO position (code, name) VALUES ('java-developer', 'Java developer'), "
-                + "('devops-engineer', 'DevOps engineer')");
+        jdbcTemplate.update("INSERT INTO position (code, name, occupation_code) VALUES "
+                + "('java-developer', 'Java developer', '2512'), ('devops-engineer', 'DevOps engineer', '2512')");
     }
 
     /**
@@ -201,6 +203,52 @@ class AccountConditionAcceptanceTests {
         assertThat(activeVersion()).isEqualTo(twoPositions);
         assertThat(client.send("PUT", "/api/v1/me/search-condition",
                 "{\"countries\":[\"SK\"],\"positions\":[]}").body()).contains("\"pointer\":\"/positions\"");
+    }
+
+    /**
+     * Группы ISCO-08 в условиях (§204): подсказка — сначала позиции словаря, затем группы (по названию на языке
+     * интерфейса и по синонимам ESCO, в том числе словацким), у группы — признак; группа сохраняется в условиях вместе с
+     * позицией, название — на языке интерфейса; неизвестная группа — {@code 400}; окно «Все позиции» — направления,
+     * группы и позиции словаря внутри группы.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void conditionsWithIscoGroup() throws Exception {
+        ApiTestClient client = signedIn("user@example.com");
+        client.language = "ru";
+        assertThat(client.send("GET", "/api/v1/positions?query=java", null).body())
+                .startsWith("[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false}");
+        assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("грузовых", StandardCharsets.UTF_8), null).body())
+                .contains("{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"group\":true}");
+        assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("nákladného", StandardCharsets.UTF_8), null).body()).contains("\"code\":\"8332\"");
+        client.language = "en";
+        assertThat(client.send("GET", "/api/v1/positions?query=lorry", null).body())
+                .contains("{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"group\":true}");
+
+        client.language = "ru";
+        ApiTestClient.Response saved = client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\",\"8332\"]}");
+        assertThat(saved.status()).isEqualTo(200);
+        assertThat(saved.body()).contains("\"positions\":[{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\","
+                + "\"active\":true},{\"code\":\"java-developer\",");
+        assertThat(jdbcTemplate.queryForObject("SELECT code FROM search_condition_occupation", String.class))
+                .isEqualTo("8332");
+        client.language = "en";
+        assertThat(client.send("GET", "/api/v1/me/search-condition", null).body())
+                .contains("{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"active\":true}");
+
+        client.ifMatch = saved.etag();
+        assertThat(client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"0000\"]}").body())
+                .contains("\"pointer\":\"/positions\"", "Unknown positions: [0000]");
+
+        client.language = "ru";
+        String catalog = client.send("GET", "/api/v1/occupations", null).body();
+        assertThat(catalog).contains("{\"code\":\"83\",\"name\":\"Водители и операторы подвижного оборудования\","
+                + "\"groups\":[", "{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"positions\":[]}",
+                "{\"code\":\"2512\",\"name\":\"Разработчики программного обеспечения\",\"positions\":[",
+                "{\"code\":\"java-developer\",\"name\":\"Java developer\"}");
     }
 
     /**
