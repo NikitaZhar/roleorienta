@@ -5,7 +5,7 @@ import {
 } from './api';
 import { GroupBadge } from './companyGroups';
 import { DictionaryAdmin } from './DictionaryAdmin';
-import { SuggestionsAdmin } from './SuggestionsAdmin';
+import { SearchMissesAdmin } from './SearchMissesAdmin';
 
 /** Сколько последних дней показывать. */
 const DAYS = 14;
@@ -85,7 +85,7 @@ export function AdminApp() {
         <StatusView />
         <MetricsView />
         <NotEmployerView />
-        <SuggestionsAdmin />
+        <SearchMissesAdmin />
         <DictionaryAdmin />
       </main>
     </>

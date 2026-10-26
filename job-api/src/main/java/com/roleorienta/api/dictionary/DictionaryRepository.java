@@ -2,10 +2,12 @@ package com.roleorienta.api.dictionary;
 
 import com.roleorienta.api.dictionary.DictionaryDtos.Placement;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionView;
+import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import com.roleorienta.api.dictionary.DictionaryDtos.Terms;
 import java.sql.Array;
 import java.sql.SQLException;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
@@ -120,6 +122,23 @@ public class DictionaryRepository {
     public boolean updatePosition(long id, String name, boolean active, String group) {
         return jdbcTemplate.update("UPDATE position SET name = ?, active = ?, occupation_code = ? WHERE id = ?", name,
                 active, group, id) == 1;
+    }
+
+    /**
+     * @return запросы подсказки без результата (§205): чаще — первыми, при равном числе — недавние; не больше 100
+     */
+    public List<SearchMiss> searchMisses() {
+        return jdbcTemplate.query("SELECT query, misses, last_at FROM position_search_miss "
+                + "ORDER BY misses DESC, last_at DESC LIMIT 100", (row, number) -> new SearchMiss(row.getString(1),
+                row.getInt(2), row.getObject(3, OffsetDateTime.class).toInstant()));
+    }
+
+    /**
+     * @param query запрос
+     * @return {@code false} — такого нет
+     */
+    public boolean forgetSearchMiss(String query) {
+        return jdbcTemplate.update("DELETE FROM position_search_miss WHERE query = ?", query) == 1;
     }
 
     /**

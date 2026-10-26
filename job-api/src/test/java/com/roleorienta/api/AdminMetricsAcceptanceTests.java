@@ -35,7 +35,7 @@ class AdminMetricsAcceptanceTests {
      */
     @BeforeEach
     void setUp() {
-        for (String table : new String[] {"position_suggestion", "delivered_vacancy", "pass_run",
+        for (String table : new String[] {"delivered_vacancy", "pass_run",
                 "vacancy_status_history", "vacancy_user_status",
                 "search_condition",
                 "digest_vacancy", "user_account", "spring_session_attributes", "spring_session", "core_metric_daily"}) {

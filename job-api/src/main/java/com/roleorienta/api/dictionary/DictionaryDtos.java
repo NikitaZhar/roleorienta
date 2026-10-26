@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -104,5 +105,16 @@ public final class DictionaryDtos {
      */
     public record Settings(@Min(1) @Max(MAX_CONTENT_HITS) int contentHits,
             @NotNull List<@NotBlank @Size(max = MAX_TERM) String> otherSpecializations) {
+    }
+
+    /**
+     * Запрос подсказки позиции, который ничего не нашёл (§205): по нему администратор решает, нужна ли новая позиция
+     * словаря.
+     *
+     * @param query  строка (в нижнем регистре)
+     * @param misses сколько раз
+     * @param lastAt когда последний раз
+     */
+    public record SearchMiss(String query, int misses, Instant lastAt) {
     }
 }

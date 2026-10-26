@@ -86,15 +86,19 @@ public class ConditionController {
     /**
      * @param query часть названия (у позиции — и кода; у группы — и синонима ESCO); пусто — первые по порядку
      * @return подсказка при вводе (§204): позиции словаря, затем группы ISCO-08 (названия — на языке
-     *         {@code Accept-Language}); не больше 20
+     *         {@code Accept-Language}); не больше 20. Ничего не нашлось — строка запоминается для администратора (§205)
      */
     @GetMapping("/api/v1/positions")
     public List<PositionOption> positions(@RequestParam(defaultValue = "") String query) {
-        return occupations.suggestions(query, OccupationRepository.language());
+        List<PositionOption> found = occupations.suggestions(query, OccupationRepository.language());
+        if (found.isEmpty()) {
+            occupations.recordMiss(query);
+        }
+        return found;
     }
 
     /**
-     * @return окно «Все позиции» (§204): направления → группы → позиции словаря (названия — на языке
+     * @return «Полный каталог» (Full catalog) (§204): направления → группы → позиции словаря (названия — на языке
      *         {@code Accept-Language})
      */
     @GetMapping("/api/v1/occupations")

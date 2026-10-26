@@ -222,6 +222,8 @@ class AccountConditionAcceptanceTests {
         assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("грузовых", StandardCharsets.UTF_8), null).body())
                 .contains("{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"group\":true}");
         assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("nákladného", StandardCharsets.UTF_8), null).body()).contains("\"code\":\"8332\"");
+        // С начала слова: «pyt» внутри «kopytá» (кузнецы, 7221) и «dopytu» (закупщики, 3323) не находит.
+        assertThat(client.send("GET", "/api/v1/positions?query=pyt", null).body()).doesNotContain("7221", "3323");
         client.language = "en";
         assertThat(client.send("GET", "/api/v1/positions?query=lorry", null).body())
                 .contains("{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"group\":true}");

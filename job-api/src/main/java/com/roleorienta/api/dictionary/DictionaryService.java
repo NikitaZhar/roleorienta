@@ -4,6 +4,7 @@ import com.roleorienta.api.condition.InvalidFieldException;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
+import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import com.roleorienta.api.dictionary.DictionaryDtos.Terms;
 import com.roleorienta.api.dictionary.DictionaryRepository.Versioned;
@@ -93,6 +94,25 @@ public class DictionaryService {
         repository.saveSettings(new Settings(settings.contentHits(), unique(settings.otherSpecializations())));
         repository.bumpVersion();
         return dictionary();
+    }
+
+    /**
+     * @return запросы подсказки позиции без результата (§205), чаще — первыми
+     */
+    @Transactional(readOnly = true)
+    public List<SearchMiss> searchMisses() {
+        return repository.searchMisses();
+    }
+
+    /**
+     * Запрос убран из списка (позиция добавлена или не нужна); повторится — появится снова.
+     *
+     * @param query запрос
+     * @return {@code false} — такого нет
+     */
+    @Transactional
+    public boolean forgetSearchMiss(String query) {
+        return repository.forgetSearchMiss(query);
     }
 
     private void requireGroup(String group) {

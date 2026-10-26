@@ -217,14 +217,14 @@ export function positions(query: string): Promise<PositionOption[]> {
   return request<PositionOption[]>('GET', '/api/v1/positions?query=' + encodeURIComponent(query));
 }
 
-/** Группа ISCO-08 в окне «Все позиции»: позиции словаря внутри неё. */
+/** Группа ISCO-08 в «Полном каталоге» (Full catalog): позиции словаря внутри неё. */
 export interface GroupNode {
   code: string;
   name: string;
   positions: CatalogItem[];
 }
 
-/** Направление в окне «Все позиции»: подраздел ISCO-08 с группами. */
+/** Направление в «Полном каталоге» (Full catalog): подраздел ISCO-08 с группами. */
 export interface Direction {
   code: string;
   name: string;
@@ -603,46 +603,19 @@ export function changeDictionarySettings(contentHits: number, otherSpecializatio
   return request<Dictionary>('PUT', '/api/v1/admin/dictionary', { contentHits, otherSpecializations });
 }
 
-/** Состояние предложения позиции и решение администратора (§161). */
-export interface SuggestionDecision {
-  state: 'PENDING' | 'ADDED' | 'REJECTED';
-  positionCode: string | null;
-  positionName: string | null;
-  reason: string | null;
-  decidedAt: string | null;
+/** Запрос подсказки позиции без результата (§205): строка, сколько раз, когда последний раз. */
+export interface SearchMiss {
+  query: string;
+  misses: number;
+  lastAt: string;
 }
 
-/** Предложение позиции. */
-export interface Suggestion {
-  id: number;
-  text: string;
-  decision: SuggestionDecision;
-  createdAt: string;
+/** @returns что искали и не нашли, чаще — первыми (не больше 100) */
+export function searchMisses(): Promise<SearchMiss[]> {
+  return request<SearchMiss[]>('GET', '/api/v1/admin/position-misses');
 }
 
-/** Предложение для администратора — с почтой пользователя. */
-export interface AdminSuggestion {
-  suggestion: Suggestion;
-  email: string;
-}
-
-/** Предложить позицию: 429 — больше 10 за сутки. */
-export function suggestPosition(text: string): Promise<Suggestion> {
-  return request<Suggestion>('POST', '/api/v1/me/position-suggestions', { text });
-}
-
-/** @returns свои предложения, новые сверху */
-export function ownSuggestions(): Promise<Suggestion[]> {
-  return request<Suggestion[]>('GET', '/api/v1/me/position-suggestions');
-}
-
-/** @returns все предложения для администратора: на рассмотрении — первыми */
-export function adminSuggestions(): Promise<AdminSuggestion[]> {
-  return request<AdminSuggestion[]>('GET', '/api/v1/admin/position-suggestions');
-}
-
-/** Решение администратора: «добавлена» с кодом позиции словаря или «отклонена» с необязательной причиной. */
-export function decideSuggestion(id: number, decision: 'ADDED' | 'REJECTED', value: string): Promise<void> {
-  return request<void>('PUT', '/api/v1/admin/position-suggestions/' + id, decision === 'ADDED'
-    ? { decision, position: value } : { decision, reason: value });
+/** Убрать запрос из списка; повторится — появится снова. */
+export function forgetSearchMiss(query: string): Promise<void> {
+  return request<void>('DELETE', '/api/v1/admin/position-misses?query=' + encodeURIComponent(query));
 }

@@ -3,14 +3,19 @@ package com.roleorienta.api.dictionary;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
+import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -69,5 +74,26 @@ public class DictionaryController {
     public DictionaryView change(@PathVariable long id, @Valid @RequestBody PositionChange change) {
         return dictionary.change(id, change).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                 "Position not found"));
+    }
+
+    /**
+     * @return что искали в подсказке позиции и не нашли (§205): строка, сколько раз, когда последний раз; чаще —
+     *         первыми, не больше 100
+     */
+    @GetMapping("/api/v1/admin/position-misses")
+    public List<SearchMiss> searchMisses() {
+        return dictionary.searchMisses();
+    }
+
+    /**
+     * @param query запрос
+     * @return {@code 204}; {@code 404} — такого нет
+     */
+    @DeleteMapping("/api/v1/admin/position-misses")
+    public ResponseEntity<Void> forgetSearchMiss(@RequestParam String query) {
+        if (!dictionary.forgetSearchMiss(query)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search miss not found");
+        }
+        return ResponseEntity.noContent().build();
     }
 }

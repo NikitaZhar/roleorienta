@@ -550,6 +550,11 @@ nav .current,
   gap: 8px;
 }
 
+/* «Full catalog» — слева, а не растянута на всю ширину колонки (§204). */
+.positions > button.link {
+  align-self: flex-start;
+}
+
 .filters-summary {
   display: flex;
   align-items: center;
@@ -638,7 +643,7 @@ nav .current,
   background: var(--surface-2);
 }
 
-/* Окно «Все позиции» (§204): направления ссылками, под раскрытым — группы, под группой — её позиции с отступом. */
+/* «Полный каталог» (Full catalog) (§204): направления ссылками, под раскрытым — группы, под группой — её позиции с отступом. */
 .catalog {
   list-style: none;
   margin: 0;
@@ -660,28 +665,6 @@ nav .current,
 .choices button:disabled {
   color: var(--muted);
   cursor: default;
-}
-
-/* «Suggest a position» в форме условий (§161): поле и свои предложения под выбором позиций. */
-.suggest {
-  display: grid;
-  justify-items: start;
-  gap: 6px;
-}
-
-.suggest label,
-.suggest textarea {
-  width: 100%;
-}
-
-.suggest textarea {
-  resize: vertical;
-}
-
-.suggestions {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 14px;
 }
 
 @media (max-width: 640px) {

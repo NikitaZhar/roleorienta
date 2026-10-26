@@ -76,7 +76,7 @@ public final class ConditionDtos {
     }
 
     /**
-     * Направление в окне «Все позиции» (§204): подраздел ISCO-08 (2 цифры).
+     * Направление в «Полном каталоге» (Full catalog) (§204): подраздел ISCO-08 (2 цифры).
      *
      * @param code   код
      * @param name   название на языке интерфейса
@@ -86,7 +86,7 @@ public final class ConditionDtos {
     }
 
     /**
-     * Группа ISCO-08 (4 цифры) в окне «Все позиции».
+     * Группа ISCO-08 (4 цифры) в «Полном каталоге» (Full catalog).
      *
      * @param code      код
      * @param name      название на языке интерфейса
