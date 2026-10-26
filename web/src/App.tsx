@@ -8,7 +8,7 @@ import { ConditionsPage } from './ConditionsPage';
 import { errorText, type Language, LanguageSwitch, type MessageKey, useI18n } from './i18n';
 import { LoginPage } from './LoginPage';
 import { Logo } from './Logo';
-import { VacancyList } from './VacancyList';
+import { flushMarks, VacancyList } from './VacancyList';
 import { SettingsPage } from './SettingsPage';
 import { VacancyPage } from './VacancyPage';
 
@@ -22,14 +22,13 @@ const SECTIONS: { view: View; label: MessageKey }[] = [
   { view: 'companies', label: 'nav.companies' },
 ];
 
-/** Подпись возврата из сведений о вакансии к разделу (§147). */
-const BACK_LABELS: Record<View, MessageKey> = {
-  list: 'back.results',
-  applications: 'back.applications',
-  marked: 'back.notInterested',
-  companies: 'back.default',
-  settings: 'back.default',
-};
+/**
+ * Подпись возврата из сведений о вакансии к разделу (§147): сведения открываются только из «Моих откликов» и «Не
+ * интересно» (§193).
+ */
+function backLabel(view: View): MessageKey {
+  return view === 'marked' ? 'back.notInterested' : 'back.applications';
+}
 
 /** Размер эмблемы в панели, px. */
 const LOGO_SIZE = 24;
@@ -38,12 +37,13 @@ const LOGO_SIZE = 24;
  * Корень SPA: при загрузке спрашивает /api/v1/me — вошёл пользователь или нет. После входа — панель с эмблемой и
  * четырьмя разделами (бизнес-описание §6): «Search» — условия поиска и под ними результаты; «My applications» —
  * вакансии с откликом (§156); «Not interested»; «Companies». Справа — кружок учётной записи с первой буквой почты
- * (§170), в его меню — почта, «Settings» и «Sign out»; перед ним — переключатель EN | RU (§162, §172). Вакансия
- * открывается вместо раздела, а раздел не снимается, а скрывается ({@code hidden}): после «Back» видна та же страница списка и
- * те же условия, прокрутка — та же, что была до открытия (аудит §154). Если статус вакансии менялся (и «Viewed» при
- * открытии новой), возврат перечитывает ту же страницу ({@code reloads}): ушедшая в другой раздел вакансия пропадает,
- * плашка «New» снимается. Новые условия начинают список заново с первой страницы ({@code searches} — ключ списка).
- * Выход сбрасывает раздел и открытую вакансию. Язык интерфейса (§162): после входа — из учётной записи; переключатель
+ * (§170), в его меню — почта, «Settings» и «Sign out»; перед ним — переключатель EN | RU (§162, §172). Сведения о
+ * вакансии (из «My applications» и «Not interested», §193) открываются вместо раздела, а раздел не снимается, а
+ * скрывается ({@code hidden}): после «Back» видна та же страница списка, прокрутка — та же, что была до открытия (аудит
+ * §154). Если статус вакансии менялся, возврат перечитывает ту же страницу ({@code reloads}): ушедшая в другой раздел
+ * вакансия пропадает. Новые условия начинают список заново с первой страницы ({@code searches} — ключ списка). Выход
+ * сначала отправляет ожидающие «Undo» отметки ({@link flushMarks}, аудит §197), затем сбрасывает раздел и открытую
+ * вакансию. Язык интерфейса (§162): после входа — из учётной записи; переключатель
  * EN | RU в панели меняет его сразу и записывает в учётную запись; «Settings» — тоже.
  */
 export function App() {
@@ -107,6 +107,7 @@ export function App() {
 
   async function signOut() {
     try {
+      await flushMarks();
       await logout();
       setNotice(null);
       setView('list');
@@ -185,7 +186,7 @@ export function App() {
       </header>
       <main className="page">
         {notice !== null && <p className="error">{notice}</p>}
-        {opened !== null && <VacancyPage id={opened} backLabel={t(BACK_LABELS[view])} onBack={closeVacancy} />}
+        {opened !== null && <VacancyPage id={opened} backLabel={t(backLabel(view))} onBack={closeVacancy} />}
         <div hidden={opened !== null}>
           {view === 'list' && (
             <>

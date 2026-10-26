@@ -122,9 +122,9 @@ public class VacancyRepository {
      * @param userId пользователь
      * @return активная версия условий; пусто — условия не заданы
      */
-    public Optional<ActiveCondition> activeCondition(long userId) {
-        return jdbcTemplate.query("SELECT id, work_format FROM search_condition WHERE user_id = ? AND active",
-                (row, number) -> new ActiveCondition(row.getLong(1), row.getString(2)), userId).stream().findFirst();
+    public Optional<Long> activeCondition(long userId) {
+        return jdbcTemplate.query("SELECT id FROM search_condition WHERE user_id = ? AND active",
+                (row, number) -> row.getLong(1), userId).stream().findFirst();
     }
 
     /**
@@ -367,15 +367,6 @@ public class VacancyRepository {
 
     private static OffsetDateTime utc(Instant instant) {
         return instant.atOffset(ZoneOffset.UTC);
-    }
-
-    /**
-     * Активная версия условий.
-     *
-     * @param id         версия
-     * @param workFormat формат в условиях; {@code null} — не задан
-     */
-    public record ActiveCondition(long id, String workFormat) {
     }
 
     /**

@@ -58,8 +58,9 @@ public class CareerPages {
      * Доски на кадровой странице; нет — сама страница как источник {@code jobposting}, если на ней или
      * на первых страницах вакансий есть разметка {@code JobPosting}; нет и её — один шаг вглубь по
      * кадровой ссылке ({@code deeper}); ничего и там — сама страница как источник {@code careerpage}, если на ней
-     * распознан и подтверждён текстом вакансий список (§136, §183) или фраза «вакансий нет». Хост и путь кадровой страницы — по её конечному
-     * адресу после переадресаций (аудит §66).
+     * фраза «вакансий нет» или распознан и подтверждён текстом вакансий список (§136, §183; фраза проверяется первой —
+     * без запросов к страницам вакансий, аудит §197). Хост и путь кадровой страницы — по её конечному адресу после
+     * переадресаций (аудит §66).
      *
      * @param careerPage открытая кадровая страница
      * @param deeper     пробовать ли шаг вглубь
@@ -84,8 +85,8 @@ public class CareerPages {
             return deeperBoards;
         }
         List<String> listed = CareerPageList.vacancies(careerPage).stream().map(CareerPageList.Item::url).toList();
-        return actual.toString().length() <= MAX_BOARD && (CareerPageList.confirmed(listed, this::page)
-                || CareerPageList.saysNoVacancies(careerPage))
+        return actual.toString().length() <= MAX_BOARD && (CareerPageList.saysNoVacancies(careerPage)
+                || CareerPageList.confirmed(listed, this::page))
                 ? Set.of(new Board(CareerPageAdapter.PROVIDER, actual.toString())) : Set.of();
     }
 }

@@ -14,7 +14,6 @@ import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyItem;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
 import com.roleorienta.api.vacancy.VacancyDtos.Work;
-import com.roleorienta.api.vacancy.VacancyRepository.ActiveCondition;
 import com.roleorienta.api.vacancy.VacancyRepository.Counts;
 import com.roleorienta.api.vacancy.VacancyRepository.PageWindow;
 import com.roleorienta.api.vacancy.VacancyRepository.RowState;
@@ -93,14 +92,13 @@ public class VacancyService {
     }
 
     /**
-     * Открытие результатов — заход в список (§191). Своей транзакцией с уровнем по умолчанию ({@code READ
-     * COMMITTED}), до чтения страницы: при одновременных открытиях второе {@code UPDATE} строки пользователя ждёт
-     * первое и выполняется, а в {@code REPEATABLE READ} оно завершилось бы ошибкой сериализации.
+     * Открытие результатов — заход в список (§191). Одно {@code UPDATE} без своей транзакции (фиксируется сразу), до
+     * чтения страницы и вне её транзакции: при одновременных открытиях второе {@code UPDATE} строки пользователя ждёт
+     * первое и выполняется, а внутри {@code REPEATABLE READ} оно завершилось бы ошибкой сериализации.
      *
      * @param userId пользователь
      * @return граница текущего захода; {@code null} — первый заход
      */
-    @Transactional
     public Instant visit(long userId) {
         return repository.recordVisit(userId, properties.visitGap());
     }
@@ -115,25 +113,25 @@ public class VacancyService {
      * @param size      строк на странице
      * @param visitFrom граница текущего захода ({@link #visit}): вакансии, полученные позже, — с точкой (§191);
      *                  {@code null} — без точек
-     * @param position  код позиции условий — только подходящие к ней, общее число и число новых — по ним (§194);
-     *                  {@code null} или неизвестный код условий — как есть: неизвестный даёт пустую страницу
+     * @param position  код позиции — только вакансии результатов, подходящие к ней, общее число и число новых — по
+     *                  ним (§194); {@code null} — все
      * @return страница результатов, общее число и число новых; условия не заданы — пусто
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VacancyPage delivered(long userId, int page, int size, Instant visitFrom, String position) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
-        Optional<ActiveCondition> condition = repository.activeCondition(userId);
+        Optional<Long> condition = repository.activeCondition(userId);
         if (condition.isEmpty()) {
             return new VacancyPage(List.of(), number, rows, 0, 0);
         }
         Instant visibleSince = Instant.now().minus(properties.hideAfter());
-        long conditionId = condition.get().id();
+        long conditionId = condition.get();
         List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows), position);
         Counts counts = repository.countDelivered(conditionId, visibleSince, position);
         Map<Long, List<String>> matched = repository.matchedPositions(conditionId,
                 shown.stream().map(VacancyRow::id).toList());
-        return new VacancyPage(items(shown, condition.get().workFormat(), visitFrom, matched), number, rows,
+        return new VacancyPage(items(shown, visitFrom, matched), number, rows,
                 counts.total(), counts.fresh());
     }
 
@@ -146,7 +144,7 @@ public class VacancyService {
     @Transactional(readOnly = true)
     public List<PositionCount> positions(long userId) {
         return repository.activeCondition(userId)
-                .map(condition -> repository.positionCounts(condition.id(),
+                .map(condition -> repository.positionCounts(condition,
                         Instant.now().minus(properties.hideAfter())))
                 .orElse(List.of());
     }
@@ -184,13 +182,13 @@ public class VacancyService {
      *
      * @param userId    пользователь
      * @param vacancyId вакансия
-     * @return сведения со статусом, историей и требованиями к языку; пусто — вакансия не выдавалась пользователю и нет его статуса
+     * @return сведения со статусом, историей и требованиями к языку; пусто — вакансия не выдавалась пользователю и
+     *         нет его статуса
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Optional<VacancyDetails> details(long userId, long vacancyId) {
-        String format = conditionFormat(userId);
         return repository.accessible(userId, vacancyId).map(row -> new VacancyDetails(row.id(), row.title(),
-                row.parties(), work(row.work(), format), new Publication(row.state().url(), timeline(row.state(), null),
+                row.parties(), work(row.work()), new Publication(row.state().url(), timeline(row.state(), null),
                         history(row.state(), repository.history(userId, vacancyId)),
                         repository.languages(vacancyId))));
     }
@@ -234,12 +232,8 @@ public class VacancyService {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         List<VacancyRow> shown = repository.byStatus(userId, statuses, window(number, rows));
-        return new VacancyPage(items(shown, conditionFormat(userId), null, Map.of()), number, rows,
+        return new VacancyPage(items(shown, null, Map.of()), number, rows,
                 repository.countByStatus(userId, statuses), 0);
-    }
-
-    private String conditionFormat(long userId) {
-        return repository.activeCondition(userId).map(ActiveCondition::workFormat).orElse(null);
     }
 
     private static ZoneId zone(String zone) {
@@ -259,12 +253,11 @@ public class VacancyService {
      * @param visitFrom граница текущего захода в результаты (§191); {@code null} — точки не ставятся
      * @param matched   к каким позициям условий подошла вакансия (§194); нет вакансии — пусто
      */
-    private static List<VacancyItem> items(List<VacancyRow> rows, String conditionFormat, Instant visitFrom,
-            Map<Long, List<String>> matched) {
+    private static List<VacancyItem> items(List<VacancyRow> rows, Instant visitFrom, Map<Long, List<String>> matched) {
         return rows.stream().map(vacancy -> new VacancyItem(vacancy.id(),
                 new Posting(vacancy.title(), vacancy.state().url(), matched.getOrDefault(vacancy.id(), List.of())),
                 vacancy.parties(),
-                work(vacancy.work(), conditionFormat), timeline(vacancy.state(), visitFrom))).toList();
+                work(vacancy.work()), timeline(vacancy.state(), visitFrom))).toList();
     }
 
     /**
@@ -299,14 +292,14 @@ public class VacancyService {
     }
 
     /**
-     * Противоречивый формат показывается как «не указано» с пометкой; территория удалённой работы — страны
+     * Противоречивый формат — {@code null} (на экране строки формата нет, §192); территория удалённой работы — страны
      * вакансии с форматом {@code REMOTE}; страна не определена — стран нет (нераспознанное место рядом с
      * определённой страной пометки не даёт: страна известна, аудит §154).
      */
-    private static Work work(WorkFacts facts, String conditionFormat) {
+    private static Work work(WorkFacts facts) {
         String format = CONFLICT.equals(facts.format()) ? null : facts.format();
         return new Work(facts.countries(), format, REMOTE.equals(format) ? facts.countries() : null,
-                facts.countries().isEmpty(), conditionFormat != null && format == null);
+                facts.countries().isEmpty());
     }
 
     private static int size(int requested) {

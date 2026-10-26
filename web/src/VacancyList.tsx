@@ -7,9 +7,9 @@ import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
- * Какой список (§156): результаты поиска, «Мои отклики» или «Не интересно». У результатов — «N vacancies · M not
- * opened», плашка «Not opened», точка «после прошлого захода», крестик «Not interested», объяснение пустого списка по
- * условиям; у остальных — свой пустой текст и своя последняя колонка.
+ * Какой список (§156, §196): результаты поиска, действующие «Мои отклики», «Employer declined» (под ними, свёрнуто) или
+ * «Не интересно». У каждого — своя последняя колонка; у результатов — свой заголовок и объяснение пустого списка по
+ * условиям, у «Моих откликов» и «Не интересно» — свой пустой текст, у «Employer declined» пустого вида нет.
  */
 export type ListKind = 'results' | 'responses' | 'declined' | 'notInterested';
 
@@ -26,9 +26,20 @@ interface Props {
   onOpen: (id: number) => void;
 }
 
+/** Статус отклика пилюлей своего цвета и под ней дата (срез 4 нового облика). */
+function responseColumn(item: VacancyItem, i18n: I18n): ReactNode {
+  return (
+    <>
+      <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
+      <span>{dateText(item.timeline.status.at, i18n)}</span>
+    </>
+  );
+}
+
 /**
- * Значение справа в строке: дата открытия с подписью «Posted» / «Found» (§179); в «Мои отклики» — статус пилюлей своего цвета и под ней дата (срез 4
- * нового облика); в «Не интересно» — дата отметки с подписью «Marked» (§180).
+ * Значение справа в строке: в результатах — точка «пришла после прошлого захода» (§191) и дата открытия с подписью
+ * «Posted» / «Found» (§179); в «Моих откликах» и «Employer declined» — статус и дата; в «Не интересно» — дата отметки с
+ * подписью «Marked» (§180).
  */
 const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode> = {
   results: (item, i18n) => (
@@ -39,18 +50,8 @@ const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode
       {rowOpenedText(item.timeline.opened, i18n)}
     </span>
   ),
-  responses: (item, i18n) => (
-    <>
-      <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
-      <span>{dateText(item.timeline.status.at, i18n)}</span>
-    </>
-  ),
-  declined: (item, i18n) => (
-    <>
-      <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
-      <span>{dateText(item.timeline.status.at, i18n)}</span>
-    </>
-  ),
+  responses: responseColumn,
+  declined: responseColumn,
   notInterested: (item, i18n) => rowMarkedText(item.timeline.status.at, i18n),
 };
 
@@ -68,6 +69,18 @@ const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
 /** Сколько ждёт «Undo» после «✓» или «×» (§191, §193): отметка уходит на сервер только после этого. */
 const UNDO_MS = 5000;
 
+/** Отправка ожидающих «Undo» отметок каждого открытого списка (см. {@link flushMarks}). */
+const flushers = new Set<() => Promise<void>>();
+
+/**
+ * Ожидающие «Undo» отметки уходят на сервер сейчас — перед выходом из учётной записи (аудит §197): после выхода сессии
+ * нет, и отметка, отправленная при уходе из списка, пропала бы. Не отправилась — выход всё равно выполняется (ошибка
+ * отметки не выдаётся за ошибку выхода).
+ */
+export async function flushMarks(): Promise<void> {
+  await Promise.allSettled([...flushers].map((flush) => flush()));
+}
+
 /** Отметки из строки результатов (§193): «✓» — откликнулся, «×» — не интересна; подпись полосы «Undo». */
 type RowMark = 'APPLIED' | 'NOT_INTERESTED';
 const MARK_MOVED: Record<RowMark, MessageKey> = {
@@ -77,31 +90,29 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
 
 /**
  * Список вакансий страницами по номеру (§151) строками в две строчки (новый облик, §171): позиция (у известного
- * формата — метка Office / Remote, гибрид без метки, §192); под ней «работодатель · страна» (чего нет — не
- * показывается, §192); справа — дата или статус (агентство — только в сведениях). Результаты (§193): строка — ссылка на
- * первичную публикацию в новой вкладке («↗» у позиции — подсказка), открытие снимает «Not opened» («Viewed»); в строке
- * «✓» — откликнулся (CV sent, уходит в «Мои отклики») и «×» — не интересна; сведения из результатов не открываются.
- * «Мои отклики» и «Не интересно»: строка открывает сведения (статус и история), «↗» рядом — публикация. Если в условиях
- * несколько позиций (§194): над результатами — метки позиций с числом вакансий, нажатие оставляет одну позицию (с
- * первой страницы), повторное — снова все; в строке — к каким позициям подошла. «Employer declined» (§196) — под
- * действующими откликами, свёрнутой строкой «Employer declined · N»; раскрытие показывает их строками, как в «Моих
- * откликах» (светлее); нет таких — ничего. Результаты поиска (открытые позже
- * сверху, дата открытия — §127; над списком — «N vacancies · M new · Updated hourly», у новых — пилюля «New»,
- * просмотренные — светлее, §156). «Мои отклики» и «Не интересно» (срез 4 нового облика): заголовок раздела и рядом
- * число вакансий; в «Мои отклики» справа — статус пилюлей и дата, у закрытой работодателем — пилюля «closed» рядом с
- * позицией; в «Не интересно» строки светлее, справа — дата отметки и «Return»: вакансия возвращается к прежнему
- * статусу (§156). Внизу — номера страниц и выбор размера страницы; выбор
- * запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку; недоступно —
- * размер по умолчанию). Условий нет — список не показывается (выше — «Set up your search»); задано, а вакансий нет —
- * «пока нет». Сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые 5 с в течение
- * 2 минут, на экране — «идёт сбор» и строки-заготовки; первая порция выдаётся в течение ~30 с (§120); следующий
- * запрос — только после ответа на предыдущий (аудит §121). Перечитывание ({@code reload}, «Return») показывает ту же
- * страницу; если она опустела (ушла последняя вакансия последней страницы) — последнюю непустую. Ошибка загрузки — сообщение с «Retry»; размер
- * страницы во время загрузки не меняется (аудит §154). В результатах (§191, §193): «✓» или «×» — строка сразу
- * скрывается, на {@value UNDO_MS} мс внизу «Moved to My applications · Undo» или «Moved to Not interested · Undo»;
- * отметка уходит на сервер только по истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк
- * истории). Новая отметка, уход со страницы или из списка — ожидающая уходит сразу. Закрытая вкладка браузера в эти
- * секунды отметку теряет.
+ * формата — метка Office / Remote, гибрид без метки; у закрытой работодателем — «closed»); под ней «работодатель ·
+ * страна» (чего нет — не показывается, §192); справа — значение {@link LAST_COLUMN}. Внизу — номера страниц и выбор
+ * размера страницы; выбор запоминается в браузере ({@code localStorage}: хранилище браузера, переживает перезагрузку;
+ * недоступно — размер по умолчанию). Ошибка загрузки — сообщение с «Retry»; размер страницы во время загрузки не
+ * меняется (аудит §154). Перечитывание ({@code reload}) показывает ту же страницу; опустела — последнюю непустую.
+ *
+ * <p>Результаты поиска: открытые позже сверху (дата открытия — §127); над списком «N vacancies · M not opened · Updated
+ * hourly», у не открытых — пилюля «Not opened», открытые — светлее (§156, §191). Строка — ссылка на первичную
+ * публикацию в новой вкладке («↗» у позиции), открытие ставит «Viewed» (§193); в строке «✓» — откликнулся (CV sent,
+ * уходит в «Мои отклики») и «×» — не интересна: строка сразу скрывается, на {@value UNDO_MS} мс внизу «Moved to … ·
+ * Undo»; отметка уходит на сервер только по истечении срока, поэтому «Undo» ничего не записывает (ни статуса, ни строк
+ * истории); новая отметка, уход из списка или выход — ожидающая уходит сразу ({@link flushMarks}); закрытая вкладка
+ * браузера в эти секунды отметку теряет. Несколько позиций в условиях (§194): над списком метки позиций с числом
+ * вакансий, нажатие — только эта позиция с первой страницы, повторное — снова все; в строке — к каким позициям
+ * подошла. Условий нет — список не показывается (выше — «Set up your search»); заданы, а вакансий нет — «пока нет»;
+ * сразу после новых условий ({@code poll}) пустая первая страница перечитывается каждые 5 с в течение 2 минут, на
+ * экране — «идёт сбор» и строки-заготовки (первая порция — в течение ~30 с, §120; следующий запрос — только после ответа
+ * на предыдущий, аудит §121).
+ *
+ * <p>«Мои отклики» (действующие), «Employer declined» и «Не интересно»: строка открывает сведения (статус и история),
+ * «↗» рядом — публикация. В «Моих откликах» — заголовок с числом вакансий; «Employer declined» (§196) — под ними
+ * свёрнутой строкой «Employer declined · N», раскрытие — строками светлее; в «Не интересно» строки светлее, справа —
+ * дата отметки и «Return»: вакансия возвращается к прежнему статусу (§156).
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
   const i18n = useI18n();
@@ -112,7 +123,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshes, setRefreshes] = useState(0);
-  /** Вакансии, скрытые крестиком до ответа сервера (§191). */
+  /** Вакансии, скрытые «✓» или «×» до ответа сервера (§191, §193). */
   const [dismissed, setDismissed] = useState<number[]>([]);
   /** Отметка, ждущая «Undo» (для подписи полосы); ref — вакансия, отметка и таймер, доступны и при уходе из списка. */
   const [waiting, setWaiting] = useState<RowMark | null>(null);
@@ -122,19 +133,33 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [position, setPosition] = useState<string | undefined>(undefined);
   /** «Employer declined» под «Моими откликами» (§196): свёрнуто, пока не раскрыли. */
   const [expanded, setExpanded] = useState(false);
+  /**
+   * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
+   * создана при нажатии и видела бы значения того времени.
+   */
+  const view = useRef({ page: 1, size, position });
+  useEffect(() => {
+    view.current = { page: data?.page ?? 1, size, position };
+  });
 
   async function show(page: number, rows: number, chosen: string | undefined = position) {
     setLoading(true);
     setMessage(null);
     try {
-      let next = await load(page, rows, chosen);
+      let target = chosen;
+      if (kind === 'results') {
+        const counts = await resultPositions();
+        setPositions(counts);
+        if (target !== undefined && !counts.some((item) => item.code === target)) {
+          target = undefined;
+          setPosition(undefined);
+        }
+      }
+      let next = await load(page, rows, target);
       if (next.items.length === 0 && next.total > 0 && page > 1) {
-        next = await load(Math.ceil(next.total / rows), rows, chosen);
+        next = await load(Math.ceil(next.total / rows), rows, target);
       }
       setData(next);
-      if (kind === 'results') {
-        setPositions(await resultPositions());
-      }
       if (next.total === 0 && kind === 'results') {
         setHasConditions((await searchCondition()) !== null);
       }
@@ -170,7 +195,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       setMessage(errorText(failure, t));
       return;
     }
-    await show(data?.page ?? 1, size);
+    await show(view.current.page, view.current.size, view.current.position);
     setDismissed((ids) => ids.filter((other) => other !== id));
   }
 
@@ -214,13 +239,26 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     setDismissed((ids) => ids.filter((other) => other !== current.id));
   }
 
-  /** Уход из списка (другой раздел, выход): ожидающая отметка уходит сразу. */
-  useEffect(() => () => {
-    const current = pending.current;
-    if (current !== null) {
+  /**
+   * Ожидающая отметка уходит сразу — по {@link flushMarks} (выход) и при уходе из списка в другой раздел; таймер
+   * снимается, чтобы она не ушла второй раз.
+   */
+  useEffect(() => {
+    async function flush() {
+      const current = pending.current;
+      if (current === null) {
+        return;
+      }
       window.clearTimeout(current.timer);
-      void setStatus(current.id, current.mark);
+      pending.current = null;
+      setWaiting(null);
+      await setStatus(current.id, current.mark);
     }
+    flushers.add(flush);
+    return () => {
+      flushers.delete(flush);
+      void flush().catch(() => undefined);
+    };
   }, []);
 
   /** Метка позиции (§194): выбор — только её вакансии с первой страницы; повторное нажатие — снова все. */

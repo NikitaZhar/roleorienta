@@ -11,22 +11,11 @@ interface Props {
   onBack: (changed: boolean) => void;
 }
 
-/** Статусы отклика (§195): в карточке «Моих откликов» выбираются только они — «Не интересно» там не предлагается. */
-const RESPONSES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
-
 /**
- * Что можно сделать в карточке по текущему статусу (§195, решения владельца 2026-10-26): отклик — сменить статус
- * отклика (CV sent · Interview · Employer declined); «Не интересно» — только «Return» (вернуть в результаты); иначе
- * (карточка открыта не из раздела) — CV sent или Not interested.
+ * Статусы отклика (§195, решения владельца 2026-10-26): сведения открываются только из «Моих откликов» и «Не интересно»
+ * (§193); у отклика выбирается только статус отклика, у «Не интересно» вместо выбора — «Return».
  */
-type Choice = 'APPLIED' | 'INTERVIEW' | 'REJECTED' | 'NOT_INTERESTED';
-
-function choicesFor(code: string): Choice[] {
-  if ((RESPONSES as readonly string[]).includes(code)) {
-    return [...RESPONSES];
-  }
-  return code === 'NOT_INTERESTED' ? [] : ['APPLIED', 'NOT_INTERESTED'];
-}
+const RESPONSES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
 
 /**
  * Сведения о вакансии (бизнес-описание §6, экран §147; порядок — решение владельца 2026-10-21, §173): сначала вся
@@ -37,7 +26,8 @@ function choicesFor(code: string): Choice[] {
  * «CV sent», «Interview», «Employer declined»; у «Не интересно» вместо выбора — «Return», вакансия возвращается в
  * результаты и карточка закрывается) и история с датами, раньше сверху. После смены статуса экран остаётся, без сообщения, и
  * перечитывается; при возврате список перечитывается — вакансия, ушедшая в другой раздел, из него пропадает.
- * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146).
+ * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146). Открываются только из «Моих
+ * откликов» и «Не интересно» (§193): «Viewed» здесь не ставится — его ставит открытие публикации из результатов.
  */
 export function VacancyPage({ id, backLabel, onBack }: Props) {
   const i18n = useI18n();
@@ -45,20 +35,11 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
   const [details, setDetails] = useState<VacancyDetails | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Статус менялся за время открытия (в том числе «Viewed» при открытии новой). */
+  /** Статус менялся за время открытия: при возврате список перечитывается. */
   const changed = useRef(false);
 
   useEffect(() => {
-    async function open() {
-      let next = await vacancy(id);
-      if (next.publication.timeline.status.code === 'NEW') {
-        await setStatus(id, 'VIEWED');
-        changed.current = true;
-        next = await vacancy(id);
-      }
-      setDetails(next);
-    }
-    open().catch((failure: unknown) => setMessage(errorText(failure, t)));
+    vacancy(id).then(setDetails, (failure: unknown) => setMessage(errorText(failure, t)));
   }, [id]);
 
   async function choose(status: StatusEvent) {
@@ -95,7 +76,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
   }
   const { parties, work, publication } = details;
   const status = publication.timeline.status;
-  const choices = choicesFor(status.code);
+  const response = (RESPONSES as readonly string[]).includes(status.code);
   return (
     <article className="details">
       {back}
@@ -118,7 +99,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
       )}
       <section className="tracking">
         <div className="status">
-          {choices.length === 0 ? (
+          {!response ? (
             <>
               <span><span className="muted">{t('vacancy.status')}</span> {statusLabel(status.code, i18n)}</span>
               <button type="button" disabled={busy} onClick={giveBack}>{t('list.return')}</button>
@@ -127,10 +108,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
             <label>
               <span className="muted">{t('vacancy.status')}</span>{' '}
               <select value={status.code} disabled={busy} onChange={(event) => choose(event.target.value as StatusEvent)}>
-                {!(choices as string[]).includes(status.code) && (
-                  <option value={status.code} disabled>{statusLabel(status.code, i18n)}</option>
-                )}
-                {choices.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
+                {RESPONSES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
               </select>
             </label>
           )}

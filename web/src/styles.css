@@ -667,7 +667,7 @@ nav .current,
 }
 
 /* Метка состояния (класс .pill, в стенограмме — «пилюля»): маленький закруглённый овал с одним-двумя словами
-   («New», «CV sent», «closed»); цвет дополняет текст. */
+   («Not opened», «CV sent», «closed»); цвет дополняет текст. */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -952,7 +952,8 @@ a.row {
   background: var(--accent);
 }
 
-/* «Moved to Not interested · Undo» (§191): внизу окна, над нижней панелью разделов телефона. */
+/* «Moved to My applications · Undo» / «Moved to Not interested · Undo» (§191, §193): внизу окна, над нижней панелью
+   разделов телефона. */
 .undo-bar {
   position: fixed;
   left: 50%;

@@ -61,9 +61,9 @@ public final class VacancyDtos {
     /**
      * Текущий статус вакансии у пользователя (бизнес-описание §6, §156).
      *
-     * @param code   {@code NEW} — «Новая» (пришла в результаты, сведения ещё не открывались), иначе статус
-     *               {@link StatusEvent}: {@code VIEWED}, {@code NOT_INTERESTED}, {@code APPLIED}, {@code INTERVIEW},
-     *               {@code REJECTED}
+     * @param code   {@code NEW} — «не открыта» (пришла в результаты, публикацию из результатов ещё не открывали),
+     *               иначе статус {@link StatusEvent}: {@code VIEWED}, {@code NOT_INTERESTED}, {@code APPLIED},
+     *               {@code INTERVIEW}, {@code REJECTED}
      * @param at     когда поставлен; у новой — когда вакансия впервые получена пользователем; {@code null} — не
      *               выдавалась (отметка без выдачи)
      * @param closed вакансия закрыта работодателем (в «Моих откликах» — пометка «закрыта»)
@@ -121,12 +121,10 @@ public final class VacancyDtos {
      * @param countries        страны выполнения работы (ISO 3166-1 alpha-2; {@code *} — без ограничения)
      * @param format           {@code OFFICE}, {@code HYBRID}, {@code REMOTE}; {@code null} — не указан или противоречив
      * @param remoteTerritory  территория удалённой работы — страны вакансии с форматом {@code REMOTE}; иначе {@code null}
-     * @param countryUncertain страна не определена — стран нет (экран: «not specified»); такая вакансия выдаётся с
-     *                         этой пометкой (решения владельца 2026-10-20, §148; аудит §154)
-     * @param formatUncertain  формат не указан или противоречив, а в условиях пользователя он задан
+     * @param countryUncertain страна не определена — стран нет: такая вакансия выдаётся, страна на экране не
+     *                         показывается (решения владельца 2026-10-20, §148; §192)
      */
-    public record Work(List<String> countries, String format, List<String> remoteTerritory, boolean countryUncertain,
-            boolean formatUncertain) {
+    public record Work(List<String> countries, String format, List<String> remoteTerritory, boolean countryUncertain) {
     }
 
     /**
@@ -164,8 +162,8 @@ public final class VacancyDtos {
     /**
      * Запрос смены статуса (§156).
      *
-     * @param status статус; {@code VIEWED} ставит экран при открытии сведений, {@code RETURNED} — «Вернуть» из
-     *               «Не интересно»
+     * @param status статус; {@code VIEWED} ставит экран при открытии публикации из результатов (§193),
+     *               {@code RETURNED} — «Вернуть» из «Не интересно»
      * @param zone   часовой пояс браузера (IANA, например {@code Europe/Bratislava}): по нему определяется день —
      *               статус того же дня заменяет прежний выбор этого дня (решение владельца 2026-10-21)
      */

@@ -133,6 +133,21 @@ class CareerPageAdapterTests {
     }
 
     /**
+     * Неподтверждённый список и фраза «вакансий нет» на той же странице (аудит §197): страницы вакансий не открылись —
+     * сбой разбора ({@link PartialReason#LIST_NOT_RECOGNIZED}), а не полное пустое чтение, которое закрыло бы прежние
+     * вакансии.
+     */
+    @Test
+    void unconfirmedListWithNoVacanciesPhraseIsNotComplete() {
+        pages.put("/kariera/", list("a") + "<p>No open positions in Brno.</p>");
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(url("/kariera/"), "SK");
+
+        assertThat(read.partialReason()).isEqualTo(PartialReason.LIST_NOT_RECOGNIZED);
+        assertThat(read.postings()).isEmpty();
+    }
+
+    /**
      * Текст вакансии — видимый текст {@code main}, обрезанный до потолка (30); страница другого сайта не открывается.
      */
     @Test

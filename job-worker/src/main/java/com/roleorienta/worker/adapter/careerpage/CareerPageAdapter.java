@@ -32,9 +32,10 @@ import org.springframework.stereotype.Component;
  *   <li>Следующие страницы списка — не больше {@link CareerPageProperties#maxPages()}; упор — неполное чтение
  *       ({@link PartialReason#PAGE_LIMIT}), отказ следующей страницы — {@link PartialReason#PAGE_FAILED}.</li>
  *   <li>Ссылки первой страницы списка не подтверждены текстом ({@link CareerPageList#confirmed}, §183) — вакансий не
- *       найдено: это не список вакансий (товары, меню, новости сайта).</li>
- *   <li>Вакансий не найдено: фраза «вакансий нет» — полное пустое чтение (прежние вакансии закрываются по общим
- *       правилам); иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): сбой разбора, а не закрытие.</li>
+ *       найдено, чтение неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): это не список вакансий (товары, меню,
+ *       новости сайта) или его страницы не открылись — даже при фразе «вакансий нет» (аудит §197).</li>
+ *   <li>Списка нет: фраза «вакансий нет» — полное пустое чтение (прежние вакансии закрываются по общим правилам);
+ *       иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): сбой разбора, а не закрытие.</li>
  *   <li>Отказ первой страницы — источник недоступен.</li>
  *   <li>Текст вакансии — деталью ({@link #detail}): видимый текст её страницы ({@code main}, иначе {@code body}).</li>
  * </ul>
@@ -84,6 +85,7 @@ public class CareerPageAdapter implements SourceAdapter {
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         Set<String> visited = new HashSet<>(List.of(first.toString(), page.location()));
         PartialReason partial = null;
+        boolean unconfirmed = false;
         for (int number = 1; ; number++) {
             for (CareerPageList.Item item : CareerPageList.vacancies(page)) {
                 postings.putIfAbsent(item.url(), new FetchedPosting(item.url(), item.title(), item.url(),
@@ -92,6 +94,7 @@ public class CareerPageAdapter implements SourceAdapter {
             if (number == 1 && !postings.isEmpty()
                     && !CareerPageList.confirmed(List.copyOf(postings.keySet()), this::open)) {
                 postings.clear();
+                unconfirmed = true;
                 break;
             }
             Optional<URI> next = CareerPageList.nextPage(page, visited);
@@ -111,7 +114,9 @@ public class CareerPageAdapter implements SourceAdapter {
             responses.add(nextSuccess.body());
             page = Jsoup.parse(nextSuccess.body(), nextSuccess.locationOr(next.get()).toString());
         }
-        if (postings.isEmpty() && partial == null && !noVacancies) {
+        // Список есть, но не подтверждён (страницы вакансий не открылись или без признаков) — сбой разбора, а не
+        // «вакансий нет», даже если на странице есть такая фраза: иначе прежние вакансии закрылись бы (аудит §197).
+        if (postings.isEmpty() && partial == null && (!noVacancies || unconfirmed)) {
             partial = PartialReason.LIST_NOT_RECOGNIZED;
         }
         return new SourceReadResult.Read(List.copyOf(postings.values()), partial, responses, Set.of(), Map.of());

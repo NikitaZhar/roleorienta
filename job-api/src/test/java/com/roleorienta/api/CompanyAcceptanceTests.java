@@ -13,8 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * Группы компаний и адрес кадровой страницы, введённый пользователем (§137; бизнес-описание §4.2, §5, сценарий 12 —
  * ввод и состояние запроса; проверку адреса делает job-worker), отметка администратора «не работодатель» (§138) через
- * настоящий HTTP; списка компаний без вакансий и личного «скрыть» у пользователя нет (§189). Компании теста — с
- * номерами {@code 9901xxxx}; ограничение частоты в тесте — 2 адреса в сутки.
+ * настоящий HTTP. Компании теста — с номерами {@code 9901xxxx}; ограничение частоты в тесте — 2 адреса в сутки.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"app.company-requests.daily-limit=2", "app.admin.password=" + CompanyAcceptanceTests.ADMIN})
@@ -37,9 +36,8 @@ class CompanyAcceptanceTests {
     private long epsi;
 
     /**
-     * Qwalfa — подключена своей системой найма (YES); Qwbeta — сайт найден, страница не читается (MAYBE); Qwgama — сайта
-     * нет, мелкая (NO); Qwdelta — сайта нет, 50+ сотрудников (NO); Qwepsi — подключена
-     * только порталом (PORTAL, §143).
+     * Qwalfa — подключена своей системой найма (YES); Qwbeta — сайт найден, страница не читается (MAYBE); Qwgama и
+     * Qwdelta — сайта нет (NO); Qwepsi — подключена только порталом (PORTAL, §143).
      */
     @BeforeEach
     void setUp() {
@@ -56,17 +54,17 @@ class CompanyAcceptanceTests {
                 "digest_vacancy", "user_account", "spring_session_attributes", "spring_session"}) {
             jdbcTemplate.update("DELETE FROM " + table);
         }
-        alfa = company("99010001", "Qwalfa s.r.o.", null);
-        beta = company("99010002", "Qwbeta a.s.", null);
-        gama = company("99010003", "Qwgama s.r.o.", null);
-        delta = company("99010004", "Qwdelta s.r.o.", 50);
+        alfa = company("99010001", "Qwalfa s.r.o.");
+        beta = company("99010002", "Qwbeta a.s.");
+        gama = company("99010003", "Qwgama s.r.o.");
+        delta = company("99010004", "Qwdelta s.r.o.");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "VALUES (?, 'CONNECTED', now(), now()), (?, 'FORMAT_UNSUPPORTED', now(), now()), "
                 + "(?, 'SITE_NOT_FOUND', now(), now()), (?, 'SITE_NOT_FOUND', now(), now())", alfa, beta, gama, delta);
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, "
                 + "career_url) VALUES (?, 'qwbeta.sk', 'https://qwbeta.sk/', 'NAME', 'FOUND', 'BRAND', "
                 + "'https://qwbeta.sk/kariera')", beta);
-        epsi = company("99010006", "Qwepsi s.r.o.", 20);
+        epsi = company("99010006", "Qwepsi s.r.o.");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "VALUES (?, 'CONNECTED', now(), now())", epsi);
         link(alfa, "greenhouse", "qwalfa");
@@ -135,7 +133,7 @@ class CompanyAcceptanceTests {
      */
     @Test
     void searchListsConnectedCompaniesFirst() throws Exception {
-        long holding = company("99010005", "Aaqwalfa holding s.r.o.", null);
+        long holding = company("99010005", "Aaqwalfa holding s.r.o.");
         ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
 
         String found = user.send("GET", "/api/v1/companies?query=qwalfa", null).body();
@@ -198,9 +196,9 @@ class CompanyAcceptanceTests {
                 .contains("\"id\":" + epsi + ",");
     }
 
-    private long company(String number, String name, Integer employees) {
-        return jdbcTemplate.queryForObject("INSERT INTO company (country, registration_number, name, registry, "
-                + "employees_min) VALUES ('SK', ?, ?, 'RPO', ?) RETURNING id", Long.class, number, name, employees);
+    private long company(String number, String name) {
+        return jdbcTemplate.queryForObject("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', ?, ?, 'RPO') RETURNING id", Long.class, number, name);
     }
 
     private int port() {

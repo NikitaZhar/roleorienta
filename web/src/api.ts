@@ -236,7 +236,6 @@ export interface Work {
   format: 'OFFICE' | 'HYBRID' | 'REMOTE' | null;
   remoteTerritory: string[] | null;
   countryUncertain: boolean;
-  formatUncertain: boolean;
 }
 
 /** Вакансия в списке. */
