@@ -28,10 +28,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Даты размещения в задании {@code PORTAL_RECORD} (§168; аудит §182) без БД и сети: запрашиваются только у публикаций,
- * чья вакансия ещё без даты и чей id даты допускает (своя вакансия портала, объявление profesia.sk), не больше
- * {@code dates-per-record} за задание, по кругу с места, зависящего от номера задания; полученные даты уходят в запись
- * публикаций.
+ * Страницы объявлений в задании {@code PORTAL_RECORD} (§168, §203; аудит §182) без БД и сети: запрашиваются у
+ * публикаций, чья вакансия ещё без даты и чей id даты допускает (своя вакансия портала, объявление profesia.sk), или у
+ * своих вакансий портала без кода профессии; не больше {@code offer-pages-per-record} за задание, по кругу с места,
+ * зависящего от номера задания; даты уходят в запись публикаций, коды профессий — после неё.
  */
 class PortalRecordHandlerTests {
 
@@ -44,6 +44,7 @@ class PortalRecordHandlerTests {
     private static final String PROFESIA = "profesia:1";
     private static final String OTHER_SITE = "https://www.worki.sk/ponuka/1";
     private static final Instant POSTED = Instant.parse("2026-10-14T00:00:00Z");
+    private static final String FREIGHT_HANDLERS = "9333";
     /** Публикации источника: две без даты, одна с датой, объявление profesia.sk без даты, объявление другой площадки. */
     private static final List<FetchedPosting> POSTINGS = List.of(posting(UUID_A), posting(UUID_DATED),
             posting(UUID_B), posting(PROFESIA), posting(OTHER_SITE));
@@ -62,40 +63,58 @@ class PortalRecordHandlerTests {
         when(sources.findById(SOURCE_ID)).thenReturn(Optional.of(source));
         when(repository.postingsOf(BOARD, CYCLE)).thenReturn(POSTINGS);
         when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED));
+        when(repository.externalIdsWithOccupation(SOURCE_ID)).thenReturn(Set.of(UUID_DATED));
         when(recorder.startRun(eq(source), anyLong())).thenReturn(run);
-        when(adapter.offerPostedDate(anyString(), anyString())).thenReturn(Optional.empty());
-        when(adapter.offerPostedDate(eq(PROFESIA), anyString())).thenReturn(Optional.of(POSTED));
+        when(adapter.offerPage(anyString(), anyString())).thenReturn(Optional.empty());
+        when(adapter.offerPage(eq(UUID_B), anyString()))
+                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(null, FREIGHT_HANDLERS)));
+        when(adapter.offerPage(eq(PROFESIA), anyString()))
+                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(POSTED, null)));
     }
 
     /**
-     * Без даты и с допускающим дату id — UUID_A, UUID_B, profesia:1; бюджет 2, задание 1 — с места 1: UUID_B (даты нет)
-     * и profesia:1 (дата есть). UUID_A, вакансия с датой и объявление другой площадки не запрашиваются.
+     * Без даты или без кода — UUID_A, UUID_B, profesia:1 (у вакансии с датой код уже есть); бюджет 2, задание 1 — с места
+     * 1: UUID_B (код профессии есть, даты нет) и profesia:1 (дата есть). UUID_A, вакансия с датой и кодом и объявление
+     * другой площадки не запрашиваются; дата — в запись публикаций, код — после неё.
      */
     @Test
-    void requestsDatesWithinBudgetFromSeedAndPassesThemToRecord() {
+    void requestsOfferPagesWithinBudgetFromSeedAndPassesFactsOn() {
         TaskOutcome outcome = handler(2).handle(task(1));
 
         assertThat(outcome).isInstanceOf(TaskOutcome.Done.class);
-        verify(adapter).offerPostedDate(eq(UUID_B), anyString());
-        verify(adapter).offerPostedDate(eq(PROFESIA), anyString());
-        verify(adapter, never()).offerPostedDate(eq(UUID_A), anyString());
-        verify(adapter, never()).offerPostedDate(eq(UUID_DATED), anyString());
-        verify(adapter, never()).offerPostedDate(eq(OTHER_SITE), anyString());
+        verify(adapter).offerPage(eq(UUID_B), anyString());
+        verify(adapter).offerPage(eq(PROFESIA), anyString());
+        verify(adapter, never()).offerPage(eq(UUID_A), anyString());
+        verify(adapter, never()).offerPage(eq(UUID_DATED), anyString());
+        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of(PROFESIA, POSTED));
+        verify(repository).recordOccupations(SOURCE_ID, Map.of(UUID_B, FREIGHT_HANDLERS));
     }
 
-    /** Бюджет 0 — страницы объявлений не запрашиваются, запись без дат. */
+    /** Вакансия портала с датой, но без кода профессии (накопленная до §203) — её страница запрашивается за кодом. */
     @Test
-    void zeroBudgetRequestsNoDates() {
+    void datedPortalOfferWithoutOccupationIsRequested() {
+        when(repository.externalIdsWithOccupation(SOURCE_ID)).thenReturn(Set.of());
+
+        handler(POSTINGS.size()).handle(task(0));
+
+        verify(adapter).offerPage(eq(UUID_DATED), anyString());
+        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString());
+    }
+
+    /** Бюджет 0 — страницы объявлений не запрашиваются, запись без дат и кодов. */
+    @Test
+    void zeroBudgetRequestsNoOfferPages() {
         handler(0).handle(task(1));
 
-        verify(adapter, never()).offerPostedDate(anyString(), anyString());
+        verify(adapter, never()).offerPage(anyString(), anyString());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of());
+        verify(repository).recordOccupations(SOURCE_ID, Map.of());
     }
 
-    private PortalRecordHandler handler(int datesPerRecord) {
+    private PortalRecordHandler handler(int offerPagesPerRecord) {
         StatePortalProperties properties = new StatePortalProperties("http://portal.test", 50,
-                new StatePortalProperties.Task(20, Duration.ofMinutes(5)), Duration.ofDays(7), datesPerRecord);
+                new StatePortalProperties.Task(20, Duration.ofMinutes(5)), Duration.ofDays(7), offerPagesPerRecord);
         return new PortalRecordHandler(sources, repository, recorder, adapter, properties);
     }
 

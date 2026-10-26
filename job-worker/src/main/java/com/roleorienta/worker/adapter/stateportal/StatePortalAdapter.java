@@ -59,6 +59,12 @@ public class StatePortalAdapter implements SourceAdapter {
     /** Дата в «Dátum a čas vytvorenia» своей вакансии портала: {@code 04.09.2026 o 09:58}. */
     private static final Pattern PORTAL_DAY = Pattern.compile("(\\d{1,2}\\.\\d{1,2}\\.\\d{4})");
     private static final DateTimeFormatter PORTAL_DATE = DateTimeFormatter.ofPattern("d.M.uuuu");
+    /**
+     * Профессия своей вакансии портала (§203): «Profesia (SK ISCO-08)» — {@code 9333004 - Pomocný pracovník v sklade};
+     * код SK ISCO-08 — 7 цифр, первые 4 — группа ISCO-08.
+     */
+    private static final Pattern PORTAL_OCCUPATION = Pattern.compile("^\\s*(\\d{4})\\d{3}\\b");
+    private static final String OCCUPATION_FIELD = "Profesia (SK ISCO-08)";
     private static final int MAX_EXTERNAL_ID = 200;
     /** Длина поля адреса стартовой страницы ({@code company_site.start_url}). */
     private static final int MAX_ADDRESS = 2000;
@@ -175,6 +181,15 @@ public class StatePortalAdapter implements SourceAdapter {
     }
 
     /**
+     * Сведения со страницы объявления вакансии общего списка (§168, §203).
+     *
+     * @param postedAt   дата размещения (начало суток UTC); {@code null} — на странице нет
+     * @param occupation группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
+     */
+    public record OfferPage(Instant postedAt, String occupation) {
+    }
+
+    /**
      * У вакансии общего списка дату размещения можно получить со страницы объявления (§168): своя вакансия портала или
      * объявление profesia.sk; у объявлений других площадок — нет.
      *
@@ -182,28 +197,43 @@ public class StatePortalAdapter implements SourceAdapter {
      * @return есть ли страница с датой
      */
     public static boolean hasPostedDate(String externalId) {
-        return OFFER_UUID.matcher(externalId).matches() || externalId.startsWith(PROFESIA_ID);
+        return hasOccupation(externalId) || externalId.startsWith(PROFESIA_ID);
     }
 
     /**
-     * Дата размещения вакансии общего списка со страницы объявления (§168): в общем списке портала её нет (только
-     * последнее изменение — датой размещения не считается). Своя вакансия портала — «Dátum a čas vytvorenia» на
-     * странице {@code /pracovne-ponuky/<uuid>}; объявление profesia.sk — разметка schema.org
-     * {@code itemprop="datePosted"} («Dátum zverejnenia») на странице объявления по его адресу.
+     * Код профессии SK ISCO-08 есть только на странице своей вакансии портала (§203); у объявлений profesia.sk — нет.
+     *
+     * @param externalId внешний id публикации
+     * @return есть ли страница с кодом профессии
+     */
+    public static boolean hasOccupation(String externalId) {
+        return OFFER_UUID.matcher(externalId).matches();
+    }
+
+    /**
+     * Страница объявления вакансии общего списка (§168, §203): в общем списке портала нет ни даты размещения (только
+     * последнее изменение — датой размещения не считается), ни профессии. Своя вакансия портала — страница
+     * {@code /pracovne-ponuky/<uuid>}: дата — «Dátum a čas vytvorenia», профессия — «Profesia (SK ISCO-08)»; объявление
+     * profesia.sk — страница по его адресу: дата — разметка schema.org {@code itemprop="datePosted"} («Dátum
+     * zverejnenia»), профессии нет.
      *
      * @param externalId внешний id публикации
      * @param url        адрес объявления (для profesia.sk)
-     * @return начало суток UTC; пусто — даты нет, страница не получена или у объявления нет страницы с датой
+     * @return сведения страницы; пусто — страница не получена или у объявления нет такой страницы
      */
-    public Optional<Instant> offerPostedDate(String externalId, String url) {
-        if (OFFER_UUID.matcher(externalId).matches()) {
+    public Optional<OfferPage> offerPage(String externalId, String url) {
+        if (hasOccupation(externalId)) {
             URI uri = URI.create(properties.baseUrl() + "/pracovne-ponuky/" + externalId);
             if (!(httpClient.get(uri) instanceof HttpResult.Success page)) {
                 return Optional.empty();
             }
-            Element created = value(Jsoup.parse(page.body(), uri.toString()), "Dátum a čas vytvorenia");
+            Document document = Jsoup.parse(page.body(), uri.toString());
+            Element created = value(document, "Dátum a čas vytvorenia");
             Matcher day = created == null ? null : PORTAL_DAY.matcher(created.text());
-            return day != null && day.find() ? portalDay(day.group(1)) : Optional.empty();
+            Element occupation = value(document, OCCUPATION_FIELD);
+            Matcher code = occupation == null ? null : PORTAL_OCCUPATION.matcher(occupation.text());
+            return Optional.of(new OfferPage(day != null && day.find() ? portalDay(day.group(1)).orElse(null) : null,
+                    code != null && code.find() ? code.group(1) : null));
         }
         if (!externalId.startsWith(PROFESIA_ID) || url == null) {
             return Optional.empty();
@@ -218,9 +248,8 @@ public class StatePortalAdapter implements SourceAdapter {
             return Optional.empty();
         }
         Element posted = Jsoup.parse(page.body(), url).selectFirst("[itemprop=datePosted]");
-        return posted == null ? Optional.empty()
-                : Optional.ofNullable(PostedDates.parse(posted.hasAttr("content") ? posted.attr("content")
-                        : posted.text()));
+        return Optional.of(new OfferPage(posted == null ? null
+                : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null));
     }
 
     private static Optional<Instant> portalDay(String text) {

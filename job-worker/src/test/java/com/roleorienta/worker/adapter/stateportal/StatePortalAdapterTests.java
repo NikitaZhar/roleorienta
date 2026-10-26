@@ -101,29 +101,33 @@ class StatePortalAdapterTests {
     }
 
     /**
-     * Дата размещения со страницы объявления (§168): своя вакансия портала — «Dátum a čas vytvorenia»; объявление
-     * profesia.sk — {@code itemprop="datePosted"}; без даты на странице и объявление другой площадки — даты нет.
+     * Страница объявления (§168, §203): своя вакансия портала — дата «Dátum a čas vytvorenia» и профессия «Profesia (SK
+     * ISCO-08)» — группа ISCO-08 по первым 4 цифрам; объявление profesia.sk — {@code itemprop="datePosted"}, профессии
+     * нет; страница без даты и профессии — сведения пустые; объявление другой площадки — страницы нет.
      */
     @Test
-    void readsPostedDateFromOfferPage() {
+    void readsPostedDateAndOccupationFromOfferPage() {
         String uuid = "4f4762a0-b1ff-4955-91e1-a89792eddd81";
         detailPages.put(uuid, "<html><body><main><dl class=\"vpm-data-panel\">"
                 + field("Dátum a čas vytvorenia", "04.09.2026 o 09:58")
+                + field("Profesia (SK ISCO-08)", "9333004 - Pomocný pracovník v sklade (skladový manipulant)")
                 + field("Naposledy aktualizované", "21.10.2026 o 14:59") + "</dl></main></body></html>");
         String base = "http://127.0.0.1:" + server.getAddress().getPort();
         profesiaPages.put("/praca/accenture/O5376258", "<div class=\"overall-info\"><strong>ID: </strong>5376258"
                 + "<strong> Dátum zverejnenia: </strong> <span>16.10.2026</span>"
                 + "<span class=\"hidden\" itemprop=\"datePosted\">2026-10-16</span></div>");
 
-        assertThat(adapter.offerPostedDate(uuid, base + "/pracovne-ponuky/" + uuid))
-                .contains(Instant.parse("2026-09-04T00:00:00Z"));
-        assertThat(adapter.offerPostedDate("profesia:5376258", base + "/praca/accenture/O5376258"))
-                .contains(Instant.parse("2026-10-16T00:00:00Z"));
-        assertThat(adapter.offerPostedDate("profesia:1", base + "/praca/none/O1")).isEmpty();
-        assertThat(adapter.offerPostedDate("0a0a0a0a-1111-4111-8111-000000000009", base)).isEmpty();
+        assertThat(adapter.offerPage(uuid, base + "/pracovne-ponuky/" + uuid))
+                .contains(new StatePortalAdapter.OfferPage(Instant.parse("2026-09-04T00:00:00Z"), "9333"));
+        assertThat(adapter.offerPage("profesia:5376258", base + "/praca/accenture/O5376258"))
+                .contains(new StatePortalAdapter.OfferPage(Instant.parse("2026-10-16T00:00:00Z"), null));
+        assertThat(adapter.offerPage("profesia:1", base + "/praca/none/O1"))
+                .contains(new StatePortalAdapter.OfferPage(null, null));
+        assertThat(adapter.offerPage("0a0a0a0a-1111-4111-8111-000000000009", base))
+                .contains(new StatePortalAdapter.OfferPage(null, null));
         assertThat(StatePortalAdapter.hasPostedDate("https://www.worki.sk/ponuka/1")).isFalse();
-        assertThat(adapter.offerPostedDate("https://www.worki.sk/ponuka/1", "https://www.worki.sk/ponuka/1"))
-                .isEmpty();
+        assertThat(StatePortalAdapter.hasOccupation("profesia:5376258")).isFalse();
+        assertThat(adapter.offerPage("https://www.worki.sk/ponuka/1", "https://www.worki.sk/ponuka/1")).isEmpty();
     }
 
     /**

@@ -36,6 +36,28 @@ public class PortalListRepository {
     }
 
     /**
+     * @param sourceId источник портала
+     * @return внешние id его публикаций, у которых уже есть код профессии (§203)
+     */
+    public Set<String> externalIdsWithOccupation(long sourceId) {
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT external_id FROM job_posting WHERE source_id = ? AND occupation_code IS NOT NULL",
+                String.class, sourceId));
+    }
+
+    /**
+     * Коды профессий со страниц объявлений (§203) — публикациям источника; публикации нет — ничего.
+     *
+     * @param sourceId    источник портала
+     * @param occupations группа ISCO-08 (4 цифры) по внешнему id
+     */
+    public void recordOccupations(long sourceId, Map<String, String> occupations) {
+        occupations.forEach((externalId, code) -> jdbcTemplate.update(
+                "UPDATE job_posting SET occupation_code = ? WHERE source_id = ? AND external_id = ?",
+                code, sourceId, externalId));
+    }
+
+    /**
      * Пора ли начинать полный обход: обходов ещё не было, последний не завершён (его цепочка оборвалась — вызывающий
      * проверяет, что она не идёт) или последний начался раньше {@code every} назад.
      *

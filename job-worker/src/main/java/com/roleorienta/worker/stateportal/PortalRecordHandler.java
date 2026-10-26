@@ -39,11 +39,14 @@ import org.springframework.stereotype.Component;
  *   <li>после обхода с пропущенной страницей — неполное ({@link PartialReason#PAGE_FAILED}, §109).</li>
  * </ul>
  *
- * <p>Даты размещения в общем списке нет (§168): у публикаций, чья вакансия ещё без даты, дата берётся со страницы
- * объявления ({@link StatePortalAdapter#offerPostedDate}) — своей вакансии портала или объявления profesia.sk, не
- * больше {@code app.state-portal.dates-per-record} за задание, до записи (HTTP не держит транзакцию). Не получена —
- * следующая запись спросит снова; публикации без даты обходятся по кругу с места, зависящего от номера задания (как
- * у детали при чтении источника, §128, аудит §133). Пока даты нет, на экране — «найдена».</p>
+ * <p>Даты размещения (§168) и профессии (§203) в общем списке нет: они берутся со страницы объявления
+ * ({@link StatePortalAdapter#offerPage}) у публикаций, чья вакансия ещё без даты (своя вакансия портала или объявление
+ * profesia.sk) или у которых ещё нет кода профессии (своя вакансия портала — «Profesia (SK ISCO-08)»), не больше
+ * {@code app.state-portal.offer-pages-per-record} страниц за задание, до записи (HTTP не держит транзакцию). Не
+ * получено — следующая запись спросит снова; такие публикации обходятся по кругу с места, зависящего от номера задания
+ * (как у детали при чтении источника, §128, аудит §133): новые получают сведения за одну-две записи, накопленные —
+ * постепенно (решение владельца 2026-10-26: можно и медленнее). Даты уходят в запись публикаций, коды профессий —
+ * после неё в {@code job_posting.occupation_code} (новая публикация до записи ещё не существует).</p>
  *
  * <p>Две записи одного источника одновременно (полная после обхода и неполная ленты) могут добавить одну и ту же
  * публикацию; вторая упирается в уникальность {@code (source_id, external_id)}, её транзакция откатывается — задание
@@ -68,8 +71,8 @@ public class PortalRecordHandler implements TaskHandler {
      * @param sources    источники
      * @param repository вакансии общего списка
      * @param recorder   запись публикаций и обхода
-     * @param adapter    даты размещения со страниц объявлений
-     * @param properties дат за задание
+     * @param adapter    даты размещения и профессии со страниц объявлений
+     * @param properties страниц объявлений за задание
      */
     public PortalRecordHandler(SourceRepository sources, PortalListRepository repository, PostingRecorder recorder,
             StatePortalAdapter adapter, StatePortalProperties properties) {
@@ -107,40 +110,61 @@ public class PortalRecordHandler implements TaskHandler {
         }
         Source source = found.get();
         List<FetchedPosting> postings = repository.postingsOf(source.getBoard(), payload.path("cycle").asLong());
-        Map<String, Instant> postedAt = postedDates(source, postings, task.id());
+        OfferFacts facts = offerFacts(source, postings, task.id());
         String partial = payload.path("partial").asText(null);
         CrawlRun run = recorder.startRun(source, task.id());
         run.read(postings.size(), partial == null ? null : PartialReason.valueOf(partial));
         try {
-            recorder.record(run, postings, Set.of(), Set.of(), postedAt);
+            recorder.record(run, postings, Set.of(), Set.of(), facts.postedAt());
         } catch (DataIntegrityViolationException concurrent) {
             return new TaskOutcome.Retry("Concurrent record of source " + source.getId(), Duration.ZERO);
         }
+        repository.recordOccupations(source.getId(), facts.occupations());
         return new TaskOutcome.Done();
     }
 
     /**
-     * Даты размещения со страниц объявлений у публикаций без даты (§168).
+     * Даты размещения (§168) и коды профессий (§203) со страниц объявлений у публикаций, у которых их ещё нет.
      *
      * @param seed номер задания — сдвиг начала обхода
      */
-    private Map<String, Instant> postedDates(Source source, List<FetchedPosting> postings, long seed) {
+    private OfferFacts offerFacts(Source source, List<FetchedPosting> postings, long seed) {
         Set<String> dated = recorder.externalIdsWithPostedDate(source);
-        List<FetchedPosting> undated = postings.stream().filter(posting -> !dated.contains(posting.externalId())
-                && StatePortalAdapter.hasPostedDate(posting.externalId())).toList();
-        int budget = Math.min(properties.datesPerRecord(), undated.size());
-        int start = undated.isEmpty() ? 0 : (int) Math.floorMod(seed, (long) undated.size());
+        Set<String> coded = repository.externalIdsWithOccupation(source.getId());
+        List<FetchedPosting> missing = postings.stream().filter(posting -> {
+            String id = posting.externalId();
+            return !dated.contains(id) && StatePortalAdapter.hasPostedDate(id)
+                    || !coded.contains(id) && StatePortalAdapter.hasOccupation(id);
+        }).toList();
+        int budget = Math.min(properties.offerPagesPerRecord(), missing.size());
+        int start = missing.isEmpty() ? 0 : (int) Math.floorMod(seed, (long) missing.size());
         Map<String, Instant> dates = new HashMap<>();
+        Map<String, String> occupations = new HashMap<>();
         for (int offset = 0; offset < budget; offset++) {
-            FetchedPosting posting = undated.get((start + offset) % undated.size());
-            adapter.offerPostedDate(posting.externalId(), posting.url())
-                    .ifPresent(date -> dates.put(posting.externalId(), date));
+            FetchedPosting posting = missing.get((start + offset) % missing.size());
+            adapter.offerPage(posting.externalId(), posting.url()).ifPresent(page -> {
+                if (page.postedAt() != null) {
+                    dates.put(posting.externalId(), page.postedAt());
+                }
+                if (page.occupation() != null) {
+                    occupations.put(posting.externalId(), page.occupation());
+                }
+            });
         }
         if (budget > 0) {
-            LOG.info("Portal source {} posted dates from offer pages: requested {}, received {}", source.getId(),
-                    budget, dates.size());
+            LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}", source.getId(),
+                    budget, dates.size(), occupations.size());
         }
-        return dates;
+        return new OfferFacts(dates, occupations);
+    }
+
+    /**
+     * Сведения со страниц объявлений.
+     *
+     * @param postedAt    даты размещения по внешнему id
+     * @param occupations группы ISCO-08 по внешнему id
+     */
+    private record OfferFacts(Map<String, Instant> postedAt, Map<String, String> occupations) {
     }
 
     private static JsonNode parse(String payload) {
