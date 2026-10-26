@@ -79,20 +79,25 @@ export function UnlinkedSourcesAdmin() {
   return (
     <section>
       <h2>Sources without company</h2>
-      <p className="muted">Vacancy sources not linked to any company. If the titles are not vacancies (a blog,
-        products), press Close: the source is no longer read and its vacancies are closed. Keep real vacancies.</p>
+      <p className="muted">Career pages found on sites but not linked to any company. If the titles are not vacancies
+        (a blog, products), press Close: the page is no longer read and its vacancies are closed. Keep real
+        vacancies.</p>
       {message !== null && <p className="error" role="alert">{message}</p>}
       {items !== null && (items.length === 0 ? <p className="muted">None.</p> : (
         <div className="scroll">
           <table className="companies">
             <thead>
-              <tr><th>Source</th><th>Open</th><th>Titles</th><th><span className="sr-only">Actions</span></th></tr>
+              <tr>
+                <th>Page</th><th className="nowrap">Open</th><th>First titles</th>
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.board}<br /><span className="muted">{item.provider}</span></td>
-                  <td>{item.openPostings}</td>
+                  <td><a href={item.board.startsWith('http') ? item.board : 'https://' + item.board} target="_blank"
+                    rel="noreferrer">{item.board}</a></td>
+                  <td className="nowrap">{item.openPostings}</td>
                   <td>{item.titles.join(' · ')}</td>
                   <td className="row-actions nowrap">
                     <button type="button" disabled={busy} onClick={() => close(item)}>Close</button>

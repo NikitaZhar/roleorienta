@@ -28,15 +28,21 @@ public class AdminSourceRepository {
     }
 
     /**
-     * @return незакрытые источники без компании с открытыми публикациями: больше публикаций — первыми; не больше
-     *         {@value #SHOWN}
+     * Только собственные кадровые страницы ({@code careerpage}): у них вместо вакансий бывает мусор (блог, товары,
+     * §183). Доски систем найма без компании (Workday, Greenhouse … — обратный путь, §27) — настоящие вакансии
+     * иностранных работодателей с названием от системы найма; закрывать их не нужно, в списке они мешают (по проверке
+     * владельца: первой стояла доска PwC на 4 860 вакансий).
+     *
+     * @return незакрытые источники careerpage без компании с открытыми публикациями: больше публикаций — первыми; не
+     *         больше {@value #SHOWN}
      */
     public List<UnlinkedSource> unlinked() {
         return jdbcTemplate.query("""
                 SELECT s.id, s.provider, s.board, count(*) AS open_postings,
                        (array_agg(p.title ORDER BY p.id))[1:5] AS titles
                 FROM source s JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL
-                WHERE s.closed_at IS NULL AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)
+                WHERE s.provider = 'careerpage' AND s.closed_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)
                 GROUP BY s.id, s.provider, s.board
                 ORDER BY open_postings DESC, s.id LIMIT ?
                 """, (row, number) -> new UnlinkedSource(row.getLong("id"), row.getString("provider"),

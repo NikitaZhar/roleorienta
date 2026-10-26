@@ -150,6 +150,8 @@ class AdminMetricsAcceptanceTests {
         ApiTestClient client = new ApiTestClient(port());
         assertThat(client.send("POST", "/api/v1/admin/login", admin(ADMIN_PASSWORD)).status()).isEqualTo(200);
 
+        // Доска системы найма без компании — настоящие вакансии, в списке её нет.
+        assertThat(client.send("GET", "/api/v1/admin/sources/unlinked", null).body()).doesNotContain("qw-src-other");
         assertThat(client.send("GET", "/api/v1/admin/sources/unlinked", null).body()).contains("\"id\":" + blog
                 + ",\"provider\":\"careerpage\",\"board\":\"qw-src-blog\",\"openPostings\":2,\"titles\":[\"Our new blog post\","
                 + "\"Java developer\"]");
