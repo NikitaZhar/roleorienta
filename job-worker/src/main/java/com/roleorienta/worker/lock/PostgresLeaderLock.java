@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * хостом ({@code ReadSourceTick#sharedHostTick}); 1016 — постановка удаления снимков по сроку
  * ({@code SnapshotPurgeTick}); 1017 — постановка расчёта показателей ядра ({@code ComputeMetricsTick}); 1018 —
  * постановка проверки адресов кадровых страниц пользователей ({@code CareerRequestTick}); 1019 — постановка сводок
- * на почту ({@code DigestTick}).</p>
+ * на почту ({@code DigestTick}); 1020 — постановка пересчёта профессии по названию ({@code TitleOccupationTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

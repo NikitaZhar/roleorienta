@@ -101,13 +101,15 @@ public class MetricsRepository {
     /**
      * Вакансии по стране работы (вакансия нескольких стран — в каждой; без страны — {@code ''}; весь мир —
      * {@code '*'}): актуальные и на перепроверке (сейчас), новые и закрытые за день; открытые с распознанной профессией
-     * (§206: сопоставлена позиции словаря или у публикации есть код группы ISCO-08 — то, что видит выбор позиции).
+     * (§206: сопоставлена позиции словаря или у публикации есть код группы ISCO-08 портала или распознанный по названию,
+     * §215 — то, что видит выбор позиции).
      */
     private static final String VACANCIES = """
             WITH placed AS (
                 SELECT v.state, v.first_seen_at, v.closed_at, coalesce(place.country, '') AS country,
                        EXISTS (SELECT 1 FROM vacancy_position_match m WHERE m.vacancy_id = v.id)
-                       OR EXISTS (SELECT 1 FROM job_posting p WHERE p.vacancy_id = v.id AND p.occupation_code IS NOT NULL)
+                       OR EXISTS (SELECT 1 FROM job_posting p WHERE p.vacancy_id = v.id
+                                  AND (p.occupation_code IS NOT NULL OR p.title_occupation_code IS NOT NULL))
                        AS recognized
                 FROM vacancy v
                 LEFT JOIN LATERAL (SELECT DISTINCT unnest(v.work_countries) AS country) place ON TRUE)

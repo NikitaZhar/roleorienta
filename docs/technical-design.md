@@ -218,7 +218,7 @@ Common Crawl и место его обработки), `intake_cursor` (мест
 `source_permission` (области `PROVIDER` и `AGENCY`), `source`, `crawl_run`, `job_posting`, `vacancy`,
 `vacancy_revision`, `source_snapshot`, `task`, `outbox_event`, `host_budget`, `geo_city`, `position`,
 `vacancy_position_match`, `user_account`, `search_condition`, `pass_run`, `delivered_vacancy`,
-`vacancy_user_status`, `vacancy_status_history`, `vacancy_language`, `position_term`, `position_dictionary`, `position_search_miss`, `digest_vacancy`, `occupation_group`, `occupation_group_name`, `esco_occupation`, `esco_label` (справочник ISCO-08 / ESCO, §202), `search_condition_occupation` (группы условий, §204) и представление `search_condition_match` (к каким пунктам условий подходит вакансия, §204), `geo_import` (версия правил справочника городов, §210), `portal_employer` (работодатели государственного портала, §45). Не реализованы: `EmployerCandidate`, `CompanyIdentity`, `CareerPage`, `CrawlObservation`,
+`vacancy_user_status`, `vacancy_status_history`, `vacancy_language`, `position_term`, `position_dictionary`, `position_search_miss`, `digest_vacancy`, `occupation_group`, `occupation_group_name`, `esco_occupation`, `esco_label` (справочник ISCO-08 / ESCO, §202), `search_condition_occupation` (группы условий, §204) и представление `search_condition_match` (к каким пунктам условий подходит вакансия, §204), `geo_import` (версия правил справочника городов, §210), `title_occupation` (голова названия → группа ISCO-08, §215), `portal_employer` (работодатели государственного портала, §45). Не реализованы: `EmployerCandidate`, `CompanyIdentity`, `CareerPage`, `CrawlObservation`,
 `Provider` как таблица (провайдер — код в `source.provider`); `CompanyRequest` — таблица `company_request` (§137:
 адрес кадровой страницы от пользователя, состояние и причина); личное скрытие компании — таблица `company_hidden`
 (пользователь, компания) — удалена миграцией `V73` (§190; личного «скрыть» нет с §189), отметка администратора «не работодатель» — `company.not_employer` (§138);
@@ -1686,7 +1686,10 @@ suitable» — без изменений (решение владельца: п�
      названия — `ops/esco/isco_ru.tsv`; 619 групп, 3 039 профессий, 66 335 названий; 3 — код профессии портала —
      **сделано (§203)**: `job_posting.occupation_code` (`V76`), страница объявления своей вакансии портала — дата и
      «Profesia (SK ISCO-08)» одним запросом, не больше `app.state-portal.offer-pages-per-record` (10) страниц за запись;
-     4 — распознавание по названию для остальных источников (после шага 5: учится на вакансиях портала с кодом); 5 —
+     4 — распознавание по названию для остальных источников — **сделано (§215)**: «голова» названия (`title_head`,
+     до первого разделителя, без регистра и диакритики) выучивается по публикациям портала с кодом (не меньше двух, доля
+     одной группы не меньше 70 %, `title_occupation`), иначе — однозначный синоним ESCO; распознанная группа —
+     `job_posting.title_occupation_code` (отдельно от кода портала), пересчёт раз в сутки (`TITLE_OCCUPATIONS`); 5 —
      позиции в условиях и выдаче — **сделано (§204)**: в условиях — позиции словаря (точные) и группы ISCO-08
      (широкие), у позиции словаря — группа (`position.occupation_code`, `V77`); к группе подходит вакансия с кодом
      группы у публикации или сопоставленная позиции группы — представление `search_condition_match`, одно правило для

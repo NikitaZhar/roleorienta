@@ -305,8 +305,8 @@ class DeliveryAcceptanceTests {
 
     /**
      * Группы ISCO-08 в условиях (§204): к группе подходит вакансия, сопоставленная позиции словаря этой группы (позиции
-     * нет в условиях), и вакансия с кодом группы у публикации (государственный портал, без позиции); вакансия с кодом
-     * другой группы — нет.
+     * нет в условиях), вакансия с кодом группы у публикации (государственный портал, без позиции) и с группой,
+     * распознанной по названию (§215); вакансия с кодом другой группы — нет.
      */
     @Test
     void portionCoversGroupsOfConditions() {
@@ -319,11 +319,14 @@ class DeliveryAcceptanceTests {
         rematch(vacancy("DevOps", 2, "acme"), devops);
         coded(vacancy("Truck", 3, "acme"), "8332");
         coded(vacancy("Cook", 4, "acme"), "5120");
+        long recognized = vacancy("Recognized driver", 5, "acme");
+        coded(recognized, null);
+        jdbcTemplate.update("UPDATE job_posting SET title_occupation_code = '8332' WHERE vacancy_id = ?", recognized);
 
-        assertThat(runPass()).isEqualTo(3);
+        assertThat(runPass()).isEqualTo(4);
         assertThat(jdbcTemplate.queryForList("""
                 SELECT v.title FROM delivered_vacancy d JOIN vacancy v ON v.id = d.vacancy_id ORDER BY v.first_seen_at
-                """, String.class)).containsExactly("Java", "DevOps", "Truck");
+                """, String.class)).containsExactly("Java", "DevOps", "Truck", "Recognized driver");
     }
 
     /** Вакансия без позиции словаря, у публикации — код группы ISCO-08. */
