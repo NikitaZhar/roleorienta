@@ -210,6 +210,8 @@ export interface PositionOption {
   code: string;
   name: string;
   group: boolean;
+  /** Совпавшее название, если строка нашлась не в name (эквивалентное название, синоним; §207); null — в name. */
+  matched: string | null;
 }
 
 /** @returns до 20 вариантов: сначала позиции словаря, затем группы, в названии (или синониме) которых есть query */
@@ -217,11 +219,18 @@ export function positions(query: string): Promise<PositionOption[]> {
   return request<PositionOption[]>('GET', '/api/v1/positions?query=' + encodeURIComponent(query));
 }
 
+/** Позиция словаря в «Полном каталоге»: эквивалентные названия — для поиска в каталоге (§208). */
+export interface CatalogPosition {
+  code: string;
+  name: string;
+  titles: string[];
+}
+
 /** Группа ISCO-08 в «Полном каталоге» (Full catalog): позиции словаря внутри неё. */
 export interface GroupNode {
   code: string;
   name: string;
-  positions: CatalogItem[];
+  positions: CatalogPosition[];
 }
 
 /** Направление в «Полном каталоге» (Full catalog): подраздел ISCO-08 с группами. */

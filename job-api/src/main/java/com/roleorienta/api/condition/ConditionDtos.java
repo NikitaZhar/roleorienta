@@ -68,11 +68,13 @@ public final class ConditionDtos {
     /**
      * Вариант подсказки при выборе позиции (§204).
      *
-     * @param code  код позиции словаря или группы ISCO-08
-     * @param name  название (у группы — на языке интерфейса)
-     * @param group {@code true} — группа: подходят все её вакансии (на экране — пометкой)
+     * @param code    код позиции словаря или группы ISCO-08
+     * @param name    название (у группы — на языке интерфейса)
+     * @param group   {@code true} — группа: подходят все её вакансии (на экране — пометкой)
+     * @param matched совпавшее название, если строка нашлась не в {@code name} (эквивалентное название позиции,
+     *                синоним ESCO, название группы на другом языке; §207); {@code null} — нашлась в {@code name}
      */
-    public record PositionOption(String code, String name, boolean group) {
+    public record PositionOption(String code, String name, boolean group, String matched) {
     }
 
     /**
@@ -92,6 +94,16 @@ public final class ConditionDtos {
      * @param name      название на языке интерфейса
      * @param positions включённые позиции словаря группы по названию
      */
-    public record GroupNode(String code, String name, List<CatalogItem> positions) {
+    public record GroupNode(String code, String name, List<CatalogPosition> positions) {
+    }
+
+    /**
+     * Позиция словаря в «Полном каталоге».
+     *
+     * @param code   код
+     * @param name   название
+     * @param titles эквивалентные названия — поиск в каталоге находит позицию и по ним (§208)
+     */
+    public record CatalogPosition(String code, String name, List<String> titles) {
     }
 }

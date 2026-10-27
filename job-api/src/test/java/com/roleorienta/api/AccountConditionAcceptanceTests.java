@@ -54,6 +54,8 @@ class AccountConditionAcceptanceTests {
         }
         jdbcTemplate.update("INSERT INTO position (code, name, occupation_code) VALUES "
                 + "('java-developer', 'Java developer', '2512'), ('devops-engineer', 'DevOps engineer', '2512')");
+        jdbcTemplate.update("INSERT INTO position_term (position_id, kind, term) SELECT id, 'TITLE', 'java engineer' "
+                + "FROM position WHERE code = 'java-developer'");
     }
 
     /**
@@ -218,15 +220,18 @@ class AccountConditionAcceptanceTests {
         ApiTestClient client = signedIn("user@example.com");
         client.language = "ru";
         assertThat(client.send("GET", "/api/v1/positions?query=java", null).body())
-                .startsWith("[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false}");
+                .startsWith("[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false,\"matched\":null}");
+        // Эквивалентное название позиции находит её и показывается рядом (§207).
+        assertThat(client.send("GET", "/api/v1/positions?query=java%20engineer", null).body()).startsWith(
+                "[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false,\"matched\":\"java engineer\"}");
         assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("грузовых", StandardCharsets.UTF_8), null).body())
-                .contains("{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"group\":true}");
+                .contains("{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"group\":true,\"matched\":null}");
         assertThat(client.send("GET", "/api/v1/positions?query=" + URLEncoder.encode("nákladného", StandardCharsets.UTF_8), null).body()).contains("\"code\":\"8332\"");
         // С начала слова: «pyt» внутри «kopytá» (кузнецы, 7221) и «dopytu» (закупщики, 3323) не находит.
         assertThat(client.send("GET", "/api/v1/positions?query=pyt", null).body()).doesNotContain("7221", "3323");
         client.language = "en";
         assertThat(client.send("GET", "/api/v1/positions?query=lorry", null).body())
-                .contains("{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"group\":true}");
+                .contains("{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"group\":true,\"matched\":null}");
 
         client.language = "ru";
         ApiTestClient.Response saved = client.send("PUT", "/api/v1/me/search-condition",
@@ -250,7 +255,7 @@ class AccountConditionAcceptanceTests {
         assertThat(catalog).contains("{\"code\":\"83\",\"name\":\"Водители и операторы подвижного оборудования\","
                 + "\"groups\":[", "{\"code\":\"8332\",\"name\":\"Водители грузовых автомобилей\",\"positions\":[]}",
                 "{\"code\":\"2512\",\"name\":\"Разработчики программного обеспечения\",\"positions\":[",
-                "{\"code\":\"java-developer\",\"name\":\"Java developer\"}");
+                "{\"code\":\"java-developer\",\"name\":\"Java developer\",\"titles\":[\"java engineer\"]}");
     }
 
     /**

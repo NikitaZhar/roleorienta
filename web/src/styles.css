@@ -643,23 +643,57 @@ nav .current,
   background: var(--surface-2);
 }
 
-/* «Полный каталог» (Full catalog) (§204): направления ссылками, под раскрытым — группы, под группой — её позиции с отступом. */
+/* «Полный каталог» (Full catalog) (§204, §208): поле поиска сверху; направления — заголовками со стрелкой (цвет
+   текста, полужирные), под раскрытым — группы обычным текстом, под группой — её позиции мельче и с отступом. */
+.catalog-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
 .catalog {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
   max-height: 360px;
   overflow-y: auto;
 }
 
+.catalog-direction {
+  width: 100%;
+  height: auto;
+  min-height: 32px;
+  padding: 4px 6px;
+  text-align: left;
+  background: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.catalog-direction:hover {
+  background: var(--surface-2);
+}
+
 .catalog .choices {
-  margin: 4px 0 8px 12px;
+  margin: 2px 0 8px 18px;
 }
 
 .choices.nested {
-  margin: 0 0 0 16px;
+  margin: 0 0 4px 18px;
+}
+
+.choices.nested button {
+  min-height: 28px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.choices.nested button:hover {
+  color: var(--ink);
 }
 
 .choices button:disabled {
@@ -723,19 +757,38 @@ nav .current,
 }
 
 /* «Employer declined · N ▸» под «Моими откликами» (§196): свёрнутая строка-переключатель, тихая. */
+/* «Employer declined · N» в «My applications» (§196, §208): заголовком раздела — линия сверху, цвет текста,
+   полужирный, число плашкой; не теряется под откликами. */
 .list-toggle {
-  margin: 16px 0 8px;
-  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 24px 0 8px;
+  padding: 12px 0 4px;
   height: auto;
   border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
   background: none;
-  color: var(--muted);
-  font-size: 14px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
   cursor: pointer;
 }
 
+.list-toggle .count-badge {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .list-toggle:hover {
-  color: var(--ink);
+  background: none;
+  color: var(--accent);
 }
 
 /* Метки позиций над результатами (§194): позиция и число вакансий; выбранная — акцентом. */

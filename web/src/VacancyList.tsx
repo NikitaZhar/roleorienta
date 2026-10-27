@@ -325,6 +325,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   }
   const rowsShown = !declined || expanded;
   const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
+  const hasCounts = positions.length > 1 && positions.some((item) => item.count > 0);
   return (
     <section className="list">
       {results ? data.total > 0 && (
@@ -335,7 +336,8 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         </div>
       ) : declined ? (
         <button type="button" className="list-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {t('status.REJECTED')} · {data.total} <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t('status.REJECTED')}
+          <span className="count-badge">{data.total}</span>
         </button>
       ) : title !== undefined && (
         <div className="list-head">
@@ -345,7 +347,8 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           )}
         </div>
       )}
-      {results && (positions.length > 1 || recent > 0 || filter.sinceLastVisit === true) && (
+      {/* Метки — когда есть что отбирать: пока идёт первый сбор (все нули), строки нулей нет (§208). */}
+      {results && (hasCounts || recent > 0 || filter.sinceLastVisit === true) && (
         <div className="position-filter" role="group" aria-label={t('list.byPosition')}>
           {(recent > 0 || filter.sinceLastVisit === true) && (
             <button type="button" aria-pressed={filter.sinceLastVisit === true}
@@ -354,7 +357,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
               <span className="dot" aria-hidden="true" /> {t('list.sinceLastVisitFilter')}
             </button>
           )}
-          {positions.length > 1 && positions.map((item) => (
+          {positions.length > 1 && hasCounts && positions.map((item) => (
             <button key={item.code} type="button" aria-pressed={filter.position === item.code}
               className={filter.position === item.code ? 'chip current' : 'chip'}
               disabled={loading || (item.count === 0 && filter.position !== item.code)}

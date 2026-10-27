@@ -1,6 +1,6 @@
 package com.roleorienta.api.condition;
 
-import com.roleorienta.api.condition.ConditionDtos.CatalogItem;
+import com.roleorienta.api.condition.ConditionDtos.CatalogPosition;
 import com.roleorienta.api.condition.ConditionDtos.Direction;
 import com.roleorienta.api.condition.ConditionDtos.GroupNode;
 import com.roleorienta.api.condition.ConditionDtos.PositionOption;
@@ -60,12 +60,15 @@ public class OccupationRepository {
     }
 
     /**
-     * Подсказка при вводе: сначала включённые позиции словаря, в названии или коде которых есть строка, затем группы, в
-     * названии которых на любом языке или в названии одной из профессий ESCO группы (синонимы, в том числе словацкие)
-     * есть строка; среди групп выше те, где строка — в названии на языке интерфейса. Строка ищется с начала слова
-     * ({@code \m} — начало слова в регулярном выражении PostgreSQL,
+     * Подсказка при вводе: сначала включённые позиции словаря, в названии, коде или эквивалентном названии которых
+     * (вид {@code TITLE}: «software architect» у позиции «Architect») есть строка, затем группы, в названии которых на
+     * любом языке или в названии одной из профессий ESCO группы (синонимы, в том числе словацкие) есть строка; среди
+     * групп выше те, где строка — в названии на языке интерфейса. Строка ищется с начала слова ({@code \m} — начало
+     * слова в регулярном выражении PostgreSQL,
      * https://www.postgresql.org/docs/16/functions-matching.html#POSIX-CONSTRAINT-ESCAPES-TABLE): «pyt» находит
-     * «Python», но не «kopytá» и «dopytu» внутри словацких синонимов. Регистр не важен ({@code ~*}).
+     * «Python», но не «kopytá» и «dopytu» внутри словацких синонимов. Регистр не важен ({@code ~*}). Если строка
+     * нашлась не в показанном названии, вариант несёт совпавшее (§207): «Architect — software architect» — видно,
+     * почему он в подсказке; у синонимов ESCO выше — на языке интерфейса, затем английские, основные, короткие.
      *
      * @param query    строка
      * @param language язык названий групп
@@ -74,12 +77,26 @@ public class OccupationRepository {
     public List<PositionOption> suggestions(String query, String language) {
         return jdbcTemplate.query("""
                 WITH q AS (SELECT CAST(? AS TEXT) AS word, CAST(? AS TEXT) AS language)
-                SELECT code, name, grp FROM (
-                    SELECT p.code, p.name, false AS grp, 0 AS rank
+                SELECT code, name, grp, matched FROM (
+                    SELECT p.code, p.name, false AS grp, 0 AS rank,
+                           CASE WHEN p.name ~* q.word OR p.code ~* q.word THEN NULL
+                                ELSE (SELECT t.term FROM position_term t
+                                      WHERE t.position_id = p.id AND t.kind = 'TITLE' AND t.term ~* q.word
+                                      ORDER BY t.id LIMIT 1) END AS matched
                     FROM position p, q
-                    WHERE p.active AND (p.name ~* q.word OR p.code ~* q.word)
+                    WHERE p.active AND (p.name ~* q.word OR p.code ~* q.word
+                                        OR EXISTS (SELECT 1 FROM position_term t WHERE t.position_id = p.id
+                                                   AND t.kind = 'TITLE' AND t.term ~* q.word))
                     UNION ALL
-                    SELECT g.code, g.name, true, CASE WHEN g.name ~* q.word THEN 1 ELSE 2 END
+                    SELECT g.code, g.name, true, CASE WHEN g.name ~* q.word THEN 1 ELSE 2 END,
+                           CASE WHEN g.name ~* q.word THEN NULL
+                                ELSE coalesce((SELECT n.name FROM occupation_group_name n
+                                               WHERE n.code = g.code AND n.name ~* q.word LIMIT 1),
+                                              (SELECT l.label FROM esco_occupation e
+                                               JOIN esco_label l ON l.occupation_id = e.id
+                                               WHERE e.group_code = g.code AND l.label ~* q.word
+                                               ORDER BY l.language = q.language DESC, l.language = 'en' DESC,
+                                                        l.preferred DESC, length(l.label), l.label LIMIT 1)) END
                     FROM (SELECT g.code, """ + GROUP_NAME + """
                            AS name FROM occupation_group g, q WHERE g.level = 4) g, q
                     WHERE EXISTS (SELECT 1 FROM occupation_group_name n
@@ -88,23 +105,28 @@ public class OccupationRepository {
                                   WHERE e.group_code = g.code AND l.label ~* q.word)
                 ) found ORDER BY rank, name LIMIT ?
                 """, (row, number) -> new PositionOption(row.getString("code"), row.getString("name"),
-                row.getBoolean("grp")), "\\m" + REGEX_SPECIAL.matcher(query.strip()).replaceAll("\\\\$0"), language,
-                SUGGESTIONS);
+                row.getBoolean("grp"), row.getString("matched")),
+                "\\m" + REGEX_SPECIAL.matcher(query.strip()).replaceAll("\\\\$0"), language, SUGGESTIONS);
     }
 
     /**
      * Все позиции для просмотра: направления (подразделы ISCO-08, 2 цифры) → группы (4 цифры) → включённые позиции
-     * словаря группы; по коду, позиции — по названию.
+     * словаря группы с эквивалентными названиями (для поиска в каталоге, §208); по коду, позиции — по названию.
      *
      * @param language язык названий
      * @return направления
      */
     public List<Direction> catalog(String language) {
-        Map<String, List<CatalogItem>> positions = new HashMap<>();
-        jdbcTemplate.query("SELECT occupation_code, code, name FROM position WHERE active AND occupation_code IS NOT NULL "
-                + "ORDER BY name", row -> {
+        Map<String, List<CatalogPosition>> positions = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT p.occupation_code, p.code, p.name,
+                       coalesce((SELECT array_agg(t.term ORDER BY t.id) FROM position_term t
+                                 WHERE t.position_id = p.id AND t.kind = 'TITLE'), ARRAY[]::VARCHAR[]) AS titles
+                FROM position p WHERE p.active AND p.occupation_code IS NOT NULL ORDER BY p.name
+                """, row -> {
                     positions.computeIfAbsent(row.getString(1), any -> new ArrayList<>())
-                            .add(new CatalogItem(row.getString(2), row.getString(3)));
+                            .add(new CatalogPosition(row.getString(2), row.getString(3),
+                                    List.of((String[]) row.getArray("titles").getArray())));
                 });
         Map<String, List<GroupNode>> groups = new HashMap<>();
         jdbcTemplate.query("WITH q AS (SELECT CAST(? AS TEXT) AS language) SELECT g.code, " + GROUP_NAME

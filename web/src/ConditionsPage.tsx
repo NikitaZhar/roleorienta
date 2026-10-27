@@ -223,6 +223,7 @@ export function ConditionsPage({ onSaved }: Props) {
                 <li key={item.code}>
                   <button type="button" onClick={() => choose(item)}>
                     {item.name}
+                    {item.matched !== null && <span className="muted"> — {item.matched}</span>}
                     {item.group && <span className="muted"> · {t('conditions.wholeGroup')}</span>}
                   </button>
                 </li>
