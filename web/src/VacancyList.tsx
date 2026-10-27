@@ -471,7 +471,7 @@ function RowContent({ item, fresh, side, link = false, matches = [] }: { item: V
           {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
         </span>
         <span className="row-meta">
-          {meta}
+          <span className="row-meta-text">{meta}</span>
           {matches.map((name) => <span key={name} className="row-match">{name}</span>)}
         </span>
       </span>

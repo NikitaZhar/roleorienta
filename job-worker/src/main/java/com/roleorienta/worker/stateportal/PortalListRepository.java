@@ -46,6 +46,29 @@ public class PortalListRepository {
     }
 
     /**
+     * @param sourceId источник портала
+     * @return внешние id его публикаций, у которых страница объявления уже прочитана ради ссылки на работодателя (§209)
+     */
+    public Set<String> externalIdsWithEmployerLinkChecked(long sourceId) {
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT external_id FROM job_posting WHERE source_id = ? AND employer_link_checked",
+                String.class, sourceId));
+    }
+
+    /**
+     * Ссылки на вакансию у работодателя со страниц объявлений profesia.sk (§209): публикация отмечается прочитанной и
+     * со ссылкой, и без неё ({@code null}) — повторно не запрашивается; публикации нет — ничего.
+     *
+     * @param sourceId источник портала
+     * @param links    ссылка по внешнему id; {@code null} — у объявления её нет
+     */
+    public void recordEmployerLinks(long sourceId, Map<String, String> links) {
+        links.forEach((externalId, link) -> jdbcTemplate.update(
+                "UPDATE job_posting SET employer_url = ?, employer_link_checked = TRUE WHERE source_id = ? "
+                        + "AND external_id = ?", link, sourceId, externalId));
+    }
+
+    /**
      * Коды профессий со страниц объявлений (§203) — публикациям источника; публикации нет — ничего.
      *
      * @param sourceId    источник портала

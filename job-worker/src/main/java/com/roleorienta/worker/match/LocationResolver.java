@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
  *
  * <ul>
  *   <li>Место делится на части по «;», «|», «/», « or »; часть — на сегменты по запятой, сегмент — на куски по
- *       тире с пробелами и скобкам ({@code Cairo - ETIC}, {@code Manila (One Ayala Tower 2)}, стенограмма §149).
+ *       тире с пробелами, скобкам и подчёркиванию ({@code Cairo - ETIC}, {@code Manila (One Ayala Tower 2)},
+ *       стенограмма §149; {@code PB_Cen_Katowice} — код места Workday, §210).
  *       Кусок — страна (название по-английски, по-словацки, по-немецки или известное сокращение), регион
  *       удалённой работы ({@link RemoteRegions}) или город (GeoNames: самый населённый с таким
  *       названием); не распознан целиком — пробуется его начало из меньшего числа слов, не короче
@@ -38,7 +39,7 @@ final class LocationResolver {
      * {@code MatchVacanciesHandler.MAX_VERSION_LENGTH} («places-2» дал 41 символ и запись отказала, стенограмма §149;
      * запас проверяет {@code MatchVersionTests}).
      */
-    static final String VERSION = "p2";
+    static final String VERSION = "p3";
 
     /** Самое короткое начало куска места, которое ищется как город или страна: короче — слишком много совпадений. */
     static final int MIN_PREFIX = 4;
@@ -47,7 +48,7 @@ final class LocationResolver {
     private static final Pattern ISO3_PREFIX = Pattern.compile("^([A-Z]{3})\\.");
     private static final Pattern PLACES = Pattern.compile("[;|/]| or ");
     /** Куски сегмента: тире с пробелами вокруг и скобки (тире без пробелов — часть названия: Baden-Baden). */
-    private static final Pattern PIECES = Pattern.compile("\\s+\\p{Pd}\\s+|[()]");
+    private static final Pattern PIECES = Pattern.compile("\\s+\\p{Pd}\\s+|[()_]");
     private static final Pattern REMOTE_WORDS = Pattern.compile(
             "\\b(fully remote|remote first|remote|work from home|home office|praca z domu|na dialku)\\b");
     private static final Pattern REMOTE_TEXT = Pattern.compile(

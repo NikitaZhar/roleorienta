@@ -34,11 +34,16 @@ public class VacancyRepository {
      * её публикаций с ролью (работодатель — и компания с кадровым сайтом группы, роль {@code GROUP}, §81, — после
      * компании с ролью {@code EMPLOYER}, аудит §84; нет компании-работодателя — название работодателя у системы найма
      * для источника без компании, аудит §65). Статус пользователя — из {@code vacancy_user_status} (псевдоним
-     * {@code st}, строки может не быть — «Новая»); «Получена» — первая выдача пользователю по любой версии условий;
+     * {@code st}, строки может не быть — «Новая»); ссылка — вакансия у работодателя, если объявление profesia.sk её
+     * дало (§209, договорённость §178), иначе первичная публикация; «Получена» — первая выдача пользователю по любой версии условий;
      * «Закрыта работодателем» — время закрытия у закрытой вакансии (без него — последнее подтверждение).
      */
     private static final String COLUMNS = """
-            v.id, v.title, v.primary_url, v.first_seen_at, v.posted_at, v.work_countries, v.work_format,
+            v.id, v.title,
+            coalesce((SELECT p.employer_url FROM job_posting p
+                      WHERE p.vacancy_id = v.id AND p.employer_url IS NOT NULL ORDER BY p.id LIMIT 1),
+                     v.primary_url) AS primary_url,
+            v.first_seen_at, v.posted_at, v.work_countries, v.work_format,
             CASE WHEN v.state = 'CLOSED' THEN coalesce(v.closed_at, v.last_confirmed_at) END AS closed_at,
             st.status AS user_status, st.changed_at,
             (SELECT min(dd.delivered_at) FROM delivered_vacancy dd

@@ -54,6 +54,9 @@ public class StatePortalAdapter implements SourceAdapter {
     private static final Pattern EMPLOYER_NUMBER = Pattern.compile("IČO:\\s*(\\d{8})");
     /** Внешний id своей вакансии портала — uuid. */
     private static final Pattern OFFER_UUID = Pattern.compile("[0-9a-f]{8}-[0-9a-f-]{27}");
+    /** Хост profesia.sk: переадресация, закончившаяся на нём, — не страница работодателя (§209). */
+    private static final String PROFESIA_HOST = "profesia.";
+
     /** Начало внешнего id объявления profesia.sk ({@link #externalId}). */
     private static final String PROFESIA_ID = "profesia:";
     /** Дата в «Dátum a čas vytvorenia» своей вакансии портала: {@code 04.09.2026 o 09:58}. */
@@ -183,10 +186,32 @@ public class StatePortalAdapter implements SourceAdapter {
     /**
      * Сведения со страницы объявления вакансии общего списка (§168, §203).
      *
-     * @param postedAt   дата размещения (начало суток UTC); {@code null} — на странице нет
-     * @param occupation группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
+     * @param postedAt    дата размещения (начало суток UTC); {@code null} — на странице нет
+     * @param occupation  группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
+     * @param employerUrl вакансия у работодателя — конечный адрес кнопки отклика объявления profesia.sk (§209);
+     *                    {@code null} — нет
      */
-    public record OfferPage(Instant postedAt, String occupation) {
+    public record OfferPage(Instant postedAt, String occupation, String employerUrl) {
+
+        /**
+         * Сведения без ссылки на работодателя (своя вакансия портала, объявление без кнопки отклика у работодателя).
+         *
+         * @param postedAt   дата размещения
+         * @param occupation группа ISCO-08
+         */
+        public OfferPage(Instant postedAt, String occupation) {
+            this(postedAt, occupation, null);
+        }
+    }
+
+    /**
+     * Ссылку на вакансию у работодателя даёт страница объявления profesia.sk (§209).
+     *
+     * @param externalId внешний id публикации
+     * @return есть ли такая страница
+     */
+    public static boolean hasEmployerLink(String externalId) {
+        return externalId.startsWith(PROFESIA_ID);
     }
 
     /**
@@ -215,7 +240,7 @@ public class StatePortalAdapter implements SourceAdapter {
      * последнее изменение — датой размещения не считается), ни профессии. Своя вакансия портала — страница
      * {@code /pracovne-ponuky/<uuid>}: дата — «Dátum a čas vytvorenia», профессия — «Profesia (SK ISCO-08)»; объявление
      * profesia.sk — страница по его адресу: дата — разметка schema.org {@code itemprop="datePosted"} («Dátum
-     * zverejnenia»), профессии нет.
+     * zverejnenia»), профессии нет; ссылка на вакансию у работодателя — {@link #employerLink}.
      *
      * @param externalId внешний id публикации
      * @param url        адрес объявления (для profesia.sk)
@@ -247,9 +272,37 @@ public class StatePortalAdapter implements SourceAdapter {
         if (!(httpClient.get(uri) instanceof HttpResult.Success page)) {
             return Optional.empty();
         }
-        Element posted = Jsoup.parse(page.body(), url).selectFirst("[itemprop=datePosted]");
+        Document document = Jsoup.parse(page.body(), url);
+        Element posted = document.selectFirst("[itemprop=datePosted]");
         return Optional.of(new OfferPage(posted == null ? null
-                : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null));
+                : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null,
+                employerLink(document)));
+    }
+
+    /**
+     * Вакансия у работодателя по кнопке отклика объявления profesia.sk (§209): кнопка ведёт на
+     * {@code /external-reaction-redirect?offerId=…}, profesia переадресует на страницу работодателя или его системы
+     * найма. Запрашивается переадресация (клиент проходит её, как браузер) — ссылка — конечный адрес. Переадресации нет
+     * или она закончилась на profesia (форма отклика самой площадки) — ссылки нет.
+     */
+    private String employerLink(Document document) {
+        Element button = document.selectFirst("a[href*=external-reaction-redirect]");
+        if (button == null) {
+            return null;
+        }
+        URI redirect;
+        try {
+            redirect = URI.create(button.absUrl("href"));
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+        if (!(httpClient.get(redirect) instanceof HttpResult.Success target) || target.location() == null
+                || target.location().getHost() == null
+                || target.location().getHost().toLowerCase(Locale.ROOT).contains(PROFESIA_HOST)) {
+            return null;
+        }
+        String link = target.location().toString();
+        return link.length() > MAX_ADDRESS ? null : link;
     }
 
     private static Optional<Instant> portalDay(String text) {

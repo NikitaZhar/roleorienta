@@ -897,12 +897,24 @@ nav .current,
   color: var(--ink-soft);
 }
 
+/* Вторая строка: «работодатель · страна» обрезается многоточием, плашки позиций не обрезаются — не помещаются в строку,
+   переносятся ниже (§208: многоточие на месте второй плашки было непонятно). */
 .row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.row-meta-text {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  color: var(--muted);
 }
 
 .row-side {

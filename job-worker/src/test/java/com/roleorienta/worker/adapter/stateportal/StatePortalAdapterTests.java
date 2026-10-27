@@ -61,6 +61,14 @@ class StatePortalAdapterTests {
         });
         server.createContext("/praca", exchange -> respond(exchange, profesiaPages.getOrDefault(
                 exchange.getRequestURI().getPath(), "<html><body></body></html>")));
+        // Кнопка отклика объявления profesia (§209): переадресация на вакансию работодателя.
+        server.createContext("/external-reaction-redirect", exchange -> {
+            exchange.getResponseHeaders().add("Location", "http://127.0.0.1:" + server.getAddress().getPort()
+                    + "/employer/jobs/7");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.createContext("/employer", exchange -> respond(exchange, "<html><body>DevOps Manager</body></html>"));
         server.createContext("/zamestnavatelia", exchange -> respond(exchange,
                 employerPages.getOrDefault(param(exchange, "pageNr"), "<html><body><main></main></body></html>")));
         server.start();
@@ -123,6 +131,15 @@ class StatePortalAdapterTests {
                 .contains(new StatePortalAdapter.OfferPage(Instant.parse("2026-10-16T00:00:00Z"), null));
         assertThat(adapter.offerPage("profesia:1", base + "/praca/none/O1"))
                 .contains(new StatePortalAdapter.OfferPage(null, null));
+        // Кнопка отклика ведёт к работодателю (§209): ссылка — конечный адрес переадресации.
+        profesiaPages.put("/praca/brightpick/O5380376", "<span itemprop=\"datePosted\">2026-10-20</span>"
+                + "<a id=\"offer-reaction\" href=\"/external-reaction-redirect?offerId=5380376&amp;_locale=sk\">"
+                + "Odpovedať</a>");
+        assertThat(adapter.offerPage("profesia:5380376", base + "/praca/brightpick/O5380376"))
+                .contains(new StatePortalAdapter.OfferPage(Instant.parse("2026-10-20T00:00:00Z"), null,
+                        base + "/employer/jobs/7"));
+        assertThat(StatePortalAdapter.hasEmployerLink("profesia:5380376")).isTrue();
+        assertThat(StatePortalAdapter.hasEmployerLink("4f4762a0-b1ff-4955-91e1-a89792eddd81")).isFalse();
         assertThat(adapter.offerPage("0a0a0a0a-1111-4111-8111-000000000009", base))
                 .contains(new StatePortalAdapter.OfferPage(null, null));
         assertThat(StatePortalAdapter.hasPostedDate("https://www.worki.sk/ponuka/1")).isFalse();

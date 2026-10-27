@@ -120,26 +120,31 @@ public class PortalRecordHandler implements TaskHandler {
             return new TaskOutcome.Retry("Concurrent record of source " + source.getId(), Duration.ZERO);
         }
         repository.recordOccupations(source.getId(), facts.occupations());
+        repository.recordEmployerLinks(source.getId(), facts.employerLinks());
         return new TaskOutcome.Done();
     }
 
     /**
-     * Даты размещения (§168) и коды профессий (§203) со страниц объявлений у публикаций, у которых их ещё нет.
+     * Даты размещения (§168), коды профессий (§203) и ссылки на вакансию у работодателя (§209) со страниц объявлений у
+     * публикаций, у которых их ещё нет.
      *
      * @param seed номер задания — сдвиг начала обхода
      */
     private OfferFacts offerFacts(Source source, List<FetchedPosting> postings, long seed) {
         Set<String> dated = recorder.externalIdsWithPostedDate(source);
         Set<String> coded = repository.externalIdsWithOccupation(source.getId());
+        Set<String> linked = repository.externalIdsWithEmployerLinkChecked(source.getId());
         List<FetchedPosting> missing = postings.stream().filter(posting -> {
             String id = posting.externalId();
             return !dated.contains(id) && StatePortalAdapter.hasPostedDate(id)
-                    || !coded.contains(id) && StatePortalAdapter.hasOccupation(id);
+                    || !coded.contains(id) && StatePortalAdapter.hasOccupation(id)
+                    || !linked.contains(id) && StatePortalAdapter.hasEmployerLink(id);
         }).toList();
         int budget = Math.min(properties.offerPagesPerRecord(), missing.size());
         int start = missing.isEmpty() ? 0 : (int) Math.floorMod(seed, (long) missing.size());
         Map<String, Instant> dates = new HashMap<>();
         Map<String, String> occupations = new HashMap<>();
+        Map<String, String> links = new HashMap<>();
         for (int offset = 0; offset < budget; offset++) {
             FetchedPosting posting = missing.get((start + offset) % missing.size());
             adapter.offerPage(posting.externalId(), posting.url()).ifPresent(page -> {
@@ -149,22 +154,29 @@ public class PortalRecordHandler implements TaskHandler {
                 if (page.occupation() != null) {
                     occupations.put(posting.externalId(), page.occupation());
                 }
+                if (StatePortalAdapter.hasEmployerLink(posting.externalId())) {
+                    links.put(posting.externalId(), page.employerUrl());
+                }
             });
         }
         if (budget > 0) {
-            LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}", source.getId(),
-                    budget, dates.size(), occupations.size());
+            LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}, employer links {}",
+                    source.getId(), budget, dates.size(), occupations.size(),
+                    links.values().stream().filter(link -> link != null).count());
         }
-        return new OfferFacts(dates, occupations);
+        return new OfferFacts(dates, occupations, links);
     }
 
     /**
      * Сведения со страниц объявлений.
      *
-     * @param postedAt    даты размещения по внешнему id
-     * @param occupations группы ISCO-08 по внешнему id
+     * @param postedAt      даты размещения по внешнему id
+     * @param occupations   группы ISCO-08 по внешнему id
+     * @param employerLinks ссылки на вакансию у работодателя по внешнему id объявлений profesia.sk ({@code null} —
+     *                      страница прочитана, ссылки нет)
      */
-    private record OfferFacts(Map<String, Instant> postedAt, Map<String, String> occupations) {
+    private record OfferFacts(Map<String, Instant> postedAt, Map<String, String> occupations,
+            Map<String, String> employerLinks) {
     }
 
     private static JsonNode parse(String payload) {

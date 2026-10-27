@@ -348,7 +348,9 @@ class VacancyAcceptanceTests {
         long truck = delivered(condition, "Truck", "ACTIVE", 0, 2);
         long unrelated = delivered(condition, "Unrelated", "ACTIVE", 0, 1);
         jdbcTemplate.update("DELETE FROM vacancy_position_match WHERE vacancy_id IN (?, ?)", truck, unrelated);
-        jdbcTemplate.update("UPDATE job_posting SET occupation_code = '8332' WHERE vacancy_id = ?", truck);
+        // Объявление profesia.sk со ссылкой на вакансию работодателя (§209): строка ведёт туда.
+        jdbcTemplate.update("UPDATE job_posting SET occupation_code = '8332', employer_url = 'https://employer.example/"
+                + "truck' WHERE vacancy_id = ?", truck);
 
         assertThat(client.send("GET", "/api/v1/me/vacancies/filters", null).body()).isEqualTo(
                 "{\"positions\":[{\"code\":\"8332\",\"name\":\"Heavy truck and lorry drivers\",\"count\":1},"
@@ -356,7 +358,8 @@ class VacancyAcceptanceTests {
         assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("Truck,JavaGroup");
         String trucks = client.send("GET", "/api/v1/me/vacancies?position=8332", null).body();
         assertThat(titles(trucks)).isEqualTo("Truck");
-        assertThat(trucks).contains("\"total\":1,", "\"matches\":[\"Heavy truck and lorry drivers\"]");
+        assertThat(trucks).contains("\"total\":1,", "\"matches\":[\"Heavy truck and lorry drivers\"]",
+                "\"url\":\"https://employer.example/truck\"");
     }
 
     /** Признак «после прошлого захода» у вакансии списка с этим названием (поля вакансии — до следующей). */

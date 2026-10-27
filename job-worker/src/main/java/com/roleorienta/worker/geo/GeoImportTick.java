@@ -12,7 +12,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Ставит загрузку справочника GeoNames под leader-lock, пока справочник пуст (первый запуск).
+ * Ставит загрузку справочника GeoNames под leader-lock, пока справочник пуст (первый запуск) или загружен по прежним
+ * правилам ({@link GeoImportHandler#RULES}, §210).
  * Выключается свойством {@code app.geo.enabled=false}.
  */
 @Component
@@ -44,13 +45,14 @@ public class GeoImportTick {
     }
 
     /**
-     * Тик: справочник пуст — поставить загрузку (ключ по дате: неудачная загрузка повторится завтра).
+     * Тик: справочник пуст или по прежним правилам — поставить загрузку (ключ по дате: неудачная загрузка повторится
+     * завтра).
      */
     @Scheduled(fixedDelayString = "${app.geo.interval-ms:3600000}")
     public void tick() {
         try {
             leaderLock.runIfLeader(LOCK_KEY, () -> {
-                if (!repository.isLoaded()) {
+                if (!repository.isCurrent(GeoImportHandler.RULES)) {
                     taskService.enqueue(GeoImportHandler.TYPE, "geo-import:" + LocalDate.now(clock), "{}");
                 }
             });

@@ -45,6 +45,7 @@ class PortalRecordHandlerTests {
     private static final String OTHER_SITE = "https://www.worki.sk/ponuka/1";
     private static final Instant POSTED = Instant.parse("2026-10-14T00:00:00Z");
     private static final String FREIGHT_HANDLERS = "9333";
+    private static final String EMPLOYER_JOB = "https://employer.example/jobs/1";
     /** Публикации источника: две без даты, одна с датой, объявление profesia.sk без даты, объявление другой площадки. */
     private static final List<FetchedPosting> POSTINGS = List.of(posting(UUID_A), posting(UUID_DATED),
             posting(UUID_B), posting(PROFESIA), posting(OTHER_SITE));
@@ -69,7 +70,7 @@ class PortalRecordHandlerTests {
         when(adapter.offerPage(eq(UUID_B), anyString()))
                 .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(null, FREIGHT_HANDLERS)));
         when(adapter.offerPage(eq(PROFESIA), anyString()))
-                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(POSTED, null)));
+                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(POSTED, null, EMPLOYER_JOB)));
     }
 
     /**
@@ -89,6 +90,23 @@ class PortalRecordHandlerTests {
         verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of(PROFESIA, POSTED));
         verify(repository).recordOccupations(SOURCE_ID, Map.of(UUID_B, FREIGHT_HANDLERS));
+        verify(repository).recordEmployerLinks(SOURCE_ID, Map.of(PROFESIA, EMPLOYER_JOB));
+    }
+
+    /**
+     * Объявление profesia.sk с датой, но страница ради ссылки на работодателя не читалась (накопленное до §209) — её
+     * страница запрашивается; прочитанное — нет.
+     */
+    @Test
+    void datedProfesiaOfferWithoutEmployerLinkIsRequested() {
+        when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED, PROFESIA));
+
+        handler(POSTINGS.size()).handle(task(0));
+        verify(adapter).offerPage(eq(PROFESIA), anyString());
+
+        when(repository.externalIdsWithEmployerLinkChecked(SOURCE_ID)).thenReturn(Set.of(PROFESIA));
+        handler(POSTINGS.size()).handle(task(0));
+        verify(adapter).offerPage(eq(PROFESIA), anyString());
     }
 
     /** Вакансия портала с датой, но без кода профессии (накопленная до §203) — её страница запрашивается за кодом. */
