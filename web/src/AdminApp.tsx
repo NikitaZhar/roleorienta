@@ -69,6 +69,14 @@ function totals(table: MetricsTable, metric: string): (number | null)[] {
   return table.rows.find((row) => row.metric === metric && row.dimension === '')?.values ?? [];
 }
 
+/** Открытые вакансии (актуальные и на перепроверке) по дням — та же база, что у доли распознанных (аудит §211). */
+function openVacancies(table: MetricsTable): (number | null)[] {
+  const active = totals(table, 'vacancies_active');
+  const recheck = totals(table, 'vacancies_recheck');
+  return table.days.map((_, index) => (active[index] === null || active[index] === undefined ? null
+    : (active[index] ?? 0) + (recheck[index] ?? 0)));
+}
+
 /** Доля распознанной профессии среди открытых (актуальные и на перепроверке), %, по дням. */
 function recognizedShare(table: MetricsTable): (number | null)[] {
   const recognized = totals(table, 'vacancies_recognized');
@@ -87,7 +95,7 @@ function recognizedShare(table: MetricsTable): (number | null)[] {
  */
 function MetricsSummary({ table }: { table: MetricsTable }) {
   const items: { label: string; values: (number | null)[]; unit?: string }[] = [
-    { label: 'Open vacancies', values: totals(table, 'vacancies_active') },
+    { label: 'Open vacancies', values: openVacancies(table) },
     { label: 'With recognized profession', values: recognizedShare(table), unit: ' %' },
     { label: 'Companies with channel', values: totals(table, 'companies_connected') },
     { label: 'Sources read overdue', values: totals(table, 'sources_overdue') },
@@ -200,7 +208,7 @@ export function AdminApp() {
               {item.label}
               {item.tab === 'positions' && missCount > 0 && ` · ${missCount}`}
               {item.tab === 'status' && status !== null && status.warnings.length > 0 && (
-                <span className="tab-alert" aria-label="warning" />
+                <span className="tab-alert" role="img" aria-label="warning" />
               )}
             </button>
           ))}

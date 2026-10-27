@@ -7,7 +7,6 @@ import java.util.Arrays;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Источники вакансий без компании для администратора (§206): список и закрытие (JDBC; источники читает job-worker).
@@ -50,22 +49,25 @@ public class AdminSourceRepository {
     }
 
     /**
-     * Закрывает источник без компании одной транзакцией (как уборка V71): источник больше не читается; его открытые
-     * публикации закрываются; вакансия, у которой не осталось открытых публикаций, закрывается.
+     * Источник отмечается закрытым: больше не читается (job-worker, {@code SourceRepository.ONE_CHANNEL}).
      *
      * @param sourceId источник
      * @return {@code false} — источника нет, он уже закрыт или связан с компанией
      */
-    @Transactional
-    public boolean close(long sourceId) {
-        int closed = jdbcTemplate.update("""
+    public boolean markClosed(long sourceId) {
+        return jdbcTemplate.update("""
                 UPDATE source SET closed_at = now()
                 WHERE id = ? AND closed_at IS NULL
                   AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = source.id)
-                """, sourceId);
-        if (closed == 0) {
-            return false;
-        }
+                """, sourceId) == 1;
+    }
+
+    /**
+     * Закрываются вакансии с открытой публикацией источника, у которых нет открытой публикации другого источника.
+     *
+     * @param sourceId источник
+     */
+    public void closeVacancies(long sourceId) {
         jdbcTemplate.update("""
                 UPDATE vacancy v SET state = 'CLOSED', closed_at = now()
                 WHERE v.state <> 'CLOSED'
@@ -74,9 +76,16 @@ public class AdminSourceRepository {
                   AND NOT EXISTS (SELECT 1 FROM job_posting p WHERE p.vacancy_id = v.id AND p.source_id <> ?
                                   AND p.closed_at IS NULL)
                 """, sourceId, sourceId);
+    }
+
+    /**
+     * Закрываются открытые публикации источника.
+     *
+     * @param sourceId источник
+     */
+    public void closePostings(long sourceId) {
         jdbcTemplate.update("UPDATE job_posting SET closed_at = now(), confirmed = FALSE "
                 + "WHERE source_id = ? AND closed_at IS NULL", sourceId);
-        return true;
     }
 
     private static List<String> titles(Array array) throws SQLException {

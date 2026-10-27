@@ -37,6 +37,9 @@ public class Source {
 
     private Instant failingSince;
 
+    /** Закрыт администратором (§206): не читается; {@code null} — открыт. */
+    private Instant closedAt;
+
     /**
      * Для JPA.
      */
@@ -54,6 +57,14 @@ public class Source {
 
     public Long getId() {
         return id;
+    }
+
+    /**
+     * @return {@code true} — источник закрыт администратором (§206): задание чтения, поставленное до закрытия, его не
+     *         читает (аудит §211)
+     */
+    public boolean isClosed() {
+        return closedAt != null;
     }
 
     public String getProvider() {

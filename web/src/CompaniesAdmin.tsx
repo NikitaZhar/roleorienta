@@ -51,13 +51,16 @@ export function CareerRequestsAdmin() {
 
 /**
  * Источники вакансий без компании (§206): адрес, число открытых публикаций и первые названия — видно, вакансии ли
- * это (блог, товары). «Close» — источник больше не читается, его публикации и вакансии без других публикаций
- * закрываются; настоящие вакансии не трогать — лучше лишние, чем потерянные (принцип владельца).
+ * это (блог, товары). «Close», затем «Confirm close» (действие не отменяется, аудит §211) — источник больше не
+ * читается, его публикации и вакансии без других публикаций закрываются; настоящие вакансии не трогать — лучше лишние,
+ * чем потерянные (принцип владельца).
  */
 export function UnlinkedSourcesAdmin() {
   const [items, setItems] = useState<UnlinkedSource[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Источник, у которого нажата «Close»: второе нажатие («Confirm close») закрывает — действие не отменяется. */
+  const [confirming, setConfirming] = useState<number | null>(null);
 
   useEffect(() => {
     unlinkedSources().then(setItems, (failure: Error) => setMessage(failure.message));
@@ -100,7 +103,16 @@ export function UnlinkedSourcesAdmin() {
                   <td className="nowrap">{item.openPostings}</td>
                   <td>{item.titles.join(' · ')}</td>
                   <td className="row-actions nowrap">
-                    <button type="button" disabled={busy} onClick={() => close(item)}>Close</button>
+                    {confirming === item.id ? (
+                      <>
+                        <button type="button" className="danger" disabled={busy} onClick={() => close(item)}>
+                          Confirm close
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => setConfirming(null)}>Cancel</button>
+                      </>
+                    ) : (
+                      <button type="button" disabled={busy} onClick={() => setConfirming(item.id)}>Close</button>
+                    )}
                   </td>
                 </tr>
               ))}

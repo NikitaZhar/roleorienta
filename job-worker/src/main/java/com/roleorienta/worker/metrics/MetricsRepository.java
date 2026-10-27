@@ -129,7 +129,8 @@ public class MetricsRepository {
 
     /**
      * Страна источника: своя страна сбора или страна его компании (работодателя или группы, не агентства); иначе
-     * {@code ''}.
+     * {@code ''}. Закрытые администратором источники (§206) не считаются: они не читаются и в «просроченные» не
+     * попадают (аудит §211).
      */
     private static final String SOURCE_COUNTRY = """
             WITH placed AS (
@@ -138,7 +139,7 @@ public class MetricsRepository {
                                 (SELECT min(CAST(co.country AS text)) FROM company_source cs
                                  JOIN company co ON co.id = cs.company_id
                                  WHERE cs.source_id = s.id AND cs.role IN ('EMPLOYER', 'GROUP')), '') AS country
-                FROM source s)
+                FROM source s WHERE s.closed_at IS NULL)
             """;
 
     /** Источники по доступности (сейчас): итог и по {@code OK / TEMP_FAILING / UNAVAILABLE}. */

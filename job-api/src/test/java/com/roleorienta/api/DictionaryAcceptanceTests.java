@@ -88,6 +88,9 @@ class DictionaryAcceptanceTests {
                 .isEqualTo(400);
         assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "test-empty")
                 .replace("[\"Rust developer\",\" rust developer \",\"rust engineer\"]", "[]")).status()).isEqualTo(400);
+        // Код из одних цифр — это код группы ISCO-08 в условиях: для позиции не допускается (аудит §211).
+        assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "2512")).status())
+                .isEqualTo(400);
         // Группа ISCO-08 обязательна и должна быть в справочнике (§204).
         assertThat(admin.send("POST", "/api/v1/admin/positions", RUST.replace("test-rust", "test-nogroup")
                 .replace("\"group\":\"2512\",", "")).status()).isEqualTo(400);
@@ -161,15 +164,19 @@ class DictionaryAcceptanceTests {
     @Test
     void administratorSeesSearchesWithoutResult() throws Exception {
         ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
-        for (String query : new String[] {"zzqx", "%20ZZQX%20", "q", "qwer", "qwerty", "lorry"}) {
+        // «§» и эмодзи — один символ (в UTF-16 эмодзи — два): короче 2 знаков, не запоминаются (аудит §211).
+        for (String query : new String[] {"zzqx", "%20ZZQX%20", "%C2%A7", "%F0%9F%98%80", "qwer", "qwerty", "lorry"}) {
             assertThat(user.send("GET", "/api/v1/positions?query=" + query, null).status()).isEqualTo(200);
         }
+        // Без входа запрос не запоминается: подсказка открыта, список администратора не накручивается (аудит §211).
+        assertThat(new ApiTestClient(port()).send("GET", "/api/v1/positions?query=zzanon", null).status())
+                .isEqualTo(200);
         assertThat(user.send("GET", "/api/v1/admin/position-misses", null).status()).isEqualTo(403);
 
         ApiTestClient admin = admin();
         String misses = admin.send("GET", "/api/v1/admin/position-misses", null).body();
         assertThat(misses).startsWith("[{\"query\":\"zzqx\",\"misses\":2,").contains("{\"query\":\"qwerty\",\"misses\":1,")
-                .doesNotContain("\"qwer\"", "\"q\"", "lorry");
+                .doesNotContain("\"qwer\"", "§", "\uD83D\uDE00", "lorry", "zzanon");
         assertThat(admin.send("DELETE", "/api/v1/admin/position-misses?query=zzqx", null).status()).isEqualTo(204);
         assertThat(admin.send("DELETE", "/api/v1/admin/position-misses?query=zzqx", null).status()).isEqualTo(404);
         assertThat(admin.send("GET", "/api/v1/admin/position-misses", null).body()).doesNotContain("zzqx");

@@ -76,12 +76,13 @@ public final class DictionaryDtos {
     /**
      * Новая позиция.
      *
-     * @param code  код: латиница в нижнем регистре, цифры, дефис между ними ({@code java-developer})
+     * @param code  код: латиница в нижнем регистре, цифры, дефис между ними ({@code java-developer}); не одни цифры —
+     *              4 цифры в условиях означают группу ISCO-08 (аудит §211)
      * @param name  название
      * @param group группа ISCO-08 (4 цифры справочника)
      * @param terms названия по видам
      */
-    public record NewPosition(@NotBlank @Size(max = 60) @Pattern(regexp = "[a-z0-9]+(-[a-z0-9]+)*") String code,
+    public record NewPosition(@NotBlank @Size(max = 60) @Pattern(regexp = "(?![0-9]+$)[a-z0-9]+(-[a-z0-9]+)*") String code,
             @NotBlank @Size(max = 200) String name, @NotNull @Pattern(regexp = "[0-9]{4}") String group, @NotNull @Valid Terms terms) {
     }
 

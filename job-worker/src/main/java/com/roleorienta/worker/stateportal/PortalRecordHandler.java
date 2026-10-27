@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -41,12 +42,15 @@ import org.springframework.stereotype.Component;
  *
  * <p>Даты размещения (§168) и профессии (§203) в общем списке нет: они берутся со страницы объявления
  * ({@link StatePortalAdapter#offerPage}) у публикаций, чья вакансия ещё без даты (своя вакансия портала или объявление
- * profesia.sk) или у которых ещё нет кода профессии (своя вакансия портала — «Profesia (SK ISCO-08)»), не больше
+ * profesia.sk), у которых страница ради кода профессии ещё не прочитана (своя вакансия портала — «Profesia (SK
+ * ISCO-08)»; прочитана без кода — больше не запрашивается, аудит §211) или у объявления profesia.sk ещё не выяснена
+ * ссылка на вакансию работодателя (кнопка отклика, §209), не больше
  * {@code app.state-portal.offer-pages-per-record} страниц за задание, до записи (HTTP не держит транзакцию). Не
  * получено — следующая запись спросит снова; такие публикации обходятся по кругу с места, зависящего от номера задания
  * (как у детали при чтении источника, §128, аудит §133): новые получают сведения за одну-две записи, накопленные —
  * постепенно (решение владельца 2026-10-26: можно и медленнее). Даты уходят в запись публикаций, коды профессий —
- * после неё в {@code job_posting.occupation_code} (новая публикация до записи ещё не существует).</p>
+ * после неё в {@code job_posting.occupation_code}, ссылки — в {@code job_posting.employer_url} (новая публикация до
+ * записи ещё не существует; выясненная ссылка не перезаписывается).</p>
  *
  * <p>Две записи одного источника одновременно (полная после обхода и неполная ленты) могут добавить одну и ту же
  * публикацию; вторая упирается в уникальность {@code (source_id, external_id)}, её транзакция откатывается — задание
@@ -109,6 +113,9 @@ public class PortalRecordHandler implements TaskHandler {
             return new TaskOutcome.Failed("Source not found");
         }
         Source source = found.get();
+        if (source.isClosed()) {
+            return new TaskOutcome.Done();
+        }
         List<FetchedPosting> postings = repository.postingsOf(source.getBoard(), payload.path("cycle").asLong());
         OfferFacts facts = offerFacts(source, postings, task.id());
         String partial = payload.path("partial").asText(null);
@@ -147,22 +154,26 @@ public class PortalRecordHandler implements TaskHandler {
         Map<String, String> links = new HashMap<>();
         for (int offset = 0; offset < budget; offset++) {
             FetchedPosting posting = missing.get((start + offset) % missing.size());
-            adapter.offerPage(posting.externalId(), posting.url()).ifPresent(page -> {
+            adapter.offerPage(posting.externalId(), posting.url(), !linked.contains(posting.externalId())).ifPresent(page -> {
                 if (page.postedAt() != null) {
                     dates.put(posting.externalId(), page.postedAt());
                 }
-                if (page.occupation() != null) {
-                    occupations.put(posting.externalId(), page.occupation());
+                String id = posting.externalId();
+                // Код: страница своей вакансии портала прочитана — и без поля кода больше не запрашивается (аудит §211).
+                if (StatePortalAdapter.hasOccupation(id) && !coded.contains(id)) {
+                    occupations.put(id, page.occupation());
                 }
-                if (StatePortalAdapter.hasEmployerLink(posting.externalId())) {
-                    links.put(posting.externalId(), page.employerUrl());
+                // Ссылка: только выясненная — сбой переадресации повторится при следующей записи (аудит §211).
+                if (page.employerLink() != null && !linked.contains(id)) {
+                    links.put(id, page.employerLink().url());
                 }
             });
         }
         if (budget > 0) {
             LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}, employer links {}",
-                    source.getId(), budget, dates.size(), occupations.size(),
-                    links.values().stream().filter(link -> link != null).count());
+                    source.getId(), budget, dates.size(),
+                    occupations.values().stream().filter(Objects::nonNull).count(),
+                    links.values().stream().filter(Objects::nonNull).count());
         }
         return new OfferFacts(dates, occupations, links);
     }
@@ -171,7 +182,8 @@ public class PortalRecordHandler implements TaskHandler {
      * Сведения со страниц объявлений.
      *
      * @param postedAt      даты размещения по внешнему id
-     * @param occupations   группы ISCO-08 по внешнему id
+     * @param occupations   группы ISCO-08 по внешнему id своих вакансий портала, чья страница прочитана ({@code null} —
+     *                      кода на странице нет)
      * @param employerLinks ссылки на вакансию у работодателя по внешнему id объявлений profesia.sk ({@code null} —
      *                      страница прочитана, ссылки нет)
      */

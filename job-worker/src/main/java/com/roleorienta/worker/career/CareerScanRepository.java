@@ -163,7 +163,8 @@ public class CareerScanRepository {
 
     /**
      * Источники подключаются (уже подключённый — не дублируется) и связываются с компанией; связь «группы» получает
-     * роль работодателя (аудит §84). Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не
+     * роль работодателя (аудит §84); закрытый администратором источник (§206) не связывается — он не читается и каналом
+     * компании не считается (аудит §211). Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не
      * ждут друг друга (аудит §78).
      */
     private void link(long companyId, Set<Board> boards, Role role) {
@@ -175,7 +176,7 @@ public class CareerScanRepository {
                     """, board.provider(), board.board(), companyId);
             jdbcTemplate.update("""
                     INSERT INTO company_source (company_id, source_id, role)
-                    SELECT ?, id, ? FROM source WHERE provider = ? AND board = ?
+                    SELECT ?, id, ? FROM source WHERE provider = ? AND board = ? AND closed_at IS NULL
                     ON CONFLICT (company_id, source_id) DO UPDATE SET role = EXCLUDED.role
                         WHERE company_source.role = 'GROUP' AND EXCLUDED.role <> 'GROUP'
                     """, companyId, role.name(), board.provider(), board.board());

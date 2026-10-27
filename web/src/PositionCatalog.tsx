@@ -5,6 +5,8 @@ import { errorText, useI18n } from './i18n';
 interface Props {
   /** Коды уже выбранных позиций и групп: отмечены и не выбираются повторно. */
   chosen: string[];
+  /** Выбрано 10 (§126): больше не выбрать — пункты недоступны, над списком — пояснение (аудит §211). */
+  full: boolean;
   /** Выбраны позиция словаря или группа ISCO-08 (код группы — 4 цифры). */
   onChoose: (item: CatalogItem) => void;
 }
@@ -23,7 +25,7 @@ function wordStart(query: string): RegExp | null {
  * группы и позиции, в названии (у позиции — и в эквивалентном названии) которых есть строка, направления с ними
  * раскрыты. Названия — на языке интерфейса; смена языка перечитывает каталог.
  */
-export function PositionCatalog({ chosen, onChoose }: Props) {
+export function PositionCatalog({ chosen, full, onChoose }: Props) {
   const { language, t } = useI18n();
   const [directions, setDirections] = useState<Direction[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function PositionCatalog({ chosen, onChoose }: Props) {
     <div className="catalog-box">
       <input type="search" className="catalog-search" placeholder={t('conditions.catalogSearch')} value={query}
         aria-label={t('conditions.catalogSearch')} onChange={(event) => setQuery(event.target.value)} />
+      {full && <p className="muted">{t('conditions.catalogFull')}</p>}
       {shown.length === 0 && <p className="muted">{t('conditions.catalogNone')}</p>}
       <ul className="catalog">
         {shown.map((direction) => {
@@ -76,7 +79,7 @@ export function PositionCatalog({ chosen, onChoose }: Props) {
                 <ul className="choices">
                   {direction.groups.map((group) => (
                     <li key={group.code}>
-                      <button type="button" disabled={chosen.includes(group.code)}
+                      <button type="button" disabled={full || chosen.includes(group.code)}
                         onClick={() => onChoose({ code: group.code, name: group.name })}>
                         {group.name} <span className="muted">· {t('conditions.wholeGroup')}</span>
                       </button>
@@ -84,7 +87,7 @@ export function PositionCatalog({ chosen, onChoose }: Props) {
                         <ul className="choices nested">
                           {group.positions.map((position) => (
                             <li key={position.code}>
-                              <button type="button" disabled={chosen.includes(position.code)}
+                              <button type="button" disabled={full || chosen.includes(position.code)}
                                 onClick={() => onChoose({ code: position.code, name: position.name })}>
                                 {position.name}
                               </button>

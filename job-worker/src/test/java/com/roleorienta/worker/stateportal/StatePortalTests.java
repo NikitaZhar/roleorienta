@@ -287,6 +287,29 @@ class StatePortalTests {
                 .doesNotContain(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE);
     }
 
+    /**
+     * Закрытый администратором источник (§206, аудит §211) не читается и каналом компании не считается: портал этой
+     * компании снова читается.
+     */
+    @Test
+    void closedSourceIsNotReadAndDoesNotDisablePortal() {
+        jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES (?, ?, 'SK')",
+                StatePortalAdapter.PROVIDER, OWN_PAGE);
+        jdbcTemplate.update("""
+                INSERT INTO company_source (company_id, source_id, role)
+                SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
+                WHERE c.registration_number = ? AND s.provider = ? AND s.board = ?
+                """, OWN_PAGE, StatePortalAdapter.PROVIDER, OWN_PAGE);
+        jdbcTemplate.update("UPDATE source SET closed_at = now() WHERE provider = 'greenhouse' AND board = "
+                + "'own-page-test'");
+
+        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+                .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
+
+        assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE)
+                .doesNotContain("greenhouse:own-page-test");
+    }
+
     private void runQueuedTasks() {
         for (int round = 0; round < MAX_TASK_ROUNDS; round++) {
             // продолжение цепочки ждёт начала следующего часа (квота, §101) — в тесте ставится сразу

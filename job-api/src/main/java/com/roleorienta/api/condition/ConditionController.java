@@ -6,12 +6,14 @@ import com.roleorienta.api.condition.ConditionDtos.ConditionRequest;
 import com.roleorienta.api.condition.ConditionDtos.ConditionResponse;
 import com.roleorienta.api.condition.ConditionDtos.Direction;
 import com.roleorienta.api.condition.ConditionDtos.PositionOption;
+import com.roleorienta.api.web.RequestLanguage;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -30,7 +32,7 @@ public class ConditionController {
 
     private final ConditionService conditions;
     private final AccountService accounts;
-    private final OccupationRepository occupations;
+    private final OccupationService occupations;
     private final ApiProperties properties;
 
     /**
@@ -39,7 +41,7 @@ public class ConditionController {
      * @param occupations выбор позиций и групп
      * @param properties  поддерживаемые страны
      */
-    public ConditionController(ConditionService conditions, AccountService accounts, OccupationRepository occupations,
+    public ConditionController(ConditionService conditions, AccountService accounts, OccupationService occupations,
             ApiProperties properties) {
         this.conditions = conditions;
         this.accounts = accounts;
@@ -54,7 +56,7 @@ public class ConditionController {
      */
     @GetMapping("/api/v1/me/search-condition")
     public ResponseEntity<ConditionResponse> get(Authentication authentication) {
-        ConditionService.Saved saved = conditions.current(userId(authentication), OccupationRepository.language())
+        ConditionService.Saved saved = conditions.current(userId(authentication), RequestLanguage.current())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search condition is not set"));
         return ResponseEntity.ok().eTag(saved.etag()).body(saved.condition());
     }
@@ -70,7 +72,7 @@ public class ConditionController {
             @Valid @RequestBody ConditionRequest request,
             @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch) {
         ConditionService.Saved saved = conditions.save(userId(authentication), request, ifMatch,
-                OccupationRepository.language());
+                RequestLanguage.current());
         return ResponseEntity.ok().eTag(saved.etag()).body(saved.condition());
     }
 
@@ -84,17 +86,18 @@ public class ConditionController {
     }
 
     /**
-     * @param query часть названия (у позиции — и кода; у группы — и синонима ESCO); пусто — первые по порядку
+     * @param query          часть названия (у позиции — и кода; у группы — и синонима ESCO); пусто — первые по порядку
+     * @param authentication вошедший пользователь; без входа — {@code null}
      * @return подсказка при вводе (§204): позиции словаря, затем группы ISCO-08 (названия — на языке
-     *         {@code Accept-Language}); не больше 20. Ничего не нашлось — строка запоминается для администратора (§205)
+     *         {@code Accept-Language}); не больше 20. Ничего не нашлось у вошедшего — строка запоминается для
+     *         администратора (§205, аудит §211)
      */
     @GetMapping("/api/v1/positions")
-    public List<PositionOption> positions(@RequestParam(defaultValue = "") String query) {
-        List<PositionOption> found = occupations.suggestions(query, OccupationRepository.language());
-        if (found.isEmpty()) {
-            occupations.recordMiss(query);
-        }
-        return found;
+    public List<PositionOption> positions(@RequestParam(defaultValue = "") String query,
+            Authentication authentication) {
+        boolean signedIn = authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken);
+        return occupations.suggestions(query, RequestLanguage.current(), signedIn);
     }
 
     /**
@@ -103,7 +106,7 @@ public class ConditionController {
      */
     @GetMapping("/api/v1/occupations")
     public List<Direction> occupations() {
-        return occupations.catalog(OccupationRepository.language());
+        return occupations.catalog(RequestLanguage.current());
     }
 
     private long userId(Authentication authentication) {

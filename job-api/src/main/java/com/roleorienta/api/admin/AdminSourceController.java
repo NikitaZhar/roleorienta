@@ -17,12 +17,12 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class AdminSourceController {
 
-    private final AdminSourceRepository sources;
+    private final AdminSourceService sources;
 
     /**
      * @param sources источники без компании
      */
-    public AdminSourceController(AdminSourceRepository sources) {
+    public AdminSourceController(AdminSourceService sources) {
         this.sources = sources;
     }
 

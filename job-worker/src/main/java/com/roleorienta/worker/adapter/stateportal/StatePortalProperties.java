@@ -12,8 +12,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param task           размер задания поиска сайта
  * @param recheckAfter   срок до повторного поиска сайта работодателя и его страницы компании на profesia.sk
  * @param offerPagesPerRecord страниц объявлений за задание записи источника из общего списка ({@code PORTAL_RECORD}):
- *                            в общем списке нет даты размещения (§168) и профессии (§203), за ними — запрос к
- *                            странице каждого объявления
+ *                            в общем списке нет даты размещения (§168), профессии (§203) и ссылки на вакансию
+ *                            работодателя у объявлений profesia.sk (§209), за ними — запрос к странице объявления
  */
 @ConfigurationProperties("app.state-portal")
 public record StatePortalProperties(

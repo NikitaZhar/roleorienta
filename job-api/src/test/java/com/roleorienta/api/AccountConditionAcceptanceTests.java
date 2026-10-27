@@ -53,7 +53,8 @@ class AccountConditionAcceptanceTests {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         jdbcTemplate.update("INSERT INTO position (code, name, occupation_code) VALUES "
-                + "('java-developer', 'Java developer', '2512'), ('devops-engineer', 'DevOps engineer', '2512')");
+                + "('java-developer', 'Java developer', '2512'), ('devops-engineer', 'DevOps engineer', '2512'), "
+                + "('dotnet-developer', '.NET developer', '2512')");
         jdbcTemplate.update("INSERT INTO position_term (position_id, kind, term) SELECT id, 'TITLE', 'java engineer' "
                 + "FROM position WHERE code = 'java-developer'");
     }
@@ -221,6 +222,9 @@ class AccountConditionAcceptanceTests {
         client.language = "ru";
         assertThat(client.send("GET", "/api/v1/positions?query=java", null).body())
                 .startsWith("[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false,\"matched\":null}");
+        // Строка с знака не буквы: «.net» находит «.NET developer» (аудит §211).
+        assertThat(client.send("GET", "/api/v1/positions?query=.net", null).body())
+                .startsWith("[{\"code\":\"dotnet-developer\",\"name\":\".NET developer\",\"group\":false,");
         // Эквивалентное название позиции находит её и показывается рядом (§207).
         assertThat(client.send("GET", "/api/v1/positions?query=java%20engineer", null).body()).startsWith(
                 "[{\"code\":\"java-developer\",\"name\":\"Java developer\",\"group\":false,\"matched\":\"java engineer\"}");

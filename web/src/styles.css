@@ -1301,6 +1301,12 @@ table.companies td.row-actions button + button {
   color: var(--ink);
 }
 
+/* Необратимое действие администратора — «Confirm close» (§206, аудит §211). */
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .tabs button.current {
   border-bottom-color: var(--accent);
 }

@@ -186,12 +186,12 @@ public class StatePortalAdapter implements SourceAdapter {
     /**
      * Сведения со страницы объявления вакансии общего списка (§168, §203).
      *
-     * @param postedAt    дата размещения (начало суток UTC); {@code null} — на странице нет
-     * @param occupation  группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
-     * @param employerUrl вакансия у работодателя — конечный адрес кнопки отклика объявления profesia.sk (§209);
-     *                    {@code null} — нет
+     * @param postedAt     дата размещения (начало суток UTC); {@code null} — на странице нет
+     * @param occupation   группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
+     * @param employerLink ссылка на вакансию у работодателя объявления profesia.sk (§209); {@code null} — не
+     *                     выяснена (не объявление profesia или переадресация не получена — спросить позже)
      */
-    public record OfferPage(Instant postedAt, String occupation, String employerUrl) {
+    public record OfferDetails(Instant postedAt, String occupation, EmployerLink employerLink) {
 
         /**
          * Сведения без ссылки на работодателя (своя вакансия портала, объявление без кнопки отклика у работодателя).
@@ -199,9 +199,18 @@ public class StatePortalAdapter implements SourceAdapter {
          * @param postedAt   дата размещения
          * @param occupation группа ISCO-08
          */
-        public OfferPage(Instant postedAt, String occupation) {
+        public OfferDetails(Instant postedAt, String occupation) {
             this(postedAt, occupation, null);
         }
+    }
+
+    /**
+     * Выясненная ссылка на вакансию у работодателя (§209).
+     *
+     * @param url конечный адрес кнопки отклика; {@code null} — у объявления её нет (кнопки нет или она ведёт на форму
+     *            profesia)
+     */
+    public record EmployerLink(String url) {
     }
 
     /**
@@ -244,9 +253,21 @@ public class StatePortalAdapter implements SourceAdapter {
      *
      * @param externalId внешний id публикации
      * @param url        адрес объявления (для profesia.sk)
+     * @return сведения страницы со ссылкой на работодателя; пусто — страница не получена или у объявления нет такой
+     *         страницы
+     */
+    public Optional<OfferDetails> offerPage(String externalId, String url) {
+        return offerPage(externalId, url, true);
+    }
+
+    /**
+     * @param externalId внешний id публикации
+     * @param url        адрес объявления (для profesia.sk)
+     * @param linkWanted выяснять ли ссылку на вакансию работодателя (§209); {@code false} — уже выяснена: переадресация
+     *                   не запрашивается, в сведениях ссылка не выяснена ({@code null}) (аудит §211)
      * @return сведения страницы; пусто — страница не получена или у объявления нет такой страницы
      */
-    public Optional<OfferPage> offerPage(String externalId, String url) {
+    public Optional<OfferDetails> offerPage(String externalId, String url, boolean linkWanted) {
         if (hasOccupation(externalId)) {
             URI uri = URI.create(properties.baseUrl() + "/pracovne-ponuky/" + externalId);
             if (!(httpClient.get(uri) instanceof HttpResult.Success page)) {
@@ -257,7 +278,7 @@ public class StatePortalAdapter implements SourceAdapter {
             Matcher day = created == null ? null : PORTAL_DAY.matcher(created.text());
             Element occupation = value(document, OCCUPATION_FIELD);
             Matcher code = occupation == null ? null : PORTAL_OCCUPATION.matcher(occupation.text());
-            return Optional.of(new OfferPage(day != null && day.find() ? portalDay(day.group(1)).orElse(null) : null,
+            return Optional.of(new OfferDetails(day != null && day.find() ? portalDay(day.group(1)).orElse(null) : null,
                     code != null && code.find() ? code.group(1) : null));
         }
         if (!externalId.startsWith(PROFESIA_ID) || url == null) {
@@ -274,35 +295,40 @@ public class StatePortalAdapter implements SourceAdapter {
         }
         Document document = Jsoup.parse(page.body(), url);
         Element posted = document.selectFirst("[itemprop=datePosted]");
-        return Optional.of(new OfferPage(posted == null ? null
+        return Optional.of(new OfferDetails(posted == null ? null
                 : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null,
-                employerLink(document)));
+                linkWanted ? employerLink(document) : null));
     }
 
     /**
      * Вакансия у работодателя по кнопке отклика объявления profesia.sk (§209): кнопка ведёт на
      * {@code /external-reaction-redirect?offerId=…}, profesia переадресует на страницу работодателя или его системы
-     * найма. Запрашивается переадресация (клиент проходит её, как браузер) — ссылка — конечный адрес. Переадресации нет
-     * или она закончилась на profesia (форма отклика самой площадки) — ссылки нет.
+     * найма. Запрашивается переадресация (клиент проходит её, как браузер) — ссылка — конечный адрес. Кнопки нет,
+     * переадресации нет или она закончилась на profesia (форма отклика самой площадки) — ссылки нет. Ответ не получен
+     * (сбой, отказ, слишком много переходов) — ссылка не выяснена ({@code null}): спросить при следующей записи, а не
+     * считать, что ссылки нет (аудит §211).
      */
-    private String employerLink(Document document) {
+    private EmployerLink employerLink(Document document) {
         Element button = document.selectFirst("a[href*=external-reaction-redirect]");
         if (button == null) {
-            return null;
+            return new EmployerLink(null);
         }
         URI redirect;
         try {
             redirect = URI.create(button.absUrl("href"));
         } catch (IllegalArgumentException malformed) {
+            return new EmployerLink(null);
+        }
+        if (!(httpClient.get(redirect) instanceof HttpResult.Success target)) {
             return null;
         }
-        if (!(httpClient.get(redirect) instanceof HttpResult.Success target) || target.location() == null
-                || target.location().getHost() == null
-                || target.location().getHost().toLowerCase(Locale.ROOT).contains(PROFESIA_HOST)) {
-            return null;
+        URI location = target.location();
+        if (location == null || location.getHost() == null
+                || location.getHost().toLowerCase(Locale.ROOT).contains(PROFESIA_HOST)) {
+            return new EmployerLink(null);
         }
-        String link = target.location().toString();
-        return link.length() > MAX_ADDRESS ? null : link;
+        String link = location.toString();
+        return new EmployerLink(link.length() > MAX_ADDRESS ? null : link);
     }
 
     private static Optional<Instant> portalDay(String text) {

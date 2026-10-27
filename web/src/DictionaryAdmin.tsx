@@ -146,8 +146,8 @@ export function DictionaryAdmin({ adding, onAdding }: {
         <form id="position-form" className="dictionary-form" onSubmit={submit}>
           <h3>{draft.id === null ? 'New position' : 'Edit ' + draft.code}</h3>
           {draft.id === null && (
-            <label>Code <span className="muted">(lowercase letters, digits and hyphens; cannot be changed later)</span>
-              <input required value={draft.code} pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            <label>Code <span className="muted">(lowercase letters, digits and hyphens, not digits only; cannot be changed later)</span>
+              <input required value={draft.code} pattern="(?![0-9]+$)[a-z0-9]+(-[a-z0-9]+)*"
                 onChange={(event) => setDraft({ ...draft, code: event.target.value })} />
             </label>
           )}

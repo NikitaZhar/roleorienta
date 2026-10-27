@@ -14,7 +14,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -30,6 +29,13 @@ public class OccupationRepository {
 
     /** Наибольшая длина запомненного запроса без результата ({@code position_search_miss.query}). */
     private static final int MAX_MISS = 100;
+
+    /**
+     * Начало слова: начало строки или знак, не буква и не цифра. Не {@code \m} — он совпадает только перед буквой или
+     * цифрой, и запрос «.net» не находил бы «.NET developer» (аудит §211); то же правило — в поиске по каталогу
+     * ({@code PositionCatalog.wordStart}).
+     */
+    private static final String WORD_START = "(^|[^[:alnum:]])";
 
     /** Знаки, особые в регулярном выражении PostgreSQL: в строке пользователя экранируются. */
     private static final Pattern REGEX_SPECIAL = Pattern.compile("[\\\\.^$|?*+()\\[\\]{}]");
@@ -49,26 +55,16 @@ public class OccupationRepository {
     }
 
     /**
-     * Язык текущего запроса: Spring MVC кладёт язык заголовка {@code Accept-Language} в {@code LocaleContextHolder} на
-     * время обработки запроса — параметр {@code Locale} в каждом методе контроллера не нужен
-     * (https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/localeresolver.html).
-     *
-     * @return язык названий: {@code ru} или {@code en} (языки интерфейса)
-     */
-    public static String language() {
-        return "ru".equals(LocaleContextHolder.getLocale().getLanguage()) ? "ru" : "en";
-    }
-
-    /**
      * Подсказка при вводе: сначала включённые позиции словаря, в названии, коде или эквивалентном названии которых
      * (вид {@code TITLE}: «software architect» у позиции «Architect») есть строка, затем группы, в названии которых на
      * любом языке или в названии одной из профессий ESCO группы (синонимы, в том числе словацкие) есть строка; среди
-     * групп выше те, где строка — в названии на языке интерфейса. Строка ищется с начала слова ({@code \m} — начало
-     * слова в регулярном выражении PostgreSQL,
-     * https://www.postgresql.org/docs/16/functions-matching.html#POSIX-CONSTRAINT-ESCAPES-TABLE): «pyt» находит
-     * «Python», но не «kopytá» и «dopytu» внутри словацких синонимов. Регистр не важен ({@code ~*}). Если строка
-     * нашлась не в показанном названии, вариант несёт совпавшее (§207): «Architect — software architect» — видно,
-     * почему он в подсказке; у синонимов ESCO выше — на языке интерфейса, затем английские, основные, короткие.
+     * групп выше те, где строка — в названии на языке интерфейса. Строка ищется с начала слова ({@link #WORD_START}):
+     * «pyt» находит «Python», но не «kopytá» и «dopytu» внутри словацких синонимов; «.net» — «.NET developer». Регистр
+     * не важен ({@code ~*}, https://www.postgresql.org/docs/16/functions-matching.html#FUNCTIONS-POSIX-REGEXP). Если
+     * строка нашлась не в показанном названии, вариант несёт совпавшее (§207): «Architect — software architect»;
+     * порядок у группы — синоним ESCO на языке интерфейса, название группы на другом языке (сначала английское), иной
+     * синоним ESCO (сначала английский); среди равных — основной, короче, по алфавиту. Названия ESCO просматриваются
+     * один раз за запрос ({@code label_hit}), а не по разу на каждую из 436 групп (аудит §211).
      *
      * @param query    строка
      * @param language язык названий групп
@@ -76,7 +72,18 @@ public class OccupationRepository {
      */
     public List<PositionOption> suggestions(String query, String language) {
         return jdbcTemplate.query("""
-                WITH q AS (SELECT CAST(? AS TEXT) AS word, CAST(? AS TEXT) AS language)
+                WITH q AS (SELECT CAST(? AS TEXT) AS word, CAST(? AS TEXT) AS language),
+                label_hit AS (
+                    SELECT e.group_code AS code, l.label, l.language, l.preferred
+                    FROM esco_label l JOIN esco_occupation e ON e.id = l.occupation_id, q
+                    WHERE l.label ~* q.word),
+                name_hit AS (
+                    SELECT n.code, n.name, n.language FROM occupation_group_name n, q
+                    WHERE length(n.code) = 4 AND n.name ~* q.word),
+                hit AS (SELECT code FROM label_hit UNION SELECT code FROM name_hit),
+                hit_group AS (
+                    SELECT g.code, """ + GROUP_NAME + """
+                     AS name FROM occupation_group g JOIN hit ON hit.code = g.code, q WHERE g.level = 4)
                 SELECT code, name, grp, matched FROM (
                     SELECT p.code, p.name, false AS grp, 0 AS rank,
                            CASE WHEN p.name ~* q.word OR p.code ~* q.word THEN NULL
@@ -90,23 +97,19 @@ public class OccupationRepository {
                     UNION ALL
                     SELECT g.code, g.name, true, CASE WHEN g.name ~* q.word THEN 1 ELSE 2 END,
                            CASE WHEN g.name ~* q.word THEN NULL
-                                ELSE coalesce((SELECT n.name FROM occupation_group_name n
-                                               WHERE n.code = g.code AND n.name ~* q.word LIMIT 1),
-                                              (SELECT l.label FROM esco_occupation e
-                                               JOIN esco_label l ON l.occupation_id = e.id
-                                               WHERE e.group_code = g.code AND l.label ~* q.word
-                                               ORDER BY l.language = q.language DESC, l.language = 'en' DESC,
-                                                        l.preferred DESC, length(l.label), l.label LIMIT 1)) END
-                    FROM (SELECT g.code, """ + GROUP_NAME + """
-                           AS name FROM occupation_group g, q WHERE g.level = 4) g, q
-                    WHERE EXISTS (SELECT 1 FROM occupation_group_name n
-                                  WHERE n.code = g.code AND n.name ~* q.word)
-                       OR EXISTS (SELECT 1 FROM esco_occupation e JOIN esco_label l ON l.occupation_id = e.id
-                                  WHERE e.group_code = g.code AND l.label ~* q.word)
+                                ELSE coalesce(
+                                    (SELECT h.label FROM label_hit h WHERE h.code = g.code AND h.language = q.language
+                                     ORDER BY h.preferred DESC, length(h.label), h.label LIMIT 1),
+                                    (SELECT h.name FROM name_hit h WHERE h.code = g.code
+                                     ORDER BY h.language = 'en' DESC, h.language, h.name LIMIT 1),
+                                    (SELECT h.label FROM label_hit h WHERE h.code = g.code
+                                     ORDER BY h.language = 'en' DESC, h.preferred DESC, length(h.label), h.label
+                                     LIMIT 1)) END
+                    FROM hit_group g, q
                 ) found ORDER BY rank, name LIMIT ?
                 """, (row, number) -> new PositionOption(row.getString("code"), row.getString("name"),
                 row.getBoolean("grp"), row.getString("matched")),
-                "\\m" + REGEX_SPECIAL.matcher(query.strip()).replaceAll("\\\\$0"), language, SUGGESTIONS);
+                WORD_START + REGEX_SPECIAL.matcher(query.strip()).replaceAll("\\\\$0"), language, SUGGESTIONS);
     }
 
     /**
@@ -165,10 +168,13 @@ public class OccupationRepository {
      */
     public void recordMiss(String query) {
         String text = query.strip().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
-        if (text.length() < 2) {
+        // Длина — в символах, как у PostgreSQL (length, VARCHAR), а не в единицах UTF-16 Java: эмодзи — один символ
+        // (аудит §211: CHECK length >= 2 не нарушается).
+        int symbols = text.codePointCount(0, text.length());
+        if (symbols < 2) {
             return;
         }
-        String miss = text.length() > MAX_MISS ? text.substring(0, MAX_MISS) : text;
+        String miss = symbols > MAX_MISS ? text.substring(0, text.offsetByCodePoints(0, MAX_MISS)) : text;
         jdbcTemplate.update("""
                 DELETE FROM position_search_miss
                 WHERE misses = 1 AND last_at > now() - interval '1 minute' AND query <> ? AND strpos(?, query) = 1

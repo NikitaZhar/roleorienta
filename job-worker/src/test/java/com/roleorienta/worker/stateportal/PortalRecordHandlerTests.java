@@ -1,6 +1,7 @@
 package com.roleorienta.worker.stateportal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,11 +67,12 @@ class PortalRecordHandlerTests {
         when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED));
         when(repository.externalIdsWithOccupation(SOURCE_ID)).thenReturn(Set.of(UUID_DATED));
         when(recorder.startRun(eq(source), anyLong())).thenReturn(run);
-        when(adapter.offerPage(anyString(), anyString())).thenReturn(Optional.empty());
-        when(adapter.offerPage(eq(UUID_B), anyString()))
-                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(null, FREIGHT_HANDLERS)));
-        when(adapter.offerPage(eq(PROFESIA), anyString()))
-                .thenReturn(Optional.of(new StatePortalAdapter.OfferPage(POSTED, null, EMPLOYER_JOB)));
+        when(adapter.offerPage(anyString(), anyString(), anyBoolean())).thenReturn(Optional.empty());
+        when(adapter.offerPage(eq(UUID_B), anyString(), anyBoolean()))
+                .thenReturn(Optional.of(new StatePortalAdapter.OfferDetails(null, FREIGHT_HANDLERS)));
+        when(adapter.offerPage(eq(PROFESIA), anyString(), anyBoolean()))
+                .thenReturn(Optional.of(new StatePortalAdapter.OfferDetails(POSTED, null,
+                        new StatePortalAdapter.EmployerLink(EMPLOYER_JOB))));
     }
 
     /**
@@ -83,11 +85,11 @@ class PortalRecordHandlerTests {
         TaskOutcome outcome = handler(2).handle(task(1));
 
         assertThat(outcome).isInstanceOf(TaskOutcome.Done.class);
-        verify(adapter).offerPage(eq(UUID_B), anyString());
-        verify(adapter).offerPage(eq(PROFESIA), anyString());
-        verify(adapter, never()).offerPage(eq(UUID_A), anyString());
-        verify(adapter, never()).offerPage(eq(UUID_DATED), anyString());
-        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString());
+        verify(adapter).offerPage(eq(UUID_B), anyString(), anyBoolean());
+        verify(adapter).offerPage(eq(PROFESIA), anyString(), anyBoolean());
+        verify(adapter, never()).offerPage(eq(UUID_A), anyString(), anyBoolean());
+        verify(adapter, never()).offerPage(eq(UUID_DATED), anyString(), anyBoolean());
+        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString(), anyBoolean());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of(PROFESIA, POSTED));
         verify(repository).recordOccupations(SOURCE_ID, Map.of(UUID_B, FREIGHT_HANDLERS));
         verify(repository).recordEmployerLinks(SOURCE_ID, Map.of(PROFESIA, EMPLOYER_JOB));
@@ -95,18 +97,21 @@ class PortalRecordHandlerTests {
 
     /**
      * Объявление profesia.sk с датой, но страница ради ссылки на работодателя не читалась (накопленное до §209) — её
-     * страница запрашивается; прочитанное — нет.
+     * страница запрашивается со ссылкой; ссылка выяснена, а даты нет — страница запрашивается за датой без переадресации
+     * (аудит §211).
      */
     @Test
     void datedProfesiaOfferWithoutEmployerLinkIsRequested() {
         when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED, PROFESIA));
 
         handler(POSTINGS.size()).handle(task(0));
-        verify(adapter).offerPage(eq(PROFESIA), anyString());
+        verify(adapter).offerPage(eq(PROFESIA), anyString(), eq(true));
 
+        // Ссылка выяснена, даты нет — страница запрашивается за датой, но без переадресации (аудит §211).
         when(repository.externalIdsWithEmployerLinkChecked(SOURCE_ID)).thenReturn(Set.of(PROFESIA));
+        when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED));
         handler(POSTINGS.size()).handle(task(0));
-        verify(adapter).offerPage(eq(PROFESIA), anyString());
+        verify(adapter).offerPage(eq(PROFESIA), anyString(), eq(false));
     }
 
     /** Вакансия портала с датой, но без кода профессии (накопленная до §203) — её страница запрашивается за кодом. */
@@ -116,8 +121,8 @@ class PortalRecordHandlerTests {
 
         handler(POSTINGS.size()).handle(task(0));
 
-        verify(adapter).offerPage(eq(UUID_DATED), anyString());
-        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString());
+        verify(adapter).offerPage(eq(UUID_DATED), anyString(), anyBoolean());
+        verify(adapter, never()).offerPage(eq(OTHER_SITE), anyString(), anyBoolean());
     }
 
     /** Бюджет 0 — страницы объявлений не запрашиваются, запись без дат и кодов. */
@@ -125,7 +130,7 @@ class PortalRecordHandlerTests {
     void zeroBudgetRequestsNoOfferPages() {
         handler(0).handle(task(1));
 
-        verify(adapter, never()).offerPage(anyString(), anyString());
+        verify(adapter, never()).offerPage(anyString(), anyString(), anyBoolean());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of());
         verify(repository).recordOccupations(SOURCE_ID, Map.of());
     }

@@ -37,12 +37,12 @@ public class PortalListRepository {
 
     /**
      * @param sourceId источник портала
-     * @return внешние id его публикаций, у которых уже есть код профессии (§203)
+     * @return внешние id его публикаций, у которых уже есть код профессии (§203) или страница прочитана, а кода на ней
+     *         нет (аудит §211: такая страница больше не запрашивается)
      */
     public Set<String> externalIdsWithOccupation(long sourceId) {
-        return new HashSet<>(jdbcTemplate.queryForList(
-                "SELECT external_id FROM job_posting WHERE source_id = ? AND occupation_code IS NOT NULL",
-                String.class, sourceId));
+        return new HashSet<>(jdbcTemplate.queryForList("SELECT external_id FROM job_posting WHERE source_id = ? "
+                + "AND (occupation_code IS NOT NULL OR occupation_checked)", String.class, sourceId));
     }
 
     /**
@@ -65,18 +65,19 @@ public class PortalListRepository {
     public void recordEmployerLinks(long sourceId, Map<String, String> links) {
         links.forEach((externalId, link) -> jdbcTemplate.update(
                 "UPDATE job_posting SET employer_url = ?, employer_link_checked = TRUE WHERE source_id = ? "
-                        + "AND external_id = ?", link, sourceId, externalId));
+                        + "AND external_id = ? AND NOT employer_link_checked", link, sourceId, externalId));
     }
 
     /**
-     * Коды профессий со страниц объявлений (§203) — публикациям источника; публикации нет — ничего.
+     * Коды профессий со страниц объявлений (§203) — публикациям источника; страница прочитана — отмечается, и без кода
+     * ({@code null}) больше не запрашивается; публикации нет — ничего.
      *
      * @param sourceId    источник портала
-     * @param occupations группа ISCO-08 (4 цифры) по внешнему id
+     * @param occupations группа ISCO-08 (4 цифры) по внешнему id; {@code null} — кода на странице нет
      */
     public void recordOccupations(long sourceId, Map<String, String> occupations) {
-        occupations.forEach((externalId, code) -> jdbcTemplate.update(
-                "UPDATE job_posting SET occupation_code = ? WHERE source_id = ? AND external_id = ?",
+        occupations.forEach((externalId, code) -> jdbcTemplate.update("UPDATE job_posting SET occupation_code = "
+                + "coalesce(?, occupation_code), occupation_checked = TRUE WHERE source_id = ? AND external_id = ?",
                 code, sourceId, externalId));
     }
 

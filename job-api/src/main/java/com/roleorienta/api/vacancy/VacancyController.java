@@ -1,13 +1,13 @@
 package com.roleorienta.api.vacancy;
 
 import com.roleorienta.api.account.AccountService;
-import com.roleorienta.api.condition.OccupationRepository;
 import com.roleorienta.api.vacancy.VacancyDtos.ResultFilter;
 import com.roleorienta.api.vacancy.VacancyDtos.ResultFilters;
 import com.roleorienta.api.vacancy.VacancyDtos.StatusRequest;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyPage;
 import com.roleorienta.api.vacancy.VacancyService.View;
+import com.roleorienta.api.web.RequestLanguage;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -61,7 +61,7 @@ public class VacancyController {
             @RequestParam(required = false) String position,
             @RequestParam(defaultValue = "false") boolean since) {
         long userId = userId(authentication);
-        return vacancies.delivered(userId, new View(page, size, OccupationRepository.language()),
+        return vacancies.delivered(userId, new View(page, size, RequestLanguage.current()),
                 vacancies.visit(userId), new ResultFilter(position, since));
     }
 
@@ -73,7 +73,7 @@ public class VacancyController {
     @GetMapping("/api/v1/me/vacancies/filters")
     public ResultFilters filters(Authentication authentication) {
         long userId = userId(authentication);
-        return vacancies.filters(userId, vacancies.visit(userId), OccupationRepository.language());
+        return vacancies.filters(userId, vacancies.visit(userId), RequestLanguage.current());
     }
 
     /**

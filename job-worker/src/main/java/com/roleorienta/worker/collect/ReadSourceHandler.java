@@ -118,6 +118,9 @@ public class ReadSourceHandler implements TaskHandler {
             return new TaskOutcome.Failed("Source not found");
         }
         Source source = found.get();
+        if (source.isClosed()) {
+            return new TaskOutcome.Done();
+        }
         SourceAdapter adapter = adaptersByProvider.get(source.getProvider());
         if (adapter == null) {
             return new TaskOutcome.Failed("No adapter for provider " + source.getProvider());

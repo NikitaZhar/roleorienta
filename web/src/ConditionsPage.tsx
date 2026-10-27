@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
-  ApiError, type CatalogItem, countries, type PositionOption, positions, saveSearchCondition, searchCondition,
-  type WorkFormat,
+  ApiError, type CatalogItem, type ChosenPosition, countries, type PositionOption, positions, saveSearchCondition,
+  searchCondition, type WorkFormat,
 } from './api';
 import { errorText, type MessageKey, useI18n } from './i18n';
 import { PositionCatalog } from './PositionCatalog';
@@ -71,8 +71,7 @@ export function ConditionsPage({ onSaved }: Props) {
       setSelected(condition.countries);
       setFormat(condition.format ?? '');
       // Выключенная администратором позиция остаётся в условиях названием с пометкой (§160, аудит §165).
-      setChosen(condition.positions.map((item) => ({ code: item.code,
-        name: item.active ? item.name : t('conditions.retired', { name: item.name }) })));
+      setChosen(chosenItems(condition.positions));
       setEditing(false);
     }
     setLoaded(true);
@@ -83,7 +82,20 @@ export function ConditionsPage({ onSaved }: Props) {
     load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }
 
+  /** Позиции условий в метки: выключенная администратором — с пометкой (§160, аудит §165). */
+  function chosenItems(items: ChosenPosition[]): CatalogItem[] {
+    return items.map((item) => ({ code: item.code,
+      name: item.active ? item.name : t('conditions.retired', { name: item.name }) }));
+  }
+
+  /**
+   * Первое открытие и смена языка — условия перечитываются (названия групп на языке интерфейса). Во время правки
+   * смена языка их не перечитывает: несохранённый выбор не теряется (аудит §211), названия обновятся после «Search».
+   */
   useEffect(() => {
+    if (loaded && editing) {
+      return;
+    }
     load().catch((failure: unknown) => setMessage(errorText(failure, t)));
   }, [language]);
 
@@ -138,6 +150,7 @@ export function ConditionsPage({ onSaved }: Props) {
       const changed = submitted !== savedSelection;
       setSavedSelection(submitted);
       setEtag(saved.etag);
+      setChosen(chosenItems(saved.data.positions));
       setMessage(null);
       setEditing(false);
       setBrowsing(false);
@@ -234,7 +247,8 @@ export function ConditionsPage({ onSaved }: Props) {
             {t(browsing ? 'conditions.browseClose' : 'conditions.browse')}
           </button>
           {browsing && (
-            <PositionCatalog chosen={chosen.map((item) => item.code)} onChoose={choose} />
+            <PositionCatalog chosen={chosen.map((item) => item.code)} full={chosen.length >= MAX_POSITIONS}
+              onChoose={choose} />
           )}
         </div>
         <div>
