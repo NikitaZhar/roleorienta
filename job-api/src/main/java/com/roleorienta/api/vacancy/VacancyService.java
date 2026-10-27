@@ -42,7 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Результаты — вакансии, выданные по активной версии условий и видимые сейчас (не закрыта, подтверждена не
  *       раньше {@link VacancyProperties#hideAfter()}, подходит по текущим условиям), со статусом «Новая» или
  *       «Просмотрена»; открытые позже сверху. Условия не заданы — пусто.</li>
- *   <li>«Мои отклики» — статусы {@link #ACTIVE_RESPONSES}, ниже отдельно — {@link #DECLINED} (§196), «Не интересно» —
+ *   <li>«Мои отклики» — действующие отклики по открытым вакансиям, ниже отдельно — завершённые: «Работодатель отказал»
+ *       и отклики по закрытым работодателем (§196, §213), «Не интересно» —
  *       {@link StatusEvent#NOT_INTERESTED}, по любым
  *       условиям, и закрытые работодателем; статус изменён позже сверху.</li>
  *   <li>Списки — страницами по номеру с общим числом (решение владельца 2026-10-20, §151): номер меньше 1 —
@@ -61,10 +62,6 @@ public class VacancyService {
     /** Первая страница. */
     static final int FIRST_PAGE = 1;
 
-    /** Действующие отклики раздела «Мои отклики» (бизнес-описание §6; §196): сверху. */
-    private static final List<StatusEvent> ACTIVE_RESPONSES = List.of(StatusEvent.APPLIED, StatusEvent.INTERVIEW);
-    /** Завершённые отклики (§196): «Работодатель отказал» — ниже, свёрнуто. */
-    private static final List<StatusEvent> DECLINED = List.of(StatusEvent.REJECTED);
     private static final List<StatusEvent> NOT_INTERESTED = List.of(StatusEvent.NOT_INTERESTED);
 
     /** Код «Новая» — статуса пользователя ещё нет. */
@@ -164,13 +161,18 @@ public class VacancyService {
      * @param userId   пользователь
      * @param page     номер страницы, с 1
      * @param size     строк на странице
-     * @param declined {@code false} — действующие отклики («Applied», «Interview»); {@code true} — «Employer
-     *                 declined» (§196: завершённые — ниже действующих, свёрнуто)
-     * @return страница вакансий с этими статусами и общее число
+     * @param finished {@code false} — действующие отклики («Applied», «Interview») по открытым вакансиям; {@code true}
+     *                 — завершённые (§196, §213: ниже действующих, свёрнуто): «Employer declined» и отклики по
+     *                 вакансиям, закрытым работодателем
+     * @return страница откликов и общее число
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage responses(long userId, int page, int size, boolean declined) {
-        return byStatus(userId, declined ? DECLINED : ACTIVE_RESPONSES, page, size);
+    public VacancyPage responses(long userId, int page, int size, boolean finished) {
+        int number = Math.max(FIRST_PAGE, page);
+        int rows = size(size);
+        List<VacancyRow> shown = repository.responses(userId, finished, window(number, rows));
+        return new VacancyPage(items(shown, null, Map.of()), number, rows,
+                repository.countResponses(userId, finished), 0);
     }
 
     /**

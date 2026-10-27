@@ -77,6 +77,40 @@ public class CompanyService {
      */
     @Transactional
     public CareerRequestItem addCareerPage(long userId, long companyId, String url) {
+        String address = checkedAddress(companyId, url);
+        repository.lockRequests(userId);
+        if (repository.pendingExists(userId, companyId, address)) {
+            throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
+        }
+        if (repository.requestsLastDay(userId) >= properties.dailyLimit()) {
+            throw new CompanyRuleException(Kind.TOO_MANY,
+                    "No more than " + properties.dailyLimit() + " addresses a day");
+        }
+        return repository.addRequest(userId, companyId, address);
+    }
+
+    /**
+     * Ввод адреса кадровой страницы администратором (§214): те же правила, что у пользователя, без лимита в сутки;
+     * запрос без пользователя, проверка — та же (адрес общий для всех).
+     *
+     * @param companyId компания
+     * @param url       адрес
+     * @return запрос «в обработке»
+     * @throws CompanyRuleException {@code NOT_FOUND} — компании нет; {@code CONFLICT} — кадровая страница уже
+     *                              читается, компания отмечена «не работодатель» или этот адрес уже проверяется
+     * @throws InvalidFieldException адрес не http(s)
+     */
+    @Transactional
+    public CareerRequestItem addCareerPageByAdmin(long companyId, String url) {
+        String address = checkedAddress(companyId, url);
+        if (repository.pendingExists(null, companyId, address)) {
+            throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
+        }
+        return repository.addRequest(null, companyId, address);
+    }
+
+    /** Компания без своей читаемой кадровой страницы и не «не работодатель»; адрес — http(s). */
+    private String checkedAddress(long companyId, String url) {
         CompanyItem company = existing(companyId);
         if (GROUP_YES.equals(company.check().group())) {
             throw new CompanyRuleException(Kind.CONFLICT, "Career page of the company is already read");
@@ -88,15 +122,7 @@ public class CompanyService {
         if (!webAddress(address)) {
             throw new InvalidFieldException("/url", "An http(s) address is required");
         }
-        repository.lockRequests(userId);
-        if (repository.pendingExists(userId, companyId, address)) {
-            throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
-        }
-        if (repository.requestsLastDay(userId) >= properties.dailyLimit()) {
-            throw new CompanyRuleException(Kind.TOO_MANY,
-                    "No more than " + properties.dailyLimit() + " addresses a day");
-        }
-        return repository.addRequest(userId, companyId, address);
+        return address;
     }
 
     /**

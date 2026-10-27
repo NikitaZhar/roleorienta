@@ -7,11 +7,11 @@ import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
- * Какой список (§156, §196): результаты поиска, действующие «Мои отклики», «Employer declined» (под ними, свёрнуто) или
+ * Какой список (§156, §196): результаты поиска, действующие «Мои отклики», завершённые («Employer declined» и закрытые)» (под ними, свёрнуто) или
  * «Не интересно». У каждого — своя последняя колонка; у результатов — свой заголовок и объяснение пустого списка по
- * условиям, у «Моих откликов» и «Не интересно» — свой пустой текст, у «Employer declined» пустого вида нет.
+ * условиям, у «Моих откликов» и «Не интересно» — свой пустой текст, у завершённых пустого вида нет.
  */
-export type ListKind = 'results' | 'responses' | 'declined' | 'notInterested';
+export type ListKind = 'results' | 'responses' | 'finished' | 'notInterested';
 
 interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
@@ -38,7 +38,7 @@ function responseColumn(item: VacancyItem, i18n: I18n): ReactNode {
 
 /**
  * Значение справа в строке: в результатах — точка «пришла после прошлого захода» (§191) и дата открытия с подписью
- * «Posted» / «Found» (§179); в «Моих откликах» и «Employer declined» — статус и дата; в «Не интересно» — дата отметки с
+ * «Posted» / «Found» (§179); в «Моих откликах» и завершённых — статус и дата; в «Не интересно» — дата отметки с
  * подписью «Marked» (§180).
  */
 const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode> = {
@@ -51,12 +51,12 @@ const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode
     </span>
   ),
   responses: responseColumn,
-  declined: responseColumn,
+  finished: responseColumn,
   notInterested: (item, i18n) => rowMarkedText(item.timeline.status.at, i18n),
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
-const EMPTY_TEXT: Record<Exclude<ListKind, 'results' | 'declined'>, MessageKey> = {
+const EMPTY_TEXT: Record<Exclude<ListKind, 'results' | 'finished'>, MessageKey> = {
   responses: 'list.emptyResponses',
   notInterested: 'list.emptyNotInterested',
 };
@@ -109,9 +109,9 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
  * экране — «идёт сбор» и строки-заготовки (первая порция — в течение ~30 с, §120; следующий запрос — только после ответа
  * на предыдущий, аудит §121).
  *
- * <p>«Мои отклики» (действующие), «Employer declined» и «Не интересно»: строка открывает сведения (статус и история),
+ * <p>«Мои отклики» (действующие), завершённые и «Не интересно»: строка открывает сведения (статус и история),
  * «↗» рядом — публикация. В «Моих откликах» — заголовок с числом вакансий; «Employer declined» (§196) — под ними
- * свёрнутой строкой «Employer declined · N», раскрытие — строками светлее; в «Не интересно» строки светлее, справа —
+ * свёрнутой строкой «Completed · N» — «Employer declined» и отклики по закрытым работодателем (§213), раскрытие — строками светлее; в «Не интересно» строки светлее, справа —
  * дата отметки и «Return»: вакансия возвращается к прежнему статусу (§156).
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
@@ -136,7 +136,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [filter, setFilter] = useState<ResultFilter>({});
   /** Полоса «Returned to search results» после «Return» (§199). */
   const [returned, setReturned] = useState(false);
-  /** «Employer declined» под «Моими откликами» (§196): свёрнуто, пока не раскрыли. */
+  /** Завершённые отклики под «Моими откликами» (§196, §213): свёрнуто, пока не раскрыли. */
   const [expanded, setExpanded] = useState(false);
   /**
    * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
@@ -318,12 +318,12 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   }
   const results = kind === 'results';
   const actions = kind === 'notInterested';
-  const declined = kind === 'declined';
+  const finished = kind === 'finished';
   const side = LAST_COLUMN[kind];
-  if ((results && data.total === 0 && !hasConditions) || (declined && data.total === 0)) {
+  if ((results && data.total === 0 && !hasConditions) || (finished && data.total === 0)) {
     return null;
   }
-  const rowsShown = !declined || expanded;
+  const rowsShown = !finished || expanded;
   const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
   const hasCounts = positions.length > 1 && positions.some((item) => item.count > 0);
   return (
@@ -334,9 +334,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
-      ) : declined ? (
+      ) : finished ? (
         <button type="button" className="list-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t('status.REJECTED')}
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t('list.finished')}
           <span className="count-badge">{data.total}</span>
         </button>
       ) : title !== undefined && (
@@ -367,7 +367,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           ))}
         </div>
       )}
-      {data.total === 0 && kind !== 'results' && kind !== 'declined' && <Empty title={t(EMPTY_TEXT[kind])} />}
+      {data.total === 0 && kind !== 'results' && kind !== 'finished' && <Empty title={t(EMPTY_TEXT[kind])} />}
       {collecting && (
         <div className="collecting" role="status">
           <p className="muted">{t('list.collecting')}</p>
@@ -386,7 +386,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         <ul className="rows">
           {data.items.filter((item) => !dismissed.includes(item.id)).map((item) => {
             const fresh = results && item.timeline.status.code === 'NEW';
-            const seen = (results && !fresh) || actions || declined;
+            const seen = (results && !fresh) || actions || finished;
             return (
               <li key={item.id} className="actionable">
                 {results ? (
@@ -470,10 +470,13 @@ function RowContent({ item, fresh, side, link = false, matches = [] }: { item: V
           {item.work.format === 'REMOTE' && <span className="pill pill-muted">{t('format.remote')}</span>}
           {item.timeline.status.closed && <span className="pill pill-muted">{t('vacancy.closed')}</span>}
         </span>
-        <span className="row-meta">
-          <span className="row-meta-text">{meta}</span>
-          {matches.map((name) => <span key={name} className="row-match">{name}</span>)}
-        </span>
+        <span className="row-meta">{meta}</span>
+        {/* Роли — своей строкой под «работодатель · страна»: не смешиваются с ней (решение владельца, аудит §212). */}
+        {matches.length > 0 && (
+          <span className="row-roles">
+            {matches.map((name) => <span key={name} className="row-match">{name}</span>)}
+          </span>
+        )}
       </span>
       <span className="row-side">{side}</span>
     </>

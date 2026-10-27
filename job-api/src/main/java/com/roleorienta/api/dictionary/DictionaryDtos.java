@@ -118,4 +118,16 @@ public final class DictionaryDtos {
      */
     public record SearchMiss(String query, int misses, Instant lastAt) {
     }
+
+    /**
+     * Позиция или группа ISCO-08, выбранная в действующих условиях, по которой нет ни одной открытой вакансии (§214):
+     * пользователи выбрали, но ничего не получают — по ним администратор решает, нужна ли точная позиция или правка
+     * названий.
+     *
+     * @param code       код позиции словаря или группы
+     * @param name       название (у группы — по-английски)
+     * @param conditions в скольких действующих условиях выбрана
+     */
+    public record ChosenWithoutVacancies(String code, String name, long conditions) {
+    }
 }

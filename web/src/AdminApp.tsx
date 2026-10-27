@@ -1,12 +1,12 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
-  type Admin, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
+  type Admin, adminAddCareerPage, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
   metrics, type MetricRow, type MetricsTable, searchMisses, setNotEmployer,
 } from './api';
 import { GroupBadge } from './companyGroups';
 import { CareerRequestsAdmin, UnlinkedSourcesAdmin } from './CompaniesAdmin';
 import { DictionaryAdmin } from './DictionaryAdmin';
-import { SearchMissesAdmin } from './SearchMissesAdmin';
+import { ChosenWithoutVacanciesAdmin, SearchMissesAdmin } from './SearchMissesAdmin';
 
 /** Разделы страницы — по задачам администратора (§206): ядро работает, растёт ли охват, находят ли пользователи
  * нужное, ошибки по компаниям. */
@@ -90,12 +90,13 @@ function recognizedShare(table: MetricsTable): (number | null)[] {
 }
 
 /**
- * Сводка над таблицей (§206): пять чисел последнего дня и изменение за неделю — «вакансий становится больше?».
+ * Сводка над таблицей (§206, §214): шесть чисел последнего дня и изменение за неделю — «вакансий становится больше?».
  * У просроченных чтений и сбоев рост — плохо: стрелка та же, вывод за администратором.
  */
 function MetricsSummary({ table }: { table: MetricsTable }) {
   const items: { label: string; values: (number | null)[]; unit?: string }[] = [
     { label: 'Open vacancies', values: openVacancies(table) },
+    { label: 'New per day', values: totals(table, 'vacancies_new') },
     { label: 'With recognized profession', values: recognizedShare(table), unit: ' %' },
     { label: 'Companies with channel', values: totals(table, 'companies_connected') },
     { label: 'Sources read overdue', values: totals(table, 'sources_overdue') },
@@ -150,6 +151,8 @@ export function AdminApp() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [missCount, setMissCount] = useState(0);
   const [adding, setAdding] = useState<string | null>(null);
+  /** Адрес добавлен администратором — список «Added addresses» перечитывается (новый ключ). */
+  const [requestsShown, setRequestsShown] = useState(0);
 
   /** Состояние ядра — на уровне страницы: тревога видна точкой у вкладки Status из любого раздела. */
   function loadStatus() {
@@ -219,10 +222,17 @@ export function AdminApp() {
         {tab === 'positions' && (
           <>
             <SearchMissesAdmin onAdd={setAdding} onCount={setMissCount} />
+            <ChosenWithoutVacanciesAdmin />
             <DictionaryAdmin adding={adding} onAdding={setAdding} />
           </>
         )}
-        {tab === 'companies' && <><NotEmployerView /><CareerRequestsAdmin /><UnlinkedSourcesAdmin /></>}
+        {tab === 'companies' && (
+          <>
+            <NotEmployerView onAdded={() => setRequestsShown((count) => count + 1)} />
+            <CareerRequestsAdmin key={requestsShown} />
+            <UnlinkedSourcesAdmin />
+          </>
+        )}
       </main>
     </>
   );
@@ -354,10 +364,28 @@ function percent(value: number, of: number | null): string {
   return of === null || of === 0 ? '' : ` (${Math.round((value * 100) / of)} %)`;
 }
 
-function NotEmployerView() {
+function NotEmployerView({ onAdded }: { onAdded: () => void }) {
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<CompanyItem[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  /** Компания, у которой открыто поле адреса кадровой страницы (§214), и введённый адрес. */
+  const [addressFor, setAddressFor] = useState<number | null>(null);
+  const [address, setAddress] = useState('');
+  const [added, setAdded] = useState<string | null>(null);
+
+  async function addAddress(event: FormEvent<HTMLFormElement>, item: CompanyItem) {
+    event.preventDefault();
+    setMessage(null);
+    try {
+      await adminAddCareerPage(item.id, address.trim());
+      setAdded(item.name + ': the address is being checked — see «Added addresses» below.');
+      onAdded();
+      setAddressFor(null);
+      setAddress('');
+    } catch (failure) {
+      setMessage((failure as Error).message);
+    }
+  }
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -382,8 +410,9 @@ function NotEmployerView() {
   return (
     <section>
       <h2>Find a company</h2>
-      <p className="muted">The collection channel of a company, and the mark «not an employer» — for a trade union, an
-        association, an owners' community: the mark is shared by all users. The
+      <p className="muted">The collection channel of a company. «Add address» — the company's career page when the
+        application did not find it; it is checked as a user's address and shared by all. «Not an employer» — for a
+        trade union, an association, an owners' community: the mark is shared by all users. The
         company's site and career page are no longer searched by name and on its sites, and users cannot add its
         career page address. Vacancies of sources already connected are still
         read.</p>
@@ -393,6 +422,7 @@ function NotEmployerView() {
         <button type="submit">Search</button>
       </form>
       {message !== null && <p className="error" role="alert">{message}</p>}
+      {added !== null && <p className="muted" role="status">{added}</p>}
       {found !== null && (found.length === 0 ? <p className="muted">No companies found.</p> : (
         <table className="companies">
           <thead>
@@ -408,6 +438,16 @@ function NotEmployerView() {
                   {item.check.group === 'NOT_EMPLOYER'
                     ? <button type="button" onClick={() => mark(item, false)}>Remove mark</button>
                     : <button type="button" onClick={() => mark(item, true)}>Mark not an employer</button>}
+                  {item.check.group !== 'YES' && item.check.group !== 'NOT_EMPLOYER' && (addressFor === item.id ? (
+                    <form className="inline-form" onSubmit={(event) => addAddress(event, item)}>
+                      <input type="url" required aria-label="Career page address" placeholder="https://…/careers"
+                        value={address} onChange={(event) => setAddress(event.target.value)} />
+                      <button type="submit">Check</button>
+                      <button type="button" onClick={() => setAddressFor(null)}>Cancel</button>
+                    </form>
+                  ) : (
+                    <button type="button" onClick={() => { setAddressFor(item.id); setAddress(''); }}>Add address</button>
+                  ))}
                   {(item.check.group === 'YES' || item.check.group === 'PORTAL') && (
                     <p className="muted">Vacancies are collected from this company.</p>
                   )}

@@ -11,7 +11,8 @@ const REQUEST_STATES: Record<CareerRequest['status']['state'], string> = {
 };
 
 /**
- * Кадровые страницы, добавленные пользователями (§206): компания, адрес, состояние проверки и причина неудачи.
+ * Кадровые страницы, добавленные пользователями и администратором (§206, §214): компания, адрес, состояние проверки и
+ * причина неудачи.
  * Только просмотр — проверку делает ядро.
  */
 export function CareerRequestsAdmin() {
@@ -24,8 +25,8 @@ export function CareerRequestsAdmin() {
 
   return (
     <section>
-      <h2>Added by users</h2>
-      <p className="muted">Career page addresses that users entered, and what the check found.</p>
+      <h2>Added addresses</h2>
+      <p className="muted">Career page addresses that users or the administrator entered, and what the check found.</p>
       {message !== null && <p className="error" role="alert">{message}</p>}
       {items !== null && (items.length === 0 ? <p className="muted">Nothing yet.</p> : (
         <div className="scroll">

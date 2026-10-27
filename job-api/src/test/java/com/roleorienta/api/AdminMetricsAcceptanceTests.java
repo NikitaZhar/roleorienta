@@ -173,6 +173,23 @@ class AdminMetricsAcceptanceTests {
                 + "'https://request.example/careers')", user, company);
         assertThat(client.send("GET", "/api/v1/admin/career-requests", null).body()).contains(
                 "\"companyName\":\"Request Ltd\",\"url\":\"https://request.example/careers\",\"status\":{\"state\":\"PENDING\"");
+
+        // Адрес от администратора (§214): та же проверка, без пользователя; повтор того же адреса — 409.
+        String address = "{\"url\":\"https://request.example/jobs\"}";
+        assertThat(client.send("POST", "/api/v1/admin/companies/" + company + "/career-page", address).status())
+                .isEqualTo(201);
+        assertThat(client.send("POST", "/api/v1/admin/companies/" + company + "/career-page", address).status())
+                .isEqualTo(409);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_request WHERE user_id IS NULL "
+                + "AND career_url = 'https://request.example/jobs'", Integer.class)).isEqualTo(1);
+
+        // Выбрано в условиях — вакансий нет (§214): группа без единой открытой вакансии.
+        long condition = jdbcTemplate.queryForObject("INSERT INTO search_condition (user_id, countries, portion_limit, "
+                + "active) VALUES (?, '{SK}', 20, TRUE) RETURNING id", Long.class, user);
+        jdbcTemplate.update("INSERT INTO search_condition_occupation (search_condition_id, code) VALUES (?, '0110')",
+                condition);
+        assertThat(client.send("GET", "/api/v1/admin/positions/without-vacancies", null).body())
+                .contains("{\"code\":\"0110\",\"name\":\"Commissioned armed forces officers\",\"conditions\":1}");
     }
 
     private long vacancyWithPosting(long source, String title) {

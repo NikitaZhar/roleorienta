@@ -1,6 +1,7 @@
 package com.roleorienta.api.dictionary;
 
 import com.roleorienta.api.condition.InvalidFieldException;
+import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
@@ -102,6 +103,14 @@ public class DictionaryService {
     @Transactional(readOnly = true)
     public List<SearchMiss> searchMisses() {
         return repository.searchMisses();
+    }
+
+    /**
+     * @return позиции и группы действующих условий без открытых вакансий (§214)
+     */
+    @Transactional(readOnly = true)
+    public List<ChosenWithoutVacancies> chosenWithoutVacancies() {
+        return repository.chosenWithoutVacancies();
     }
 
     /**

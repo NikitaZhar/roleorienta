@@ -1,5 +1,6 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
 import com.roleorienta.api.dictionary.DictionaryDtos.Placement;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionView;
 import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
@@ -131,6 +132,30 @@ public class DictionaryRepository {
         return jdbcTemplate.query("SELECT query, misses, last_at FROM position_search_miss "
                 + "ORDER BY misses DESC, last_at DESC LIMIT 100", (row, number) -> new SearchMiss(row.getString(1),
                 row.getInt(2), row.getObject(3, OffsetDateTime.class).toInstant()));
+    }
+
+    /**
+     * @return позиции и группы действующих условий без единой открытой вакансии (§214; соответствие — представление
+     *         {@code search_condition_match}, как у выдачи): чаще выбранные — первыми
+     */
+    public List<ChosenWithoutVacancies> chosenWithoutVacancies() {
+        return jdbcTemplate.query("""
+                WITH chosen AS (
+                    SELECT p.code, p.name, count(*) AS conditions
+                    FROM search_condition_position s JOIN search_condition c ON c.id = s.search_condition_id AND c.active
+                    JOIN position p ON p.id = s.position_id GROUP BY p.code, p.name
+                    UNION ALL
+                    SELECT o.code, n.name, count(*)
+                    FROM search_condition_occupation o
+                    JOIN search_condition c ON c.id = o.search_condition_id AND c.active
+                    JOIN occupation_group_name n ON n.code = o.code AND n.language = 'en' GROUP BY o.code, n.name)
+                SELECT ch.code, ch.name, ch.conditions FROM chosen ch
+                WHERE NOT EXISTS (SELECT 1 FROM search_condition_match m
+                                  JOIN search_condition c ON c.id = m.search_condition_id AND c.active
+                                  JOIN vacancy v ON v.id = m.vacancy_id AND v.state <> 'CLOSED'
+                                  WHERE m.code = ch.code)
+                ORDER BY ch.conditions DESC, ch.name
+                """, (row, number) -> new ChosenWithoutVacancies(row.getString(1), row.getString(2), row.getLong(3)));
     }
 
     /**

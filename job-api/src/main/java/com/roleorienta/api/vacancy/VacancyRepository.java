@@ -127,6 +127,18 @@ public class VacancyRepository {
             WHERE st.user_id = ? AND st.status IN (%1$s)""";
 
     /**
+     * Отклики пользователя (§196, §213): параметры — пользователь и «завершённые». Действующие — «Applied» и
+     * «Interview» по вакансиям, которые работодатель не закрыл; завершённые — «Employer declined» и отклики по закрытым
+     * работодателем: ответа по ним уже не будет, сверху они только мешают видеть, с кем идёт работа.
+     */
+    private static final String RESPONSES_FROM = """
+             FROM vacancy_user_status st JOIN vacancy v ON v.id = st.vacancy_id
+            WHERE st.user_id = ?
+              AND CASE WHEN CAST(? AS BOOLEAN)
+                       THEN st.status = 'REJECTED' OR (st.status IN ('APPLIED', 'INTERVIEW') AND v.state = 'CLOSED')
+                       ELSE st.status IN ('APPLIED', 'INTERVIEW') AND v.state <> 'CLOSED' END""";
+
+    /**
      * Вакансия по id для пользователя ({@code me.user_id}): видна, если выдавалась ему (по любой версии условий) или у
      * неё есть его статус; параметры — пользователь и вакансия.
      */
@@ -279,6 +291,29 @@ public class VacancyRepository {
     public long countByStatus(long userId, List<StatusEvent> statuses) {
         return jdbcTemplate.queryForObject("SELECT count(*)" + STATUS_FROM.formatted(names(statuses)), Long.class,
                 userId);
+    }
+
+    /**
+     * Страница откликов, статус изменён позже сверху.
+     *
+     * @param userId   пользователь
+     * @param finished {@code true} — завершённые; {@code false} — действующие ({@link #RESPONSES_FROM})
+     * @param page     смещение и размер страницы
+     * @return вакансии страницы
+     */
+    public List<VacancyRow> responses(long userId, boolean finished, PageWindow page) {
+        return jdbcTemplate.query("SELECT " + COLUMNS.formatted("st.user_id") + RESPONSES_FROM
+                + " ORDER BY st.changed_at DESC, st.vacancy_id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row), userId, finished, page.size(), page.offset());
+    }
+
+    /**
+     * @param userId   пользователь
+     * @param finished {@code true} — завершённые; {@code false} — действующие
+     * @return сколько откликов в разделе
+     */
+    public long countResponses(long userId, boolean finished) {
+        return jdbcTemplate.queryForObject("SELECT count(*)" + RESPONSES_FROM, Long.class, userId, finished);
     }
 
     /**

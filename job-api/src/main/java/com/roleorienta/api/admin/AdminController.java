@@ -6,6 +6,7 @@ import com.roleorienta.api.admin.AdminDtos.Admin;
 import com.roleorienta.api.admin.AdminDtos.AdminCredentials;
 import com.roleorienta.api.admin.AdminDtos.CoreStatus;
 import com.roleorienta.api.admin.AdminDtos.MetricsTable;
+import com.roleorienta.api.company.CompanyDtos.CareerPageInput;
 import com.roleorienta.api.company.CompanyDtos.CareerRequestItem;
 import com.roleorienta.api.company.CompanyDtos.CompanyItem;
 import com.roleorienta.api.company.CompanyService;
@@ -13,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -113,7 +116,21 @@ public class AdminController {
     }
 
     /**
-     * @return кадровые страницы, добавленные пользователями (§206), с состоянием проверки, новые первыми (до 100)
+     * Адрес кадровой страницы компании от администратора (§214): правила и проверка — как у пользователя, без лимита.
+     *
+     * @param id    компания
+     * @param input адрес
+     * @return запрос «в обработке» ({@code 201}); {@code 404} — компании нет; {@code 409} — страница уже читается,
+     *         «не работодатель» или адрес уже проверяется; {@code 400} — адрес не http(s)
+     */
+    @PostMapping("/api/v1/admin/companies/{id}/career-page")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CareerRequestItem addCareerPage(@PathVariable long id, @Valid @RequestBody CareerPageInput input) {
+        return companies.addCareerPageByAdmin(id, input.url());
+    }
+
+    /**
+     * @return кадровые страницы, добавленные пользователями и администратором (§206, §214), с состоянием проверки, новые первыми (до 100)
      */
     @GetMapping("/api/v1/admin/career-requests")
     public List<CareerRequestItem> careerRequests() {

@@ -427,9 +427,9 @@ export function responses(page: number, size: number): Promise<VacancyPage> {
   return listPage('/api/v1/me/responses', page, size);
 }
 
-/** @returns страница «Employer declined» — завершённые отклики, под действующими (§196) */
-export function declinedResponses(page: number, size: number): Promise<VacancyPage> {
-  return request<VacancyPage>('GET', '/api/v1/me/responses?declined=true&page=' + page + '&size=' + size);
+/** @returns страница завершённых откликов — «Employer declined» и закрытые работодателем, под действующими (§196, §213) */
+export function finishedResponses(page: number, size: number): Promise<VacancyPage> {
+  return request<VacancyPage>('GET', '/api/v1/me/responses?finished=true&page=' + page + '&size=' + size);
 }
 
 /** @returns сведения о вакансии */
@@ -559,6 +559,23 @@ export function searchCompanies(query: string): Promise<CompanyItem[]> {
 /** Ввод адреса кадровой страницы компании. */
 export function addCareerPage(companyId: number, url: string): Promise<CareerRequest> {
   return request<CareerRequest>('POST', '/api/v1/companies/' + companyId + '/career-page', { url });
+}
+
+/** Адрес кадровой страницы компании от администратора (§214): проверка — как у пользователя, без лимита. */
+export function adminAddCareerPage(companyId: number, url: string): Promise<CareerRequest> {
+  return request<CareerRequest>('POST', '/api/v1/admin/companies/' + companyId + '/career-page', { url });
+}
+
+/** Позиция или группа, выбранная в условиях, без открытых вакансий (§214). */
+export interface ChosenWithoutVacancies {
+  code: string;
+  name: string;
+  conditions: number;
+}
+
+/** @returns выбранные в действующих условиях позиции и группы без открытых вакансий */
+export function chosenWithoutVacancies(): Promise<ChosenWithoutVacancies[]> {
+  return request<ChosenWithoutVacancies[]>('GET', '/api/v1/admin/positions/without-vacancies');
 }
 
 /** Адреса, введённые пользователем, новые первыми. */

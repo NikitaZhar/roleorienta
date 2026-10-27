@@ -170,14 +170,18 @@ class VacancyAcceptanceTests {
         // Минута вперёд — закрытие позже статуса, поставленного по часам JVM (часы БД могут немного отличаться).
         jdbcTemplate.update("UPDATE vacancy SET state = 'CLOSED', closed_at = now() + interval '1 minute' WHERE id = ?",
                 applied);
-        assertThat(client.send("GET", "/api/v1/me/responses", null).body()).contains("\"closed\":true");
+        // §213: отклик по вакансии, закрытой работодателем, — среди завершённых, не среди действующих.
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEmpty();
+        assertThat(client.send("GET", "/api/v1/me/responses?finished=true", null).body()).contains("\"closed\":true");
         assertThat(events(client.send("GET", "/api/v1/me/vacancies/" + applied, null).body()))
                 .isEqualTo("RECEIVED,VIEWED,INTERVIEW,CLOSED");
 
-        // §196: «Employer declined» — не среди действующих откликов, а отдельно.
+        // §196: «Employer declined» — среди завершённых; вакансия снова открыта — отказ всё равно завершённый.
+        jdbcTemplate.update("UPDATE vacancy SET state = 'ACTIVE', closed_at = NULL WHERE id = ?", applied);
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEqualTo("Applied");
         assertThat(status(client, applied, "REJECTED")).isEqualTo(204);
         assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEmpty();
-        assertThat(titles(client.send("GET", "/api/v1/me/responses?declined=true", null).body()))
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?finished=true", null).body()))
                 .isEqualTo("Applied");
     }
 

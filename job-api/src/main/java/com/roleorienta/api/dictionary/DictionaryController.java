@@ -1,5 +1,6 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
@@ -95,5 +96,14 @@ public class DictionaryController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search miss not found");
         }
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * @return позиции и группы, выбранные в действующих условиях, без единой открытой вакансии (§214), чаще выбранные
+     *         — первыми
+     */
+    @GetMapping("/api/v1/admin/positions/without-vacancies")
+    public List<ChosenWithoutVacancies> chosenWithoutVacancies() {
+        return dictionary.chosenWithoutVacancies();
     }
 }

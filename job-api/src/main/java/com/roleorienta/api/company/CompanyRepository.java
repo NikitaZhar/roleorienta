@@ -107,15 +107,16 @@ public class CompanyRepository {
     }
 
     /**
-     * @param userId    пользователь
+     * @param userId    пользователь; {@code null} — администратор (§214)
      * @param companyId компания
      * @param url       адрес
      * @return {@code true} — тот же адрес той же компании от этого пользователя ещё проверяется
      */
-    public boolean pendingExists(long userId, long companyId, String url) {
+    public boolean pendingExists(Long userId, long companyId, String url) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM company_request WHERE user_id = ? AND company_id = ? AND career_url = ?
-                               AND state = 'PENDING')""", Boolean.class, userId, companyId, url));
+                SELECT EXISTS (SELECT 1 FROM company_request WHERE user_id IS NOT DISTINCT FROM CAST(? AS BIGINT)
+                               AND company_id = ? AND career_url = ? AND state = 'PENDING')""", Boolean.class,
+                userId, companyId, url));
     }
 
     /**
@@ -130,12 +131,12 @@ public class CompanyRepository {
     }
 
     /**
-     * @param userId    пользователь
+     * @param userId    пользователь; {@code null} — администратор (§214)
      * @param companyId компания
      * @param url       адрес кадровой страницы
      * @return новый запрос «в обработке»
      */
-    public CareerRequestItem addRequest(long userId, long companyId, String url) {
+    public CareerRequestItem addRequest(Long userId, long companyId, String url) {
         return jdbcTemplate.queryForObject("""
                 WITH added AS (
                     INSERT INTO company_request (user_id, company_id, career_url) VALUES (?, ?, ?)

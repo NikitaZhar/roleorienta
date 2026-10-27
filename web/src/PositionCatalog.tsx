@@ -21,7 +21,8 @@ function wordStart(query: string): RegExp | null {
 /**
  * «Полный каталог» (Full catalog) в условиях (§204, §208): направления (подразделы ISCO-08) — заголовками со стрелкой;
  * нажатие раскрывает направление — его группы, под группой — позиции словаря с отступом. Выбор — одним нажатием:
- * группа — все вакансии группы (пометка), позиция — только вакансии этой позиции. Поле поиска сверху оставляет
+ * группа — все вакансии группы, позиция — только вакансии этой позиции; это объясняет одна строка над деревом, а не
+ * пометка у каждой из 436 групп (§213). Поле поиска сверху оставляет
  * группы и позиции, в названии (у позиции — и в эквивалентном названии) которых есть строка, направления с ними
  * раскрыты. Названия — на языке интерфейса; смена языка перечитывает каталог.
  */
@@ -64,6 +65,7 @@ export function PositionCatalog({ chosen, full, onChoose }: Props) {
     <div className="catalog-box">
       <input type="search" className="catalog-search" placeholder={t('conditions.catalogSearch')} value={query}
         aria-label={t('conditions.catalogSearch')} onChange={(event) => setQuery(event.target.value)} />
+      <p className="muted catalog-legend">{t('conditions.catalogLegend')}</p>
       {full && <p className="muted">{t('conditions.catalogFull')}</p>}
       {shown.length === 0 && <p className="muted">{t('conditions.catalogNone')}</p>}
       <ul className="catalog">
@@ -81,7 +83,7 @@ export function PositionCatalog({ chosen, full, onChoose }: Props) {
                     <li key={group.code}>
                       <button type="button" disabled={full || chosen.includes(group.code)}
                         onClick={() => onChoose({ code: group.code, name: group.name })}>
-                        {group.name} <span className="muted">· {t('conditions.wholeGroup')}</span>
+                        {group.name}
                       </button>
                       {group.positions.length > 0 && (
                         <ul className="choices nested">

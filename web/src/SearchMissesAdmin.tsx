@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { forgetSearchMiss, type SearchMiss, searchMisses } from './api';
+import {
+  type ChosenWithoutVacancies, chosenWithoutVacancies, forgetSearchMiss, type SearchMiss, searchMisses,
+} from './api';
 
 /**
  * Что искали и не нашли (§205), в нынешнем виде страницы /admin: запросы подсказки позиции без результата — чаще
@@ -69,6 +71,44 @@ export function SearchMissesAdmin({ onAdd, onCount }: {
         </div>
       ))}
       <button type="button" onClick={load}>Refresh</button>
+    </section>
+  );
+}
+
+/**
+ * Выбрано в условиях — вакансий нет (§214; аудит логики §212, п. 8): позиция или группа, выбранная в действующих
+ * условиях, по которой нет ни одной открытой вакансии. Пользователь выбрал, но ничего не получает — администратор
+ * решает: поправить названия позиции в словаре или подождать (группе без кодов поможет распознавание по названию).
+ */
+export function ChosenWithoutVacanciesAdmin() {
+  const [items, setItems] = useState<ChosenWithoutVacancies[] | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    chosenWithoutVacancies().then(setItems, (failure: Error) => setMessage(failure.message));
+  }, []);
+
+  return (
+    <section>
+      <h2>Chosen, no vacancies</h2>
+      <p className="muted">Positions and groups that users chose in their search, with no open vacancy at all.</p>
+      {message !== null && <p className="error" role="alert">{message}</p>}
+      {items !== null && (items.length === 0 ? <p className="muted">None: every choice has vacancies.</p> : (
+        <div className="scroll">
+          <table className="companies">
+            <thead><tr><th>Position or group</th><th>Code</th><th>Chosen by</th></tr></thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.code}>
+                  <td>{item.name}</td>
+                  <td className="muted nowrap">{item.code}</td>
+                  <td>{item.conditions === 1 ? '1 search' : item.conditions + ' searches'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </section>
   );
 }
