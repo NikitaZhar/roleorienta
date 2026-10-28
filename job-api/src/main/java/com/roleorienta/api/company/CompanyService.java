@@ -37,6 +37,8 @@ public class CompanyService {
     private static final Pattern NUMBER = Pattern.compile("\\d{6,12}");
     private static final Pattern NOT_SLUG = Pattern.compile("[^a-z0-9]+");
     private static final String COMPANY_NOT_FOUND = "Company not found";
+    /** Ключ очереди вводов администратора ({@link CompanyRepository#lockRequests}): учётных записей с id 0 нет. */
+    private static final long ADMIN_LOCK = 0;
 
     private final CompanyRepository repository;
     private final CompanyProperties properties;
@@ -91,7 +93,8 @@ public class CompanyService {
 
     /**
      * Ввод адреса кадровой страницы администратором (§214): те же правила, что у пользователя, без лимита в сутки;
-     * запрос без пользователя, проверка — та же (адрес общий для всех).
+     * запрос без пользователя, проверка — та же (адрес общий для всех). Вводы администратора — по очереди до конца
+     * транзакции, как у пользователя (аудит §222: два нажатия не дают двух одинаковых запросов).
      *
      * @param companyId компания
      * @param url       адрес
@@ -103,6 +106,7 @@ public class CompanyService {
     @Transactional
     public CareerRequestItem addCareerPageByAdmin(long companyId, String url) {
         String address = checkedAddress(companyId, url);
+        repository.lockRequests(ADMIN_LOCK);
         if (repository.pendingExists(null, companyId, address)) {
             throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
         }

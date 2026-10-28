@@ -26,6 +26,12 @@ public class ProfesiaOfferRepository {
     /** Начало внешнего id — как у объявлений profesia.sk общего списка портала ({@code StatePortalAdapter.externalId}). */
     static final String EXTERNAL_ID = "profesia:";
 
+    /** Через сколько дней снова запрашивается страница, полученная без названия. */
+    static final int UNPARSED_RETRY_DAYS = 7;
+
+    /** Общий список портала старше — добор не идёт (полный обход — не дольше 20 ч, лента — каждый час). */
+    static final int PORTAL_FRESH_DAYS = 2;
+
     /**
      * Объявления, которых нет на портале: были в карте сайта последнего чтения (карта читается раз в сутки — окно
      * с запасом 30 ч) и не встречались в общем списке портала за 3 дня (полный обход портала — не дольше 20 ч, лента —
@@ -48,15 +54,24 @@ public class ProfesiaOfferRepository {
 
     /**
      * Объявление прочитано и той же вакансии у компании нет (§220): у компании работодателя ({@code o.company_id})
-     * нет незакрытой публикации с тем же названием в её собственных источниках (кадровая страница, система найма,
-     * портал) — «читаем компании, портал и только после этого profesia» (владелец). Работодатель не сопоставлен
-     * компании — сравнивать не с чем, объявление берётся.
+     * нет живой публикации с тем же названием в её собственных источниках — «читаем компании, портал и только после
+     * этого profesia» (владелец). Живая — незакрытая, подтверждённая последним чтением своего незакрытого источника не
+     * дольше 3 суток назад (источники читаются раз в сутки), вакансия — в Словакии (стране profesia.sk) или страна не
+     * определена (доска Greenhouse без фильтра по стране: «Software Engineer» в Берлине — не та вакансия), источник
+     * компании — не кадрового агентства (аудит §222:
+     * незакрытая, но давно не подтверждаемая публикация — портал, отключённый «одним каналом», вакансия Workday другой
+     * страны — иначе отнимала бы настоящую вакансию). Работодатель не сопоставлен компании — сравнивать не с чем,
+     * объявление берётся.
      */
     private static final String NEW_TO_COMPANY = """
               AND o.title IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM company_source cs
-                              JOIN job_posting p ON p.source_id = cs.source_id AND p.closed_at IS NULL
-                              WHERE cs.company_id = o.company_id AND %s = %s)"""
+                              JOIN source s ON s.id = cs.source_id AND s.closed_at IS NULL
+                              JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL AND p.confirmed
+                                               AND p.last_confirmed_at > now() - interval '3 days'
+                              JOIN vacancy v ON v.id = p.vacancy_id
+                                            AND ('SK' = ANY (v.work_countries) OR cardinality(v.work_countries) = 0)
+                              WHERE cs.company_id = o.company_id AND cs.role <> 'AGENCY' AND %s = %s)"""
             .formatted(SAME_TITLE.formatted("p.title"), SAME_TITLE.formatted("o.title"));
 
     private final JdbcTemplate jdbcTemplate;
@@ -70,11 +85,14 @@ public class ProfesiaOfferRepository {
 
     /**
      * @param limit сколько
-     * @return объявления, которых нет на портале, со страницей ещё не прочитанной; новые (больший номер) — первыми
+     * @return объявления, которых нет на портале, со страницей ещё не прочитанной или прочитанной без названия больше
+     *         {@value #UNPARSED_RETRY_DAYS} дней назад (аудит §222); новые (больший номер) — первыми
      */
     public List<ListedOffer> toRead(int limit) {
         return jdbcTemplate.query("SELECT o.num, o.employer, o.url" + GAP
-                + " AND o.page_read_at IS NULL ORDER BY o.num DESC LIMIT ?",
+                + " AND (o.page_read_at IS NULL OR (o.title IS NULL AND NOT o.page_gone"
+                + "      AND o.page_read_at < now() - make_interval(days => " + UNPARSED_RETRY_DAYS + ")))"
+                + " ORDER BY o.num DESC LIMIT ?",
                 (row, number) -> new ListedOffer(row.getLong(1), row.getString(2), row.getString(3)), limit);
     }
 
@@ -92,12 +110,34 @@ public class ProfesiaOfferRepository {
     }
 
     /**
-     * Страницы объявления нет — больше не запрашивается и не записывается (названия нет).
+     * Страницы объявления нет (404 / 410, запрет robots.txt) — больше не запрашивается и не записывается.
      *
      * @param num объявление
      */
     public void saveGone(long num) {
+        jdbcTemplate.update("UPDATE profesia_offer SET page_read_at = now(), page_gone = TRUE WHERE num = ?", num);
+    }
+
+    /**
+     * Страница получена, но без названия (баннер, капча, другая разметка; аудит §222) — не записывается, запрашивается
+     * снова через {@value #UNPARSED_RETRY_DAYS} дней.
+     *
+     * @param num объявление
+     */
+    public void saveUnparsed(long num) {
         jdbcTemplate.update("UPDATE profesia_offer SET page_read_at = now() WHERE num = ?", num);
+    }
+
+    /**
+     * Общий список портала свеж (аудит §222): последнее объявление видели в нём меньше
+     * {@value #PORTAL_FRESH_DAYS} суток назад. Иначе «нет на портале» не значит ничего — добор не идёт: ни новых
+     * вакансий (дубли вакансий портала), ни отсутствия у записанных.
+     *
+     * @return свеж ли
+     */
+    public boolean portalFresh() {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("SELECT coalesce(max(last_seen_at) > now() - "
+                + "make_interval(days => " + PORTAL_FRESH_DAYS + "), FALSE) FROM portal_offer", Boolean.class));
     }
 
     /**

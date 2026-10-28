@@ -28,6 +28,8 @@ spring:
     hibernate:
       ddl-auto: none       # схемой владеет job-api
     open-in-view: false
+    properties:
+      hibernate.order_updates: true  # изменения строк — по порядку id, как пересчёт профессий (аудит §222): меньше риск взаимной блокировки
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

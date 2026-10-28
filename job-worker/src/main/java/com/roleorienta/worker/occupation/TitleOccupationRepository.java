@@ -33,7 +33,11 @@ public class TitleOccupationRepository {
      * Переучивает и перераспознаёт одной транзакцией: выученные головы заменяются целиком; у открытых публикаций без
      * кода портала распознанная группа — выученная голова, иначе однозначный синоним ESCO (у названия одной профессии
      * ESCO — одна группа, у одинаковых названий разных профессий — одна и та же), иначе нет. Меняются только
-     * отличающиеся значения; у закрытых публикаций и публикаций с кодом портала распознанная группа не трогается.
+     * отличающиеся значения; у закрытых публикаций распознанная группа не трогается; у публикаций, получивших код
+     * портала после распознавания, распознанная снимается (аудит §222: иначе вакансия подходила бы и чужой группе).
+     * Строки блокируются по порядку id ({@code FOR UPDATE}), запись публикаций упорядочивает изменения так же
+     * (Hibernate {@code order_updates}) — риск взаимной блокировки снижен (аудит §222); случившаяся прерывает
+     * транзакцию, задание повторяется.
      *
      * @return сколько голов выучено и у скольких публикаций распознанная группа изменилась
      */
@@ -62,12 +66,23 @@ public class TitleOccupationRepository {
                     FROM job_posting p
                     LEFT JOIN title_occupation t ON t.head = title_head(p.title)
                     LEFT JOIN esco ON esco.head = title_head(p.title)
-                    WHERE p.occupation_code IS NULL AND p.closed_at IS NULL)
+                    WHERE p.occupation_code IS NULL AND p.closed_at IS NULL
+                      AND p.title_occupation_code IS DISTINCT FROM coalesce(t.code, esco.code)
+                    ORDER BY p.id
+                    FOR UPDATE OF p)
                 UPDATE job_posting p SET title_occupation_code = r.code
                 FROM recognized r
-                WHERE p.id = r.id AND p.title_occupation_code IS DISTINCT FROM r.code
+                WHERE p.id = r.id
                 """, MIN_HEAD);
-        return new Result(learned, changed);
+        int superseded = jdbcTemplate.update("""
+                WITH coded AS (
+                    SELECT id FROM job_posting
+                    WHERE occupation_code IS NOT NULL AND title_occupation_code IS NOT NULL
+                    ORDER BY id
+                    FOR UPDATE)
+                UPDATE job_posting p SET title_occupation_code = NULL FROM coded WHERE p.id = coded.id
+                """);
+        return new Result(learned, changed + superseded);
     }
 
     /**

@@ -88,8 +88,9 @@ public class ProfesiaPages {
     }
 
     /**
-     * Страница объявления (§219): сведения ({@link ProfesiaOfferPage}); постоянный отказ (404, запрет robots.txt),
-     * неразбираемый адрес или страница без названия — {@link OfferGone}; временный отказ — {@link OfferUnavailable}.
+     * Страница объявления (§219): сведения ({@link ProfesiaOfferPage}); постоянный отказ (404, запрет robots.txt) или
+     * неразбираемый адрес — {@link OfferGone}; страница без названия — {@link OfferUnparsed} (аудит §222); временный
+     * отказ — {@link OfferUnavailable}.
      *
      * @param url адрес объявления из карты сайта
      * @return сведения, «нет объявления» или «profesia.sk временно недоступна»
@@ -97,7 +98,7 @@ public class ProfesiaPages {
     public OfferRead offer(String url) {
         return switch (page(url)) {
             case Read read -> ProfesiaOfferPage.parse(read.document())
-                    .<OfferRead>map(OfferFound::new).orElseGet(OfferGone::new);
+                    .<OfferRead>map(OfferFound::new).orElseGet(OfferUnparsed::new);
             case Failed failed -> new OfferUnavailable(failed.failure());
             case Gone gone -> new OfferGone();
         };
@@ -159,15 +160,19 @@ public class ProfesiaPages {
     }
 
     /** Итог чтения страницы объявления (§219). */
-    public sealed interface OfferRead permits OfferFound, OfferGone, OfferUnavailable {
+    public sealed interface OfferRead permits OfferFound, OfferGone, OfferUnparsed, OfferUnavailable {
     }
 
     /** @param offer сведения объявления */
     record OfferFound(ProfesiaOfferPage.Offer offer) implements OfferRead {
     }
 
-    /** Объявления нет: удалено, закрыто robots.txt или страница без названия. */
+    /** Объявления нет: удалено или закрыто robots.txt. */
     public record OfferGone() implements OfferRead {
+    }
+
+    /** Страница получена, но без названия: баннер, капча, другая разметка — спросить позже. */
+    public record OfferUnparsed() implements OfferRead {
     }
 
     /** @param failure временный отказ profesia.sk ({@code Retry-After} — в нём) */

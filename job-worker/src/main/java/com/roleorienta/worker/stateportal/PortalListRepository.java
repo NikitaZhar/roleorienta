@@ -70,15 +70,17 @@ public class PortalListRepository {
 
     /**
      * Коды профессий со страниц объявлений (§203) — публикациям источника; страница прочитана — отмечается, и без кода
-     * ({@code null}) больше не запрашивается; публикации нет — ничего.
+     * ({@code null}) больше не запрашивается; код получен — распознанная по названию группа снимается (§215, аудит
+     * §222: код портала точнее); публикации нет — ничего.
      *
      * @param sourceId    источник портала
      * @param occupations группа ISCO-08 (4 цифры) по внешнему id; {@code null} — кода на странице нет
      */
     public void recordOccupations(long sourceId, Map<String, String> occupations) {
         occupations.forEach((externalId, code) -> jdbcTemplate.update("UPDATE job_posting SET occupation_code = "
-                + "coalesce(?, occupation_code), occupation_checked = TRUE WHERE source_id = ? AND external_id = ?",
-                code, sourceId, externalId));
+                + "coalesce(?, occupation_code), occupation_checked = TRUE, title_occupation_code = CASE WHEN "
+                + "CAST(? AS VARCHAR) IS NULL THEN title_occupation_code END WHERE source_id = ? AND external_id = ?",
+                code, code, sourceId, externalId));
     }
 
     /**

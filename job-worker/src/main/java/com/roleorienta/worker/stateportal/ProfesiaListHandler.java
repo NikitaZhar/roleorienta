@@ -34,7 +34,8 @@ import org.springframework.stereotype.Component;
  * ({@code sitemap.php}, объявлена в robots.txt): объявления {@code /praca/<работодатель>/O<номер>} — по первому на
  * работодателя; работодатель сопоставляется компании реестра по названию ({@code company.name_slug}, только
  * однозначно); все объявления карты сайта — в {@code profesia_offer}, и ставится цепочка добора объявлений, которых
- * нет на портале ({@link ProfesiaOffersHandler}, §219). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
+ * нет на портале ({@link ProfesiaOffersHandler}, §219); карта без объявлений или с объявлениями вдвое меньше прошлого
+ * — объявления не обновляются и добор не ставится (аудит §222). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
  * работодателей: объявление → страница
  * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaPages#find}), запись сайта компании (источник
  * и подтверждение {@code PROFESIA}). Компании, у которых сайт со страницы profesia.sk уже есть (шаг 2 или этот),
@@ -60,6 +61,11 @@ public class ProfesiaListHandler implements TaskHandler {
     /** Длины колонок {@code profesia_employer.slug} и {@code ad_url} (V43); длиннее — запись пропускается. */
     private static final int MAX_SLUG = 200;
     private static final int MAX_AD_URL = 1000;
+    /**
+     * Карта сайта с объявлениями меньше чем в столько раз, чем в прошлом чтении (или без объявлений), — объявления не
+     * обновляются и добор не ставится (аудит §222): иначе все вакансии profesia.sk получили бы отсутствие и закрылись.
+     */
+    private static final int SHRINK_LIMIT = 2;
     /** Объявление в карте сайта: {@code <loc>…/praca/<работодатель>/O<номер></loc>}. */
     private static final Pattern OFFER =
             Pattern.compile("<loc>\\s*(https?://[^<\\s]*/praca/([^/<\\s]+)/O(\\d{1,18}))\\s*</loc>");
@@ -134,11 +140,17 @@ public class ProfesiaListHandler implements TaskHandler {
         Map<String, String> employers = employers(sitemap);
         repository.saveProfesiaList(employers);
         List<ListedOffer> offers = offers(sitemap);
-        repository.saveProfesiaOffers(offers);
+        int previous = repository.profesiaOffersListed();
+        if (offers.isEmpty() || offers.size() * SHRINK_LIMIT < previous) {
+            // Аудит §222: карта сайта другого вида (индекс подкарт, заглушка) — не основание закрывать вакансии.
+            LOG.warn("Profesia sitemap: {} offers instead of {} — offers are not updated", offers.size(), previous);
+        } else {
+            repository.saveProfesiaOffers(offers);
+            taskService.startChain(ProfesiaOffersHandler.TYPE, ProfesiaOffersHandler.key(day, 1),
+                    ProfesiaOffersHandler.payload(day, 1));
+        }
         LOG.info("Profesia sitemap: {} employers, {} offers listed", employers.size(), offers.size());
         taskService.enqueue(TYPE, key(day, 1), payload(day, 1));
-        taskService.startChain(ProfesiaOffersHandler.TYPE, ProfesiaOffersHandler.key(day, 1),
-                ProfesiaOffersHandler.payload(day, 1));
         return new TaskOutcome.Done();
     }
 

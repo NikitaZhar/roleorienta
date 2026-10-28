@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.collect.ReadSourcePlanner;
+import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpServer;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +57,9 @@ class ProfesiaOffersTests {
     private ReadSourcePlanner planner;
 
     @Autowired
+    private ProfesiaOfferRepository offers;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     /**
@@ -90,10 +95,21 @@ class ProfesiaOffersTests {
         PAGES.clear();
         PAGES.put("/sitemap.php", "<urlset><url><loc>" + BASE + "/praca/qwacme-s-r-o/O101</loc></url>"
                 + "<url><loc>" + BASE + "/praca/qwacme-s-r-o/O102</loc></url>"
-                + "<url><loc>" + BASE + "/praca/beta/O103</loc></url></urlset>");
+                + "<url><loc>" + BASE + "/praca/beta/O103</loc></url>"
+                + "<url><loc>" + BASE + "/praca/gamma/O104</loc></url></urlset>");
         PAGES.put("/praca/qwacme-s-r-o/O101", ProfesiaOfferPageTests.PAGE.replace("Brightpick s. r. o.", "ACME s.r.o."));
         PAGES.put("/praca/qwacme-s-r-o/O102", "<h1>Skladník</h1>");
+        PAGES.put("/praca/gamma/O104", "<p>Súhlas so súbormi cookies</p>");
         portalOffer(102);
+    }
+
+    /**
+     * Объявления и работодатели profesia.sk ссылаются на компании: другие тесты удаляют компании (аудит §222).
+     */
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("DELETE FROM profesia_offer");
+        jdbcTemplate.update("DELETE FROM profesia_employer");
     }
 
     /**
@@ -111,14 +127,62 @@ class ProfesiaOffersTests {
                 """, String.class)).containsExactly("qwacme-s-r-o:ACME s.r.o.:profesia:101:DevOps Manager:"
                 + "Plynárenská 4937/6, Ružinov, Slovensko, Bratislava:2026-10-25:ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source", Integer.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("SELECT page_read_at IS NOT NULL AND title IS NULL FROM profesia_offer "
-                + "WHERE num = 103", Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT page_read_at IS NOT NULL AND title IS NULL AND page_gone "
+                + "FROM profesia_offer WHERE num = 103", Boolean.class)).isTrue();
         assertThat(jdbcTemplate.queryForObject("SELECT page_read_at IS NULL FROM profesia_offer WHERE num = 102",
                 Boolean.class)).isTrue();
 
         planner.enqueueDue();
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = 'READ_SOURCE'", Integer.class))
                 .isZero();
+    }
+
+    /**
+     * Страница без названия (баннер, капча; аудит §222) — не «объявления нет»: не записывается и запрашивается снова
+     * через 7 дней; страница 404 — больше нет.
+     */
+    @Test
+    void pageWithoutTitleIsRequestedAgain() {
+        runChain();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT page_read_at IS NOT NULL AND title IS NULL AND NOT page_gone "
+                + "FROM profesia_offer WHERE num = 104", Boolean.class)).isTrue();
+        assertThat(offers.toRead(10)).isEmpty();
+        jdbcTemplate.update("UPDATE profesia_offer SET page_read_at = now() - interval '8 days'");
+        assertThat(offers.toRead(10)).extracting(ListedOffer::num).containsExactly(104L);
+    }
+
+    /**
+     * Карта сайта без объявлений (другой вид, заглушка; аудит §222) — объявления не обновляются, добор не ставится,
+     * вакансии не закрываются.
+     */
+    @Test
+    void emptySitemapKeepsOffers() {
+        runChain();
+        PAGES.put("/sitemap.php", "<urlset></urlset>");
+        jdbcTemplate.update("DELETE FROM outbox_event");
+        jdbcTemplate.update("DELETE FROM task");
+
+        listHandler.enqueue("empty");
+        for (int pass = 0; pass < 3; pass++) {
+            runQueued();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM task WHERE type = ?", Integer.class,
+                ProfesiaOffersHandler.TYPE)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM vacancy", String.class)).isEqualTo("ACTIVE");
+    }
+
+    /** Общий список портала устарел (аудит §222) — «нет на портале» ничего не значит: добор не идёт. */
+    @Test
+    void stalePortalListStopsOffers() {
+        jdbcTemplate.update("UPDATE portal_offer SET last_seen_at = now() - interval '5 days'");
+
+        runChain();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM job_posting", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM profesia_offer WHERE page_read_at IS NOT NULL",
+                Integer.class)).isZero();
     }
 
     /** Объявление появилось на портале — у источника profesia.sk отсутствие; после трёх полных чтений закрыто. */

@@ -11,6 +11,7 @@ import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import com.roleorienta.worker.stateportal.ProfesiaPages.OfferFound;
 import com.roleorienta.worker.stateportal.ProfesiaPages.OfferGone;
 import com.roleorienta.worker.stateportal.ProfesiaPages.OfferUnavailable;
+import com.roleorienta.worker.stateportal.ProfesiaPages.OfferUnparsed;
 import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
@@ -33,13 +34,17 @@ import org.springframework.stereotype.Component;
  *
  * <ol>
  *   <li>страницы до {@code pages-per-task} объявлений, которых нет на портале и чья страница ещё не прочитана, новые
- *       первыми ({@link ProfesiaPages#offer}): сведения записываются, нет страницы — больше не запрашивается;
- *       временный отказ profesia.sk — запись прочитанного и повтор задания;</li>
+ *       первыми ({@link ProfesiaPages#offer}): сведения записываются, нет страницы — больше не запрашивается,
+ *       страница без названия — снова через 7 дней; временный отказ profesia.sk — запись прочитанного и повтор
+ *       задания;</li>
  *   <li>запись: в первом круге — все работодатели (в том числе те, у кого объявления ушли: из карты сайта или на
  *       портал), дальше — работодатели прочитанных страниц. Работодатель — источник провайдера {@code profesia}
  *       (доска — работодатель в адресе, без компании — V86), его объявления — полное чтение ({@link PostingRecorder}):
  *       ушедшему засчитывается отсутствие, закрытие — после N полных чтений подряд.</li>
  * </ol>
+ *
+ * <p>Общий список портала устарел (больше 2 суток) — задание ничего не делает (аудит §222): «нет на портале» тогда
+ * ничего не значит. Запись работодателей сроком задания не ограничена: аренда продлевается до {@code max-run}.</p>
  *
  * <p>Приложение показывает о таких вакансиях только краткие сведения и ссылку на объявление; текст — только для
  * сопоставления (основание — {@code source_permission}, V86).</p>
@@ -103,6 +108,10 @@ public class ProfesiaOffersHandler implements TaskHandler {
         if (!properties.enabled()) {
             return new TaskOutcome.Done();
         }
+        if (!repository.portalFresh()) {
+            LOG.warn("Profesia offers: state portal list is stale, offers are not added or closed");
+            return new TaskOutcome.Done();
+        }
         JsonNode payload = parse(task.payload());
         String day = payload.path("day").asText();
         int round = payload.path("round").asInt(1);
@@ -111,6 +120,7 @@ public class ProfesiaOffersHandler implements TaskHandler {
         Set<String> touched = new LinkedHashSet<>();
         int handled = 0;
         int gone = 0;
+        int unparsed = 0;
         for (ListedOffer offer : due) {
             if (System.nanoTime() - deadline > 0) {
                 break;
@@ -124,6 +134,10 @@ public class ProfesiaOffersHandler implements TaskHandler {
                     repository.saveGone(offer.num());
                     gone++;
                 }
+                case OfferUnparsed blank -> {
+                    repository.saveUnparsed(offer.num());
+                    unparsed++;
+                }
                 case OfferUnavailable unavailable -> {
                     int recorded = record(touched, task.id());
                     LOG.warn("Profesia offers: profesia.sk unavailable after {} pages, {} employers recorded: {}",
@@ -135,8 +149,8 @@ public class ProfesiaOffersHandler implements TaskHandler {
             handled++;
         }
         int recorded = record(round == 1 ? repository.employersToRecord() : touched, task.id());
-        LOG.info("Profesia offers round {}: {} pages read, {} gone, {} employers recorded", round, handled, gone,
-                recorded);
+        LOG.info("Profesia offers round {}: {} pages read, {} gone, {} without title, {} employers recorded", round,
+                handled, gone, unparsed, recorded);
         if (due.size() == properties.pagesPerTask() || handled < due.size()) {
             return new TaskOutcome.Continue(key(day, round + 1), payload(day, round + 1));
         }

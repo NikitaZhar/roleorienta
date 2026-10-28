@@ -183,14 +183,17 @@ public class StatePortalRepository {
     /**
      * Объявления карты сайта пакетом (§219, {@code profesia_offer}): новые добавляются, известные — отметка «в карте
      * сайта сейчас»; компания — работодателя карты сайта ({@code profesia_employer}, записывается до этого,
-     * §220); их сведения со страниц пишет {@link ProfesiaOfferRepository}.
+     * §220) только из этого же чтения карты (записан за последний час; аудит §222: неоднозначный теперь работодатель в
+     * карту не попадает, его прежняя строка с компанией не берётся); их сведения со страниц пишет
+     * {@link ProfesiaOfferRepository}.
      *
      * @param offers объявления карты сайта
      */
     public void saveProfesiaOffers(List<ListedOffer> offers) {
         jdbcTemplate.batchUpdate("""
                 INSERT INTO profesia_offer (num, employer, url, listed_at, company_id)
-                VALUES (?, ?, ?, now(), (SELECT company_id FROM profesia_employer WHERE slug = ?))
+                VALUES (?, ?, ?, now(), (SELECT company_id FROM profesia_employer
+                                         WHERE slug = ? AND listed_at > now() - interval '1 hour'))
                 ON CONFLICT (num) DO UPDATE SET employer = EXCLUDED.employer, url = EXCLUDED.url, listed_at = now(),
                     company_id = EXCLUDED.company_id
                 """, offers, 1000, (statement, offer) -> {
@@ -199,6 +202,14 @@ public class StatePortalRepository {
                     statement.setString(3, offer.url());
                     statement.setString(4, ProfesiaListHandler.slug(offer.employer()));
                 });
+    }
+
+    /**
+     * @return сколько объявлений было в прошлом чтении карты сайта profesia.sk (за последние 30 ч, §222)
+     */
+    public int profesiaOffersListed() {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM profesia_offer WHERE listed_at > now() - interval "
+                + "'30 hours'", Integer.class);
     }
 
     /**
