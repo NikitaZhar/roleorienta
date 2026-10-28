@@ -88,11 +88,11 @@ class ProfesiaOffersTests {
             jdbcTemplate.update("DELETE FROM " + table);
         }
         PAGES.clear();
-        PAGES.put("/sitemap.php", "<urlset><url><loc>" + BASE + "/praca/acme-s-r-o/O101</loc></url>"
-                + "<url><loc>" + BASE + "/praca/acme-s-r-o/O102</loc></url>"
+        PAGES.put("/sitemap.php", "<urlset><url><loc>" + BASE + "/praca/qwacme-s-r-o/O101</loc></url>"
+                + "<url><loc>" + BASE + "/praca/qwacme-s-r-o/O102</loc></url>"
                 + "<url><loc>" + BASE + "/praca/beta/O103</loc></url></urlset>");
-        PAGES.put("/praca/acme-s-r-o/O101", ProfesiaOfferPageTests.PAGE.replace("Brightpick s. r. o.", "ACME s.r.o."));
-        PAGES.put("/praca/acme-s-r-o/O102", "<h1>Skladník</h1>");
+        PAGES.put("/praca/qwacme-s-r-o/O101", ProfesiaOfferPageTests.PAGE.replace("Brightpick s. r. o.", "ACME s.r.o."));
+        PAGES.put("/praca/qwacme-s-r-o/O102", "<h1>Skladník</h1>");
         portalOffer(102);
     }
 
@@ -108,7 +108,7 @@ class ProfesiaOffersTests {
                 SELECT s.board || ':' || s.employer_name || ':' || p.external_id || ':' || p.title || ':' || p.location
                        || ':' || v.posted_at::date || ':' || v.state
                 FROM job_posting p JOIN source s ON s.id = p.source_id JOIN vacancy v ON v.id = p.vacancy_id
-                """, String.class)).containsExactly("acme-s-r-o:ACME s.r.o.:profesia:101:DevOps Manager:"
+                """, String.class)).containsExactly("qwacme-s-r-o:ACME s.r.o.:profesia:101:DevOps Manager:"
                 + "Plynárenská 4937/6, Ružinov, Slovensko, Bratislava:2026-10-25:ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("SELECT page_read_at IS NOT NULL AND title IS NULL FROM profesia_offer "
@@ -134,6 +134,42 @@ class ProfesiaOffersTests {
         }
 
         assertThat(jdbcTemplate.queryForObject("SELECT state FROM vacancy", String.class)).isEqualTo("CLOSED");
+    }
+
+    /**
+     * Та же вакансия уже есть у компании работодателя из её кадровой страницы (§220: «читаем компании, портал и только
+     * после этого profesia») — название без регистра и пометки «(m/ž)» совпало: объявление не берётся.
+     */
+    @Test
+    void offerKnownFromCompanyIsNotTaken() {
+        jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
+                + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
+        long company = jdbcTemplate.queryForObject("""
+                INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', '90600001', 'Qwacme s.r.o.', 'RPO')
+                ON CONFLICT (country, registration_number) DO UPDATE SET name = EXCLUDED.name, terminated_on = NULL
+                RETURNING id
+                """, Long.class);
+        long source = jdbcTemplate.queryForObject(
+                "INSERT INTO source (provider, board, country) VALUES ('careerpage', 'https://acme.test/kariera', 'SK') "
+                        + "RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO company_source (company_id, source_id, role) VALUES (?, ?, 'EMPLOYER')",
+                company, source);
+        long vacancy = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries)
+                VALUES ('ACTIVE', 'DEVOPS manager (m/ž)', 'https://acme.test/kariera/devops', now(), now(), '{SK}')
+                RETURNING id
+                """, Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, 'devops', 'DEVOPS manager (m/ž)', 'https://acme.test/kariera/devops', now(), now())
+                """, source, vacancy);
+
+        runChain();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT company_id FROM profesia_offer WHERE num = 101", Long.class))
+                .isEqualTo(company);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM job_posting WHERE external_id LIKE 'profesia:%'",
+                Integer.class)).isZero();
     }
 
     private void portalOffer(long num) {

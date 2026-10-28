@@ -38,6 +38,27 @@ public class ProfesiaOfferRepository {
               AND NOT EXISTS (SELECT 1 FROM portal_offer po WHERE po.external_id = 'profesia:' || o.num
                               AND po.last_seen_at > now() - interval '3 days')""";
 
+    /**
+     * Название для сравнения (§220): без регистра, словацкой и чешской диакритики, пометок в скобках («(m/f/d)»,
+     * «(muž/žena)») и знаков — «Backend Developer - Java (m/ž)» и «Backend developer – Java» совпадают.
+     */
+    private static final String SAME_TITLE = "btrim(regexp_replace(regexp_replace(lower(translate(%s, "
+            + "'áäčďéěíĺľňóôŕřšťúůýžÁÄČĎÉĚÍĹĽŇÓÔŔŘŠŤÚŮÝŽ', 'aacdeeillnoorrstuuyzaacdeeillnoorrstuuyz')), "
+            + "'\\([^)]*\\)', ' ', 'g'), '[^a-z0-9]+', ' ', 'g'))";
+
+    /**
+     * Объявление прочитано и той же вакансии у компании нет (§220): у компании работодателя ({@code o.company_id})
+     * нет незакрытой публикации с тем же названием в её собственных источниках (кадровая страница, система найма,
+     * портал) — «читаем компании, портал и только после этого profesia» (владелец). Работодатель не сопоставлен
+     * компании — сравнивать не с чем, объявление берётся.
+     */
+    private static final String NEW_TO_COMPANY = """
+              AND o.title IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM company_source cs
+                              JOIN job_posting p ON p.source_id = cs.source_id AND p.closed_at IS NULL
+                              WHERE cs.company_id = o.company_id AND %s = %s)"""
+            .formatted(SAME_TITLE.formatted("p.title"), SAME_TITLE.formatted("o.title"));
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -80,12 +101,12 @@ public class ProfesiaOfferRepository {
     }
 
     /**
-     * @return работодатели к записи: с прочитанными объявлениями, которых нет на портале, и с источником, у которого
+     * @return работодатели к записи: с прочитанными объявлениями, которых нет на портале и у компании
+     *         ({@link #NEW_TO_COMPANY}), и с источником, у которого
      *         есть незакрытые публикации (им засчитывается отсутствие ушедших)
      */
     public Set<String> employersToRecord() {
-        return new LinkedHashSet<>(jdbcTemplate.queryForList("SELECT DISTINCT o.employer" + GAP
-                + " AND o.title IS NOT NULL"
+        return new LinkedHashSet<>(jdbcTemplate.queryForList("SELECT DISTINCT o.employer" + GAP + NEW_TO_COMPANY
                 + " UNION SELECT s.board FROM source s WHERE s.provider = ? AND s.closed_at IS NULL"
                 + "   AND EXISTS (SELECT 1 FROM job_posting p WHERE p.source_id = s.id AND p.closed_at IS NULL)",
                 String.class, StatePortalAdapter.PROFESIA_PROVIDER));
@@ -93,7 +114,7 @@ public class ProfesiaOfferRepository {
 
     /**
      * @param employer работодатель в адресе объявления
-     * @return его прочитанные объявления, которых нет на портале: публикации (ссылка — объявление profesia.sk), даты
+     * @return его прочитанные объявления, которых нет на портале и у компании ({@link #NEW_TO_COMPANY}): публикации (ссылка — объявление profesia.sk), даты
      *         размещения и название работодателя из последнего объявления
      */
     public EmployerOffers offersOf(String employer) {
@@ -101,7 +122,7 @@ public class ProfesiaOfferRepository {
         Map<String, Instant> postedAt = new HashMap<>();
         String[] name = {null};
         jdbcTemplate.query("SELECT o.num, o.title, o.url, o.location, o.content, o.posted_at, o.employer_name" + GAP
-                + " AND o.employer = ? AND o.title IS NOT NULL ORDER BY o.num", row -> {
+                + NEW_TO_COMPANY + " AND o.employer = ? ORDER BY o.num", row -> {
                     String externalId = EXTERNAL_ID + row.getLong(1);
                     postings.add(new FetchedPosting(externalId, row.getString(2), row.getString(3), row.getString(4),
                             row.getString(5)));

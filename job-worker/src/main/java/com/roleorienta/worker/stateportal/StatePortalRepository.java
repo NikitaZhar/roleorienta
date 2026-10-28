@@ -182,18 +182,22 @@ public class StatePortalRepository {
 
     /**
      * Объявления карты сайта пакетом (§219, {@code profesia_offer}): новые добавляются, известные — отметка «в карте
-     * сайта сейчас»; их сведения со страниц пишет {@link ProfesiaOfferRepository}.
+     * сайта сейчас»; компания — работодателя карты сайта ({@code profesia_employer}, записывается до этого,
+     * §220); их сведения со страниц пишет {@link ProfesiaOfferRepository}.
      *
      * @param offers объявления карты сайта
      */
     public void saveProfesiaOffers(List<ListedOffer> offers) {
         jdbcTemplate.batchUpdate("""
-                INSERT INTO profesia_offer (num, employer, url, listed_at) VALUES (?, ?, ?, now())
-                ON CONFLICT (num) DO UPDATE SET employer = EXCLUDED.employer, url = EXCLUDED.url, listed_at = now()
+                INSERT INTO profesia_offer (num, employer, url, listed_at, company_id)
+                VALUES (?, ?, ?, now(), (SELECT company_id FROM profesia_employer WHERE slug = ?))
+                ON CONFLICT (num) DO UPDATE SET employer = EXCLUDED.employer, url = EXCLUDED.url, listed_at = now(),
+                    company_id = EXCLUDED.company_id
                 """, offers, 1000, (statement, offer) -> {
                     statement.setLong(1, offer.num());
                     statement.setString(2, offer.employer());
                     statement.setString(3, offer.url());
+                    statement.setString(4, ProfesiaListHandler.slug(offer.employer()));
                 });
     }
 
