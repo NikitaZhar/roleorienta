@@ -172,7 +172,7 @@ class VacancyAcceptanceTests {
                 applied);
         // §213: отклик по вакансии, закрытой работодателем, — среди завершённых, не среди действующих.
         assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEmpty();
-        assertThat(client.send("GET", "/api/v1/me/responses?finished=true", null).body()).contains("\"closed\":true");
+        assertThat(client.send("GET", "/api/v1/me/responses?group=FINISHED", null).body()).contains("\"closed\":true");
         assertThat(events(client.send("GET", "/api/v1/me/vacancies/" + applied, null).body()))
                 .isEqualTo("RECEIVED,VIEWED,INTERVIEW,CLOSED");
 
@@ -181,8 +181,69 @@ class VacancyAcceptanceTests {
         assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEqualTo("Applied");
         assertThat(status(client, applied, "REJECTED")).isEqualTo(204);
         assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEmpty();
-        assertThat(titles(client.send("GET", "/api/v1/me/responses?finished=true", null).body()))
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?group=FINISHED", null).body()))
                 .isEqualTo("Applied");
+    }
+
+    /**
+     * Группы «Моих откликов» (§217): действующие — «Interview» над «Applied», затем свежие «Applied»; «Applied» без
+     * ответа 3+ недели — отдельно; без ответа 6+ недель — среди завершённых; «Interview» давностью 6+ недель —
+     * по-прежнему действующий: ответ уже был. Неизвестная группа — {@code 400}.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void responsesAreGroupedByReply() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        long fresh = delivered(condition, "FreshApplied", "ACTIVE", 0, 4);
+        long silent = delivered(condition, "SilentApplied", "ACTIVE", 0, 3);
+        long gaveUp = delivered(condition, "GaveUpApplied", "ACTIVE", 0, 2);
+        long interview = delivered(condition, "OldInterview", "ACTIVE", 0, 1);
+        for (long vacancy : new long[] {fresh, silent, gaveUp}) {
+            assertThat(status(client, vacancy, "APPLIED")).isEqualTo(204);
+        }
+        assertThat(status(client, interview, "INTERVIEW")).isEqualTo(204);
+        statusAge(silent, 25);
+        statusAge(gaveUp, 50);
+        statusAge(interview, 50);
+
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body()))
+                .isEqualTo("OldInterview,FreshApplied");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?group=SILENT", null).body()))
+                .isEqualTo("SilentApplied");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?group=FINISHED", null).body()))
+                .isEqualTo("GaveUpApplied");
+
+        // Ответ пришёл — «Interview»: отклик снова среди действующих, наверху.
+        assertThat(status(client, gaveUp, "INTERVIEW")).isEqualTo(204);
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body()))
+                .isEqualTo("GaveUpApplied,OldInterview,FreshApplied");
+        assertThat(client.send("GET", "/api/v1/me/responses?group=OTHER", null).status()).isEqualTo(400);
+    }
+
+    /**
+     * Старые вакансии (§217): размещённая работодателем больше 4 месяцев назад в результатах не показывается, без даты
+     * размещения — показывается; отклик на старую вакансию остаётся в «Моих откликах».
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void staleVacancyLeavesResultsButNotResponses() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        long stale = delivered(condition, "Stale", "ACTIVE", 0, 3);
+        posted(stale, 130);
+        long applied = delivered(condition, "StaleApplied", "ACTIVE", 0, 2);
+        posted(delivered(condition, "Recent", "ACTIVE", 0, 1), 100);
+        delivered(condition, "NoDate", "ACTIVE", 0, 1);
+        assertThat(status(client, applied, "APPLIED")).isEqualTo(204);
+        posted(applied, 130);
+
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies", null).body())).isEqualTo("NoDate,Recent");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses", null).body())).isEqualTo("StaleApplied");
     }
 
     /**
@@ -381,6 +442,12 @@ class VacancyAcceptanceTests {
     private void posted(long vacancy, int daysAgo) {
         jdbcTemplate.update("UPDATE vacancy SET posted_at = date_trunc('day', now() - make_interval(days => ?)) "
                 + "WHERE id = ?", daysAgo, vacancy);
+    }
+
+    /** Текущий статус поставлен столько дней назад. */
+    private void statusAge(long vacancy, int daysAgo) {
+        jdbcTemplate.update("UPDATE vacancy_user_status SET changed_at = now() - make_interval(days => ?) "
+                + "WHERE vacancy_id = ?", daysAgo, vacancy);
     }
 
     private void format(long vacancy, String format) {

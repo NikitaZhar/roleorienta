@@ -7,11 +7,12 @@ import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
 /**
- * Какой список (§156, §196): результаты поиска, действующие «Мои отклики», завершённые («Employer declined» и закрытые)» (под ними, свёрнуто) или
- * «Не интересно». У каждого — своя последняя колонка; у результатов — свой заголовок и объяснение пустого списка по
- * условиям, у «Моих откликов» и «Не интересно» — свой пустой текст, у завершённых пустого вида нет.
+ * Какой список (§156, §196, §217): результаты поиска, действующие «Мои отклики», под ними свёрнуто — «без ответа 3+
+ * недели» и завершённые («Employer declined», закрытые и без ответа 6+ недель), или «Не интересно». У каждого — своя
+ * последняя колонка; у результатов — свой заголовок и объяснение пустого списка по условиям, у «Моих откликов» и «Не
+ * интересно» — свой пустой текст, у свёрнутых пустого вида нет — пустые не показываются.
  */
-export type ListKind = 'results' | 'responses' | 'finished' | 'notInterested';
+export type ListKind = 'results' | 'responses' | 'silent' | 'finished' | 'notInterested';
 
 interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
@@ -54,12 +55,13 @@ const LAST_COLUMN: Record<ListKind, (item: VacancyItem, i18n: I18n) => ReactNode
     </span>
   ),
   responses: responseColumn,
+  silent: responseColumn,
   finished: responseColumn,
   notInterested: (item, i18n) => rowMarkedText(item.timeline.status.at, i18n),
 };
 
 /** Пустой раздел «Мои отклики» и «Не интересно» (§147). */
-const EMPTY_TEXT: Record<Exclude<ListKind, 'results' | 'finished'>, MessageKey> = {
+const EMPTY_TEXT: Record<Exclude<ListKind, 'results' | 'silent' | 'finished'>, MessageKey> = {
   responses: 'list.emptyResponses',
   notInterested: 'list.emptyNotInterested',
 };
@@ -113,8 +115,9 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
  * на предыдущий, аудит §121).
  *
  * <p>«Мои отклики» (действующие), завершённые и «Не интересно»: строка открывает сведения (статус и история),
- * «↗» рядом — публикация. В «Моих откликах» — заголовок с числом вакансий; «Employer declined» (§196) — под ними
- * свёрнутой строкой «Completed · N» — «Employer declined» и отклики по закрытым работодателем (§213), раскрытие — строками светлее; в «Не интересно» строки светлее, справа —
+ * «↗» рядом — публикация. В «Моих откликах» — заголовок с числом вакансий; под ними (§196)
+ * свёрнутыми строками «No reply 3+ weeks · N» — «Applied» без ответа 3–6 недель (§217) — и «Completed · N» — «Employer
+ * declined», отклики по закрытым работодателем (§213) и без ответа 6+ недель (§217), раскрытие завершённых — строками светлее; в «Не интересно» строки светлее, справа —
  * дата отметки и «Return»: вакансия возвращается к прежнему статусу (§156).
  */
 export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
@@ -139,7 +142,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [filter, setFilter] = useState<ResultFilter>({});
   /** Полоса «Returned to search results» после «Return» (§199). */
   const [returned, setReturned] = useState(false);
-  /** Завершённые отклики под «Моими откликами» (§196, §213): свёрнуто, пока не раскрыли. */
+  /** «Без ответа 3+ недели» и завершённые под «Моими откликами» (§196, §213, §217): свёрнуто, пока не раскрыли. */
   const [expanded, setExpanded] = useState(false);
   /**
    * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
@@ -322,11 +325,13 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const results = kind === 'results';
   const actions = kind === 'notInterested';
   const finished = kind === 'finished';
+  /** Свёрнутая группа под «Моими откликами»: строка-заголовок с числом, раскрывается нажатием; пустая не показывается. */
+  const collapsible = finished || kind === 'silent';
   const side = LAST_COLUMN[kind];
-  if ((results && data.total === 0 && !hasConditions) || (finished && data.total === 0)) {
+  if ((results && data.total === 0 && !hasConditions) || (collapsible && data.total === 0)) {
     return null;
   }
-  const rowsShown = !finished || expanded;
+  const rowsShown = !collapsible || expanded;
   const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
   const hasCounts = positions.length > 1 && positions.some((item) => item.count > 0);
   return (
@@ -337,9 +342,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
-      ) : finished ? (
+      ) : collapsible ? (
         <button type="button" className="list-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t('list.finished')}
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t(finished ? 'list.finished' : 'list.silent')}
           <span className="count-badge">{data.total}</span>
         </button>
       ) : title !== undefined && (
@@ -370,7 +375,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           ))}
         </div>
       )}
-      {data.total === 0 && kind !== 'results' && kind !== 'finished' && <Empty title={t(EMPTY_TEXT[kind])} />}
+      {data.total === 0 && kind !== 'results' && kind !== 'silent' && kind !== 'finished' && (
+        <Empty title={t(EMPTY_TEXT[kind])} />
+      )}
       {collecting && (
         <div className="collecting" role="status">
           <p className="muted">{t('list.collecting')}</p>

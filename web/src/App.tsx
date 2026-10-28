@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  type Account, browserTimeZone, currentAccount, finishedResponses, logout, responses, saveSettings,
+  type Account, browserTimeZone, currentAccount, finishedResponses, logout, responses, saveSettings, silentResponses,
   unsuitableVacancies, vacancies,
 } from './api';
 import { CompaniesPage } from './CompaniesPage';
@@ -199,6 +199,7 @@ export function App() {
             <>
               <VacancyList title={t('nav.applications')} kind="responses" load={responses} poll={false}
                 reload={reloads} onOpen={open} />
+              <VacancyList kind="silent" load={silentResponses} poll={false} reload={reloads} onOpen={open} />
               <VacancyList kind="finished" load={finishedResponses} poll={false} reload={reloads} onOpen={open} />
             </>
           )}

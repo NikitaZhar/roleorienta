@@ -127,16 +127,22 @@ public class VacancyRepository {
             WHERE st.user_id = ? AND st.status IN (%1$s)""";
 
     /**
-     * Отклики пользователя (§196, §213): параметры — пользователь и «завершённые». Действующие — «Applied» и
-     * «Interview» по вакансиям, которые работодатель не закрыл; завершённые — «Employer declined» и отклики по закрытым
-     * работодателем: ответа по ним уже не будет, сверху они только мешают видеть, с кем идёт работа.
+     * Отклики пользователя одной группы ({@link ResponseGroup}; §196, §213, §217): параметры — пользователь и имя
+     * группы. Завершённые — «Employer declined», отклики по закрытым работодателем и «Applied» без ответа
+     * {@value ResponseGroup#GIVE_UP_DAYS} дней: ответа по ним уже не будет, сверху они только мешают видеть, с кем идёт
+     * работа; «Applied» без ответа {@value ResponseGroup#SILENT_DAYS} дней — «нет ответа»; остальные — действующие.
+     * Сроки — от даты текущего статуса; числа подставлены из констант, не данные пользователя.
      */
     private static final String RESPONSES_FROM = """
              FROM vacancy_user_status st JOIN vacancy v ON v.id = st.vacancy_id
-            WHERE st.user_id = ?
-              AND CASE WHEN CAST(? AS BOOLEAN)
-                       THEN st.status = 'REJECTED' OR (st.status IN ('APPLIED', 'INTERVIEW') AND v.state = 'CLOSED')
-                       ELSE st.status IN ('APPLIED', 'INTERVIEW') AND v.state <> 'CLOSED' END""";
+            WHERE st.user_id = ? AND st.status IN ('APPLIED', 'INTERVIEW', 'REJECTED')
+              AND CASE WHEN st.status = 'REJECTED' OR v.state = 'CLOSED'
+                            OR (st.status = 'APPLIED' AND st.changed_at <= now() - make_interval(days => %2$d))
+                       THEN 'FINISHED'
+                       WHEN st.status = 'APPLIED' AND st.changed_at <= now() - make_interval(days => %1$d)
+                       THEN 'SILENT'
+                       ELSE 'ACTIVE' END = ?"""
+            .formatted(ResponseGroup.SILENT_DAYS, ResponseGroup.GIVE_UP_DAYS);
 
     /**
      * Вакансия по id для пользователя ({@code me.user_id}): видна, если выдавалась ему (по любой версии условий) или у
@@ -294,26 +300,28 @@ public class VacancyRepository {
     }
 
     /**
-     * Страница откликов, статус изменён позже сверху.
+     * Страница откликов группы, статус изменён позже сверху; у действующих «Interview» — над «Applied» (§217): с
+     * ними нужно что-то делать.
      *
-     * @param userId   пользователь
-     * @param finished {@code true} — завершённые; {@code false} — действующие ({@link #RESPONSES_FROM})
-     * @param page     смещение и размер страницы
+     * @param userId пользователь
+     * @param group  группа ({@link #RESPONSES_FROM})
+     * @param page   смещение и размер страницы
      * @return вакансии страницы
      */
-    public List<VacancyRow> responses(long userId, boolean finished, PageWindow page) {
+    public List<VacancyRow> responses(long userId, ResponseGroup group, PageWindow page) {
         return jdbcTemplate.query("SELECT " + COLUMNS.formatted("st.user_id") + RESPONSES_FROM
-                + " ORDER BY st.changed_at DESC, st.vacancy_id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), userId, finished, page.size(), page.offset());
+                + " ORDER BY (CAST(? AS TEXT) = 'ACTIVE' AND st.status = 'INTERVIEW') DESC, st.changed_at DESC,"
+                + " st.vacancy_id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row), userId, group.name(), group.name(), page.size(), page.offset());
     }
 
     /**
-     * @param userId   пользователь
-     * @param finished {@code true} — завершённые; {@code false} — действующие
-     * @return сколько откликов в разделе
+     * @param userId пользователь
+     * @param group  группа
+     * @return сколько откликов в группе
      */
-    public long countResponses(long userId, boolean finished) {
-        return jdbcTemplate.queryForObject("SELECT count(*)" + RESPONSES_FROM, Long.class, userId, finished);
+    public long countResponses(long userId, ResponseGroup group) {
+        return jdbcTemplate.queryForObject("SELECT count(*)" + RESPONSES_FROM, Long.class, userId, group.name());
     }
 
     /**

@@ -76,7 +76,10 @@ export function dateText(at: string | null, i18n: I18n): string {
   return at === null ? '' : new Date(at).toLocaleDateString(i18n.locale);
 }
 
-/** Сколько дней после отклика без ответа работодателя, прежде чем отклик напоминает о себе (решение владельца 2026-10-28, §216). */
+/**
+ * Сколько дней после отклика без ответа работодателя, прежде чем отклик напоминает о себе (решение владельца 2026-10-28,
+ * §216); то же число — у группы «No reply 3+ weeks» в API ({@code ResponseGroup.SILENT_DAYS}, §217).
+ */
 export const NO_REPLY_DAYS = 21;
 
 /**

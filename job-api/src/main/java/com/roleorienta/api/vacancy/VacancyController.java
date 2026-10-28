@@ -107,17 +107,18 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @param finished       {@code true} — завершённые: «Employer declined» и отклики по вакансиям, закрытым
-     *                       работодателем (§213); нет или {@code false} — действующие отклики («Applied», «Interview»)
-     *                       по открытым вакансиям (§196)
-     * @return «Мои отклики»: статус изменён позже сверху, и общее число
+     * @param group          группа откликов (§217): нет или {@code ACTIVE} — действующие («Interview» сверху),
+     *                       {@code SILENT} — «Applied» без ответа 3+ недели, {@code FINISHED} — завершённые
+     *                       («Employer declined», закрытые работодателем, без ответа 6+ недель); другое значение —
+     *                       {@code 400}
+     * @return «Мои отклики» одной группы: статус изменён позже сверху, и общее число
      */
     @GetMapping("/api/v1/me/responses")
     public VacancyPage responses(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
             @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
-            @RequestParam(defaultValue = "false") boolean finished) {
-        return vacancies.responses(userId(authentication), page, size, finished);
+            @RequestParam(defaultValue = "ACTIVE") ResponseGroup group) {
+        return vacancies.responses(userId(authentication), page, size, group);
     }
 
     /**

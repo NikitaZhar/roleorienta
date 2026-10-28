@@ -161,18 +161,17 @@ public class VacancyService {
      * @param userId   пользователь
      * @param page     номер страницы, с 1
      * @param size     строк на странице
-     * @param finished {@code false} — действующие отклики («Applied», «Interview») по открытым вакансиям; {@code true}
-     *                 — завершённые (§196, §213: ниже действующих, свёрнуто): «Employer declined» и отклики по
-     *                 вакансиям, закрытым работодателем
+     * @param group    группа откликов ({@link ResponseGroup}, §217): действующие сверху, ниже свёрнуто — «нет ответа»
+     *                 и завершённые
      * @return страница откликов и общее число
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage responses(long userId, int page, int size, boolean finished) {
+    public VacancyPage responses(long userId, int page, int size, ResponseGroup group) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
-        List<VacancyRow> shown = repository.responses(userId, finished, window(number, rows));
+        List<VacancyRow> shown = repository.responses(userId, group, window(number, rows));
         return new VacancyPage(items(shown, null, Map.of()), number, rows,
-                repository.countResponses(userId, finished), 0);
+                repository.countResponses(userId, group), 0);
     }
 
     /**

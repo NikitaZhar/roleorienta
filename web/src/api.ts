@@ -422,14 +422,22 @@ export function unsuitableVacancies(page: number, size: number): Promise<Vacancy
   return listPage('/api/v1/me/unsuitable', page, size);
 }
 
-/** @returns страница «Мои отклики» (§156) */
+/** @returns страница действующих «Моих откликов» (§156, §217): «Interview» сверху, затем «Applied» моложе 3 недель */
 export function responses(page: number, size: number): Promise<VacancyPage> {
   return listPage('/api/v1/me/responses', page, size);
 }
 
-/** @returns страница завершённых откликов — «Employer declined» и закрытые работодателем, под действующими (§196, §213) */
+/** @returns страница откликов «Applied» без ответа 3–6 недель (§217), под действующими, свёрнуто */
+export function silentResponses(page: number, size: number): Promise<VacancyPage> {
+  return request<VacancyPage>('GET', '/api/v1/me/responses?group=SILENT&page=' + page + '&size=' + size);
+}
+
+/**
+ * @returns страница завершённых откликов (§196, §213, §217) — «Employer declined», закрытые работодателем и без ответа
+ * 6+ недель, ниже всех, свёрнуто
+ */
 export function finishedResponses(page: number, size: number): Promise<VacancyPage> {
-  return request<VacancyPage>('GET', '/api/v1/me/responses?finished=true&page=' + page + '&size=' + size);
+  return request<VacancyPage>('GET', '/api/v1/me/responses?group=FINISHED&page=' + page + '&size=' + size);
 }
 
 /** @returns сведения о вакансии */

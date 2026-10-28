@@ -122,6 +122,23 @@ class DeliveryAcceptanceTests {
     }
 
     /**
+     * Старые вакансии (§217): размещённая работодателем больше 4 месяцев назад не выдаётся; моложе и без даты
+     * размещения — выдаются.
+     */
+    @Test
+    void staleVacancyIsNotDelivered() {
+        long stale = vacancy("Java Developer stale", 1, "acme");
+        long recent = vacancy("Java Developer recent", 2, "acme");
+        vacancy("Java Developer undated", 3, "acme");
+        postedDaysAgo(stale, 130);
+        postedDaysAgo(recent, 100);
+
+        assertThat(runPass()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM delivered_vacancy WHERE vacancy_id = ?",
+                Integer.class, stale)).isZero();
+    }
+
+    /**
      * Сценарий 2: пять вакансий — первая порция; три новые — следующая.
      */
     @Test
@@ -400,6 +417,11 @@ class DeliveryAcceptanceTests {
 
     private void confirmedDaysAgo(long vacancyId, int days) {
         jdbcTemplate.update("UPDATE vacancy SET last_confirmed_at = now() - ? * interval '1 day' WHERE id = ?", days,
+                vacancyId);
+    }
+
+    private void postedDaysAgo(long vacancyId, int days) {
+        jdbcTemplate.update("UPDATE vacancy SET posted_at = now() - ? * interval '1 day' WHERE id = ?", days,
                 vacancyId);
     }
 
