@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   type PositionCount, type ResultFilter, resultFilters, searchCondition, setStatus, type VacancyItem, type VacancyPage,
 } from './api';
-import { dateText, rowMarkedText, rowMetaText, rowOpenedText, statusLabel } from './format';
+import { dateText, noReplyText, rowMarkedText, rowMetaText, rowOpenedText, statusLabel } from './format';
 import { errorText, type I18n, type MessageKey, useI18n } from './i18n';
 import { PAGE_SIZES, PageSize, Pager, storedSize, storeSize } from './Pager';
 
@@ -26,12 +26,15 @@ interface Props {
   onOpen: (id: number) => void;
 }
 
-/** Статус отклика пилюлей своего цвета и под ней дата (срез 4 нового облика). */
+/** Статус отклика пилюлей своего цвета, под ней дата и, если ответа давно нет, «No reply for N days» (§216). */
 function responseColumn(item: VacancyItem, i18n: I18n): ReactNode {
   return (
     <>
       <span className={'pill status-' + item.timeline.status.code}>{statusLabel(item.timeline.status.code, i18n)}</span>
       <span>{dateText(item.timeline.status.at, i18n)}</span>
+      {noReplyText(item.timeline.status, i18n) !== '' && (
+        <span className="no-reply">{noReplyText(item.timeline.status, i18n)}</span>
+      )}
     </>
   );
 }

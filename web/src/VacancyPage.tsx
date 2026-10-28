@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { setStatus, type StatusEvent, vacancy, type VacancyDetails } from './api';
-import { countriesText, dateText, formatText, historyLabel, languagesText, openedText, statusLabel } from './format';
+import { countriesText, dateText, formatText, historyLabel, languagesText, noReplyText, openedText, statusLabel } from './format';
 import { errorText, useI18n } from './i18n';
 
 interface Props {
@@ -23,7 +23,8 @@ const RESPONSES = ['APPLIED', 'INTERVIEW', 'REJECTED'] as const;
  * («Only office», «Only remote — from …», «Hybrid»), требования к языку (§158), дата открытия («found …», если
  * работодатель даты не дал, §127); чего нет, той строки нет (§192, принцип владельца: нет информации — показываем то,
  * что есть); затем ссылка на первичную публикацию; затем — вместе — текущий статус с датой и выбором (§195: у отклика —
- * «Applied», «Interview», «Employer declined», у «Applied» ещё «Return to results» — ошибочный «✓» (§200); у «Не
+ * «Applied», «Interview», «Employer declined», у «Applied» ещё пункт «Not applied — back to search results» — ошибочный «✓» (§200;
+ * отдельной кнопкой он выглядел вторым «назад», §216); через {@code NO_REPLY_DAYS} дней без ответа — «No reply for N days»; у «Не
  * интересно» вместо выбора — «Return»; вакансия возвращается в результаты и карточка закрывается) и история с датами, раньше сверху. После смены статуса — сразу возврат к списку
  * (§199), список перечитывается: новая метка статуса или вакансия, ушедшая в свёрнутые отказы, видны там.
  * Состояние и дата последней проверки не показываются (решение владельца 2026-10-20, §146). Открываются только из «Моих
@@ -55,7 +56,7 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
   }
 
   /**
-   * «Return» у «Не интересно» (§195) и «Return to results» у «Applied» (§200): вакансия возвращается в результаты,
+   * «Return» у «Не интересно» (§195) и пункт «Not applied — back to search results» у «Applied» (§200, §216): вакансия возвращается в результаты,
    * карточка закрывается.
    */
   async function giveBack() {
@@ -109,16 +110,16 @@ export function VacancyPage({ id, backLabel, onBack }: Props) {
           ) : (
             <label>
               <span className="muted">{t('vacancy.status')}</span>{' '}
-              <select value={status.code} disabled={busy} onChange={(event) => choose(event.target.value as StatusEvent)}>
+              <select value={status.code} disabled={busy} onChange={(event) => (event.target.value === 'RETURNED'
+                ? giveBack() : choose(event.target.value as StatusEvent))}>
                 {RESPONSES.map((choice) => <option key={choice} value={choice}>{statusLabel(choice, i18n)}</option>)}
+                {status.code === 'APPLIED' && <option value="RETURNED">{t('vacancy.returnToResults')}</option>}
               </select>
             </label>
           )}
-          {status.code === 'APPLIED' && (
-            <button type="button" disabled={busy} onClick={giveBack}>{t('vacancy.returnToResults')}</button>
-          )}
           <span className="muted">{[dateText(status.at, i18n), status.closed ? t('vacancy.closedByEmployer') : '']
             .filter((part) => part !== '').join(' · ')}</span>
+          {noReplyText(status, i18n) !== '' && <span className="no-reply">{noReplyText(status, i18n)}</span>}
         </div>
         <h3>{t('vacancy.history')}</h3>
         <ol className="history">

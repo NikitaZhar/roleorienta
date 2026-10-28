@@ -1640,3 +1640,9 @@ table.dictionary .nowrap {
     padding: 16px;
   }
 }
+
+/* «Нет ответа N дн.» (§216): отклик без ответа три недели и дольше — акцентом, чтобы напомнить, но не тревожить. */
+.no-reply {
+  color: var(--accent-ink);
+  font-size: 13px;
+}

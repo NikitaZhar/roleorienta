@@ -76,6 +76,21 @@ export function dateText(at: string | null, i18n: I18n): string {
   return at === null ? '' : new Date(at).toLocaleDateString(i18n.locale);
 }
 
+/** Сколько дней после отклика без ответа работодателя, прежде чем отклик напоминает о себе (решение владельца 2026-10-28, §216). */
+export const NO_REPLY_DAYS = 21;
+
+/**
+ * «No reply for N days» (§216): статус «Applied» поставлен {@link NO_REPLY_DAYS} и более дней назад, вакансия не закрыта;
+ * иначе пусто. Собеседование и отказ — ответ уже есть, напоминания нет.
+ */
+export function noReplyText(status: UserStatus, i18n: I18n, now: number = Date.now()): string {
+  if (status.code !== 'APPLIED' || status.closed || status.at === null) {
+    return '';
+  }
+  const days = Math.floor((now - new Date(status.at).getTime()) / 86_400_000);
+  return days >= NO_REPLY_DAYS ? i18n.t('list.noReply', { days }) : '';
+}
+
 /** Подпись статуса вакансии у пользователя (§156). */
 export function statusLabel(code: UserStatus['code'], i18n: I18n): string {
   return i18n.t(('status.' + code) as MessageKey);
