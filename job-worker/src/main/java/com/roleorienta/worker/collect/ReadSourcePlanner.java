@@ -54,14 +54,16 @@ public class ReadSourcePlanner {
 
     /**
      * Ставит чтение каждого источника, которому пора читаться, кроме источников провайдеров с общим хостом (их ставит
-     * {@link #continueSharedHosts()}) и источников портала (их вакансии записываются из общего списка —
-     * {@code PortalRecordHandler}, стенограмма §107). Вызывается тиком раз в час.
+     * {@link #continueSharedHosts()}), источников портала (их вакансии записываются из общего списка —
+     * {@code PortalRecordHandler}, стенограмма §107) и объявлений profesia.sk (записываются заданием
+     * {@code PROFESIA_OFFERS}, §219). Вызывается тиком раз в час.
      */
     public void enqueueDue() {
         Set<String> pending = taskService.activeKeys(ReadSourceHandler.TYPE).stream()
                 .map(ReadSourcePlanner::sourcePrefix).collect(Collectors.toSet());
         for (Source source : sources.findToRead(StatePortalAdapter.PROVIDER, readAfterSeconds())) {
             if (!StatePortalAdapter.PROVIDER.equals(source.getProvider())
+                    && !StatePortalAdapter.PROFESIA_PROVIDER.equals(source.getProvider())
                     && !properties.sharedHostProviders().contains(source.getProvider())
                     && !pending.contains(KEY_PREFIX + source.getId() + ":")) {
                 enqueue(source);

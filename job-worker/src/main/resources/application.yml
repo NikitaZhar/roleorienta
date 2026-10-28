@@ -80,7 +80,7 @@ app:
                              # достаётся по очереди — первым более старое отложенное задание (§96)
       exclusive:
         portal: [STATE_PORTAL, PORTAL_LIST]       # государственный портал: работодатели, сайт, общий список вакансий
-        profesia: [PROFESIA_SITE, PROFESIA_LIST]  # profesia.sk
+        profesia: [PROFESIA_SITE, PROFESIA_LIST, PROFESIA_OFFERS]  # profesia.sk
   http:
     connect-timeout: 5s      # установление соединения
     read-timeout: 20s        # ожидание ответа и данных
@@ -208,6 +208,10 @@ app:
     profesia-sitemap-url: https://www.profesia.sk/sitemap.php  # список работодателей profesia.sk (§83)
     profesia-sitemap-max-bytes: 16777216  # потолок только для карты сайта profesia.sk (≈ 7 МБ; аудит §84)
     profesia-task-time-budget: 3m        # задание PROFESIA_SITE/LIST не дольше — укладывается в аренду (10m; аудит §84)
+    profesia-offers:                     # объявления profesia.sk, которых нет на портале (§219), задание PROFESIA_OFFERS
+      enabled: true                      # false — не добираются (задания цепочки завершаются сразу)
+      pages-per-task: 100                # страниц объявлений за задание — квота в час (~2 400 в сутки)
+      time-budget: 3m                    # новые страницы не начинаются дольше — продолжение в следующем часу
   match:                     # предрасчёт соответствия вакансий позициям (словарь позиций — в БД, §159)
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки

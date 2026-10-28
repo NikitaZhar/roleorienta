@@ -17,6 +17,7 @@ import com.roleorienta.worker.site.SiteScanHandler;
 import com.roleorienta.worker.site.WikidataSiteHandler;
 import com.roleorienta.worker.snapshot.SnapshotPurgeHandler;
 import com.roleorienta.worker.stateportal.ProfesiaListHandler;
+import com.roleorienta.worker.stateportal.ProfesiaOffersHandler;
 import com.roleorienta.worker.stateportal.ProfesiaSiteHandler;
 import com.roleorienta.worker.stateportal.StatePortalHandler;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,7 @@ class RabbitTopologyTests {
         assertThat(RabbitTopology.DISCOVERY_TYPES).containsExactlyInAnyOrder(RegistryIntakeHandler.TYPE,
                 SiteScanHandler.TYPE, WikidataSiteHandler.TYPE, CareerScanHandler.TYPE, BoardDiscoveryHandler.TYPE,
                 StatePortalHandler.TYPE, GeoImportHandler.TYPE, CompanySizeHandler.TYPE, ProfesiaSiteHandler.TYPE,
-                ProfesiaListHandler.TYPE, SnapshotPurgeHandler.TYPE);
+                ProfesiaListHandler.TYPE, ProfesiaOffersHandler.TYPE, SnapshotPurgeHandler.TYPE);
         assertThat(RabbitTopology.routingKey(StatePortalHandler.TYPE)).isEqualTo(RabbitTopology.DISCOVERY_ROUTING_KEY);
     }
 

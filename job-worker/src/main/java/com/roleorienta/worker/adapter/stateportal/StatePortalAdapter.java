@@ -43,6 +43,13 @@ public class StatePortalAdapter implements SourceAdapter {
     /** Код провайдера ({@code source.provider}, {@code source_permission.provider}). */
     public static final String PROVIDER = "sluzbyzamestnanosti";
 
+    /**
+     * Провайдер источников объявлений profesia.sk, которых нет на портале (§219; доска — работодатель в адресе
+     * объявления): их вакансии записываются из карты сайта и страниц объявлений (задание {@code PROFESIA_OFFERS}),
+     * чтение по источнику планировщик не ставит — как у источников портала.
+     */
+    public static final String PROFESIA_PROVIDER = "profesia";
+
     /** Работодателей на страницу списка работодателей (наибольшее, что портал отдаёт). */
     static final int EMPLOYERS_PAGE_SIZE = 200;
 

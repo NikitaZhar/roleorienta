@@ -3,6 +3,7 @@ package com.roleorienta.worker.stateportal;
 import com.roleorienta.worker.adapter.stateportal.PortalEmployer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.site.SiteScanRepository;
+import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -176,6 +177,23 @@ public class StatePortalRepository {
                     statement.setString(1, row.getKey());
                     statement.setString(2, row.getValue());
                     statement.setString(3, row.getKey());
+                });
+    }
+
+    /**
+     * Объявления карты сайта пакетом (§219, {@code profesia_offer}): новые добавляются, известные — отметка «в карте
+     * сайта сейчас»; их сведения со страниц пишет {@link ProfesiaOfferRepository}.
+     *
+     * @param offers объявления карты сайта
+     */
+    public void saveProfesiaOffers(List<ListedOffer> offers) {
+        jdbcTemplate.batchUpdate("""
+                INSERT INTO profesia_offer (num, employer, url, listed_at) VALUES (?, ?, ?, now())
+                ON CONFLICT (num) DO UPDATE SET employer = EXCLUDED.employer, url = EXCLUDED.url, listed_at = now()
+                """, offers, 1000, (statement, offer) -> {
+                    statement.setLong(1, offer.num());
+                    statement.setString(2, offer.employer());
+                    statement.setString(3, offer.url());
                 });
     }
 

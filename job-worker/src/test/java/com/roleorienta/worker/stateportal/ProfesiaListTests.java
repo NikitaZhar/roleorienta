@@ -3,6 +3,7 @@ package com.roleorienta.worker.stateportal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -163,6 +164,11 @@ class ProfesiaListTests {
                 Map.entry("gama-slovakia", BASE + "/praca/gama-slovakia-k-s/O7"),
                 Map.entry("delta", BASE + "/praca/delta/O9"));
         assertThat(ProfesiaListHandler.slug("hagard-hal-spol-s-r-o")).isEqualTo("hagard-hal");
+        // §219: все объявления карты сайта — номер, работодатель в адресе, адрес
+        assertThat(ProfesiaListHandler.offers(PAGES.get("/sitemap.php"))).containsExactly(
+                new ListedOffer(7, "gama-slovakia-k-s", BASE + "/praca/gama-slovakia-k-s/O7"),
+                new ListedOffer(8, "gama-slovakia-k-s", BASE + "/praca/gama-slovakia-k-s/O8"),
+                new ListedOffer(9, "delta", BASE + "/praca/delta/O9"));
         assertThat(ProfesiaListHandler.employers("<loc>" + BASE + "/praca/omega-s-r-o/O1</loc>"
                 + "<loc>" + BASE + "/praca/omega-a-s/O2</loc><loc>" + BASE + "/praca/sigma-a-s/O3</loc>"))
                 .containsOnlyKeys("sigma");

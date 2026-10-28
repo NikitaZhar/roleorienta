@@ -16,9 +16,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Чтение profesia.sk для шагов 2 и 3 алгоритма кадровых страниц (§82, §83): объявление → страница компании и её
- * разделы → ссылка компании ({@link ProfesiaCompanyPage}), и карта сайта. Общий для заданий {@code PROFESIA_SITE} и
- * {@code PROFESIA_LIST} (аудит §84: прежде одно задание пользовалось другим как HTTP-клиентом). robots.txt и пауза на
- * хост соблюдаются {@link ExternalHttpClient}; вакансии с profesia.sk не читаются.
+ * разделы → ссылка компании ({@link ProfesiaCompanyPage}), и карта сайта; страница объявления, которого нет на портале
+ * ({@link #offer}, §219). Общий для заданий {@code PROFESIA_SITE}, {@code PROFESIA_LIST} и {@code PROFESIA_OFFERS}
+ * (аудит §84: прежде одно задание пользовалось другим как HTTP-клиентом). robots.txt и пауза на хост соблюдаются
+ * {@link ExternalHttpClient}.
  */
 @Component
 public class ProfesiaPages {
@@ -87,6 +88,22 @@ public class ProfesiaPages {
     }
 
     /**
+     * Страница объявления (§219): сведения ({@link ProfesiaOfferPage}); постоянный отказ (404, запрет robots.txt),
+     * неразбираемый адрес или страница без названия — {@link OfferGone}; временный отказ — {@link OfferUnavailable}.
+     *
+     * @param url адрес объявления из карты сайта
+     * @return сведения, «нет объявления» или «profesia.sk временно недоступна»
+     */
+    public OfferRead offer(String url) {
+        return switch (page(url)) {
+            case Read read -> ProfesiaOfferPage.parse(read.document())
+                    .<OfferRead>map(OfferFound::new).orElseGet(OfferGone::new);
+            case Failed failed -> new OfferUnavailable(failed.failure());
+            case Gone gone -> new OfferGone();
+        };
+    }
+
+    /**
      * Ссылка → сайт: хост ссылки; путь ссылки (кадровая страница) — стартовая страница, главная — без неё; адрес
      * длиннее колонки — без стартовой страницы. Ссылки приходят уже разобранными ({@link ProfesiaCompanyPage}).
      */
@@ -139,6 +156,22 @@ public class ProfesiaPages {
      * @param failure временный отказ ({@code Retry-After} — в нём)
      */
     public record Unavailable(HttpResult.TemporaryFailure failure) implements Lookup {
+    }
+
+    /** Итог чтения страницы объявления (§219). */
+    public sealed interface OfferRead permits OfferFound, OfferGone, OfferUnavailable {
+    }
+
+    /** @param offer сведения объявления */
+    record OfferFound(ProfesiaOfferPage.Offer offer) implements OfferRead {
+    }
+
+    /** Объявления нет: удалено, закрыто robots.txt или страница без названия. */
+    public record OfferGone() implements OfferRead {
+    }
+
+    /** @param failure временный отказ profesia.sk ({@code Retry-After} — в нём) */
+    public record OfferUnavailable(HttpResult.TemporaryFailure failure) implements OfferRead {
     }
 
     /** Страница profesia.sk: прочитана, временный отказ или нет её. */

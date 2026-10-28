@@ -173,15 +173,15 @@ public class MetricsRepository {
 
     /**
      * Источники с просроченным чтением: доступные (не «недоступен»), читаемые заданием чтения (без источников
-     * государственного портала — их вакансии пишутся общим списком, §107), созданные раньше чем за
-     * {@link #READ_OVERDUE_AFTER} до конца дня и без чтения, начатого за это время. Параметры: день, провайдер портала,
-     * начало окна, конец дня.
+     * государственного портала — их вакансии пишутся общим списком, §107, — и объявлений profesia.sk — заданием
+     * {@code PROFESIA_OFFERS}, §219), созданные раньше чем за {@link #READ_OVERDUE_AFTER} до конца дня и без чтения,
+     * начатого за это время. Параметры: день, провайдеры портала и profesia.sk, начало окна, конец дня.
      */
     private static final String SOURCES_OVERDUE = SOURCE_COUNTRY + """
             INSERT INTO core_metric_daily (day, country, metric, dimension, value)
             SELECT CAST(? AS date), country, 'sources_overdue', '', count(*)
             FROM placed
-            WHERE availability <> 'UNAVAILABLE' AND provider <> ? AND created_at < CAST(? AS timestamptz)
+            WHERE availability <> 'UNAVAILABLE' AND provider NOT IN (?, ?) AND created_at < CAST(? AS timestamptz)
               AND NOT EXISTS (SELECT 1 FROM crawl_run r WHERE r.source_id = placed.id
                               AND r.started_at >= CAST(? AS timestamptz) AND r.started_at < CAST(? AS timestamptz))
             GROUP BY country
@@ -228,7 +228,8 @@ public class MetricsRepository {
         jdbcTemplate.update(SOURCES, day);
         jdbcTemplate.update(SOURCE_READS, day, from, to);
         OffsetDateTime overdueSince = utc(end.minus(READ_OVERDUE_AFTER));
-        jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, overdueSince, overdueSince, to);
+        jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
+                overdueSince, overdueSince, to);
         jdbcTemplate.update(FAILED_OPERATIONS, day, from, to);
     }
 

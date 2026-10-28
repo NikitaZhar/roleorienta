@@ -34,6 +34,8 @@ app:
     enabled: false           # справочник GeoNames в тестах не загружается
   state-portal:
     enabled: false           # работа с государственным порталом ставится из теста вручную
+    profesia-offers:
+      enabled: false         # добор объявлений profesia.sk (§219) — только в своём тесте
   wikidata:
     enabled: false           # шаг «Wikidata» ставится из теста вручную
   site-name:

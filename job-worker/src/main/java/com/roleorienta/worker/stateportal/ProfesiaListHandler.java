@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import com.roleorienta.worker.stateportal.ProfesiaPages.Found;
 import com.roleorienta.worker.stateportal.ProfesiaPages.Lookup;
 import com.roleorienta.worker.stateportal.ProfesiaPages.Unavailable;
@@ -32,11 +33,12 @@ import org.springframework.stereotype.Component;
  * если вакансии на портале и на profesia.sk различаются). Нулевой круг читает карту сайта profesia.sk
  * ({@code sitemap.php}, объявлена в robots.txt): объявления {@code /praca/<работодатель>/O<номер>} — по первому на
  * работодателя; работодатель сопоставляется компании реестра по названию ({@code company.name_slug}, только
- * однозначно). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
+ * однозначно); все объявления карты сайта — в {@code profesia_offer}, и ставится цепочка добора объявлений, которых
+ * нет на портале ({@link ProfesiaOffersHandler}, §219). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
  * работодателей: объявление → страница
  * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaPages#find}), запись сайта компании (источник
  * и подтверждение {@code PROFESIA}). Компании, у которых сайт со страницы profesia.sk уже есть (шаг 2 или этот),
- * не берутся. profesia.sk — только путь к сайту: вакансии с неё не читаются.
+ * не берутся.
  *
  * <p>Срок задания, временный отказ profesia.sk и отметка «смотрели» — как у {@link ProfesiaSiteHandler} (аудит §84).
  * Карта сайта: временный отказ — повтор задания, постоянный (запрет robots.txt, 403, больше потолка) — неудача без
@@ -60,7 +62,7 @@ public class ProfesiaListHandler implements TaskHandler {
     private static final int MAX_AD_URL = 1000;
     /** Объявление в карте сайта: {@code <loc>…/praca/<работодатель>/O<номер></loc>}. */
     private static final Pattern OFFER =
-            Pattern.compile("<loc>\\s*(https?://[^<\\s]*/praca/([^/<\\s]+)/O\\d+)\\s*</loc>");
+            Pattern.compile("<loc>\\s*(https?://[^<\\s]*/praca/([^/<\\s]+)/O(\\d{1,18}))\\s*</loc>");
     /**
      * Правовая форма в конце названия — то же выражение, что в вычисляемом столбце {@code company.name_slug} (V43);
      * меняются только вместе (применённая миграция не меняется — новой миграцией).
@@ -131,8 +133,12 @@ public class ProfesiaListHandler implements TaskHandler {
     private TaskOutcome saveList(String day, String sitemap) {
         Map<String, String> employers = employers(sitemap);
         repository.saveProfesiaList(employers);
-        LOG.info("Profesia sitemap: {} employers listed", employers.size());
+        List<ListedOffer> offers = offers(sitemap);
+        repository.saveProfesiaOffers(offers);
+        LOG.info("Profesia sitemap: {} employers, {} offers listed", employers.size(), offers.size());
         taskService.enqueue(TYPE, key(day, 1), payload(day, 1));
+        taskService.startChain(ProfesiaOffersHandler.TYPE, ProfesiaOffersHandler.key(day, 1),
+                ProfesiaOffersHandler.payload(day, 1));
         return new TaskOutcome.Done();
     }
 
@@ -191,6 +197,25 @@ public class ProfesiaListHandler implements TaskHandler {
         }
         employers.keySet().removeAll(ambiguous);
         return employers;
+    }
+
+    /**
+     * Объявления карты сайта (§219): номер, работодатель в адресе и адрес; адреса длиннее колонок
+     * {@code profesia_offer} не берутся, повтор номера — первый.
+     *
+     * @param sitemap карта сайта profesia.sk
+     * @return объявления по порядку карты сайта
+     */
+    static List<ListedOffer> offers(String sitemap) {
+        Map<Long, ListedOffer> offers = new LinkedHashMap<>();
+        Matcher offer = OFFER.matcher(sitemap);
+        while (offer.find()) {
+            if (offer.group(2).length() <= MAX_SLUG && offer.group(1).length() <= MAX_AD_URL) {
+                long num = Long.parseLong(offer.group(3));
+                offers.putIfAbsent(num, new ListedOffer(num, offer.group(2), offer.group(1)));
+            }
+        }
+        return List.copyOf(offers.values());
     }
 
     /**

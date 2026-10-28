@@ -50,13 +50,13 @@ public class RabbitTopology {
     /**
      * Типы заданий поиска (константы {@code TYPE} обработчиков: приём реестра, скан сайтов, сайты из Wikidata,
      * проверка кадровых страниц, обратный путь, государственный портал, загрузка справочника GeoNames, число
-     * сотрудников из RÚZ, удаление снимков по сроку — долгая служебная работа не задерживает чтение). Строками,
+     * сотрудников из RÚZ, объявления profesia.sk, удаление снимков по сроку — долгая служебная работа не задерживает чтение). Строками,
      * а не ссылками на обработчики: пакет обмена сообщениями не зависит от пакетов обработчиков (иначе
      * цикл пакетов); соответствие проверяет тест. Прочие типы — сбор.
      */
     static final Set<String> DISCOVERY_TYPES = Set.of("REGISTRY_INTAKE", "SITE_SCAN", "SITE_WIKIDATA",
             "CAREER_SCAN", "BOARD_DISCOVERY", "STATE_PORTAL", "GEO_IMPORT", "COMPANY_SIZE", "PROFESIA_SITE",
-            "PROFESIA_LIST", "SNAPSHOT_PURGE");
+            "PROFESIA_LIST", "PROFESIA_OFFERS", "SNAPSHOT_PURGE");
 
     /** Очередь заданий «адрес по названию» (шаги 3–4 поиска сайта). */
     public static final String SITE_NAME_QUEUE = "roleorienta.jobs.site-name";
