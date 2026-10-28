@@ -204,7 +204,8 @@ public class PostingRecorder {
 
     /**
      * @param source источник
-     * @return внешние id незакрытых публикаций источника
+     * @return внешние id незакрытых публикаций источника, дольше не подтверждённые — первыми (§218): проверка пропавших
+     *         за чтение ограничена числом и так доходит до каждой
      */
     @Transactional(readOnly = true)
     public List<String> openExternalIds(Source source) {

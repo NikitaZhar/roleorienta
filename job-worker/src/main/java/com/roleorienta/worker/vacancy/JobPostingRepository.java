@@ -68,9 +68,14 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
     List<String> findExternalIdsWithPostedDate(Long sourceId);
 
     /**
+     * Порядок — дольше всех не подтверждённые первыми (§218): проверка пропавших из списка с фильтром по стране
+     * ограничена числом за чтение, и без порядка каждое чтение проверяло бы одни и те же первые публикации, а остальные
+     * не проверялись бы никогда — не закрывались и не подтверждались (у MSD, PwC, Roche — сотни с начала октября).
+     *
      * @param sourceId источник
-     * @return внешние id незакрытых публикаций источника
+     * @return внешние id незакрытых публикаций источника, дольше не подтверждённые — первыми
      */
-    @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.closedAt is null")
+    @Query("select p.externalId from JobPosting p where p.source.id = ?1 and p.closedAt is null"
+            + " order by p.lastConfirmedAt, p.id")
     List<String> findOpenExternalIds(Long sourceId);
 }
