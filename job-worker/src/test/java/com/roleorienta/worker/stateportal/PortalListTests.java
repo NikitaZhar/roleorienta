@@ -217,6 +217,23 @@ class PortalListTests {
     }
 
     /**
+     * Своя кадровая страница, найденная разбором сайта ({@code careerpage}), подключению портала не мешает (§225):
+     * источник портала подключён и {@link #DETAIL}, его вакансия записана.
+     */
+    @Test
+    void completedCycleConnectsEmployerWithCareerPage() {
+        jdbcTemplate.update("UPDATE source SET provider = 'careerpage' WHERE board = ?", OWN_PAGE_BOARD);
+        handler.startCycleIfDue();
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("SELECT s.board || ':' || c.registration_number FROM company_source cs "
+                + "JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id "
+                + "WHERE s.provider = 'sluzbyzamestnanosti'", String.class))
+                .containsExactlyInAnyOrder(LISTED_NUMBER + ":" + LISTED_NUMBER, OWN_PAGE_NUMBER + ":" + OWN_PAGE_NUMBER);
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_C + ":ACTIVE", UUID_E + ":ACTIVE");
+    }
+
+    /**
      * Вакансия, которой нет в трёх полных обходах подряд, закрыта; остальные — актуальны (§107).
      */
     @Test

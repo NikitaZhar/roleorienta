@@ -17,7 +17,9 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
      * Один канал на компанию (общая часть запросов): все незакрытые источники (закрывает администратор, §206), кроме
      * источника канала ниже кадровой страницы (государственный портал, {@code ?1}), если у его компании есть другой
      * незакрытый источник — у компании читается один канал (бизнес-описание §4.1); кадровый сайт группы (роль
-     * {@code GROUP}, §81) портал не отключает.
+     * {@code GROUP}, §81) и своя кадровая страница, найденная разбором сайта (провайдер {@code careerpage},
+     * {@code CareerPageAdapter.PROVIDER}; §225: у 218 из 481 компании она давала меньше вакансий, чем портал), портал
+     * не отключают.
      */
     String ONE_CHANNEL = """
             SELECT s.* FROM source s
@@ -27,7 +29,8 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
                                   JOIN company_source other ON other.company_id = own.company_id
                                                                AND other.role <> 'GROUP'
                                   JOIN source o ON o.id = other.source_id AND o.closed_at IS NULL
-                                  WHERE own.source_id = s.id AND o.provider <> ?1))
+                                  WHERE own.source_id = s.id AND o.provider <> ?1
+                                    AND o.provider <> 'careerpage'))
             """;
 
     /**

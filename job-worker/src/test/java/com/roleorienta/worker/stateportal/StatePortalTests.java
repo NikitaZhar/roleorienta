@@ -288,6 +288,29 @@ class StatePortalTests {
     }
 
     /**
+     * Своя кадровая страница, найденная разбором сайта ({@code careerpage}), портал компании не отключает (§225):
+     * читаются оба.
+     */
+    @Test
+    void careerPageDoesNotDisablePortal() {
+        jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES (?, ?, 'SK')",
+                StatePortalAdapter.PROVIDER, OWN_PAGE);
+        jdbcTemplate.update("""
+                INSERT INTO company_source (company_id, source_id, role)
+                SELECT c.id, s.id, 'EMPLOYER' FROM company c, source s
+                WHERE c.registration_number = ? AND s.provider = ? AND s.board = ?
+                """, OWN_PAGE, StatePortalAdapter.PROVIDER, OWN_PAGE);
+        jdbcTemplate.update("UPDATE source SET provider = 'careerpage' WHERE board = 'own-page-test'");
+
+        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+                .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
+
+        assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE, "careerpage:own-page-test");
+        assertThat(sources.findChannelSources(StatePortalAdapter.PROVIDER).stream().map(source -> source.getBoard()))
+                .contains(OWN_PAGE);
+    }
+
+    /**
      * Закрытый администратором источник (§206, аудит §211) не читается и каналом компании не считается: портал этой
      * компании снова читается.
      */
