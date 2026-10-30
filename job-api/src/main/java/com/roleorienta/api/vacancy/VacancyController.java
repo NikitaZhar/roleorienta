@@ -111,27 +111,34 @@ public class VacancyController {
      *                       {@code SILENT} — «Applied» без ответа 3+ недели, {@code FINISHED} — завершённые
      *                       («Employer declined», закрытые работодателем, без ответа 6+ недель); другое значение —
      *                       {@code 400}
-     * @return «Мои отклики» одной группы: статус изменён позже сверху, и общее число
+     * @param query          параметр {@code q} — поиск по позиции, работодателю и агентству без регистра и
+     *                       диакритики (§226): задан —
+     *                       отклики всех групп одним списком, {@code group} не учитывается
+     * @return «Мои отклики» одной группы (или найденные): статус изменён позже сверху, и общее число
      */
     @GetMapping("/api/v1/me/responses")
     public VacancyPage responses(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
             @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
-            @RequestParam(defaultValue = "ACTIVE") ResponseGroup group) {
-        return vacancies.responses(userId(authentication), page, size, group);
+            @RequestParam(defaultValue = "ACTIVE") ResponseGroup group,
+            @RequestParam(name = "q", required = false) String query) {
+        return vacancies.responses(userId(authentication), page, size, group, query);
     }
 
     /**
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @return «Не интересно»: отмеченные позже сверху, и общее число
+     * @param query          параметр {@code q} — поиск по позиции, работодателю и агентству без регистра и
+     *                       диакритики (§226); нет — все
+     * @return «Не интересно» (или найденные): отмеченные позже сверху, и общее число
      */
     @GetMapping("/api/v1/me/unsuitable")
     public VacancyPage unsuitable(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
-            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size) {
-        return vacancies.notInterested(userId(authentication), page, size);
+            @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
+            @RequestParam(name = "q", required = false) String query) {
+        return vacancies.notInterested(userId(authentication), page, size, query);
     }
 
     private static ResponseEntity<Void> done(boolean found) {

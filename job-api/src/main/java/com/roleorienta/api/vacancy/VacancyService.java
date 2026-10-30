@@ -64,6 +64,11 @@ public class VacancyService {
     static final int FIRST_PAGE = 1;
 
     private static final List<StatusEvent> NOT_INTERESTED = List.of(StatusEvent.NOT_INTERESTED);
+    /** Статусы «Моих откликов» всех групп ({@link ResponseGroup}) — для поиска по ним (§226). */
+    private static final List<StatusEvent> RESPONSES = List.of(StatusEvent.APPLIED, StatusEvent.INTERVIEW,
+            StatusEvent.REJECTED);
+    /** Длиннее запрос поиска обрезается (§226): название и работодатель короче. */
+    static final int MAX_QUERY = 100;
 
     /** Код «Новая» — статуса пользователя ещё нет. */
     private static final String NEW = "NEW";
@@ -164,10 +169,16 @@ public class VacancyService {
      * @param size     строк на странице
      * @param group    группа откликов ({@link ResponseGroup}, §217): действующие сверху, ниже свёрнуто — «нет ответа»
      *                 и завершённые
+     * @param query    поиск по позиции, работодателю и агентству ({@link #words}, §226): задан — отклики всех групп
+     *                 одним списком, статус изменён позже сверху, группа не учитывается; {@code null} или пусто — группа
      * @return страница откликов и общее число
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage responses(long userId, int page, int size, ResponseGroup group) {
+    public VacancyPage responses(long userId, int page, int size, ResponseGroup group, String query) {
+        List<String> words = words(query);
+        if (!words.isEmpty()) {
+            return byStatus(userId, RESPONSES, words, page, size);
+        }
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
         List<VacancyRow> shown = repository.responses(userId, group, window(number, rows));
@@ -181,11 +192,27 @@ public class VacancyService {
      * @param userId пользователь
      * @param page   номер страницы, с 1
      * @param size   строк на странице
+     * @param query  поиск по позиции, работодателю и агентству ({@link #words}, §226); {@code null} или пусто — все
      * @return страница вакансий со статусом «Не интересно» и общее число
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public VacancyPage notInterested(long userId, int page, int size) {
-        return byStatus(userId, NOT_INTERESTED, page, size);
+    public VacancyPage notInterested(long userId, int page, int size, String query) {
+        return byStatus(userId, NOT_INTERESTED, words(query), page, size);
+    }
+
+    /**
+     * Слова поиска (§226): запрос обрезается до {@value #MAX_QUERY} знаков и делится по пробелам; каждое слово должно
+     * встретиться в позиции, работодателе или агентстве — так «kaufland java» находит «Java developer» в Kaufland.
+     *
+     * @param query запрос пользователя
+     * @return слова; {@code null} или одни пробелы — пусто
+     */
+    static List<String> words(String query) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        String text = query.length() > MAX_QUERY ? query.substring(0, MAX_QUERY) : query;
+        return List.of(text.strip().split("\\s+"));
     }
 
     /**
@@ -239,12 +266,12 @@ public class VacancyService {
         return true;
     }
 
-    private VacancyPage byStatus(long userId, List<StatusEvent> statuses, int page, int size) {
+    private VacancyPage byStatus(long userId, List<StatusEvent> statuses, List<String> words, int page, int size) {
         int number = Math.max(FIRST_PAGE, page);
         int rows = size(size);
-        List<VacancyRow> shown = repository.byStatus(userId, statuses, window(number, rows));
+        List<VacancyRow> shown = repository.byStatus(userId, statuses, words, window(number, rows));
         return new VacancyPage(items(shown, null, Map.of()), number, rows,
-                repository.countByStatus(userId, statuses), 0);
+                repository.countByStatus(userId, statuses, words), 0);
     }
 
     private static ZoneId zone(String zone) {

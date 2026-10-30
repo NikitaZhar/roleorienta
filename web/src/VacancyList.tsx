@@ -18,13 +18,20 @@ interface Props {
   /** Заголовок раздела; нет — без заголовка (результаты под условиями поиска). */
   title?: string;
   kind: ListKind;
-  /** Страница списка; {@code filter} — отбор внутри результатов (§194, §200; только у результатов). */
-  load: (page: number, size: number, filter?: ResultFilter) => Promise<VacancyPage>;
+  /**
+   * Страница списка; {@code filter} — отбор внутри результатов (§194, §200; только у результатов); {@code query} —
+   * поиск (§226; у «Моих откликов» и «Не интересно»).
+   */
+  load: (page: number, size: number, filter?: ResultFilter, query?: string) => Promise<VacancyPage>;
   /** Список открыт сразу после новых условий: пустой перечитывается, пока не придёт первая порция. */
   poll: boolean;
   /** Счётчик перечитываний: изменился — перечитать текущую страницу (статус вакансии изменился в сведениях). */
   reload: number;
   onOpen: (id: number) => void;
+  /** Поиск по позиции, работодателю и агентству (§226); пусто — без поиска. */
+  query?: string;
+  /** Есть — над списком поле поиска; вызывается с запросом через {@value SEARCH_DELAY_MS} мс после ввода. */
+  onQuery?: (query: string) => void;
 }
 
 /** Статус отклика пилюлей своего цвета, под ней дата и, если ответа давно нет, «No reply for N days» (§216). */
@@ -73,6 +80,10 @@ const REFRESH_TIMES = 24;
 const SKELETON_WIDTHS = [62, 48, 70, 55, 44, 66];
 /** Сколько ждёт «Undo» после «✓» или «×» (§191, §193): отметка уходит на сервер только после этого. */
 const UNDO_MS = 5000;
+/** Поиск (§226) уходит на сервер через столько мс после последней буквы — не на каждую букву. */
+const SEARCH_DELAY_MS = 300;
+/** Длиннее запрос не нужен: название и работодатель короче; сервер обрезает так же ({@code VacancyService.MAX_QUERY}). */
+const SEARCH_MAX = 100;
 
 /** Отправка ожидающих «Undo» отметок каждого открытого списка (см. {@link flushMarks}). */
 const flushers = new Set<() => Promise<void>>();
@@ -119,8 +130,12 @@ const MARK_MOVED: Record<RowMark, MessageKey> = {
  * свёрнутыми строками «No reply 3+ weeks · N» — «Applied» без ответа 3–6 недель (§217) — и «Completed · N» — «Employer
  * declined», отклики по закрытым работодателем (§213) и без ответа 6+ недель (§217), раскрытие завершённых — строками светлее; в «Не интересно» строки светлее, справа —
  * дата отметки и «Return»: вакансия возвращается к прежнему статусу (§156).
+ *
+ * <p>Поиск (§226): у «Моих откликов» и «Не интересно» под заголовком поле «по работодателю или позиции» — запрос уходит
+ * через {@value SEARCH_DELAY_MS} мс после ввода, список — с первой страницы; в «Моих откликах» найденные во всех
+ * группах идут одним списком (свёрнутые группы на это время скрывает App); «×» в поле — снова весь список.
  */
-export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) {
+export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '', onQuery }: Props) {
   const i18n = useI18n();
   const { t } = i18n;
   const [data, setData] = useState<VacancyPage | null>(null);
@@ -144,6 +159,10 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
   const [returned, setReturned] = useState(false);
   /** «Без ответа 3+ недели» и завершённые под «Моими откликами» (§196, §213, §217): свёрнуто, пока не раскрыли. */
   const [expanded, setExpanded] = useState(false);
+  /** Набранный в поле поиска текст (§226); в {@code query} он попадает с задержкой. */
+  const [typed, setTyped] = useState(query);
+  /** Запрос, по которому показана страница: сменился — с первой страницы. */
+  const shownQuery = useRef(query);
   /**
    * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
    * создана при нажатии и видела бы значения того времени.
@@ -170,9 +189,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
           setFilter(target);
         }
       }
-      let next = await load(page, rows, target);
+      let next = await load(page, rows, target, query);
       if (next.items.length === 0 && next.total > 0 && page > 1) {
-        next = await load(Math.ceil(next.total / rows), rows, target);
+        next = await load(Math.ceil(next.total / rows), rows, target, query);
       }
       setData(next);
       if (next.total === 0 && kind === 'results') {
@@ -296,10 +315,24 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
     show(1, rows);
   }
 
-  /** Смена языка перечитывает страницу: названия групп ISCO-08 в метках приходят на языке интерфейса (§204). */
+  /**
+   * Смена языка перечитывает страницу: названия групп ISCO-08 в метках приходят на языке интерфейса (§204); новый
+   * запрос поиска (§226) — с первой страницы.
+   */
   useEffect(() => {
-    show(data?.page ?? 1, size);
-  }, [reload, i18n.language]);
+    const restart = shownQuery.current !== query;
+    shownQuery.current = query;
+    show(restart ? 1 : data?.page ?? 1, size);
+  }, [reload, i18n.language, query]);
+
+  /** Набранный текст уходит в поиск через {@value SEARCH_DELAY_MS} мс после последней буквы. */
+  useEffect(() => {
+    if (onQuery === undefined) {
+      return;
+    }
+    const timer = window.setTimeout(() => onQuery(typed.trim()), SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [typed]);
 
   useEffect(() => {
     if (!poll || data === null || loading || !hasConditions || data.total > 0 || refreshes >= REFRESH_TIMES) {
@@ -351,7 +384,19 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         <div className="list-head">
           <h1>{title}</h1>
           {data.total > 0 && (
-            <span className="muted">· {data.total === 1 ? t('list.countOne') : t('list.count', { total: data.total })}</span>
+            <span className="muted">· {headCount(kind, query, data.total, t)}</span>
+          )}
+        </div>
+      )}
+      {onQuery !== undefined && (
+        <div className="list-search">
+          <input type="text" value={typed} maxLength={SEARCH_MAX} placeholder={t('list.search')}
+            aria-label={t('list.search')} onChange={(event) => setTyped(event.target.value)} />
+          {typed !== '' && (
+            <button type="button" className="row-mark" aria-label={t('list.searchClear')} title={t('list.searchClear')}
+              onClick={() => setTyped('')}>
+              ×
+            </button>
           )}
         </div>
       )}
@@ -376,7 +421,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
         </div>
       )}
       {data.total === 0 && kind !== 'results' && kind !== 'silent' && kind !== 'finished' && (
-        <Empty title={t(EMPTY_TEXT[kind])} />
+        <Empty title={query !== '' ? t('list.notFound', { query }) : t(EMPTY_TEXT[kind])} />
       )}
       {collecting && (
         <div className="collecting" role="status">
@@ -456,6 +501,21 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen }: Props) 
       )}
     </section>
   );
+}
+
+/**
+ * Число рядом с заголовком раздела (§227): идёт поиск — «N found»; в «Моих откликах» — «N active» (действующие:
+ * «Interview» и «Applied» моложе 3 недель по открытым вакансиям — закрытые и долго молчащие ниже, в своих группах);
+ * иначе — «N vacancies».
+ */
+function headCount(kind: ListKind, query: string, total: number, t: I18n['t']): string {
+  if (query !== '') {
+    return t('list.foundCount', { total });
+  }
+  if (kind === 'responses') {
+    return t('list.active', { total });
+  }
+  return total === 1 ? t('list.countOne') : t('list.count', { total });
 }
 
 /**

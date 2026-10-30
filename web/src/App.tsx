@@ -56,6 +56,9 @@ export function App() {
   const [searches, setSearches] = useState(0);
   const [reloads, setReloads] = useState(0);
   const [fresh, setFresh] = useState(false);
+  /** Поиск в «My applications» и «Not interested» (§226): остаётся при переходе между разделами, выход сбрасывает. */
+  const [applicationsQuery, setApplicationsQuery] = useState('');
+  const [markedQuery, setMarkedQuery] = useState('');
   /** Меню учётной записи ({@code <details>}): закрывается при переходе в раздел и щелчке мимо (§163). */
   const menu = useRef<HTMLDetailsElement>(null);
   /** Прокрутка раздела в момент открытия вакансии: карточка короче списка, браузер прижал бы прокрутку. */
@@ -114,6 +117,8 @@ export function App() {
       listScroll.current = 0;
       setOpened(null);
       setFresh(false);
+      setApplicationsQuery('');
+      setMarkedQuery('');
       setAccount(null);
     } catch (failure) {
       setNotice(t('menu.signOutFailed', { detail: (failure as Error).message }));
@@ -198,14 +203,19 @@ export function App() {
           {view === 'applications' && (
             <>
               <VacancyList title={t('nav.applications')} kind="responses" load={responses} poll={false}
-                reload={reloads} onOpen={open} />
-              <VacancyList kind="silent" load={silentResponses} poll={false} reload={reloads} onOpen={open} />
-              <VacancyList kind="finished" load={finishedResponses} poll={false} reload={reloads} onOpen={open} />
+                reload={reloads} onOpen={open} query={applicationsQuery} onQuery={setApplicationsQuery} />
+              {/* Поиск (§226) показывает найденные во всех группах одним списком — свёрнутые группы не нужны. */}
+              {applicationsQuery === '' && (
+                <>
+                  <VacancyList kind="silent" load={silentResponses} poll={false} reload={reloads} onOpen={open} />
+                  <VacancyList kind="finished" load={finishedResponses} poll={false} reload={reloads} onOpen={open} />
+                </>
+              )}
             </>
           )}
           {view === 'marked' && (
             <VacancyList title={t('nav.notInterested')} kind="notInterested" load={unsuitableVacancies} poll={false}
-              reload={reloads} onOpen={open} />
+              reload={reloads} onOpen={open} query={markedQuery} onQuery={setMarkedQuery} />
           )}
           {view === 'companies' && <CompaniesPage />}
           {view === 'settings' && <SettingsPage account={account} onSaved={setAccount} />}

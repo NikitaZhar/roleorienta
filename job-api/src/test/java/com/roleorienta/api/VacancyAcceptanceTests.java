@@ -224,6 +224,45 @@ class VacancyAcceptanceTests {
     }
 
     /**
+     * Поиск (§226): в «Моих откликах» — по всем группам одним списком, статус изменён позже сверху; без регистра и
+     * диакритики; каждое слово — в позиции, работодателе или агентстве; {@code %} — буквально, не «любые знаки»; одни
+     * пробелы — обычная группа. В «Не интересно» — только свои.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void searchFindsAcrossGroupsWithoutDiacritics() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition", JAVA_SK);
+        long condition = activeCondition();
+        long accountant = delivered(condition, "Účtovník Žilina", "ACTIVE", 0, 4);
+        long gaveUp = delivered(condition, "Java Zilina", "ACTIVE", 0, 3);
+        long interview = delivered(condition, "Java Košice", "ACTIVE", 0, 2);
+        long dismissed = delivered(condition, "Skladník Žilina", "ACTIVE", 0, 1);
+        assertThat(status(client, accountant, "APPLIED")).isEqualTo(204);
+        assertThat(status(client, gaveUp, "APPLIED")).isEqualTo(204);
+        assertThat(status(client, interview, "INTERVIEW")).isEqualTo(204);
+        assertThat(status(client, dismissed, "NOT_INTERESTED")).isEqualTo(204);
+        statusAge(accountant, 2);
+        statusAge(gaveUp, 50);
+        statusAge(interview, 1);
+
+        ApiTestClient.Response found = client.send("GET", "/api/v1/me/responses?q=ZILINA", null);
+        assertThat(titles(found.body())).isEqualTo("Účtovník Žilina,Java Zilina");
+        assertThat(found.body()).contains("\"total\":2");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?q=employer%20%C5%BEilina", null).body()))
+                .isEqualTo("Účtovník Žilina,Java Zilina");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?q=java&group=SILENT", null).body()))
+                .isEqualTo("Java Košice,Java Zilina");
+        assertThat(client.send("GET", "/api/v1/me/responses?q=%25", null).body()).contains("\"total\":0");
+        assertThat(titles(client.send("GET", "/api/v1/me/responses?q=%20%20", null).body()))
+                .isEqualTo("Java Košice,Účtovník Žilina");
+        assertThat(titles(client.send("GET", "/api/v1/me/unsuitable?q=zilina", null).body()))
+                .isEqualTo("Skladník Žilina");
+        assertThat(titles(client.send("GET", "/api/v1/me/unsuitable?q=java", null).body())).isEmpty();
+    }
+
+    /**
      * Старые вакансии (§217): размещённая работодателем больше 4 месяцев назад в результатах не показывается, без даты
      * размещения — показывается; отклик на старую вакансию остаётся в «Моих откликах».
      *

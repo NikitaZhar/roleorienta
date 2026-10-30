@@ -128,6 +128,15 @@ public class VacancyRepository {
             WHERE st.user_id = ? AND st.status IN (%1$s)""";
 
     /**
+     * Поиск в «Моих откликах» и «Не интересно» (§226): у строки подзапроса {@code r} (поля {@link #COLUMNS}) каждое
+     * слово запроса встречается в позиции, работодателе или агентстве — без регистра и диакритики (словацкие буквы, как
+     * в V84, и чешские, немецкие). Параметр — массив слов с экранированными {@code \ % _}; пустой — без отбора.
+     */
+    private static final String WORDS = " WHERE NOT EXISTS (SELECT 1 FROM unnest(CAST(? AS TEXT[])) w(word) WHERE "
+            + fold("concat_ws(' ', r.title, r.employer, r.agency)") + " NOT LIKE '%' || " + fold("w.word")
+            + " || '%')";
+
+    /**
      * Отклики пользователя одной группы ({@link ResponseGroup}; §196, §213, §217): параметры — пользователь и имя
      * группы. Завершённые — «Employer declined», отклики по закрытым работодателем и «Applied» без ответа
      * {@value ResponseGroup#GIVE_UP_DAYS} дней: ответа по ним уже не будет, сверху они только мешают видеть, с кем идёт
@@ -281,23 +290,23 @@ public class VacancyRepository {
      *
      * @param userId   пользователь
      * @param statuses статусы раздела
+     * @param words    слова поиска ({@link #WORDS}, §226); пусто — все
      * @param page     смещение и размер страницы
      * @return вакансии страницы
      */
-    public List<VacancyRow> byStatus(long userId, List<StatusEvent> statuses, PageWindow page) {
-        return jdbcTemplate.query("SELECT " + COLUMNS.formatted("st.user_id") + STATUS_FROM.formatted(names(statuses))
-                + " ORDER BY st.changed_at DESC, st.vacancy_id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), userId, page.size(), page.offset());
+    public List<VacancyRow> byStatus(long userId, List<StatusEvent> statuses, List<String> words, PageWindow page) {
+        return jdbcTemplate.query(withStatus(statuses, "*") + " ORDER BY r.changed_at DESC, r.id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row), userId, escaped(words), page.size(), page.offset());
     }
 
     /**
      * @param userId   пользователь
      * @param statuses статусы раздела
-     * @return сколько вакансий пользователя с таким текущим статусом
+     * @param words    слова поиска ({@link #WORDS}); пусто — все
+     * @return сколько вакансий пользователя с таким текущим статусом (и словами)
      */
-    public long countByStatus(long userId, List<StatusEvent> statuses) {
-        return jdbcTemplate.queryForObject("SELECT count(*)" + STATUS_FROM.formatted(names(statuses)), Long.class,
-                userId);
+    public long countByStatus(long userId, List<StatusEvent> statuses, List<String> words) {
+        return jdbcTemplate.queryForObject(withStatus(statuses, "count(*)"), Long.class, userId, escaped(words));
     }
 
     /**
@@ -418,6 +427,31 @@ public class VacancyRepository {
     }
 
     /** Статусы как SQL-список; значения — имена перечисления, не данные пользователя. */
+    /**
+     * Вакансии с текущим статусом из списка подзапросом {@code r} и отбор {@link #WORDS}; параметры — пользователь и
+     * слова.
+     */
+    private static String withStatus(List<StatusEvent> statuses, String select) {
+        return "SELECT " + select + " FROM (SELECT " + COLUMNS.formatted("st.user_id")
+                + STATUS_FROM.formatted(names(statuses)) + ") r" + WORDS;
+    }
+
+    /**
+     * Без регистра и диакритики (§226): строчные, затем буквы с диакритикой — в латинские; заглавные с диакритикой
+     * тоже в списке — {@code lower} их не опускает, если локаль БД {@code C}.
+     */
+    private static String fold(String expression) {
+        String plain = "aacdeeillnooorrstuuuyz";
+        return "translate(lower(" + expression + "), 'áäčďéěíĺľňóôöŕřšťúůüýžÁÄČĎÉĚÍĹĽŇÓÔÖŔŘŠŤÚŮÜÝŽ', '" + plain + plain
+                + "')";
+    }
+
+    /** Слова для {@code LIKE}: {@code \ % _} — буквально (знак экранирования в PostgreSQL по умолчанию — {@code \}). */
+    private static String[] escaped(List<String> words) {
+        return words.stream().map(word -> word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"))
+                .toArray(String[]::new);
+    }
+
     private static String names(List<StatusEvent> statuses) {
         return statuses.stream().map(status -> "'" + status.name() + "'").collect(Collectors.joining(", "));
     }

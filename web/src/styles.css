@@ -796,6 +796,23 @@ nav .current,
   color: var(--accent);
 }
 
+/* Поиск в «My applications» и «Not interested» (§226): поле во всю ширину списка, «×» внутри справа. */
+.list-search {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.list-search input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.list-search .row-mark {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
 /* Метки позиций над результатами (§194): позиция и число вакансий; выбранная — акцентом. */
 .position-filter {
   display: flex;

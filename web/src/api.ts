@@ -371,8 +371,13 @@ export interface VacancyDetails {
   publication: Publication;
 }
 
-function listPage(path: string, page: number, size: number): Promise<VacancyPage> {
-  return request<VacancyPage>('GET', path + '?page=' + page + '&size=' + size);
+/** {@code query} — поиск по позиции, работодателю и агентству (§226); пусто — без поиска. */
+function listPage(path: string, page: number, size: number, query = ''): Promise<VacancyPage> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (query !== '') {
+    params.set('q', query);
+  }
+  return request<VacancyPage>('GET', path + '?' + params.toString());
 }
 
 /** Отбор внутри результатов: позиция условий (§194) и «после прошлого захода» (§200). */
@@ -417,14 +422,17 @@ export function resultFilters(): Promise<ResultFilters> {
   return request<ResultFilters>('GET', '/api/v1/me/vacancies/filters');
 }
 
-/** @returns страница отмеченных «Не интересно» */
-export function unsuitableVacancies(page: number, size: number): Promise<VacancyPage> {
-  return listPage('/api/v1/me/unsuitable', page, size);
+/** @returns страница отмеченных «Не интересно»; {@code query} — только найденные (§226) */
+export function unsuitableVacancies(page: number, size: number, _filter?: ResultFilter, query = ''): Promise<VacancyPage> {
+  return listPage('/api/v1/me/unsuitable', page, size, query);
 }
 
-/** @returns страница действующих «Моих откликов» (§156, §217): «Interview» сверху, затем «Applied» моложе 3 недель */
-export function responses(page: number, size: number): Promise<VacancyPage> {
-  return listPage('/api/v1/me/responses', page, size);
+/**
+ * @returns страница действующих «Моих откликов» (§156, §217): «Interview» сверху, затем «Applied» моложе 3 недель;
+ * {@code query} — найденные во всех группах одним списком (§226)
+ */
+export function responses(page: number, size: number, _filter?: ResultFilter, query = ''): Promise<VacancyPage> {
+  return listPage('/api/v1/me/responses', page, size, query);
 }
 
 /** @returns страница откликов «Applied» без ответа 3–6 недель (§217), под действующими, свёрнуто */
