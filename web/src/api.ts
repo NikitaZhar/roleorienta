@@ -609,6 +609,35 @@ export function setNotEmployer(companyId: number, notEmployer: boolean): Promise
   return request<void>(notEmployer ? 'PUT' : 'DELETE', '/api/v1/admin/companies/' + companyId + '/not-employer');
 }
 
+/** Компания, у которой теряются вакансии (§235): числа полноты сбора, сайты и вакансии портала, которых нет на её странице. */
+export interface Loss {
+  company: {
+    id: number;
+    registrationNumber: string;
+    name: string;
+    counts: { portalVacancies: number; foundOnOwn: number; ownVacancies: number; channel: string };
+    /** Сколько компаний с потерями в очереди, включая эту. */
+    remaining: number;
+  };
+  sites: { host: string; checkResult: string | null; careerUrl: string | null }[];
+  missing: { title: string; url: string }[];
+}
+
+/** @returns следующая компания с потерями; null — потерь нет (204) */
+export async function nextLoss(): Promise<Loss | null> {
+  return (await request<Loss | undefined>('GET', '/api/v1/admin/losses/next')) ?? null;
+}
+
+/** «Later» (§235): компания не предлагается 10 дней. */
+export function postponeLoss(companyId: number): Promise<void> {
+  return request<void>('POST', '/api/v1/admin/companies/' + companyId + '/loss-postponed');
+}
+
+/** «No own career page» (§235): вакансии компании — с портала и profesia.sk, в потери она не попадает. */
+export function setNoOwnCareerPage(companyId: number, noOwnPage: boolean): Promise<void> {
+  return request<void>(noOwnPage ? 'PUT' : 'DELETE', '/api/v1/admin/companies/' + companyId + '/no-own-career-page');
+}
+
 /** Состояние ядра сейчас (§142): чтения, задания, тревоги NO_RECENT_READ и QUEUE_STALLED. */
 export interface CoreStatus {
   checkedAt: string;

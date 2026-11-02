@@ -192,6 +192,85 @@ class AdminMetricsAcceptanceTests {
                 .contains("{\"code\":\"0110\",\"name\":\"Commissioned armed forces officers\",\"conditions\":1}");
     }
 
+    /**
+     * Потери по одной компании (§235): больше потерянных — первой; в карточке — сайт и вакансии портала, которых нет на
+     * собственной странице («Java Developer (m/ž)» портала найдена как «Java developer»); «Later» — следующая
+     * компания; «No own career page» — потерь нет ({@code 204}), снятие отметки — компания снова в очереди.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void administratorHandlesLossesOneByOne() throws Exception {
+        jdbcTemplate.update("DELETE FROM job_posting WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qw-loss-%')");
+        jdbcTemplate.update("DELETE FROM vacancy WHERE primary_url LIKE 'https://qw-loss.example/%'");
+        jdbcTemplate.update("DELETE FROM company_source WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qw-loss-%')");
+        jdbcTemplate.update("DELETE FROM source WHERE board LIKE 'qw-loss-%'");
+        jdbcTemplate.update("DELETE FROM company_site WHERE host = 'loss.example'");
+        jdbcTemplate.update("DELETE FROM company_coverage");
+        jdbcTemplate.update("DELETE FROM company WHERE registration_number IN ('99900081', '99900082')");
+        long big = lossCompany("99900081", "Big Loss Ltd", "5, 1, 1, 'READ'");
+        long small = lossCompany("99900082", "Small Loss Ltd", "2, 0, 0, 'NO_CAREER_PAGE'");
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, check_result, career_url)
+                VALUES (?, 'loss.example', 'https://loss.example/', 'STATE_PORTAL', 'FOUND', 'REGISTRATION_NUMBER',
+                        'SOURCE_FOUND', 'https://loss.example/kariera')""", big);
+        long portal = lossSource("sluzbyzamestnanosti", "qw-loss-portal", big);
+        long own = lossSource("careerpage", "qw-loss-own", big);
+        lossPosting(portal, "Java Developer (m/ž)");
+        lossPosting(portal, "Skladník");
+        lossPosting(own, "Java developer");
+        ApiTestClient client = new ApiTestClient(port());
+        assertThat(client.send("POST", "/api/v1/admin/login", admin(ADMIN_PASSWORD)).status()).isEqualTo(200);
+
+        String first = client.send("GET", "/api/v1/admin/losses/next", null).body();
+        assertThat(first).contains("\"id\":" + big + ",\"registrationNumber\":\"99900081\",\"name\":\"Big Loss Ltd\","
+                + "\"counts\":{\"portalVacancies\":5,\"foundOnOwn\":1,\"ownVacancies\":1,\"channel\":\"READ\"},"
+                + "\"remaining\":2}");
+        assertThat(first).contains("{\"host\":\"loss.example\",\"checkResult\":\"SOURCE_FOUND\","
+                + "\"careerUrl\":\"https://loss.example/kariera\"}");
+        assertThat(first).contains("\"missing\":[{\"title\":\"Skladník\"");
+        assertThat(first).doesNotContain("Java Developer");
+
+        assertThat(client.send("POST", "/api/v1/admin/companies/" + big + "/loss-postponed", null).status())
+                .isEqualTo(204);
+        assertThat(client.send("GET", "/api/v1/admin/losses/next", null).body())
+                .contains("\"name\":\"Small Loss Ltd\"").contains("\"remaining\":1");
+        assertThat(client.send("PUT", "/api/v1/admin/companies/" + small + "/no-own-career-page", null).status())
+                .isEqualTo(204);
+        assertThat(client.send("GET", "/api/v1/admin/losses/next", null).status()).isEqualTo(204);
+        assertThat(client.send("DELETE", "/api/v1/admin/companies/" + small + "/no-own-career-page", null).status())
+                .isEqualTo(204);
+        assertThat(client.send("GET", "/api/v1/admin/losses/next", null).body()).contains("\"name\":\"Small Loss Ltd\"");
+        assertThat(client.send("POST", "/api/v1/admin/companies/0/loss-postponed", null).status()).isEqualTo(404);
+    }
+
+    private long lossCompany(String number, String name, String coverage) {
+        long company = jdbcTemplate.queryForObject("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', ?, ?, 'RPO') RETURNING id", Long.class, number, name);
+        jdbcTemplate.update("INSERT INTO company_coverage (company_id, portal_titles, found_on_own, own_vacancies, "
+                + "channel) VALUES (?, " + coverage + ")", company);
+        return company;
+    }
+
+    private long lossSource(String provider, String board, long company) {
+        long source = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES (?, ?) RETURNING id",
+                Long.class, provider, board);
+        jdbcTemplate.update("INSERT INTO company_source (company_id, source_id, role) VALUES (?, ?, 'EMPLOYER')",
+                company, source);
+        return source;
+    }
+
+    private void lossPosting(long source, String title) {
+        long vacancy = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
+                VALUES ('ACTIVE', ?, ?, now(), now()) RETURNING id""", Long.class, title,
+                "https://qw-loss.example/" + source + "/" + title.hashCode());
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, ?, ?, ?, now(), now())""", source, vacancy, "qw-loss-" + vacancy, title,
+                "https://qw-loss.example/" + vacancy);
+    }
+
     private long vacancyWithPosting(long source, String title) {
         long vacancy = jdbcTemplate.queryForObject("""
                 INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)

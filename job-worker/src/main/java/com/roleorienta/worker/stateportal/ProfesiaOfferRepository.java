@@ -46,12 +46,11 @@ public class ProfesiaOfferRepository {
 
     /**
      * Название для сравнения (§220): без регистра, словацкой и чешской диакритики, пометок в скобках («(m/f/d)»,
-     * «(muž/žena)») и знаков — «Backend Developer - Java (m/ž)» и «Backend developer – Java» совпадают. Тем же правилом
-     * сравнивает названия полнота сбора ({@code MetricsRepository}, §234). {@code %s} — выражение названия.
+     * «(muž/žena)») и знаков — «Backend Developer - Java (m/ž)» и «Backend developer – Java» совпадают. Правило — функция
+     * БД {@code same_title} (V90, §235): одно определение для job-worker и job-api; тем же правилом сравнивает названия
+     * полнота сбора ({@code MetricsRepository}, §234). {@code %s} — выражение названия.
      */
-    public static final String SAME_TITLE = "btrim(regexp_replace(regexp_replace(lower(translate(%s, "
-            + "'áäčďéěíĺľňóôŕřšťúůýžÁÄČĎÉĚÍĹĽŇÓÔŔŘŠŤÚŮÝŽ', 'aacdeeillnoorrstuuyzaacdeeillnoorrstuuyz')), "
-            + "'\\([^)]*\\)', ' ', 'g'), '[^a-z0-9]+', ' ', 'g'))";
+    public static final String SAME_TITLE = "same_title(%s)";
 
     /**
      * Объявление прочитано и той же вакансии у компании нет (§220): у компании работодателя ({@code o.company_id})

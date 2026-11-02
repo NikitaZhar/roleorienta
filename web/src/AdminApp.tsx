@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import {
   type Admin, adminAddCareerPage, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
   metrics, type MetricRow, type MetricsTable, searchMisses, setNotEmployer,
@@ -6,15 +6,17 @@ import {
 import { GroupBadge } from './companyGroups';
 import { CareerRequestsAdmin, UnlinkedSourcesAdmin } from './CompaniesAdmin';
 import { DictionaryAdmin } from './DictionaryAdmin';
+import { LossesAdmin, useLosses } from './LossesAdmin';
 import { ChosenWithoutVacanciesAdmin, SearchMissesAdmin } from './SearchMissesAdmin';
 
 /** Разделы страницы — по задачам администратора (§206): ядро работает, растёт ли охват, находят ли пользователи
  * нужное, ошибки по компаниям. */
-type Tab = 'status' | 'metrics' | 'positions' | 'companies';
+type Tab = 'status' | 'metrics' | 'losses' | 'positions' | 'companies';
 
 const TABS: { tab: Tab; label: string; note: string }[] = [
   { tab: 'status', label: 'Status', note: 'Is the core working right now?' },
   { tab: 'metrics', label: 'Metrics', note: 'Are there more vacancies day by day?' },
+  { tab: 'losses', label: 'Losses', note: 'Where do we lose vacancies? One company at a time.' },
   { tab: 'positions', label: 'Positions', note: 'Do users find what they look for?' },
   { tab: 'companies', label: 'Companies', note: 'Fix what the application got wrong about a company.' },
 ];
@@ -158,6 +160,7 @@ function countryLabel(code: string): string {
  * открыт один, под вкладками — строка «на какой вопрос отвечает». Status — состояние ядра сейчас с тревогами (§142);
  * тревога видна точкой у вкладки из любого раздела. Metrics — показатели ядра по дням (бизнес-описание §7.3): строки —
  * показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от «обработано».
+ * Losses — компании, у которых вакансии портала не найдены на их странице, по одной, с уведомлением браузера (§235).
  * Positions — запросы без результата (§205) и словарь позиций (§160). Companies — отметка «не работодатель» (§138),
  * общая для всех: сайт и кадровая страница не ищутся, адрес не вводится; подключённые источники читаются дальше. При
  * ошибке загрузки блока — «Retry» (§143).
@@ -186,10 +189,13 @@ export function AdminApp() {
     }
   }, [admin]);
 
-  function choose(next: Tab) {
+  const choose = useCallback((next: Tab) => {
     setTab(next);
     storeTab(next);
-  }
+  }, []);
+  const openLosses = useCallback(() => choose('losses'), [choose]);
+  /** Потери вакансий (§235): опрос и уведомления — пока вкладка /admin открыта, на любом разделе. */
+  const losses = useLosses(openLosses, Boolean(admin));
 
   useEffect(() => {
     currentAdmin().then(setAdmin, (failure: Error) => setError(failure.message));
@@ -229,6 +235,7 @@ export function AdminApp() {
               aria-current={tab === item.tab ? 'page' : undefined} onClick={() => choose(item.tab)}>
               {item.label}
               {item.tab === 'positions' && missCount > 0 && ` · ${missCount}`}
+              {item.tab === 'losses' && losses.loss !== null && ` · ${losses.loss.company.remaining}`}
               {item.tab === 'status' && status !== null && status.warnings.length > 0 && (
                 <span className="tab-alert" role="img" aria-label="warning" />
               )}
@@ -238,6 +245,7 @@ export function AdminApp() {
         <p className="muted tab-note">{TABS.find((item) => item.tab === tab)!.note}</p>
         {tab === 'status' && <StatusView status={status} message={statusError} onRefresh={loadStatus} />}
         {tab === 'metrics' && <MetricsView />}
+        {tab === 'losses' && <LossesAdmin loss={losses.loss} message={losses.message} onDone={losses.refresh} />}
         {tab === 'positions' && (
           <>
             <SearchMissesAdmin onAdd={setAdding} onCount={setMissCount} />

@@ -93,4 +93,50 @@ public final class AdminDtos {
      */
     public record UnlinkedSource(long id, String provider, String board, long openPostings, List<String> titles) {
     }
+
+    /**
+     * Компания, у которой теряются вакансии (§235): следующая для администратора.
+     *
+     * @param company компания и числа полноты сбора
+     * @param sites   найденные сайты компании
+     * @param missing до 5 вакансий портала и profesia.sk, которых нет на её собственной странице
+     */
+    public record Loss(LossCompany company, List<LossSite> sites, List<LossTitle> missing) {
+    }
+
+    /**
+     * @param id                 компания
+     * @param registrationNumber IČO
+     * @param name               название
+     * @param counts             полнота сбора (последний пересчёт показателей)
+     * @param remaining          сколько компаний с потерями в очереди, включая эту
+     */
+    public record LossCompany(long id, String registrationNumber, String name, LossCounts counts, long remaining) {
+    }
+
+    /**
+     * Полнота сбора компании ({@code company_coverage}, §234).
+     *
+     * @param portalVacancies разных вакансий портала и profesia.sk
+     * @param foundOnOwn      из них найдено на собственной странице
+     * @param ownVacancies    вакансий собственной страницы
+     * @param channel         состояние собственного канала ({@code READ}, {@code NO_CAREER_PAGE}, {@code NO_SITE} …)
+     */
+    public record LossCounts(int portalVacancies, int foundOnOwn, int ownVacancies, String channel) {
+    }
+
+    /**
+     * @param host        хост сайта
+     * @param checkResult итог проверки сайта; {@code null} — не проверен
+     * @param careerUrl   найденная кадровая страница; {@code null} — нет
+     */
+    public record LossSite(String host, String checkResult, String careerUrl) {
+    }
+
+    /**
+     * @param title название вакансии
+     * @param url   публикация на портале или profesia.sk
+     */
+    public record LossTitle(String title, String url) {
+    }
 }
