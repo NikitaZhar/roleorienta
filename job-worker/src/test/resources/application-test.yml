@@ -24,10 +24,10 @@ app:
     enabled: false           # приём реестра ставится из теста вручную
   site:
     enabled: false           # скан сайтов ставится из теста вручную
+  browser:
+    enabled: false           # браузер без окна — только в ChromiumPageRendererTests (§236)
   career:
     enabled: false           # проверка сайтов ставится из теста вручную
-    render:
-      enabled: false         # браузер без окна — только в ChromiumPageRendererTests (§236)
   match:
     enabled: false           # предрасчёт соответствий ставится из теста вручную
   delivery:

@@ -3,6 +3,7 @@ package com.roleorienta.worker.adapter.careerpage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.browser.PageRenderer;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.TestHttpClients;
@@ -12,9 +13,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,7 +56,7 @@ class CareerPageAdapterTests {
             }
         });
         server.start();
-        adapter = new CareerPageAdapter(httpClient, new CareerPageProperties(2, 30));
+        adapter = new CareerPageAdapter(httpClient, new CareerPageProperties(2, 30), PageRenderer.NONE);
     }
 
     /**
@@ -80,6 +85,37 @@ class CareerPageAdapterTests {
         assertThat(read.postings()).containsExactly(
                 new FetchedPosting(url("/kariera/casnik"), "Čašník", url("/kariera/casnik"), "Piešťany", null),
                 new FetchedPosting(url("/kariera/kuchar"), "Kuchár", url("/kariera/kuchar"), "Slovakia", null));
+    }
+
+    /**
+     * Кнопка «Zobraziť viac» (§241): в HTML сервера одна вакансия, остальные подгружает кнопка — страница читается
+     * браузером с нажатиями (здесь — заглушка построенной страницы): три вакансии; без браузера — одна из HTML.
+     */
+    @Test
+    void readsListLoadedByShowMoreButton() {
+        pages.put("/ponuka-prace/casnik", VACANCY);
+        pages.put("/ponuka-prace/", "<ul><li><a href=\"/ponuka-prace/casnik\">Čašník</a></li></ul>"
+                + "<button class=\"btn-load-more\">Zobraziť viac</button>");
+        PageRenderer expanded = new PageRenderer() {
+            @Override
+            public Optional<Document> render(URI uri) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Document> expanded(URI uri) {
+                return Optional.of(Jsoup.parse("<ul><li><a href=\"/ponuka-prace/casnik\">Čašník</a></li>"
+                        + "<li><a href=\"/ponuka-prace/kuchar\">Kuchár</a></li>"
+                        + "<li><a href=\"/ponuka-prace/upratovac\">Upratovač</a></li></ul>", uri.toString()));
+            }
+        };
+
+        SourceReadResult.Read read = (SourceReadResult.Read) new CareerPageAdapter(httpClient,
+                new CareerPageProperties(2, 30), expanded).read(url("/ponuka-prace/"), "SK");
+
+        assertThat(read.complete()).isTrue();
+        assertThat(read.postings()).extracting(FetchedPosting::title).containsExactly("Čašník", "Kuchár", "Upratovač");
+        assertThat(((SourceReadResult.Read) adapter.read(url("/ponuka-prace/"), "SK")).postings()).hasSize(1);
     }
 
     /**

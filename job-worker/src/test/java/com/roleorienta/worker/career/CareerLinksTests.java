@@ -243,8 +243,15 @@ class CareerLinksTests {
         Document career = Jsoup.parse("""
                 <a href="/kariera/">Kariéra</a><a href="/kariera/volne-pozicie">Voľné pozície</a>
                 """, "https://acme.sk/kariera");
-        assertThat(CareerLinks.deeperCareerPage(career, URI.create("https://acme.sk/kariera")))
-                .contains("https://acme.sk/kariera/volne-pozicie");
+        assertThat(CareerLinks.deeperCareerPages(career, URI.create("https://acme.sk/kariera"), 3))
+                .containsExactly("https://acme.sk/kariera/volne-pozicie");
+        // Первыми — ссылки на список вакансий (§241).
+        Document agel = Jsoup.parse("""
+                <a href="/kariera-v-skupine">Kariéra v skupine Agel</a><a href="/studenti">Kariéra pre študentov</a>
+                <a href="/ponuka-prace/">Voľné pozície</a>
+                """, "https://kariera.agel.sk/");
+        assertThat(CareerLinks.deeperCareerPages(agel, URI.create("https://kariera.agel.sk/"), 2))
+                .containsExactly("https://kariera.agel.sk/ponuka-prace/", "https://kariera.agel.sk/kariera-v-skupine");
 
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Kariéra | Acme</title>"))).isTrue();
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Acme</title><h1>Vitajte</h1>"))).isFalse();

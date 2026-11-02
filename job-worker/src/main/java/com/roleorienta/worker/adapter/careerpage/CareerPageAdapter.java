@@ -2,6 +2,8 @@ package com.roleorienta.worker.adapter.careerpage;
 
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.browser.LoadMore;
+import com.roleorienta.worker.browser.PageRenderer;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
@@ -37,6 +39,9 @@ import org.springframework.stereotype.Component;
  *   <li>Списка нет: фраза «вакансий нет» — полное пустое чтение (прежние вакансии закрываются по общим правилам);
  *       иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): сбой разбора, а не закрытие.</li>
  *   <li>Отказ первой страницы — источник недоступен.</li>
+ *   <li>Первая страница по HTML сервера — без распознанного списка или с кнопкой «показать ещё»
+ *       ({@link LoadMore}): она открывается браузером без окна с нажатием «показать ещё» ({@link PageRenderer#expanded},
+ *       §241); построенная страница берётся, если вакансий на ней не меньше (AGEL: 7 в HTML, 196 после нажатий).</li>
  *   <li>Текст вакансии — деталью ({@link #detail}): видимый текст её страницы ({@code main}, иначе {@code body}).</li>
  * </ul>
  */
@@ -48,14 +53,17 @@ public class CareerPageAdapter implements SourceAdapter {
 
     private final ExternalHttpClient httpClient;
     private final CareerPageProperties properties;
+    private final PageRenderer renderer;
 
     /**
      * @param httpClient внешний HTTP-клиент (бюджет на хост, robots.txt)
      * @param properties потолок страниц списка и текста вакансии
+     * @param renderer   браузер без окна ({@link PageRenderer#NONE} — без него)
      */
-    public CareerPageAdapter(ExternalHttpClient httpClient, CareerPageProperties properties) {
+    public CareerPageAdapter(ExternalHttpClient httpClient, CareerPageProperties properties, PageRenderer renderer) {
         this.httpClient = httpClient;
         this.properties = properties;
+        this.renderer = renderer;
     }
 
     @Override
@@ -79,7 +87,7 @@ public class CareerPageAdapter implements SourceAdapter {
         if (!(result instanceof HttpResult.Success success)) {
             return new SourceReadResult.Unavailable(result);
         }
-        Document page = Jsoup.parse(success.body(), success.locationOr(first).toString());
+        Document page = built(Jsoup.parse(success.body(), success.locationOr(first).toString()));
         boolean noVacancies = CareerPageList.saysNoVacancies(page);
         List<String> responses = new ArrayList<>(List.of(success.body()));
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
@@ -142,6 +150,19 @@ public class CareerPageAdapter implements SourceAdapter {
         String text = (main != null ? main : page.body()).text();
         return new FetchedPosting(externalId, page.title(), externalId, null,
                 text.length() > properties.maxContent() ? text.substring(0, properties.maxContent()) : text);
+    }
+
+    /**
+     * Первая страница списка (§241): по HTML сервера список не распознан или есть кнопка «показать ещё» — страница в
+     * браузере без окна с нажатиями «показать ещё»; берётся, если вакансий на ней не меньше, иначе — HTML сервера.
+     */
+    private Document built(Document page) {
+        List<CareerPageList.Item> listed = CareerPageList.vacancies(page);
+        if (!listed.isEmpty() && !LoadMore.present(page)) {
+            return page;
+        }
+        return renderer.expanded(URI.create(page.location()))
+                .filter(rendered -> CareerPageList.vacancies(rendered).size() >= listed.size()).orElse(page);
     }
 
     /**

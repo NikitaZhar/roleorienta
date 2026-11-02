@@ -1,4 +1,4 @@
-package com.roleorienta.worker.career;
+package com.roleorienta.worker.browser;
 
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
@@ -18,6 +18,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -38,7 +39,7 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
 /**
- * Страница после выполнения скриптов в Chromium без окна через Playwright (§236; https://playwright.dev/java/).
+ * Страница после выполнения скриптов в Chromium без окна через Playwright (§236, §241; https://playwright.dev/java/).
  *
  * <ul>
  *   <li><b>Один поток.</b> Объекты Playwright не потокобезопасны: браузер создаётся и используется в одном своём потоке
@@ -51,8 +52,11 @@ import org.springframework.stereotype.Component;
  *       ядра. Страница открывается, только если тот же адрес уже открылся обычным запросом (robots.txt и бюджет хоста
  *       проверены там).</li>
  *   <li><b>Сроки:</b> открытие страницы и, отдельно, окончание её запросов — не дольше
- *       {@link CareerRenderProperties#timeout()} каждое; не дождались окончания запросов — берётся то, что
+ *       {@link BrowserProperties#timeout()} каждое; не дождались окончания запросов — берётся то, что
  *       построено.</li>
+ *   <li><b>«Показать ещё»</b> ({@link #expanded}): кнопка с текстом {@link LoadMore#TEXT} нажимается скриптом
+ *       страницы, пока после нажатия появляются новые ссылки, — не больше {@link BrowserProperties#expandClicks()} раз
+ *       и {@link BrowserProperties#expandBudget()} всего.</li>
  * </ul>
  */
 @Component
@@ -66,9 +70,24 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
     private static final long QUEUE_MARGIN_MS = 10_000;
     /** Порог кода ответа: страница с ним — не открылась. */
     private static final int HTTP_ERROR = 400;
+    /** Скрипт страницы: нажать видимую кнопку «показать ещё»; {@code true} — нажата. */
+    private static final String CLICK_LOAD_MORE = """
+            ([selector, pattern]) => {
+              const text = new RegExp(pattern);
+              const plain = (value) => value.normalize('NFKD').replace(/\\p{M}/gu, '').toLowerCase();
+              const button = [...document.querySelectorAll(selector)]
+                .find((element) => element.offsetParent !== null && text.test(plain(element.innerText || '')));
+              if (!button) {
+                return false;
+              }
+              button.click();
+              return true;
+            }""";
+    /** Скрипт страницы: сколько на ней ссылок. */
+    private static final String COUNT_LINKS = "() => document.querySelectorAll('a[href]').length";
     private static final Logger LOG = LoggerFactory.getLogger(ChromiumPageRenderer.class);
 
-    private final CareerRenderProperties properties;
+    private final BrowserProperties properties;
     private final AddressPolicy addressPolicy;
     private final String userAgent;
     private final ExecutorService thread = Executors.newSingleThreadExecutor(task -> {
@@ -86,7 +105,7 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
      * @param http       разрешены ли внутренние адреса (только локальные заглушки)
      * @param politeness User-Agent ядра
      */
-    public ChromiumPageRenderer(CareerRenderProperties properties, ExternalHttpProperties http,
+    public ChromiumPageRenderer(BrowserProperties properties, ExternalHttpProperties http,
             PolitenessProperties politeness) {
         this.properties = properties;
         this.addressPolicy = new AddressPolicy(http.allowPrivateAddresses());
@@ -95,14 +114,25 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
 
     @Override
     public Optional<Document> render(URI uri) {
+        return inBrowser(uri, false);
+    }
+
+    @Override
+    public Optional<Document> expanded(URI uri) {
+        return inBrowser(uri, true);
+    }
+
+    private Optional<Document> inBrowser(URI uri, boolean expand) {
         if (!properties.enabled()) {
             return Optional.empty();
         }
         AtomicBoolean abandoned = new AtomicBoolean();
-        Callable<Optional<Document>> task = () -> abandoned.get() ? Optional.<Document>empty() : open(uri);
+        Callable<Optional<Document>> task = () -> abandoned.get() ? Optional.<Document>empty() : open(uri, expand);
         Future<Optional<Document>> result = thread.submit(task);
+        long wait = 2 * properties.timeout().toMillis() + QUEUE_MARGIN_MS
+                + (expand ? properties.expandBudget().toMillis() : 0);
         try {
-            return result.get(2 * properties.timeout().toMillis() + QUEUE_MARGIN_MS, TimeUnit.MILLISECONDS);
+            return result.get(wait, TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
             abandoned.set(true);
             LOG.info("Rendering {} did not finish in time", uri);
@@ -117,8 +147,8 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
         }
     }
 
-    /** В потоке браузера: страница в чистом профиле. */
-    private Optional<Document> open(URI uri) {
+    /** В потоке браузера: страница в чистом профиле; {@code expand} — нажимать «показать ещё». */
+    private Optional<Document> open(URI uri, boolean expand) {
         double timeout = properties.timeout().toMillis();
         try (BrowserContext context = browser().newContext(new Browser.NewContextOptions().setUserAgent(userAgent))) {
             context.setDefaultTimeout(timeout);
@@ -129,10 +159,9 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
             if (response == null || response.status() >= HTTP_ERROR) {
                 return Optional.empty();
             }
-            try {
-                page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(timeout));
-            } catch (TimeoutError stillLoading) {
-                LOG.debug("Rendering {}: requests did not settle, taking what is built", uri);
+            settle(page, timeout);
+            if (expand) {
+                expand(page, timeout);
             }
             return Optional.of(Jsoup.parse(page.content(), page.url()));
         } catch (PlaywrightException exception) {
@@ -142,6 +171,35 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
             }
             return Optional.empty();
         }
+    }
+
+    /** Ждёт окончания запросов страницы; не дождались — берётся построенное. */
+    private static void settle(Page page, double timeout) {
+        try {
+            page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(timeout));
+        } catch (TimeoutError stillLoading) {
+            LOG.debug("Rendering {}: requests did not settle, taking what is built", page.url());
+        }
+    }
+
+    /** «Показать ещё», пока после нажатия прибавляются ссылки (в пределах числа нажатий и общего срока). */
+    private void expand(Page page, double timeout) {
+        long until = System.nanoTime() + properties.expandBudget().toNanos();
+        for (int click = 0; click < properties.expandClicks() && System.nanoTime() < until; click++) {
+            int before = links(page);
+            if (!Boolean.TRUE.equals(page.evaluate(CLICK_LOAD_MORE, List.of(LoadMore.SELECTOR, LoadMore.TEXT.pattern())))) {
+                return;
+            }
+            settle(page, timeout);
+            if (links(page) <= before) {
+                return;
+            }
+        }
+        LOG.info("Rendering {}: stopped pressing load more at the limit", page.url());
+    }
+
+    private static int links(Page page) {
+        return ((Number) page.evaluate(COUNT_LINKS)).intValue();
     }
 
     /** В потоке браузера: пропустить запрос страницы или отказать. */

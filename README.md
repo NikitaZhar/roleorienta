@@ -78,7 +78,7 @@ mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/heal
 ```
 
 job-worker при первой проверке сайта, где ссылку на вакансии строит скрипт, скачивает Chromium (≈ 150 МБ, один раз;
-macOS — `~/Library/Caches/ms-playwright`); `CAREER_RENDER_ENABLED=false` — без браузера.
+macOS — `~/Library/Caches/ms-playwright`); `BROWSER_ENABLED=false` — без браузера.
 
 SPA в разработке (после `mvn verify`; job-api запущен на :8080):
 

@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
@@ -109,6 +110,11 @@ public final class CareerLinks {
             "kari[eé]r|career|\\bjobs?\\b|\\bpr[aá]ca u n[aá]s|\\bpr[aá]ca vo? |pre uch[aá]dza[čc]"
                     + "|vo[ľl]n[ée] (?:poz[ií]cie|miesta|pracovn)|pracovn[ée] (?:ponuky|poz[ií]cie|miesta)|ponuky pr[aá]ce"
                     + "|pridaj sa|po[ďd]te k n[aá]m|join us|work with us|zamestnanie|n[aá]bor",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /** Ссылка на список вакансий, а не на страницу о работе в компании (§241). */
+    private static final Pattern LIST_WORDS = Pattern.compile(
+            "vo[ľl]n[ée] (?:poz[ií]c|miest|pracovn)|pracovn[ée] (?:ponuk|poz[ií]c|miest)|ponuk[ay] pr[aá]c|ponuka-prace"
+                    + "|volne-pozicie|pracovne-ponuky|open positions|job offers|vacanc|all jobs|stellenangebote|pozície",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     /** Сколько первых символов текста страницы проверяется на кадровые слова (как в скрипте). */
     private static final int CAREER_TEXT_LIMIT = 300_000;
@@ -309,17 +315,27 @@ public final class CareerLinks {
     }
 
     /**
-     * Шаг вглубь: на кадровой странице без досок — ссылка на другую кадровую страницу
-     * ({@code /kariera} → {@code /kariera/volne-pozicie}).
+     * Шаг вглубь: на кадровой странице без досок — ссылки на другие кадровые страницы
+     * ({@code /kariera} → {@code /kariera/volne-pozicie}); первыми — ссылки на список вакансий ({@link #LIST_WORDS} в
+     * тексте или адресе: AGEL — «Voľné pozície» → {@code /ponuka-prace/}, §241), затем остальные по правилам класса.
      *
      * @param page       кадровая страница
      * @param careerPage её адрес
-     * @return адрес другой кадровой страницы по правилам класса (своего домена, затем другого); пусто — нет
+     * @param limit      сколько адресов
+     * @return адреса других кадровых страниц (своего домена, затем другого); пусто — нет
      */
-    static Optional<String> deeperCareerPage(Document page, URI careerPage) {
+    static List<String> deeperCareerPages(Document page, URI careerPage, int limit) {
         String current = normalized(careerPage.toString());
-        return careerLinks(page, careerPage.getAuthority()).stream()
-                .filter(link -> !normalized(link).equals(current)).findFirst();
+        Set<String> listLinks = new LinkedHashSet<>();
+        for (Element anchor : page.select("a[href]")) {
+            if (LIST_WORDS.matcher(anchor.text() + " " + anchor.attr("href")).find()) {
+                listLinks.add(anchor.absUrl("href").replaceFirst("#.*$", ""));
+            }
+        }
+        List<String> links = careerLinks(page, careerPage.getAuthority()).stream()
+                .filter(link -> !normalized(link).equals(current)).toList();
+        return Stream.concat(links.stream().filter(listLinks::contains),
+                links.stream().filter(link -> !listLinks.contains(link))).limit(limit).toList();
     }
 
     /**

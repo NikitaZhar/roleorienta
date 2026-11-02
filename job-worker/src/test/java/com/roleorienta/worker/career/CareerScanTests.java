@@ -3,6 +3,7 @@ package com.roleorienta.worker.career;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.browser.PageRenderer;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.site.DomainMarketplaces;
 import com.roleorienta.worker.site.SiteCheckProperties;

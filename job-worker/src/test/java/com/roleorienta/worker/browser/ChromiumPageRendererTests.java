@@ -1,4 +1,4 @@
-package com.roleorienta.worker.career;
+package com.roleorienta.worker.browser;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Браузер без окна (§236) — настоящий Chromium (Playwright скачивает его при первом запуске) и сайт-заглушка на
  * встроенном HTTP-сервере JDK: ссылку «Kariéra» строит скрипт — после выполнения она на странице; переадресация
- * скриптом — конечный адрес страницы; внутренний адрес при запрете внутренних адресов не открывается.
+ * скриптом — конечный адрес страницы; «Zobraziť viac» нажимается, пока прибавляются вакансии; внутренний адрес при
+ * запрете внутренних адресов не открывается.
  */
 class ChromiumPageRendererTests {
 
@@ -32,6 +33,13 @@ class ChromiumPageRendererTests {
     private static final String REDIRECT_SCRIPT = "<html><body>Redirecting…<script>location.replace('/sk/');</script>"
             + "</body></html>";
     private static final String TARGET = "<html><body><h1>Vitajte</h1></body></html>";
+    /** Список, который подгружает кнопка «Zobraziť viac» (§241): нажатие добавляет вакансию, после третьей кнопки нет. */
+    private static final String LOAD_MORE = "<html><body><ul id=\"list\"><li><a href=\"/ponuka-prace/1\">V1</a></li>"
+            + "</ul><button id=\"more\" onclick=\"add()\">Zobraziť viac</button><script>let count = 1;"
+            + "function add() { count++; const item = document.createElement('li');"
+            + "item.innerHTML = '<a href=\"/ponuka-prace/' + count + '\">V' + count + '</a>';"
+            + "document.getElementById('list').appendChild(item);"
+            + "if (count >= 3) { document.getElementById('more').remove(); } }</script></body></html>";
 
     private static HttpServer site;
     private static String origin;
@@ -46,7 +54,8 @@ class ChromiumPageRendererTests {
         site = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         site.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
-            String page = "/".equals(path) ? MENU_SCRIPT : "/redirect".equals(path) ? REDIRECT_SCRIPT : TARGET;
+            String page = "/".equals(path) ? MENU_SCRIPT : "/redirect".equals(path) ? REDIRECT_SCRIPT
+                    : "/ponuka-prace/".equals(path) ? LOAD_MORE : TARGET;
             byte[] bytes = page.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
             exchange.sendResponseHeaders(200, bytes.length);
@@ -78,11 +87,14 @@ class ChromiumPageRendererTests {
             Optional<Document> home = renderer.render(URI.create(origin + "/"));
             assertThat(home).isPresent();
             assertThat(home.get().select("a[href]").eachAttr("abs:href")).containsExactly(origin + "/spolocnost/ponuka");
-            assertThat(CareerLinks.careerPage(home.get(), URI.create(origin).getAuthority()))
-                    .contains(origin + "/spolocnost/ponuka");
 
             Optional<Document> redirected = renderer.render(URI.create(origin + "/redirect"));
             assertThat(redirected).map(Document::location).contains(origin + "/sk/");
+
+            // «Zobraziť viac» (§241): без нажатий — одна вакансия, с нажатиями — все три, кнопки больше нет.
+            URI list = URI.create(origin + "/ponuka-prace/");
+            assertThat(renderer.render(list).orElseThrow().select("#list a")).hasSize(1);
+            assertThat(renderer.expanded(list).orElseThrow().select("#list a")).hasSize(3);
         } finally {
             renderer.destroy();
         }
@@ -105,7 +117,7 @@ class ChromiumPageRendererTests {
     }
 
     private static ChromiumPageRenderer renderer(boolean enabled, boolean allowPrivate) {
-        return new ChromiumPageRenderer(new CareerRenderProperties(enabled, Duration.ofSeconds(20)),
+        return new ChromiumPageRenderer(new BrowserProperties(enabled, Duration.ofSeconds(20), 50, Duration.ofSeconds(60)),
                 new ExternalHttpProperties(Duration.ofSeconds(5), Duration.ofSeconds(20), 5, 5_242_880, allowPrivate),
                 new PolitenessProperties("Roleorienta/0.1 (test)", Duration.ZERO, Duration.ofSeconds(30), List.of(),
                         List.of()));

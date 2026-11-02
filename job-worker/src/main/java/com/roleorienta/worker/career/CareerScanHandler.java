@@ -3,6 +3,7 @@ package com.roleorienta.worker.career;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.careerpage.CareerPageList;
+import com.roleorienta.worker.browser.PageRenderer;
 import com.roleorienta.worker.career.CareerScanRepository.CheckResult;
 import com.roleorienta.worker.career.CareerScanRepository.Role;
 import com.roleorienta.worker.career.CareerScanRepository.Site;
