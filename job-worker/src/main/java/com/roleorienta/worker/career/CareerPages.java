@@ -5,6 +5,8 @@ import com.roleorienta.worker.adapter.careerpage.CareerPageList;
 import com.roleorienta.worker.adapter.jobposting.JobPostingAdapter;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
+import com.roleorienta.worker.site.SiteVerifier;
+import com.roleorienta.worker.site.SiteVerifier.Verdict;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
@@ -30,14 +32,32 @@ public class CareerPages {
 
     private final ExternalHttpClient http;
     private final PageRenderer renderer;
+    private final SiteVerifier verifier;
 
     /**
      * @param http     внешний HTTP-клиент
      * @param renderer браузер без окна ({@link PageRenderer#NONE} — без него)
+     * @param verifier проверка, что сайт принадлежит компании (IČO или бренд на его странице)
      */
-    public CareerPages(ExternalHttpClient http, PageRenderer renderer) {
+    public CareerPages(ExternalHttpClient http, PageRenderer renderer, SiteVerifier verifier) {
         this.http = http;
         this.renderer = renderer;
+        this.verifier = verifier;
+    }
+
+    /**
+     * Сайт по ссылке со страницы группы (§237) — сайт этой компании, если на его главной или странице реквизитов её
+     * IČO, иначе бренд названия ({@link SiteVerifier}).
+     *
+     * @param host               хост сайта
+     * @param registrationNumber IČO компании
+     * @param name               название компании
+     * @return подтверждение ({@code REGISTRATION_NUMBER} или {@code BRAND}); пусто — сайт не её или не открылся
+     */
+    public Optional<String> companySite(String host, String registrationNumber, String name) {
+        Verdict verdict = verifier.verify(host, "", registrationNumber, name);
+        return verdict == Verdict.REGISTRATION_NUMBER || verdict == Verdict.BRAND
+                ? Optional.of(verdict.name()) : Optional.empty();
     }
 
     /**

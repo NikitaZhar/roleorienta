@@ -276,6 +276,39 @@ public final class CareerLinks {
     }
 
     /**
+     * Сайты компаний группы со страницы группы (§237): ссылки на хосты другого регистрируемого домена, в первой части
+     * которого есть бренд названия компании ({@code zos.sk} → {@code www.zostt.sk}, {@code www.zoszv.sk} у «ŽOS
+     * Trnava»); площадки вакансий не берутся. Чей это сайт — решает проверка сайта (IČO или бренд на его странице).
+     *
+     * @param page  открытая главная сайта
+     * @param keys  бренды названия компании ({@link SiteBrand#keys})
+     * @param limit сколько хостов
+     * @return хосты по порядку ссылок, один на регистрируемый домен
+     */
+    static List<String> groupLinkedHosts(Document page, Set<String> keys, int limit) {
+        String own = SiteBrand.registrable(lower(URI.create(page.location()).getHost()));
+        Set<String> domains = new LinkedHashSet<>();
+        List<String> hosts = new ArrayList<>();
+        for (Element anchor : page.select("a[href]")) {
+            URI link = uri(anchor.absUrl("href"));
+            if (hosts.size() == limit) {
+                break;
+            }
+            if (link == null || link.getHost() == null) {
+                continue;
+            }
+            String host = lower(link.getHost());
+            String domain = SiteBrand.registrable(host);
+            String label = domain.split("\\.")[0];
+            if (!domain.equals(own) && !JOB_PORTAL_HOSTS.matcher(host).find() && domains.add(domain)
+                    && keys.stream().anyMatch(key -> key.length() >= MIN_BRAND && label.contains(key))) {
+                hosts.add(host);
+            }
+        }
+        return hosts;
+    }
+
+    /**
      * Шаг вглубь: на кадровой странице без досок — ссылка на другую кадровую страницу
      * ({@code /kariera} → {@code /kariera/volne-pozicie}).
      *

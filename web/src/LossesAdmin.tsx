@@ -123,8 +123,9 @@ export function LossesAdmin({ loss, message, onDone }: {
   return (
     <section>
       <h2>Losing vacancies</h2>
-      <p className="muted">Companies whose portal and profesia.sk vacancies are not found on their own career page,
-        biggest loss first. Handle one, the next one comes.</p>
+      <p className="muted">Companies whose own career page the application could not find after trying all its ways
+        (site not found, no career page on the site, site does not open). Find the page and add it, or mark that the
+        company has none. Biggest loss first; handle one, the next one comes.</p>
       {permission === 'default' && (
         <p><button type="button" onClick={() => void enableNotifications()}>Enable notifications</button>
           <span className="muted"> — a system notification for each next company while this tab is open.</span></p>

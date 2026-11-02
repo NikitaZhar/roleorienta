@@ -170,6 +170,11 @@ class MetricsRepositoryTests {
         assertThat(value(COUNTRY, "coverage_found_on_own", "")).isEqualTo(1);
         assertThat(value(COUNTRY, "coverage_companies", "READ")).isEqualTo(1);
         assertThat(value(COUNTRY, "coverage_companies", "NO_OWN_PAGE")).isZero();
+
+        // Пересчёт раз в час (§238) — та же таблица без показателей дня.
+        jdbcTemplate.update("DELETE FROM company_coverage");
+        repository.refreshCoverage();
+        assertThat(coverage(read)).isEqualTo("2 1 2 READ");
     }
 
     private long companySource(String provider, String board, long companyId) {

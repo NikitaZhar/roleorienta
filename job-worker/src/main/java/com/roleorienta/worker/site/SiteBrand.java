@@ -163,7 +163,7 @@ public final class SiteBrand {
      * @param companyName название компании
      * @return бренды по порядку, без повторов
      */
-    static Set<String> keys(String companyName) {
+    public static Set<String> keys(String companyName) {
         Set<String> keys = new LinkedHashSet<>();
         for (String brand : brands(companyName)) {
             if (!GENERIC.contains(brand)) {

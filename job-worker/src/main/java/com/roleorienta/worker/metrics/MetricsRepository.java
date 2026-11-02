@@ -301,10 +301,20 @@ public class MetricsRepository {
         jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
                 overdueSince, overdueSince, to);
         jdbcTemplate.update(FAILED_OPERATIONS, day, from, to);
+        refreshCoverage();
+        jdbcTemplate.update(COVERAGE_METRICS, day);
+    }
+
+    /**
+     * Заменяет полноту сбора по компаниям ({@code company_coverage}, §234) текущим состоянием одной транзакцией: очередь
+     * потерь администратора (§235) видит либо прежнюю таблицу, либо новую целиком. Вызывается с показателями дня и
+     * отдельно раз в час ({@link CoverageTick}, §238) — уведомления не ждут суток.
+     */
+    @Transactional
+    public void refreshCoverage() {
         jdbcTemplate.update("DELETE FROM company_coverage");
         jdbcTemplate.update(COVERAGE, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
                 StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER);
-        jdbcTemplate.update(COVERAGE_METRICS, day);
     }
 
     /**

@@ -3,6 +3,7 @@ package com.roleorienta.worker.career;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
+import java.util.Set;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,28 @@ class CareerLinksTests {
     /**
      * Кадровая страница — по тексту ссылки или адресу, только того же сайта ({@code www.} не мешает).
      */
+    /**
+     * Страница группы (§237): ссылки на другие домены с брендом названия — по одному хосту на домен, не больше
+     * предела; свой домен, площадки вакансий и чужие бренды — нет.
+     */
+    @Test
+    void findsCompanySitesLinkedFromGroupPage() {
+        Document page = Jsoup.parse("""
+                <a href="https://www.zos.sk/o-nas">O nás</a>
+                <a href="https://www.zostt.sk/"><img src="tt.png"></a>
+                <a href="https://zostt.sk/kariera">Kariéra</a>
+                <a href="http://www.zoszv.sk/"><img src="zv.png"></a>
+                <a href="https://www.facebook.com/zos">Facebook</a>
+                <a href="https://zos.jobs.cz/">Jobs</a>
+                <a href="https://www.zos4trains.cz/"><img src="cz.png"></a>
+                """, "https://www.zos.sk/");
+
+        assertThat(CareerLinks.groupLinkedHosts(page, Set.of("zos", "zostrnava"), 5))
+                .containsExactly("www.zostt.sk", "www.zoszv.sk", "www.zos4trains.cz");
+        assertThat(CareerLinks.groupLinkedHosts(page, Set.of("zos"), 2)).containsExactly("www.zostt.sk", "www.zoszv.sk");
+        assertThat(CareerLinks.groupLinkedHosts(page, Set.of("alfa"), 5)).isEmpty();
+    }
+
     @Test
     void findsCareerPageOfSameSite() {
         Document page = Jsoup.parse("""

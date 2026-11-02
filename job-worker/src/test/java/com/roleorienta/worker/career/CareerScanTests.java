@@ -6,6 +6,7 @@ import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.site.DomainMarketplaces;
 import com.roleorienta.worker.site.SiteCheckProperties;
+import com.roleorienta.worker.site.SiteVerifier;
 import com.roleorienta.worker.task.TaskExecutor;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
@@ -68,6 +69,9 @@ class CareerScanTests {
 
     @Autowired
     private CareerScanRepository repository;
+
+    @Autowired
+    private SiteVerifier verifier;
 
     @Autowired
     private CareerRequestHandler careerRequests;
@@ -417,7 +421,7 @@ class CareerScanTests {
      */
     @Test
     void stopsStartingSitesAfterTimeBudget() {
-        CareerScanHandler noTime = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE), repository,
+        CareerScanHandler noTime = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE, verifier), repository,
                 new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ZERO), 6, noMarketplaces());
 
         TaskOutcome outcome = noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE,
@@ -519,7 +523,7 @@ class CareerScanTests {
         jdbcTemplate.update("UPDATE company_site SET career_url = 'http://' || host || '/kariera'");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'FORMAT_UNSUPPORTED', now(), now() FROM company");
-        CareerScanHandler withMarketplace = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE), repository,
+        CareerScanHandler withMarketplace = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE, verifier), repository,
                 new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1,
                 new DomainMarketplaces(new SiteCheckProperties("https://{host}/", List.of("localhost"))));
 
@@ -547,7 +551,7 @@ class CareerScanTests {
         PageRenderer builtMenu = uri -> "/".equals(uri.getPath()) ? Optional.of(Jsoup.parse(
                 "<html><body><nav><a href=\"/spolocnost/ponuka\">Kariéra</a></nav></body></html>", uri.toString()))
                 : Optional.empty();
-        CareerScanHandler withBrowser = new CareerScanHandler(new CareerPages(http, builtMenu), repository,
+        CareerScanHandler withBrowser = new CareerScanHandler(new CareerPages(http, builtMenu, verifier), repository,
                 new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1, noMarketplaces());
 
         withBrowser.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("rendered"), 0));
@@ -559,6 +563,35 @@ class CareerScanTests {
     }
 
     /**
+     * Главная — страница группы (§237): кадровой страницы нет, ссылки на сайты компаний группы; подтверждённый как сайт
+     * этой компании (здесь — заглушка проверки: IČO на {@code www.zostt.example}) добавлен ей найденным со способом
+     * {@code GROUP_LINK}; сайт другой компании группы — нет; итог страницы группы — «кадровая страница не найдена».
+     */
+    @Test
+    void addsCompanySiteLinkedFromGroupPage() {
+        jdbcTemplate.update("UPDATE company SET name = 'ŽOS Trnava, a.s.'");
+        PAGES.put("/", "<h1>ŽOS Group</h1><a href=\"https://www.zostt.example/\">Trnava</a>"
+                + "<a href=\"https://www.zoszv.example/\">Zvolen</a>");
+        CareerPages groupPages = new CareerPages(http, PageRenderer.NONE, verifier) {
+            @Override
+            public Optional<String> companySite(String host, String registrationNumber, String name) {
+                return "www.zostt.example".equals(host) && "11111111".equals(registrationNumber)
+                        ? Optional.of("REGISTRATION_NUMBER") : Optional.empty();
+            }
+        };
+        CareerScanHandler withGroup = new CareerScanHandler(groupPages, repository,
+                new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1, noMarketplaces());
+
+        withGroup.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("group"), 0));
+
+        assertThat(jdbcTemplate.queryForList("SELECT host || ':' || source || ':' || proof || ':' || status "
+                + "|| ':' || (checked_at IS NULL) FROM company_site WHERE host LIKE '%.example' ORDER BY host", String.class))
+                .containsExactly("www.zostt.example:GROUP_LINK:REGISTRATION_NUMBER:FOUND:true");
+        assertThat(jdbcTemplate.queryForObject("SELECT check_result FROM company_site WHERE host = ?", String.class,
+                HOST)).isEqualTo("NO_CAREER_PAGE");
+    }
+
+    /**
      * Сайт «не открывается» проверяется снова через 2 дня (§236), сайт без кадровой страницы — только через общий срок.
      */
     @Test
@@ -567,6 +600,23 @@ class CareerScanTests {
         assertThat(repository.nextSites(10, Duration.ofDays(10))).hasSize(1);
         jdbcTemplate.update("UPDATE company_site SET check_result = 'NO_CAREER_PAGE'");
         assertThat(repository.nextSites(10, Duration.ofDays(10))).isEmpty();
+    }
+
+    /**
+     * Сайты нанимающих компаний (с открытой вакансией портала — строка {@code company_coverage}) проверяются первыми
+     * (§240): у обеих компаний сайт не проверен, первым — сайт нанимающей, хотя он добавлен позже.
+     */
+    @Test
+    void checksHiringCompanySitesFirst() {
+        long hiring = jdbcTemplate.queryForObject("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', '22222222', 'Beta s.r.o.', 'RPO') RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) "
+                + "VALUES (?, 'beta.example', 'https://beta.example/', 'STATE_PORTAL', 'REGISTRATION_NUMBER')", hiring);
+        jdbcTemplate.update("INSERT INTO company_coverage (company_id, portal_titles, found_on_own, own_vacancies, "
+                + "channel) VALUES (?, 2, 0, 0, 'NOT_CHECKED')", hiring);
+
+        assertThat(repository.nextSites(1, Duration.ofDays(10))).extracting(CareerScanRepository.Site::host)
+                .containsExactly("beta.example");
     }
 
     private static DomainMarketplaces noMarketplaces() {

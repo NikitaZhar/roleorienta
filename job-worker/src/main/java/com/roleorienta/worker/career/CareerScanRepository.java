@@ -1,5 +1,6 @@
 package com.roleorienta.worker.career;
 
+import com.roleorienta.worker.site.SiteScanRepository;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
@@ -79,6 +80,9 @@ public class CareerScanRepository {
             ON CONFLICT (company_id) DO UPDATE SET result = 'SITE_NOT_FOUND', checked_at = now()
             """;
 
+    /** Способ нахождения сайта: ссылка со страницы группы (§237). */
+    static final String GROUP_LINK = "GROUP_LINK";
+
     private final JdbcTemplate jdbcTemplate;
     private final CareerRetryProperties retry;
 
@@ -92,6 +96,41 @@ public class CareerScanRepository {
     }
 
     /**
+     * @param companyId компания
+     * @return IČO и название компании; пусто — компании нет
+     */
+    public Optional<CompanyName> company(long companyId) {
+        return jdbcTemplate.query("SELECT registration_number, name FROM company WHERE id = ?",
+                (row, number) -> new CompanyName(row.getString(1), row.getString(2)), companyId).stream().findFirst();
+    }
+
+    /**
+     * Сайт компании, найденный по ссылке со страницы группы и подтверждённый (§237): {@code FOUND}, способ —
+     * {@value #GROUP_LINK}, проверяется следующим заданием. Тот же хост уже есть — не меняется (отклонённый
+     * восстанавливается, как у других способов, {@link SiteScanRepository#RESTORE_REJECTED}).
+     *
+     * @param companyId   компания
+     * @param host        хост сайта
+     * @param proof       подтверждение ({@code REGISTRATION_NUMBER} или {@code BRAND})
+     * @param evidenceUrl страница группы со ссылкой
+     */
+    public void addLinkedSite(long companyId, String host, String proof, String evidenceUrl) {
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, proof, status)
+                VALUES (?, ?, ?, ?, ?, 'FOUND') ON CONFLICT (company_id, host)
+                """ + SiteScanRepository.RESTORE_REJECTED, companyId, host, evidenceUrl, GROUP_LINK, proof);
+    }
+
+    /**
+     * IČO и название компании.
+     *
+     * @param registrationNumber IČO
+     * @param name               название в реестре
+     */
+    public record CompanyName(String registrationNumber, String name) {
+    }
+
+    /**
      * @param limit        сколько сайтов
      * @param recheckAfter срок до перепроверки
      * @return проверяемые сайты ({@link #CHECKED_SITE}) и кандидаты компаний без найденного сайта
@@ -100,12 +139,14 @@ public class CareerScanRepository {
      *         {@link CareerRetryProperties#unreachableAfter()}, §236), — не больше одного сайта компании за задание:
      *         сайты задания проверяются одновременно, а итог компании пересчитывается по всем её сайтам — два сайта
      *         одной компании в одном задании записали бы итог, не видя друг друга (§80); сайты приоритетных
-     *         компаний — первыми (§71); компании с отметкой «не работодатель» (§138) — нет
+     *         компаний — первыми (§71), затем нанимающих — с открытой вакансией портала или profesia.sk
+     *         ({@code company_coverage}, §240); компании с отметкой «не работодатель» (§138) — нет
      */
     public List<Site> nextSites(int limit, Duration recheckAfter) {
         return jdbcTemplate.query("""
                 SELECT id, company_id, host, start_url, status FROM (
                     SELECT s.id, s.company_id, s.host, s.start_url, s.status, c.priority, s.checked_at,
+                           EXISTS (SELECT 1 FROM company_coverage cc WHERE cc.company_id = s.company_id) AS hiring,
                            row_number() OVER (PARTITION BY s.company_id ORDER BY s.checked_at NULLS FIRST, s.id)
                                AS company_order
                     FROM company_site s JOIN company c ON c.id = s.company_id
@@ -114,7 +155,7 @@ public class CareerScanRepository {
                       AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?)
                            OR s.check_result = 'UNREACHABLE' AND s.checked_at < now() - make_interval(secs => ?))) due
                 WHERE company_order = 1
-                ORDER BY priority DESC, checked_at NULLS FIRST, id LIMIT ?
+                ORDER BY priority DESC, hiring DESC, checked_at NULLS FIRST, id LIMIT ?
                 """.formatted(CHECKED_SITE, CANDIDATE_SITE), (row, number) -> new Site(row.getLong("id"),
                         row.getLong("company_id"), row.getString("host"), row.getString("start_url"),
                         "CANDIDATE".equals(row.getString("status"))),

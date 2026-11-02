@@ -25,13 +25,22 @@ public class AdminLossRepository {
     private static final String PORTAL_PROVIDERS = "('sluzbyzamestnanosti', 'profesia')";
 
     /**
-     * Очередь потерь: найдено на собственной странице меньше, чем есть на портале и profesia.sk; без отметок «своей
-     * страницы нет» и «не работодатель», не отложенные («Later») и без адреса кадровой страницы, который ещё
-     * проверяется или добавлен после пересчёта (итог появится следующим пересчётом). Больше потерянных — первыми.
+     * Очередь потерь (§235, §239) — только там, где помочь может администратор, и только после всех способов ядра
+     * (решения владельца 2026-11-02): своя кадровая страница не найдена — сайта нет (поиск сайта по названию пройден),
+     * на сайте страницы нет, сайт не открывается или запрещает чтение; все найденные сайты компании уже проверены (с
+     * браузером без окна и переходом со страницы группы, §236, §237). Страница найдена, но не читается или читается не
+     * полностью — работа ядра (чтение любой кадровой страницы, п. 5а шаг 3), не администратора: в очередь не
+     * попадает, видна в показателях. Без порога по числу вакансий; без отметок «своей страницы нет» и «не
+     * работодатель», не отложенные («Later») и без адреса кадровой страницы, который ещё проверяется или добавлен после
+     * пересчёта. Больше потерянных — первыми.
      */
     private static final String QUEUE = """
             FROM company_coverage cc JOIN company c ON c.id = cc.company_id
-            WHERE cc.channel <> 'NO_OWN_PAGE' AND cc.found_on_own < cc.portal_titles
+            WHERE cc.channel IN ('NO_SITE', 'NO_CAREER_PAGE', 'UNREACHABLE', 'USE_FORBIDDEN')
+              AND cc.found_on_own < cc.portal_titles
+              AND (cc.channel <> 'NO_SITE' OR c.site_name_checked_at IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM company_site st WHERE st.company_id = c.id AND st.status = 'FOUND'
+                              AND st.checked_at IS NULL)
               AND NOT c.no_own_career_page AND NOT c.not_employer AND c.terminated_on IS NULL
               AND (c.loss_postponed_until IS NULL OR c.loss_postponed_until <= now())
               AND NOT EXISTS (SELECT 1 FROM company_request r WHERE r.company_id = c.id

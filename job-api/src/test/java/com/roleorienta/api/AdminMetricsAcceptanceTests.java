@@ -193,7 +193,8 @@ class AdminMetricsAcceptanceTests {
     }
 
     /**
-     * Потери по одной компании (§235): больше потерянных — первой; в карточке — сайт и вакансии портала, которых нет на
+     * Потери по одной компании (§235, §239): в очереди — только то, что может решить администратор, после проверки всех
+     * сайтов компании («формат не поддержан» и непроверенный сайт — нет); больше потерянных — первой; в карточке — сайт и вакансии портала, которых нет на
      * собственной странице («Java Developer (m/ž)» портала найдена как «Java developer»); «Later» — следующая
      * компания; «No own career page» — потерь нет ({@code 204}), снятие отметки — компания снова в очереди.
      *
@@ -205,15 +206,24 @@ class AdminMetricsAcceptanceTests {
         jdbcTemplate.update("DELETE FROM vacancy WHERE primary_url LIKE 'https://qw-loss.example/%'");
         jdbcTemplate.update("DELETE FROM company_source WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qw-loss-%')");
         jdbcTemplate.update("DELETE FROM source WHERE board LIKE 'qw-loss-%'");
-        jdbcTemplate.update("DELETE FROM company_site WHERE host = 'loss.example'");
+        jdbcTemplate.update("DELETE FROM company_site WHERE host LIKE '%loss.example'");
         jdbcTemplate.update("DELETE FROM company_coverage");
-        jdbcTemplate.update("DELETE FROM company WHERE registration_number IN ('99900081', '99900082')");
-        long big = lossCompany("99900081", "Big Loss Ltd", "5, 1, 1, 'READ'");
+        jdbcTemplate.update("DELETE FROM company WHERE registration_number IN ('99900081', '99900082', '99900083', "
+                + "'99900084')");
+        long big = lossCompany("99900081", "Big Loss Ltd", "5, 1, 1, 'NO_CAREER_PAGE'");
         long small = lossCompany("99900082", "Small Loss Ltd", "2, 0, 0, 'NO_CAREER_PAGE'");
+        // Работа ядра, не администратора (§239): страница найдена, формат не поддержан; сайт ещё не проверен.
+        lossCompany("99900083", "Unsupported Format Ltd", "9, 0, 0, 'FORMAT_UNSUPPORTED'");
+        long unchecked = lossCompany("99900084", "Unchecked Site Ltd", "9, 0, 0, 'NO_CAREER_PAGE'");
         jdbcTemplate.update("""
-                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, check_result, career_url)
+                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, check_result, career_url,
+                                          checked_at)
                 VALUES (?, 'loss.example', 'https://loss.example/', 'STATE_PORTAL', 'FOUND', 'REGISTRATION_NUMBER',
-                        'SOURCE_FOUND', 'https://loss.example/kariera')""", big);
+                        'NO_CAREER_PAGE', 'https://loss.example/kariera', now())""", big);
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof)
+                VALUES (?, 'unchecked.loss.example', 'https://unchecked.loss.example/', 'STATE_PORTAL', 'FOUND',
+                        'REGISTRATION_NUMBER')""", unchecked);
         long portal = lossSource("sluzbyzamestnanosti", "qw-loss-portal", big);
         long own = lossSource("careerpage", "qw-loss-own", big);
         lossPosting(portal, "Java Developer (m/ž)");
@@ -224,9 +234,9 @@ class AdminMetricsAcceptanceTests {
 
         String first = client.send("GET", "/api/v1/admin/losses/next", null).body();
         assertThat(first).contains("\"id\":" + big + ",\"registrationNumber\":\"99900081\",\"name\":\"Big Loss Ltd\","
-                + "\"counts\":{\"portalVacancies\":5,\"foundOnOwn\":1,\"ownVacancies\":1,\"channel\":\"READ\"},"
+                + "\"counts\":{\"portalVacancies\":5,\"foundOnOwn\":1,\"ownVacancies\":1,\"channel\":\"NO_CAREER_PAGE\"},"
                 + "\"remaining\":2}");
-        assertThat(first).contains("{\"host\":\"loss.example\",\"checkResult\":\"SOURCE_FOUND\","
+        assertThat(first).contains("{\"host\":\"loss.example\",\"checkResult\":\"NO_CAREER_PAGE\","
                 + "\"careerUrl\":\"https://loss.example/kariera\"}");
         assertThat(first).contains("\"missing\":[{\"title\":\"Skladník\"");
         assertThat(first).doesNotContain("Java Developer");

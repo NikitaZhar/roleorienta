@@ -60,7 +60,8 @@ import org.springframework.stereotype.Component;
  *       скриптом), а {@code careers.swissre.com} — SuccessFactors (§89).</li>
  *   <li>Ничего не нашлось, а главная открылась — она открывается браузером без окна ({@link PageRenderer}, §236): меню
  *       и ссылки, которые строит скрипт, переадресация скриптом; на построенной странице — те же доски и кадровая
- *       ссылка.</li>
+ *       ссылка. Не нашлось и там — главная может быть страницей группы: сайты компаний группы по ссылкам с неё, если
+ *       подтверждены как сайт этой компании, добавляются ей (§237).</li>
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>
@@ -95,6 +96,8 @@ public class CareerScanHandler implements TaskHandler {
     /** Пробные кадровые хосты бренда сайта ({@code %s} — первое слово регистрируемого домена), как в скрипте замера. */
     private static final List<String> BRAND_CAREER_HOSTS = List.of("jobs.%s.com", "careers.%s.com", "www.%s-jobs.sk");
     private static final Pattern IP_ADDRESS = Pattern.compile("[0-9.]+|\\[.*]");
+    /** Сколько сайтов компаний группы со страницы группы проверяется за раз (§237). */
+    private static final int LINKED_SITES_MAX = 3;
     private static final Logger LOG = LoggerFactory.getLogger(CareerScanHandler.class);
 
     private final CareerPages pages;
@@ -271,6 +274,9 @@ public class CareerScanHandler implements TaskHandler {
                 careerLink = rendered.careerLink();
             }
         }
+        if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
+            linkedCompanySites(site, homePage.get());
+        }
         if (homePage.isEmpty() && careerPage.isEmpty()) {
             LOG.info("Home page of site {} of company {} did not open ({}), no career address open", site.host(),
                     site.companyId(), homeResult);
@@ -332,6 +338,25 @@ public class CareerScanHandler implements TaskHandler {
                 .filter(CareerLinks::isCareerPage)
                 .or(() -> link.flatMap(address -> pages.rendered(URI.create(address))).filter(CareerLinks::isCareerPage));
         return new Rendered(careerPage, link, careerPage.map(found -> careerBoards(found, true)).orElse(Set.of()));
+    }
+
+    /**
+     * Сайт группы вместо сайта компании (§237): на главной без кадровой страницы — ссылки на сайты компаний группы
+     * ({@link CareerLinks#groupLinkedHosts}); сайт, подтверждённый как сайт этой компании (IČO или бренд на нём),
+     * добавляется ей найденным и проверяется следующим заданием. Итог проверяемого сайта не меняется.
+     *
+     * @param site проверяемый сайт
+     * @param home его главная
+     */
+    private void linkedCompanySites(Site site, Document home) {
+        repository.company(site.companyId()).ifPresent(company -> CareerLinks
+                .groupLinkedHosts(home, SiteBrand.keys(company.name()), LINKED_SITES_MAX)
+                .forEach(host -> pages.companySite(host, company.registrationNumber(), company.name())
+                        .ifPresent(proof -> {
+                            repository.addLinkedSite(site.companyId(), host, proof, home.location());
+                            LOG.info("Site {} of company {}: company site {} linked from group page ({})",
+                                    site.host(), site.companyId(), host, proof);
+                        })));
     }
 
     /**
