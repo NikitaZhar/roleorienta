@@ -24,7 +24,8 @@ public class AdminMetricsService {
     /** Порядок показателей в таблице (технический документ §11); прочие — после них по алфавиту. */
     static final List<String> METRIC_ORDER = List.of("companies_known", "companies_processed", "companies_remaining",
             "companies_with_site", "companies_connected", "companies_failed", "vacancies_active", "vacancies_recheck",
-            "vacancies_recognized", "vacancies_new", "vacancies_closed", "sources", "source_reads", "sources_overdue", "operations_failed");
+            "vacancies_recognized", "vacancies_new", "vacancies_closed", "coverage_companies", "coverage_portal_vacancies",
+            "coverage_found_on_own", "sources", "source_reads", "sources_overdue", "operations_failed");
 
     private final AdminMetricsRepository repository;
 

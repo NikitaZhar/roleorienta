@@ -55,6 +55,9 @@ const LABELS: Record<string, string> = {
   vacancies_recognized: 'Vacancies with recognized profession',
   vacancies_new: 'Vacancies new',
   vacancies_closed: 'Vacancies closed',
+  coverage_companies: 'Hiring companies (portal or profesia.sk vacancies) by own channel',
+  coverage_portal_vacancies: 'Their portal and profesia.sk vacancies',
+  coverage_found_on_own: 'Of them found on own career page',
   sources: 'Sources',
   source_reads: 'Sources by last read of the day',
   sources_overdue: 'Sources with overdue read',
@@ -90,7 +93,22 @@ function recognizedShare(table: MetricsTable): (number | null)[] {
 }
 
 /**
- * Сводка над таблицей (§206, §214): шесть чисел последнего дня и изменение за неделю — «вакансий становится больше?».
+ * Полнота сбора (§234), %, по дням: доля вакансий портала и profesia.sk нанимающих компаний, найденных и на их
+ * собственной кадровой странице — мера плана «Полнота сбора вакансий» (решение владельца §233).
+ */
+function ownPageShare(table: MetricsTable): (number | null)[] {
+  const portal = totals(table, 'coverage_portal_vacancies');
+  const found = totals(table, 'coverage_found_on_own');
+  return table.days.map((_, index) => {
+    const base = portal[index];
+    const value = found[index];
+    return base === null || base === undefined || base === 0 || value === null || value === undefined ? null
+      : Math.round((value * 100) / base);
+  });
+}
+
+/**
+ * Сводка над таблицей (§206, §214, §234): семь чисел последнего дня и изменение за неделю — «вакансий становится больше?».
  * У просроченных чтений и сбоев рост — плохо: стрелка та же, вывод за администратором.
  */
 function MetricsSummary({ table }: { table: MetricsTable }) {
@@ -98,6 +116,7 @@ function MetricsSummary({ table }: { table: MetricsTable }) {
     { label: 'Open vacancies', values: openVacancies(table) },
     { label: 'New per day', values: totals(table, 'vacancies_new') },
     { label: 'With recognized profession', values: recognizedShare(table), unit: ' %' },
+    { label: 'Portal vacancies found on own pages', values: ownPageShare(table), unit: ' %' },
     { label: 'Companies with channel', values: totals(table, 'companies_connected') },
     { label: 'Sources read overdue', values: totals(table, 'sources_overdue') },
     { label: 'Operations failed', values: totals(table, 'operations_failed') },

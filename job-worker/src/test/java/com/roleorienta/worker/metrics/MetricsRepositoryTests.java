@@ -50,7 +50,7 @@ class MetricsRepositoryTests {
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("DELETE FROM core_metric_daily");
-        jdbcTemplate.update("DELETE FROM job_posting WHERE external_id = 'qq-coded'");
+        jdbcTemplate.update("DELETE FROM job_posting WHERE external_id LIKE 'qq-%'");
         jdbcTemplate.update("DELETE FROM crawl_run WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qq-%')");
         jdbcTemplate.update(
                 "DELETE FROM company_source WHERE source_id IN (SELECT id FROM source WHERE board LIKE 'qq-%')");
@@ -132,6 +132,66 @@ class MetricsRepositoryTests {
         assertThat(value("", "operations_failed", TASK_TYPE)).isEqualTo(1);
         assertThat(value("", "operations_failed", "")).isPositive();
         assertThat(repository.computedDays(DAY)).contains(DAY);
+    }
+
+    /**
+     * Полнота сбора (§234): компания R — вакансии портала «Backend Developer - Java (m/ž)» и «Skladník (muž/žena)»,
+     * на своей кадровой странице — «Backend developer – Java» (то же название по правилу §220) и «Data Engineer»;
+     * компания N — вакансия портала, сайт без кадровой страницы; компания M — объявление profesia.sk и отметка «своей
+     * страницы нет» — в меру не входит; компания A из {@link #setUp()} — свой источник без вакансий портала, не
+     * нанимающая по порталу — строки нет.
+     */
+    @Test
+    void computesCoverageByCompany() {
+        long read = company("10", "2026-10-01T00:00:00Z", null);
+        long noPage = company("11", "2026-10-01T00:00:00Z", null);
+        long marked = company("12", "2026-10-01T00:00:00Z", null);
+        jdbcTemplate.update("UPDATE company SET no_own_career_page = TRUE WHERE id = ?", marked);
+        site(noPage, "nopage.qq");
+        jdbcTemplate.update("UPDATE company_site SET check_result = 'NO_CAREER_PAGE' WHERE company_id = ?", noPage);
+        long portalRead = companySource("sluzbyzamestnanosti", "qq-portal-r", read);
+        long own = companySource("careerpage", "qq-own-r", read);
+        posting(portalRead, "qq-p1", "Backend Developer - Java (m/ž)");
+        posting(portalRead, "qq-p2", "Skladník (muž/žena)");
+        posting(own, "qq-o1", "Backend developer – Java");
+        posting(own, "qq-o2", "Data Engineer");
+        posting(companySource("sluzbyzamestnanosti", "qq-portal-n", noPage), "qq-p3", "Účtovník");
+        posting(companySource("profesia", "qq-profesia-m", marked), "qq-p4", "Kuchár");
+
+        repository.replaceDay(DAY, DAY.atStartOfDay(ZONE).toInstant(), DAY.plusDays(1).atStartOfDay(ZONE).toInstant());
+
+        assertThat(coverage(read)).isEqualTo("2 1 2 READ");
+        assertThat(coverage(noPage)).isEqualTo("1 0 0 NO_CAREER_PAGE");
+        assertThat(coverage(marked)).isEqualTo("1 0 0 NO_OWN_PAGE");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_coverage cc JOIN company co "
+                + "ON co.id = cc.company_id WHERE co.country = ?", Long.class, COUNTRY)).isEqualTo(3);
+        assertThat(value(COUNTRY, "coverage_companies", "")).isEqualTo(2);
+        assertThat(value(COUNTRY, "coverage_portal_vacancies", "")).isEqualTo(3);
+        assertThat(value(COUNTRY, "coverage_found_on_own", "")).isEqualTo(1);
+        assertThat(value(COUNTRY, "coverage_companies", "READ")).isEqualTo(1);
+        assertThat(value(COUNTRY, "coverage_companies", "NO_OWN_PAGE")).isZero();
+    }
+
+    private long companySource(String provider, String board, long companyId) {
+        long source = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES (?, ?) RETURNING id",
+                Long.class, provider, board);
+        jdbcTemplate.update("INSERT INTO company_source (company_id, source_id, role) VALUES (?, ?, 'EMPLOYER')",
+                companyId, source);
+        return source;
+    }
+
+    private void posting(long source, String externalId, String title) {
+        long vacancy = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at, work_countries)
+                VALUES ('ACTIVE', ?, ?, now(), now(), ARRAY['QQ']) RETURNING id""", Long.class, title, VACANCY_URL);
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, ?, ?, ?, now(), now())""", source, vacancy, externalId, title, VACANCY_URL);
+    }
+
+    private String coverage(long companyId) {
+        return jdbcTemplate.queryForObject("SELECT portal_titles || ' ' || found_on_own || ' ' || own_vacancies || ' ' "
+                + "|| channel FROM company_coverage WHERE company_id = ?", String.class, companyId);
     }
 
     private long company(String number, String firstSeen, LocalDate terminatedOn) {

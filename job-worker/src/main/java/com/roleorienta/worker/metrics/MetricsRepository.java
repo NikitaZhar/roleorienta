@@ -1,6 +1,7 @@
 package com.roleorienta.worker.metrics;
 
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
+import com.roleorienta.worker.stateportal.ProfesiaOfferRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -198,6 +199,74 @@ public class MetricsRepository {
             GROUP BY GROUPING SETS ((), (t.type))
             """;
 
+    /**
+     * Полнота сбора по компаниям (§234; технический документ §15, MVP п. 5а): нанимающая компания — действующая, не
+     * агентство и не «не работодатель», с открытой вакансией государственного портала или profesia.sk в своей стране
+     * (или без страны). По каждой: разных названий вакансий портала и profesia.sk, сколько из них есть на собственной
+     * странице компании (свои источники работодателя — не портал и не profesia.sk; название — правилом
+     * {@link ProfesiaOfferRepository#SAME_TITLE}, §220), сколько вакансий там всего и состояние собственного канала
+     * (отметка администратора «своей страницы нет»; свой источник с вакансиями или без; только доска группы; иначе
+     * лучший итог проверки найденных сайтов; сайта нет). Таблица — текущее состояние, заменяется целиком. Параметры:
+     * провайдеры портала и profesia.sk дважды.
+     */
+    private static final String COVERAGE = """
+            WITH posting AS (
+                SELECT cs.company_id, s.provider IN (?, ?) AS portal, p.vacancy_id, %s AS title_key
+                FROM company co
+                JOIN company_source cs ON cs.company_id = co.id AND cs.role = 'EMPLOYER'
+                JOIN source s ON s.id = cs.source_id AND s.closed_at IS NULL
+                JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL
+                JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
+                                  AND (co.country = ANY (v.work_countries) OR cardinality(v.work_countries) = 0)
+                WHERE co.terminated_on IS NULL AND NOT co.agency AND NOT co.not_employer),
+            portal_title AS (SELECT DISTINCT company_id, title_key FROM posting WHERE portal),
+            own_title AS (SELECT DISTINCT company_id, title_key FROM posting WHERE NOT portal),
+            own_count AS (SELECT company_id, count(DISTINCT vacancy_id) AS vacancies FROM posting WHERE NOT portal
+                          GROUP BY company_id),
+            counted AS (SELECT pt.company_id, count(*) AS portal_titles, count(ot.company_id) AS found_on_own
+                        FROM portal_title pt
+                        LEFT JOIN own_title ot ON ot.company_id = pt.company_id AND ot.title_key = pt.title_key
+                        GROUP BY pt.company_id)
+            INSERT INTO company_coverage (company_id, portal_titles, found_on_own, own_vacancies, channel)
+            SELECT c.company_id, c.portal_titles, c.found_on_own, coalesce(o.vacancies, 0),
+                   CASE WHEN co.no_own_career_page THEN 'NO_OWN_PAGE'
+                        WHEN EXISTS (SELECT 1 FROM company_source cs JOIN source s ON s.id = cs.source_id
+                                     WHERE cs.company_id = c.company_id AND cs.role = 'EMPLOYER'
+                                       AND s.closed_at IS NULL AND s.provider NOT IN (?, ?))
+                            THEN CASE WHEN coalesce(o.vacancies, 0) > 0 THEN 'READ' ELSE 'READ_EMPTY' END
+                        WHEN EXISTS (SELECT 1 FROM company_source cs JOIN source s ON s.id = cs.source_id
+                                     WHERE cs.company_id = c.company_id AND cs.role = 'GROUP' AND s.closed_at IS NULL)
+                            THEN 'GROUP_ONLY'
+                        ELSE coalesce((SELECT CASE min(CASE st.check_result WHEN 'SOURCE_FOUND' THEN 1
+                                                       WHEN 'FORMAT_UNSUPPORTED' THEN 2 WHEN 'NO_CAREER_PAGE' THEN 3
+                                                       WHEN 'UNREACHABLE' THEN 4 WHEN 'USE_FORBIDDEN' THEN 5 ELSE 6 END)
+                                                  WHEN 1 THEN 'PAGE_FOUND' WHEN 2 THEN 'FORMAT_UNSUPPORTED'
+                                                  WHEN 3 THEN 'NO_CAREER_PAGE' WHEN 4 THEN 'UNREACHABLE'
+                                                  WHEN 5 THEN 'USE_FORBIDDEN' ELSE 'NOT_CHECKED' END
+                                       FROM company_site st
+                                       WHERE st.company_id = c.company_id AND st.status = 'FOUND'), 'NO_SITE') END
+            FROM counted c
+            JOIN company co ON co.id = c.company_id
+            LEFT JOIN own_count o ON o.company_id = c.company_id
+            """.formatted(ProfesiaOfferRepository.SAME_TITLE.formatted("p.title"));
+
+    /**
+     * Мера полноты сбора (§234; решение владельца §233) по стране — итог и по состоянию собственного канала:
+     * нанимающих компаний, разных названий их вакансий портала и profesia.sk и сколько из них найдено на собственной
+     * странице. Компании с отметкой «своей страницы нет» не считаются: их вакансии и должны браться с портала.
+     */
+    private static final String COVERAGE_METRICS = """
+            INSERT INTO core_metric_daily (day, country, metric, dimension, value)
+            SELECT CAST(? AS date), co.country, kind.metric,
+                   CASE WHEN GROUPING(cc.channel) = 1 THEN '' ELSE cc.channel END, sum(kind.value)
+            FROM company_coverage cc
+            JOIN company co ON co.id = cc.company_id
+            CROSS JOIN LATERAL (VALUES ('coverage_companies', 1), ('coverage_portal_vacancies', cc.portal_titles),
+                                       ('coverage_found_on_own', cc.found_on_own)) kind (metric, value)
+            WHERE cc.channel <> 'NO_OWN_PAGE'
+            GROUP BY GROUPING SETS ((co.country, kind.metric), (co.country, kind.metric, cc.channel))
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -209,7 +278,8 @@ public class MetricsRepository {
 
     /**
      * Пересчитывает показатели дня: прежние строки дня удаляются, новые пишутся в той же транзакции — показатели
-     * дня видны либо прежние, либо новые целиком.
+     * дня видны либо прежние, либо новые целиком. Там же заменяется полнота сбора по компаниям
+     * ({@code company_coverage}, §234) — текущее состояние, как и другие показатели-состояния.
      *
      * @param day   день
      * @param start начало дня (в часовом поясе показателей)
@@ -231,6 +301,10 @@ public class MetricsRepository {
         jdbcTemplate.update(SOURCES_OVERDUE, day, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
                 overdueSince, overdueSince, to);
         jdbcTemplate.update(FAILED_OPERATIONS, day, from, to);
+        jdbcTemplate.update("DELETE FROM company_coverage");
+        jdbcTemplate.update(COVERAGE, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
+                StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER);
+        jdbcTemplate.update(COVERAGE_METRICS, day);
     }
 
     /**
