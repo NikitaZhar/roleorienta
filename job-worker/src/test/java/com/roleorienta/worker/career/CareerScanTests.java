@@ -564,6 +564,25 @@ class CareerScanTests {
     }
 
     /**
+     * Кадровая ссылка, построенная скриптом, не открылась обычным запросом (здесь 404; так же — запрет robots.txt или
+     * 403): браузер её не открывает, хотя мог бы (аудит §244), — кадровая страница не найдена.
+     */
+    @Test
+    void doesNotRenderCareerLinkRefusedToProgram() {
+        PAGES.put("/", "<div id=\"menu\"></div><script>/* menu is built here */</script>");
+        PageRenderer builtMenu = uri -> Optional.of(Jsoup.parse("/".equals(uri.getPath())
+                ? "<nav><a href=\"/zatvorene\">Kariéra</a></nav>"
+                : "<h1>Kariéra</h1><ul><li><a href=\"/zatvorene/casnik\">Čašník</a></li></ul>", uri.toString()));
+        CareerScanHandler withBrowser = new CareerScanHandler(new CareerPages(http, builtMenu, verifier), repository,
+                new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1, noMarketplaces());
+
+        withBrowser.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("refused"), 0));
+
+        assertThat(connectedSources()).isEmpty();
+        assertThat(checkResult()).isEqualTo("NO_CAREER_PAGE");
+    }
+
+    /**
      * Главная — страница группы (§237): кадровой страницы нет, ссылки на сайты компаний группы; подтверждённый как сайт
      * этой компании (здесь — заглушка проверки: IČO на {@code www.zostt.example}) добавлен ей найденным со способом
      * {@code GROUP_LINK}; сайт другой компании группы — нет; итог страницы группы — «кадровая страница не найдена».

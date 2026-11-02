@@ -217,7 +217,8 @@ public class MetricsRepository {
                 JOIN source s ON s.id = cs.source_id AND s.closed_at IS NULL
                 JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL
                 JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
-                                  AND (co.country = ANY (v.work_countries) OR cardinality(v.work_countries) = 0)
+                                  AND (co.country = ANY (v.work_countries)
+                                       OR coalesce(cardinality(v.work_countries), 0) = 0)
                 WHERE co.terminated_on IS NULL AND NOT co.agency AND NOT co.not_employer),
             portal_title AS (SELECT DISTINCT company_id, title_key FROM posting WHERE portal),
             own_title AS (SELECT DISTINCT company_id, title_key FROM posting WHERE NOT portal),
@@ -308,10 +309,14 @@ public class MetricsRepository {
     /**
      * Заменяет полноту сбора по компаниям ({@code company_coverage}, §234) текущим состоянием одной транзакцией: очередь
      * потерь администратора (§235) видит либо прежнюю таблицу, либо новую целиком. Вызывается с показателями дня и
-     * отдельно раз в час ({@link CoverageTick}, §238) — уведомления не ждут суток.
+     * отдельно раз в час ({@link CoverageTick}, §238) — уведомления не ждут суток. Оба пути берут одну блокировку
+     * ({@value CoverageTick#LOCK_KEY}, до конца транзакции): пересчёты не идут одновременно (аудит §244); у
+     * {@link CoverageTick} она уже взята той же транзакцией.
      */
     @Transactional
     public void refreshCoverage() {
+        jdbcTemplate.queryForObject("SELECT 1 FROM (SELECT pg_advisory_xact_lock(?)) locked", Integer.class,
+                CoverageTick.LOCK_KEY);
         jdbcTemplate.update("DELETE FROM company_coverage");
         jdbcTemplate.update(COVERAGE, StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER,
                 StatePortalAdapter.PROVIDER, StatePortalAdapter.PROFESIA_PROVIDER);

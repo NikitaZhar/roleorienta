@@ -10,6 +10,7 @@ import com.microsoft.playwright.Response;
 import com.microsoft.playwright.Route;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.ServiceWorkerPolicy;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.roleorienta.worker.http.AddressPolicy;
 import com.roleorienta.worker.http.ExternalHttpProperties;
@@ -50,7 +51,10 @@ import org.springframework.stereotype.Component;
  *   <li><b>Запросы страницы</b> — только http(s) к разрешённым адресам ({@link AddressPolicy}, как у внешнего
  *       HTTP-клиента: не локальные и не внутренние сети); картинки, шрифты, видео не загружаются. User-Agent — общий
  *       ядра. Страница открывается, только если тот же адрес уже открылся обычным запросом (robots.txt и бюджет хоста
- *       проверены там).</li>
+ *       проверены там). Переходы по перенаправлению и веб-сокеты мимо этого фильтра не проходят — Playwright их
+ *       не перехватывает: если такой запрос ушёл на запрещённый адрес, страница отбрасывается целиком (её содержимое не
+ *       попадает в данные). Сам запрос при этом уже отправлен — остаточный риск; как и подмена адреса в DNS между
+ *       проверкой хоста и запросом браузера (аудит §244). Service worker'ы запрещены.</li>
  *   <li><b>Сроки:</b> открытие страницы и, отдельно, окончание её запросов — не дольше
  *       {@link BrowserProperties#timeout()} каждое; не дождались окончания запросов — берётся то, что
  *       построено.</li>
@@ -150,20 +154,39 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
     /** В потоке браузера: страница в чистом профиле; {@code expand} — нажимать «показать ещё». */
     private Optional<Document> open(URI uri, boolean expand) {
         double timeout = properties.timeout().toMillis();
-        try (BrowserContext context = browser().newContext(new Browser.NewContextOptions().setUserAgent(userAgent))) {
+        AtomicBoolean tainted = new AtomicBoolean();
+        try (BrowserContext context = browser().newContext(new Browser.NewContextOptions().setUserAgent(userAgent)
+                .setServiceWorkers(ServiceWorkerPolicy.BLOCK))) {
             context.setDefaultTimeout(timeout);
             context.route("**/*", this::filter);
+            context.onRequest(request -> {
+                if (request.redirectedFrom() != null && !permitted(request.url())) {
+                    tainted.set(true);
+                }
+            });
             Page page = context.newPage();
+            page.onWebSocket(socket -> {
+                if (!permitted(socket.url())) {
+                    tainted.set(true);
+                }
+            });
             Response response = page.navigate(uri.toString(),
                     new Page.NavigateOptions().setWaitUntil(WaitUntilState.LOAD).setTimeout(timeout));
             if (response == null || response.status() >= HTTP_ERROR) {
                 return Optional.empty();
             }
             settle(page, timeout);
-            if (expand) {
-                expand(page, timeout);
+            boolean complete = !expand || expand(page, timeout);
+            String html = page.content();
+            if (tainted.get()) {
+                LOG.info("Rendering {}: a redirect or web socket went to a forbidden address, page discarded", uri);
+                return Optional.empty();
             }
-            return Optional.of(Jsoup.parse(page.content(), page.url()));
+            Document built = Jsoup.parse(html, page.url());
+            if (!complete) {
+                built.body().attr(INCOMPLETE, "true");
+            }
+            return Optional.of(built);
         } catch (PlaywrightException exception) {
             LOG.info("Rendering {} failed: {}", uri, exception.getMessage());
             if (browser != null && !browser.isConnected()) {
@@ -182,20 +205,25 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
         }
     }
 
-    /** «Показать ещё», пока после нажатия прибавляются ссылки (в пределах числа нажатий и общего срока). */
-    private void expand(Page page, double timeout) {
+    /**
+     * «Показать ещё», пока после нажатия прибавляются ссылки (в пределах числа нажатий и общего срока).
+     *
+     * @return {@code true} — список кончился (кнопки нет или ссылок не прибавилось); {@code false} — упор в предел
+     */
+    private boolean expand(Page page, double timeout) {
         long until = System.nanoTime() + properties.expandBudget().toNanos();
         for (int click = 0; click < properties.expandClicks() && System.nanoTime() < until; click++) {
             int before = links(page);
             if (!Boolean.TRUE.equals(page.evaluate(CLICK_LOAD_MORE, List.of(LoadMore.SELECTOR, LoadMore.TEXT.pattern())))) {
-                return;
+                return true;
             }
             settle(page, timeout);
             if (links(page) <= before) {
-                return;
+                return true;
             }
         }
         LOG.info("Rendering {}: stopped pressing load more at the limit", page.url());
+        return false;
     }
 
     private static int links(Page page) {
@@ -212,13 +240,25 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
             route.abort();
             return;
         }
-        String scheme = target.getScheme() == null ? "" : target.getScheme().toLowerCase(Locale.ROOT);
-        if (SKIPPED_RESOURCES.contains(type) || !("http".equals(scheme) || "https".equals(scheme))
-                || target.getHost() == null || !allowed(target.getHost())) {
+        if (SKIPPED_RESOURCES.contains(type) || !permitted(target, Set.of("http", "https"))) {
             route.abort();
             return;
         }
         route.resume();
+    }
+
+    /** В потоке браузера: адрес перехода или веб-сокета разрешён. */
+    private boolean permitted(String url) {
+        try {
+            return permitted(URI.create(url), Set.of("http", "https", "ws", "wss"));
+        } catch (IllegalArgumentException malformed) {
+            return false;
+        }
+    }
+
+    private boolean permitted(URI target, Set<String> schemes) {
+        String scheme = target.getScheme() == null ? "" : target.getScheme().toLowerCase(Locale.ROOT);
+        return schemes.contains(scheme) && target.getHost() != null && allowed(target.getHost());
     }
 
     private boolean allowed(String host) {
@@ -242,8 +282,15 @@ public class ChromiumPageRenderer implements PageRenderer, DisposableBean {
 
     private Browser browser() {
         if (browser == null) {
-            playwright = Playwright.create();
-            browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+            // Не запустился браузер — процесс Playwright закрывается сразу, а не остаётся висеть (аудит §244).
+            Playwright created = Playwright.create();
+            try {
+                browser = created.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+            } catch (PlaywrightException failed) {
+                created.close();
+                throw failed;
+            }
+            playwright = created;
             LOG.info("Chromium started for rendering pages");
         }
         return browser;

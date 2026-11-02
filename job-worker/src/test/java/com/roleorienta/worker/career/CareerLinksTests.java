@@ -34,9 +34,6 @@ class CareerLinksTests {
     }
 
     /**
-     * Кадровая страница — по тексту ссылки или адресу, только того же сайта ({@code www.} не мешает).
-     */
-    /**
      * Страница группы (§237): ссылки на другие домены с брендом названия — по одному хосту на домен, не больше
      * предела; свой домен, площадки вакансий и чужие бренды — нет.
      */
@@ -75,6 +72,9 @@ class CareerLinksTests {
         assertThat(CareerLinks.careerPage(rajo, "www.rajo.sk", Set.of("alfa"))).isEmpty();
     }
 
+    /**
+     * Кадровая страница — по тексту ссылки или адресу, только того же сайта ({@code www.} не мешает).
+     */
     @Test
     void findsCareerPageOfSameSite() {
         Document page = Jsoup.parse("""
@@ -269,6 +269,12 @@ class CareerLinksTests {
                 """, "https://kariera.agel.sk/");
         assertThat(CareerLinks.deeperCareerPages(agel, URI.create("https://kariera.agel.sk/"), 2))
                 .containsExactly("https://kariera.agel.sk/ponuka-prace/", "https://kariera.agel.sk/kariera-v-skupine");
+        // Адрес списка с диакритикой — тоже первым: сравнение в одной кодировке (аудит §244).
+        Document diacritics = Jsoup.parse("""
+                <a href="/kariera-v-skupine">Kariéra v skupine</a><a href="/voľné-pozície">Voľné pozície</a>
+                """, "https://kariera.agel.sk/");
+        assertThat(CareerLinks.deeperCareerPages(diacritics, URI.create("https://kariera.agel.sk/"), 1))
+                .containsExactly("https://kariera.agel.sk/vo%C4%BEn%C3%A9-poz%C3%ADcie");
 
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Kariéra | Acme</title>"))).isTrue();
         assertThat(CareerLinks.isCareerPage(Jsoup.parse("<title>Acme</title><h1>Vitajte</h1>"))).isFalse();

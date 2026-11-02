@@ -87,9 +87,17 @@ public class CareerPageAdapter implements SourceAdapter {
         if (!(result instanceof HttpResult.Success success)) {
             return new SourceReadResult.Unavailable(result);
         }
-        Document page = built(Jsoup.parse(success.body(), success.locationOr(first).toString()));
+        Document served = Jsoup.parse(success.body(), success.locationOr(first).toString());
+        Optional<Document> rendered = rendered(served);
+        Document page = rendered.orElse(served);
         boolean noVacancies = CareerPageList.saysNoVacancies(page);
         List<String> responses = new ArrayList<>(List.of(success.body()));
+        rendered.ifPresent(built -> responses.add(built.outerHtml()));
+        // Кнопка «показать ещё» есть, а браузер список не раскрыл — прочитана лишь часть; браузер упёрся в предел
+        // нажатий или времени — хвост не прочитан: прежние вакансии не закрываются (аудит §244).
+        PartialReason expansion = rendered.isEmpty() && LoadMore.present(served) ? PartialReason.PAGE_FAILED
+                : rendered.filter(built -> built.body().hasAttr(PageRenderer.INCOMPLETE)).isPresent()
+                        ? PartialReason.PAGE_LIMIT : null;
         Map<String, FetchedPosting> postings = new LinkedHashMap<>();
         Set<String> visited = new HashSet<>(List.of(first.toString(), page.location()));
         PartialReason partial = null;
@@ -121,6 +129,9 @@ public class CareerPageAdapter implements SourceAdapter {
             }
             responses.add(nextSuccess.body());
             page = Jsoup.parse(nextSuccess.body(), nextSuccess.locationOr(next.get()).toString());
+        }
+        if (partial == null) {
+            partial = expansion;
         }
         // Список есть, но не подтверждён (страницы вакансий не открылись или без признаков) — сбой разбора, а не
         // «вакансий нет», даже если на странице есть такая фраза: иначе прежние вакансии закрылись бы (аудит §197).
@@ -154,15 +165,17 @@ public class CareerPageAdapter implements SourceAdapter {
 
     /**
      * Первая страница списка (§241): по HTML сервера список не распознан или есть кнопка «показать ещё» — страница в
-     * браузере без окна с нажатиями «показать ещё»; берётся, если вакансий на ней не меньше, иначе — HTML сервера.
+     * браузере без окна с нажатиями «показать ещё»; берётся, если вакансий на ней не меньше.
+     *
+     * @return страница из браузера; пусто — не понадобилась, не открылась или вакансий на ней меньше
      */
-    private Document built(Document page) {
+    private Optional<Document> rendered(Document page) {
         List<CareerPageList.Item> listed = CareerPageList.vacancies(page);
         if (!listed.isEmpty() && !LoadMore.present(page)) {
-            return page;
+            return Optional.empty();
         }
         return renderer.expanded(URI.create(page.location()))
-                .filter(rendered -> CareerPageList.vacancies(rendered).size() >= listed.size()).orElse(page);
+                .filter(built -> CareerPageList.vacancies(built).size() >= listed.size());
     }
 
     /**

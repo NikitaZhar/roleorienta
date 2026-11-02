@@ -88,7 +88,9 @@ public class AdminLossRepository {
 
     /**
      * Открытые вакансии портала и profesia.sk компании, которых нет среди открытых публикаций её собственных
-     * источников (название — функцией {@code same_title}, правило §220, V90).
+     * источников (название — функцией {@code same_title}, правило §220, V90); те же отборы, что у
+     * {@code company_coverage}: вакансия не закрыта и в стране компании; страны ещё не посчитаны ({@code NULL}) или
+     * не определены — вакансия берётся (аудит §244).
      *
      * @param companyId компания
      * @return до {@value #MISSING_SHOWN} разных названий по алфавиту, с адресом публикации
@@ -96,16 +98,22 @@ public class AdminLossRepository {
     public List<LossTitle> missing(long companyId) {
         return jdbcTemplate.query("""
                 SELECT min(p.title) AS title, min(p.url) AS url
-                FROM company_source cs
+                FROM company co
+                JOIN company_source cs ON cs.company_id = co.id AND cs.role = 'EMPLOYER'
                 JOIN source s ON s.id = cs.source_id AND s.closed_at IS NULL AND s.provider IN %1$s
                 JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL
                 JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
-                WHERE cs.company_id = ? AND cs.role = 'EMPLOYER'
+                                  AND (co.country = ANY (v.work_countries)
+                                       OR coalesce(cardinality(v.work_countries), 0) = 0)
+                WHERE co.id = ?
                   AND NOT EXISTS (SELECT 1 FROM company_source os
                                   JOIN source o ON o.id = os.source_id AND o.closed_at IS NULL
                                                    AND o.provider NOT IN %1$s
                                   JOIN job_posting q ON q.source_id = o.id AND q.closed_at IS NULL
-                                  WHERE os.company_id = cs.company_id AND os.role = 'EMPLOYER'
+                                  JOIN vacancy w ON w.id = q.vacancy_id AND w.state <> 'CLOSED'
+                                                    AND (co.country = ANY (w.work_countries)
+                                                         OR coalesce(cardinality(w.work_countries), 0) = 0)
+                                  WHERE os.company_id = co.id AND os.role = 'EMPLOYER'
                                     AND same_title(q.title) = same_title(p.title))
                 GROUP BY same_title(p.title) ORDER BY 1 LIMIT ?
                 """.formatted(PORTAL_PROVIDERS), (row, number) -> new LossTitle(row.getString("title"),

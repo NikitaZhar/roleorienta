@@ -245,8 +245,8 @@ public class CareerScanHandler implements TaskHandler {
         // Стартовый адрес — сама доска системы найма (ссылка со страницы компании на profesia.sk, §82).
         CareerLinks.board(home.toString()).ifPresent(boards::add);
         // Бренды названия компании (§242): кадровая ссылка на домен с брендом компании, а не сайта, — тоже её.
-        Set<String> companyKeys = repository.company(site.companyId()).map(company -> SiteBrand.keys(company.name()))
-                .orElse(Set.of());
+        Optional<CareerScanRepository.CompanyName> company = repository.company(site.companyId());
+        Set<String> companyKeys = company.map(named -> SiteBrand.keys(named.name())).orElse(Set.of());
         Optional<String> careerLink = homePage.flatMap(page -> CareerLinks.careerPage(page,
                 URI.create(page.location()).getAuthority(), companyKeys));
         Optional<Document> careerPage = Optional.empty();
@@ -279,7 +279,7 @@ public class CareerScanHandler implements TaskHandler {
             }
         }
         if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
-            linkedCompanySites(site, homePage.get());
+            company.ifPresent(named -> linkedCompanySites(site, homePage.get(), named, companyKeys));
         }
         if (homePage.isEmpty() && careerPage.isEmpty()) {
             LOG.info("Home page of site {} of company {} did not open ({}), no career address open", site.host(),
@@ -339,29 +339,34 @@ public class CareerScanHandler implements TaskHandler {
         if (!boards.isEmpty()) {
             return new Rendered(Optional.empty(), link, boards);
         }
-        Optional<Document> careerPage = link.flatMap(address -> page(URI.create(address)))
-                .filter(CareerLinks::isCareerPage)
-                .or(() -> link.flatMap(address -> pages.rendered(URI.create(address))).filter(CareerLinks::isCareerPage));
+        // Браузером — только страница, которая открылась обычным запросом (robots.txt и запрет сайта проверены там),
+        // но без кадровых слов в HTML сервера; не открылась — браузер её не открывает (аудит §244).
+        Optional<Document> served = link.flatMap(address -> page(URI.create(address)));
+        Optional<Document> careerPage = served.filter(CareerLinks::isCareerPage)
+                .or(() -> served.flatMap(opened -> pages.rendered(URI.create(opened.location())))
+                        .filter(CareerLinks::isCareerPage));
         return new Rendered(careerPage, link, careerPage.map(found -> careerBoards(found, true)).orElse(Set.of()));
     }
 
     /**
      * Сайт группы вместо сайта компании (§237): на главной без кадровой страницы — ссылки на сайты компаний группы
-     * ({@link CareerLinks#groupLinkedHosts}); сайт, подтверждённый как сайт этой компании (IČO или бренд на нём),
+     * ({@link CareerLinks#groupLinkedHosts}); сайт, подтверждённый как сайт этой компании (её IČO на нём),
      * добавляется ей найденным и проверяется следующим заданием. Итог проверяемого сайта не меняется.
      *
-     * @param site проверяемый сайт
-     * @param home его главная
+     * @param site    проверяемый сайт
+     * @param home    его главная
+     * @param company компания сайта
+     * @param keys    бренды её названия
      */
-    private void linkedCompanySites(Site site, Document home) {
-        repository.company(site.companyId()).ifPresent(company -> CareerLinks
-                .groupLinkedHosts(home, SiteBrand.keys(company.name()), LINKED_SITES_MAX)
+    private void linkedCompanySites(Site site, Document home, CareerScanRepository.CompanyName company,
+            Set<String> keys) {
+        CareerLinks.groupLinkedHosts(home, keys, LINKED_SITES_MAX)
                 .forEach(host -> pages.companySite(host, company.registrationNumber(), company.name())
                         .ifPresent(proof -> {
                             repository.addLinkedSite(site.companyId(), host, proof, home.location());
                             LOG.info("Site {} of company {}: company site {} linked from group page ({})",
                                     site.host(), site.companyId(), host, proof);
-                        })));
+                        }));
     }
 
     /**

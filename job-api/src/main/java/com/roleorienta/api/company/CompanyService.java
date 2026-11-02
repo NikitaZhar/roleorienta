@@ -110,6 +110,9 @@ public class CompanyService {
         if (repository.pendingExists(null, companyId, address)) {
             throw new CompanyRuleException(Kind.CONFLICT, "This address is already being checked");
         }
+        // Адрес от администратора — решение, что своя страница есть: отметка «своей страницы нет» (§235) снимается,
+        // компания снова в мере полноты (§244). Адрес пользователя отметку не снимает — решение администратора.
+        repository.clearNoOwnCareerPage(companyId);
         return repository.addRequest(null, companyId, address);
     }
 

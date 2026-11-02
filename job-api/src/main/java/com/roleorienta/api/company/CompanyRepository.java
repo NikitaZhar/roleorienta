@@ -131,6 +131,18 @@ public class CompanyRepository {
     }
 
     /**
+     * Снимает отметку администратора «своей страницы нет» (§235).
+     *
+     * @param companyId компания
+     */
+    public void clearNoOwnCareerPage(long companyId) {
+        jdbcTemplate.update("UPDATE company SET no_own_career_page = FALSE WHERE id = ? AND no_own_career_page",
+                companyId);
+    }
+
+    /**
+     * Новый адрес кадровой страницы.
+     *
      * @param userId    пользователь; {@code null} — администратор (§214)
      * @param companyId компания
      * @param url       адрес кадровой страницы

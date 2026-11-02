@@ -115,7 +115,28 @@ class CareerPageAdapterTests {
 
         assertThat(read.complete()).isTrue();
         assertThat(read.postings()).extracting(FetchedPosting::title).containsExactly("Čašník", "Kuchár", "Upratovač");
-        assertThat(((SourceReadResult.Read) adapter.read(url("/ponuka-prace/"), "SK")).postings()).hasSize(1);
+        assertThat(read.responses()).hasSize(2).last().asString().contains("upratovac");
+        // Без браузера список не раскрыт — чтение неполное, прежние вакансии не закрываются.
+        SourceReadResult.Read served = (SourceReadResult.Read) adapter.read(url("/ponuka-prace/"), "SK");
+        assertThat(served.postings()).hasSize(1);
+        assertThat(served.partialReason()).isEqualTo(PartialReason.PAGE_FAILED);
+        // Браузер упёрся в предел нажатий — тоже неполное чтение.
+        PageRenderer stopped = new PageRenderer() {
+            @Override
+            public Optional<Document> render(URI uri) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Document> expanded(URI uri) {
+                return expanded.expanded(uri).map(built -> {
+                    built.body().attr(PageRenderer.INCOMPLETE, "true");
+                    return built;
+                });
+            }
+        };
+        assertThat(((SourceReadResult.Read) new CareerPageAdapter(httpClient, new CareerPageProperties(2, 30), stopped)
+                .read(url("/ponuka-prace/"), "SK")).partialReason()).isEqualTo(PartialReason.PAGE_LIMIT);
     }
 
     /**

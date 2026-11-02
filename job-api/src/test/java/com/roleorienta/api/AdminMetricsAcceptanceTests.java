@@ -259,6 +259,13 @@ class AdminMetricsAcceptanceTests {
         assertThat(client.send("DELETE", "/api/v1/admin/companies/" + small + "/no-own-career-page", null).status())
                 .isEqualTo(204);
         assertThat(client.send("GET", "/api/v1/admin/losses/next", null).body()).contains("\"name\":\"Small Loss Ltd\"");
+        // Адрес кадровой страницы снимает отметку «своей страницы нет» (§244).
+        assertThat(client.send("PUT", "/api/v1/admin/companies/" + small + "/no-own-career-page", null).status())
+                .isEqualTo(204);
+        assertThat(client.send("POST", "/api/v1/admin/companies/" + small + "/career-page",
+                "{\"url\":\"https://small.loss.example/kariera\"}").status()).isEqualTo(201);
+        assertThat(jdbcTemplate.queryForObject("SELECT no_own_career_page FROM company WHERE id = ?", Boolean.class,
+                small)).isFalse();
         assertThat(client.send("POST", "/api/v1/admin/companies/0/loss-postponed", null).status()).isEqualTo(404);
     }
 

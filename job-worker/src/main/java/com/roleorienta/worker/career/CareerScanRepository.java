@@ -111,7 +111,7 @@ public class CareerScanRepository {
      *
      * @param companyId   компания
      * @param host        хост сайта
-     * @param proof       подтверждение ({@code REGISTRATION_NUMBER} или {@code BRAND})
+     * @param proof       подтверждение ({@code REGISTRATION_NUMBER}, §244)
      * @param evidenceUrl страница группы со ссылкой
      */
     public void addLinkedSite(long companyId, String host, String proof, String evidenceUrl) {
@@ -146,7 +146,7 @@ public class CareerScanRepository {
         return jdbcTemplate.query("""
                 SELECT id, company_id, host, start_url, status FROM (
                     SELECT s.id, s.company_id, s.host, s.start_url, s.status, c.priority, s.checked_at,
-                           EXISTS (SELECT 1 FROM company_coverage cc WHERE cc.company_id = s.company_id) AS hiring,
+                           EXISTS (SELECT 1 FROM company_coverage cov WHERE cov.company_id = s.company_id) AS hiring,
                            row_number() OVER (PARTITION BY s.company_id ORDER BY s.checked_at NULLS FIRST, s.id)
                                AS company_order
                     FROM company_site s JOIN company c ON c.id = s.company_id

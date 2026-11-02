@@ -343,7 +343,8 @@ public final class CareerLinks {
         Set<String> listLinks = new LinkedHashSet<>();
         for (Element anchor : page.select("a[href]")) {
             if (LIST_WORDS.matcher(anchor.text() + " " + anchor.attr("href")).find()) {
-                listLinks.add(anchor.absUrl("href").replaceFirst("#.*$", ""));
+                // В той же кодировке, что адреса careerLinks (не-ASCII → %XX), иначе совпадения нет (аудит §244).
+                listLinks.add(ascii(anchor.absUrl("href")).replaceFirst("#.*$", ""));
             }
         }
         List<String> links = careerLinks(page, careerPage.getAuthority(), Set.of()).stream()

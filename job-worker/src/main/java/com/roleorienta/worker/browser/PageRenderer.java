@@ -11,6 +11,9 @@ import org.jsoup.nodes.Document;
  */
 public interface PageRenderer {
 
+    /** Атрибут {@code body} страницы {@link #expanded}: «показать ещё» нажималась до предела (аудит §244). */
+    String INCOMPLETE = "data-roleorienta-incomplete";
+
     /** Без браузера: ничего не открывает (тесты, выключенный браузер). */
     PageRenderer NONE = uri -> Optional.empty();
 
@@ -26,7 +29,9 @@ public interface PageRenderer {
      * появляются новые ссылки, — не больше {@link BrowserProperties#expandClicks()} раз.
      *
      * @param uri адрес страницы списка
-     * @return построенная страница со всеми подгруженными ссылками; пусто — как у {@link #render}
+     * @return построенная страница со всеми подгруженными ссылками; нажатия остановлены пределом числа или времени —
+     *         у {@code body} атрибут {@link #INCOMPLETE} (список, возможно, не весь); пусто — как у
+     *         {@link #render}
      */
     default Optional<Document> expanded(URI uri) {
         return render(uri);

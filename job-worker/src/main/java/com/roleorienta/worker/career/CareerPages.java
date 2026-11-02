@@ -50,18 +50,18 @@ public class CareerPages {
     }
 
     /**
-     * Сайт по ссылке со страницы группы (§237) — сайт этой компании, если на его главной или странице реквизитов её
-     * IČO, иначе бренд названия ({@link SiteVerifier}).
+     * Сайт по ссылке со страницы группы (§237) — сайт этой компании, только если на его главной или странице реквизитов
+     * её IČO ({@link SiteVerifier}). Бренда мало: у компаний группы он общий (ŽOS Trnava и ŽOS Zvolen), и сайт соседней
+     * компании записался бы этой — с чужими вакансиями (аудит §244).
      *
      * @param host               хост сайта
      * @param registrationNumber IČO компании
      * @param name               название компании
-     * @return подтверждение ({@code REGISTRATION_NUMBER} или {@code BRAND}); пусто — сайт не её или не открылся
+     * @return подтверждение ({@code REGISTRATION_NUMBER}); пусто — сайт не её, не подтверждён IČO или не открылся
      */
     public Optional<String> companySite(String host, String registrationNumber, String name) {
         Verdict verdict = verifier.verify(host, "", registrationNumber, name);
-        return verdict == Verdict.REGISTRATION_NUMBER || verdict == Verdict.BRAND
-                ? Optional.of(verdict.name()) : Optional.empty();
+        return verdict == Verdict.REGISTRATION_NUMBER ? Optional.of(verdict.name()) : Optional.empty();
     }
 
     /**
@@ -131,7 +131,9 @@ public class CareerPages {
         if (CareerPageList.saysNoVacancies(careerPage) || listConfirmed(careerPage)) {
             return Set.of(own);
         }
-        Optional<Document> built = deeper ? renderer.expanded(actual) : Optional.empty();
+        // Для поиска хватает первых вакансий: страница без нажатий «показать ещё» — проверка сайта укладывается в
+        // аренду задания (аудит §244); весь список раскрывается при чтении (CareerPageAdapter).
+        Optional<Document> built = deeper ? renderer.render(actual) : Optional.empty();
         if (built.isEmpty()) {
             return Set.of();
         }
