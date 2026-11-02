@@ -21,7 +21,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -415,7 +417,7 @@ class CareerScanTests {
      */
     @Test
     void stopsStartingSitesAfterTimeBudget() {
-        CareerScanHandler noTime = new CareerScanHandler(new CareerPages(http), repository,
+        CareerScanHandler noTime = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE), repository,
                 new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ZERO), 6, noMarketplaces());
 
         TaskOutcome outcome = noTime.handle(new TaskRecord(0, CareerScanHandler.TYPE,
@@ -517,7 +519,7 @@ class CareerScanTests {
         jdbcTemplate.update("UPDATE company_site SET career_url = 'http://' || host || '/kariera'");
         jdbcTemplate.update("INSERT INTO company_check (company_id, result, first_checked_at, checked_at) "
                 + "SELECT id, 'FORMAT_UNSUPPORTED', now(), now() FROM company");
-        CareerScanHandler withMarketplace = new CareerScanHandler(new CareerPages(http), repository,
+        CareerScanHandler withMarketplace = new CareerScanHandler(new CareerPages(http, PageRenderer.NONE), repository,
                 new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1,
                 new DomainMarketplaces(new SiteCheckProperties("https://{host}/", List.of("localhost"))));
 
@@ -528,6 +530,43 @@ class CareerScanTests {
         assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class)).isNull();
         assertThat(companyResult()).isEqualTo("SITE_NOT_FOUND");
         assertThat(connectedSources()).isEmpty();
+    }
+
+    /**
+     * Меню главной строит скрипт (§236): в HTML сервера ссылок нет, пробные адреса не подходят — главная открывается
+     * браузером (здесь — заглушка с построенным меню), по ссылке «Kariéra» — собственный список вакансий: подключён
+     * источник {@code careerpage}, адрес кадровой страницы записан.
+     */
+    @Test
+    void findsCareerLinkBuiltByScript() {
+        PAGES.put("/", "<div id=\"menu\"></div><script>/* menu is built here */</script>");
+        PAGES.put("/spolocnost/ponuka", "<h1>Voľné pracovné pozície</h1><ul><li><a href=\"/spolocnost/ponuka/casnik\">"
+                + "Čašník</a></li><li><a href=\"/spolocnost/ponuka/kuchar\">Kuchár</a></li></ul>");
+        PAGES.put("/spolocnost/ponuka/casnik", "<h1>Čašník</h1><p>Požiadavky: prax. Ponúkame stravné lístky.</p>");
+        PAGES.put("/spolocnost/ponuka/kuchar", "<h1>Kuchár</h1><p>Náplň práce: príprava jedál. Nástup ihneď.</p>");
+        PageRenderer builtMenu = uri -> "/".equals(uri.getPath()) ? Optional.of(Jsoup.parse(
+                "<html><body><nav><a href=\"/spolocnost/ponuka\">Kariéra</a></nav></body></html>", uri.toString()))
+                : Optional.empty();
+        CareerScanHandler withBrowser = new CareerScanHandler(new CareerPages(http, builtMenu), repository,
+                new CareerProperties("http", 25, Duration.ofDays(30), 20, Duration.ofMinutes(4)), 1, noMarketplaces());
+
+        withBrowser.handle(new TaskRecord(0, CareerScanHandler.TYPE, CareerScanHandler.payload("rendered"), 0));
+
+        assertThat(connectedSources()).containsExactly("careerpage:http://" + HOST + "/spolocnost/ponuka:SK");
+        assertThat(checkResult()).isEqualTo("SOURCE_FOUND");
+        assertThat(jdbcTemplate.queryForObject("SELECT career_url FROM company_site", String.class))
+                .isEqualTo("http://" + HOST + "/spolocnost/ponuka");
+    }
+
+    /**
+     * Сайт «не открывается» проверяется снова через 2 дня (§236), сайт без кадровой страницы — только через общий срок.
+     */
+    @Test
+    void retriesUnreachableSiteSooner() {
+        jdbcTemplate.update("UPDATE company_site SET check_result = 'UNREACHABLE', checked_at = now() - interval '3 days'");
+        assertThat(repository.nextSites(10, Duration.ofDays(10))).hasSize(1);
+        jdbcTemplate.update("UPDATE company_site SET check_result = 'NO_CAREER_PAGE'");
+        assertThat(repository.nextSites(10, Duration.ofDays(10))).isEmpty();
     }
 
     private static DomainMarketplaces noMarketplaces() {

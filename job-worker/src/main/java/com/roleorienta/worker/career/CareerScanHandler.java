@@ -58,6 +58,9 @@ import org.springframework.stereotype.Component;
  *       страница сайта есть, но читаемого на ней нет — пробуются ещё кадровые хосты ({@code careers.<домен>} …, без
  *       путей на том же хосте): у Swiss Re {@code swissre.com/careers.html} без ссылки на систему найма (поиск —
  *       скриптом), а {@code careers.swissre.com} — SuccessFactors (§89).</li>
+ *   <li>Ничего не нашлось, а главная открылась — она открывается браузером без окна ({@link PageRenderer}, §236): меню
+ *       и ссылки, которые строит скрипт, переадресация скриптом; на построенной странице — те же доски и кадровая
+ *       ссылка.</li>
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>
@@ -259,6 +262,15 @@ public class CareerScanHandler implements TaskHandler {
                 }
             }
         }
+        if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
+            Rendered rendered = rendered(URI.create(homePage.get().location()));
+            if (rendered.found()) {
+                LOG.info("Site {} of company {}: career page found after scripts ran", site.host(), site.companyId());
+                boards = new LinkedHashSet<>(rendered.boards());
+                careerPage = rendered.careerPage();
+                careerLink = rendered.careerLink();
+            }
+        }
         if (homePage.isEmpty() && careerPage.isEmpty()) {
             LOG.info("Home page of site {} of company {} did not open ({}), no career address open", site.host(),
                     site.companyId(), homeResult);
@@ -279,6 +291,47 @@ public class CareerScanHandler implements TaskHandler {
         }
         repository.record(site, permitted, result, careerUrl, role.orElse(Role.EMPLOYER));
         LOG.info("Site {} of company {}: {} {}", site.host(), site.companyId(), result, boards);
+    }
+
+    /**
+     * Найденное на главной после выполнения скриптов (§236).
+     *
+     * @param careerPage кадровая страница
+     * @param careerLink ссылка на неё с главной
+     * @param boards     источники: доски на главной или на кадровой странице
+     */
+    private record Rendered(Optional<Document> careerPage, Optional<String> careerLink, Set<Board> boards) {
+
+        boolean found() {
+            return careerPage.isPresent() || !boards.isEmpty();
+        }
+    }
+
+    /**
+     * Запасной путь (§236): в HTML главной, который отдал сервер, ни досок, ни кадровой страницы, ни пробных адресов —
+     * главная открывается браузером без окна (меню строит скрипт, переадресация скриптом), и на построенной странице
+     * ищутся те же доски и кадровая ссылка ({@link CareerLinks}). Кадровая страница по ссылке — обычным запросом, а
+     * если в её HTML нет кадровых слов (страница тоже строится скриптом) — браузером; источники на ней — как обычно
+     * ({@link CareerPages#boards}).
+     *
+     * @param home главная по конечному адресу обычного запроса
+     * @return найденное; ничего — браузер выключен, страница не открылась или кадрового нет и там
+     */
+    private Rendered rendered(URI home) {
+        Optional<Document> built = pages.rendered(home);
+        if (built.isEmpty()) {
+            return new Rendered(Optional.empty(), Optional.empty(), Set.of());
+        }
+        Document page = built.get();
+        Set<Board> boards = CareerLinks.boards(page);
+        Optional<String> link = CareerLinks.careerPage(page, URI.create(page.location()).getAuthority());
+        if (!boards.isEmpty()) {
+            return new Rendered(Optional.empty(), link, boards);
+        }
+        Optional<Document> careerPage = link.flatMap(address -> page(URI.create(address)))
+                .filter(CareerLinks::isCareerPage)
+                .or(() -> link.flatMap(address -> pages.rendered(URI.create(address))).filter(CareerLinks::isCareerPage));
+        return new Rendered(careerPage, link, careerPage.map(found -> careerBoards(found, true)).orElse(Set.of()));
     }
 
     /**

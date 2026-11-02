@@ -59,6 +59,12 @@
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
         </dependency>
+        <!-- Браузер без окна (Chromium): главная и кадровая страница, которые строит скрипт (§236). Chromium
+             скачивается при первом запуске в ~/Library/Caches/ms-playwright (macOS), ~/.cache/ms-playwright (Linux). -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+        </dependency>
         <!-- Клиент S3 для снимков ответов источников (SeaweedFS локально). Асинхронный транспорт Netty
              не используется — исключён. -->
         <dependency>

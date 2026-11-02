@@ -80,12 +80,15 @@ public class CareerScanRepository {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final CareerRetryProperties retry;
 
     /**
      * @param jdbcTemplate доступ к БД
+     * @param retry        повтор сайта «не открывается» раньше общего срока (§236)
      */
-    public CareerScanRepository(JdbcTemplate jdbcTemplate) {
+    public CareerScanRepository(JdbcTemplate jdbcTemplate, CareerRetryProperties retry) {
         this.jdbcTemplate = jdbcTemplate;
+        this.retry = retry;
     }
 
     /**
@@ -93,7 +96,8 @@ public class CareerScanRepository {
      * @param recheckAfter срок до перепроверки
      * @return проверяемые сайты ({@link #CHECKED_SITE}) и кандидаты компаний без найденного сайта
      *         ({@link #CANDIDATE_SITE}) действующих компаний активных стран
-     *         сбора, ещё не проверенные или проверенные давнее срока, — не больше одного сайта компании за задание:
+     *         сбора, ещё не проверенные или проверенные давнее срока (с итогом «не открывается» — давнее
+     *         {@link CareerRetryProperties#unreachableAfter()}, §236), — не больше одного сайта компании за задание:
      *         сайты задания проверяются одновременно, а итог компании пересчитывается по всем её сайтам — два сайта
      *         одной компании в одном задании записали бы итог, не видя друг друга (§80); сайты приоритетных
      *         компаний — первыми (§71); компании с отметкой «не работодатель» (§138) — нет
@@ -107,13 +111,14 @@ public class CareerScanRepository {
                     FROM company_site s JOIN company c ON c.id = s.company_id
                     JOIN collection_country cc ON cc.country = c.country AND cc.active
                     WHERE c.terminated_on IS NULL AND NOT c.not_employer AND (%s OR %s)
-                      AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?))) due
+                      AND (s.checked_at IS NULL OR s.checked_at < now() - make_interval(secs => ?)
+                           OR s.check_result = 'UNREACHABLE' AND s.checked_at < now() - make_interval(secs => ?))) due
                 WHERE company_order = 1
                 ORDER BY priority DESC, checked_at NULLS FIRST, id LIMIT ?
                 """.formatted(CHECKED_SITE, CANDIDATE_SITE), (row, number) -> new Site(row.getLong("id"),
                         row.getLong("company_id"), row.getString("host"), row.getString("start_url"),
                         "CANDIDATE".equals(row.getString("status"))),
-                (double) recheckAfter.toSeconds(), limit);
+                (double) recheckAfter.toSeconds(), (double) retry.unreachableAfter().toSeconds(), limit);
     }
 
     /**

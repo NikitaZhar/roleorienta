@@ -61,7 +61,8 @@
 
 ## Стек
 
-Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, SeaweedFS (S3), Apache HttpClient 5, Jsoup, Maven,
+Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, SeaweedFS (S3), Apache HttpClient 5, Jsoup, Playwright
+(Chromium без окна — страницы сайтов, которые строит скрипт), Maven,
 JUnit 5 + Testcontainers, Checkstyle, GitHub Actions; SPA — React 19, TypeScript, Vite (Node.js скачивает
 frontend-maven-plugin, ставить не нужно).
 
@@ -76,13 +77,16 @@ mvn -pl job-api spring-boot:run            # http://localhost:8080/actuator/heal
 mvn -pl job-worker spring-boot:run         # http://localhost:8081/actuator/health
 ```
 
+job-worker при первой проверке сайта, где ссылку на вакансии строит скрипт, скачивает Chromium (≈ 150 МБ, один раз;
+macOS — `~/Library/Caches/ms-playwright`); `CAREER_RENDER_ENABLED=false` — без браузера.
+
 SPA в разработке (после `mvn verify`; job-api запущен на :8080):
 
 ```bash
 mvn -pl web frontend:npm -Dfrontend.npm.arguments="run dev"   # http://localhost:5173, /api — на job-api
 ```
 
-Разделы Status (работает ли сбор сейчас), Metrics (сводка и показатели по дням), Positions (запросы без результата и словарь позиций), Companies (компании, добавленные пользователями страницы, источники без компании) для администратора — `http://localhost:5173/admin`,
+Разделы Status (работает ли сбор сейчас), Metrics (сводка и показатели по дням), Losses (компании, у которых теряются вакансии, — по одной, с уведомлением браузера), Positions (запросы без результата и словарь позиций), Companies (компании, добавленные пользователями страницы, источники без компании) для администратора — `http://localhost:5173/admin`,
 имя `admin`; вход включается паролем в
 переменной окружения job-api:
 

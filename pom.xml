@@ -29,6 +29,8 @@
         <awssdk.version>2.54.13</awssdk.version>
         <!-- ArchUnit (архитектурные правила в тестах) Spring Boot не управляет. -->
         <archunit.version>1.4.2</archunit.version>
+        <!-- Playwright (браузер без окна: страницы, которые строит скрипт, §236) Spring Boot не управляет. -->
+        <playwright.version>1.49.0</playwright.version>
     </properties>
 
     <dependencyManagement>
@@ -56,6 +58,11 @@
                 <groupId>org.jsoup</groupId>
                 <artifactId>jsoup</artifactId>
                 <version>${jsoup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.playwright</groupId>
+                <artifactId>playwright</artifactId>
+                <version>${playwright.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

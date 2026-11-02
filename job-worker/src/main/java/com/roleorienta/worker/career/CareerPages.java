@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 /**
  * Страницы сайтов и источники на кадровой странице — общее у проверки сайтов ({@link CareerScanHandler}) и проверки
  * адреса кадровой страницы, введённого пользователем ({@link CareerRequestHandler}, §137). Страницы читаются
- * {@link ExternalHttpClient} (robots.txt, бюджет на хост, защита от SSRF).
+ * {@link ExternalHttpClient} (robots.txt, бюджет на хост, защита от SSRF); страница после выполнения скриптов — браузером
+ * без окна ({@link PageRenderer}, §236).
  */
 @Component
 public class CareerPages {
@@ -28,12 +29,23 @@ public class CareerPages {
     static final int MAX_BOARD = 200;
 
     private final ExternalHttpClient http;
+    private final PageRenderer renderer;
 
     /**
-     * @param http внешний HTTP-клиент
+     * @param http     внешний HTTP-клиент
+     * @param renderer браузер без окна ({@link PageRenderer#NONE} — без него)
      */
-    public CareerPages(ExternalHttpClient http) {
+    public CareerPages(ExternalHttpClient http, PageRenderer renderer) {
         this.http = http;
+        this.renderer = renderer;
+    }
+
+    /**
+     * @param uri адрес страницы, уже открывшейся обычным запросом
+     * @return страница после выполнения скриптов; пусто — не открылась или браузер выключен
+     */
+    public Optional<Document> rendered(URI uri) {
+        return renderer.render(uri);
     }
 
     /**

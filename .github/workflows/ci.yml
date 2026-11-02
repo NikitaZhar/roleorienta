@@ -18,6 +18,11 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # Системные библиотеки Chromium для браузера без окна (Playwright, §236; ChromiumPageRendererTests); сам Chromium
+      # Playwright скачивает при первом запуске теста.
+      - name: Install Chromium system dependencies
+        run: npx --yes playwright@1.49.0 install-deps chromium
+
       # verify: Checkstyle, компиляция и тесты (Testcontainers использует Docker раннера); модуль web —
       # сборка SPA: Node.js скачивает frontend-maven-plugin.
       - name: Build and test
