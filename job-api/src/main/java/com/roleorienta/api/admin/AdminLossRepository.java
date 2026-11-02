@@ -1,5 +1,6 @@
 package com.roleorienta.api.admin;
 
+import com.roleorienta.api.admin.AdminDtos.LossAddress;
 import com.roleorienta.api.admin.AdminDtos.LossCompany;
 import com.roleorienta.api.admin.AdminDtos.LossCounts;
 import com.roleorienta.api.admin.AdminDtos.LossSite;
@@ -32,7 +33,8 @@ public class AdminLossRepository {
      * полностью — работа ядра (чтение любой кадровой страницы, п. 5а шаг 3), не администратора: в очередь не
      * попадает, видна в показателях. Без порога по числу вакансий; без отметок «своей страницы нет» и «не
      * работодатель», не отложенные («Later») и без адреса кадровой страницы, который ещё проверяется или добавлен после
-     * пересчёта. Больше потерянных — первыми.
+     * пересчёта; последний добавленный адрес не подключён — компания не возвращается администратору по кругу: это
+     * работа ядра (§243, решение владельца 2026-11-02). Больше потерянных — первыми.
      */
     private static final String QUEUE = """
             FROM company_coverage cc JOIN company c ON c.id = cc.company_id
@@ -44,7 +46,9 @@ public class AdminLossRepository {
               AND NOT c.no_own_career_page AND NOT c.not_employer AND c.terminated_on IS NULL
               AND (c.loss_postponed_until IS NULL OR c.loss_postponed_until <= now())
               AND NOT EXISTS (SELECT 1 FROM company_request r WHERE r.company_id = c.id
-                              AND (r.state = 'PENDING' OR r.created_at > cc.computed_at))""";
+                              AND (r.state = 'PENDING' OR r.created_at > cc.computed_at))
+              AND (SELECT r.state FROM company_request r WHERE r.company_id = c.id
+                   ORDER BY r.created_at DESC, r.id DESC LIMIT 1) IS DISTINCT FROM 'NOT_CONNECTED'""";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -106,6 +110,18 @@ public class AdminLossRepository {
                 GROUP BY same_title(p.title) ORDER BY 1 LIMIT ?
                 """.formatted(PORTAL_PROVIDERS), (row, number) -> new LossTitle(row.getString("title"),
                 row.getString("url")), companyId, MISSING_SHOWN);
+    }
+
+    /**
+     * @param companyId компания
+     * @return последний добавленный адрес кадровой страницы и итог проверки; пусто — адресов нет
+     */
+    public Optional<LossAddress> lastAddress(long companyId) {
+        return jdbcTemplate.query("""
+                SELECT career_url, state, reason FROM company_request WHERE company_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """, (row, number) -> new LossAddress(row.getString("career_url"), row.getString("state"),
+                row.getString("reason")), companyId).stream().findFirst();
     }
 
     /**

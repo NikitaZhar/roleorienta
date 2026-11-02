@@ -26,11 +26,13 @@ public class AdminLossService {
     }
 
     /**
-     * @return следующая компания с потерями, её сайты и до 5 вакансий, которых нет на её странице; пусто — потерь нет
+     * @return следующая компания с потерями, её сайты, до 5 вакансий, которых нет на её странице, и последний
+     *         добавленный адрес кадровой страницы; пусто — потерь нет
      */
     @Transactional(readOnly = true)
     public Optional<Loss> next() {
-        return losses.next().map(company -> new Loss(company, losses.sites(company.id()), losses.missing(company.id())));
+        return losses.next().map(company -> new Loss(company, losses.sites(company.id()), losses.missing(company.id()),
+                losses.lastAddress(company.id()).orElse(null)));
     }
 
     /**

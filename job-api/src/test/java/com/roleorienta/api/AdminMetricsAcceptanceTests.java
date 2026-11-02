@@ -209,12 +209,18 @@ class AdminMetricsAcceptanceTests {
         jdbcTemplate.update("DELETE FROM company_site WHERE host LIKE '%loss.example'");
         jdbcTemplate.update("DELETE FROM company_coverage");
         jdbcTemplate.update("DELETE FROM company WHERE registration_number IN ('99900081', '99900082', '99900083', "
-                + "'99900084')");
+                + "'99900084', '99900085')");
         long big = lossCompany("99900081", "Big Loss Ltd", "5, 1, 1, 'NO_CAREER_PAGE'");
         long small = lossCompany("99900082", "Small Loss Ltd", "2, 0, 0, 'NO_CAREER_PAGE'");
         // Работа ядра, не администратора (§239): страница найдена, формат не поддержан; сайт ещё не проверен.
         lossCompany("99900083", "Unsupported Format Ltd", "9, 0, 0, 'FORMAT_UNSUPPORTED'");
         long unchecked = lossCompany("99900084", "Unchecked Site Ltd", "9, 0, 0, 'NO_CAREER_PAGE'");
+        // Последний добавленный адрес не подключён — работа ядра, администратору по кругу не возвращается (§243).
+        long failed = lossCompany("99900085", "Failed Address Ltd", "20, 0, 0, 'UNREACHABLE'");
+        jdbcTemplate.update("INSERT INTO company_request (company_id, career_url, state, reason, created_at) VALUES "
+                + "(?, 'https://failed.loss.example/', 'NOT_CONNECTED', 'UNREACHABLE', now() - interval '1 day')", failed);
+        jdbcTemplate.update("INSERT INTO company_request (company_id, career_url, state, created_at) VALUES "
+                + "(?, 'https://loss.example/jobs', 'CONNECTED', now() - interval '1 day')", big);
         jdbcTemplate.update("""
                 INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, check_result, career_url,
                                           checked_at)
@@ -239,6 +245,8 @@ class AdminMetricsAcceptanceTests {
         assertThat(first).contains("{\"host\":\"loss.example\",\"checkResult\":\"NO_CAREER_PAGE\","
                 + "\"careerUrl\":\"https://loss.example/kariera\"}");
         assertThat(first).contains("\"missing\":[{\"title\":\"Skladník\"");
+        assertThat(first).contains("\"lastAddress\":{\"url\":\"https://loss.example/jobs\",\"state\":\"CONNECTED\","
+                + "\"reason\":null}");
         assertThat(first).doesNotContain("Java Developer");
 
         assertThat(client.send("POST", "/api/v1/admin/companies/" + big + "/loss-postponed", null).status())

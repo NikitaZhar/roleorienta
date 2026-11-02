@@ -23,6 +23,13 @@ const CHANNELS: Record<string, string> = {
   NO_SITE: 'site not found',
 };
 
+/** Итог проверки добавленного адреса (§243). */
+const ADDRESS_STATES: Record<string, string> = {
+  PENDING: 'checking',
+  CONNECTED: 'connected, but some portal vacancies are still not found there',
+  NOT_CONNECTED: 'not connected',
+};
+
 function channelText(channel: string): string {
   return CHANNELS[channel] ?? channel;
 }
@@ -125,7 +132,8 @@ export function LossesAdmin({ loss, message, onDone }: {
       <h2>Losing vacancies</h2>
       <p className="muted">Companies whose own career page the application could not find after trying all its ways
         (site not found, no career page on the site, site does not open). Find the page and add it, or mark that the
-        company has none. Biggest loss first; handle one, the next one comes.</p>
+        company has none. Biggest loss first; handle one, the next one comes. An added address that did not connect
+        is the application&apos;s work: the company does not come back here (see Companies → Added addresses).</p>
       {permission === 'default' && (
         <p><button type="button" onClick={() => void enableNotifications()}>Enable notifications</button>
           <span className="muted"> — a system notification for each next company while this tab is open.</span></p>
@@ -142,6 +150,14 @@ export function LossesAdmin({ loss, message, onDone }: {
             ({loss.company.counts.ownVacancies} vacancies read there): {channelText(loss.company.counts.channel)}.
             <span className="muted"> {loss.company.remaining - 1} more in the queue.</span>
           </p>
+          {/* «!= null»: нет адреса — null; ответ API без поля (job-api старее страницы) — undefined, не падать. */}
+          {loss.lastAddress != null && (
+            <p>
+              Address added: <a href={loss.lastAddress.url} target="_blank" rel="noreferrer">{loss.lastAddress.url}</a>
+              {' — '}{ADDRESS_STATES[loss.lastAddress.state] ?? loss.lastAddress.state}
+              {loss.lastAddress.reason != null && <span className="muted"> ({loss.lastAddress.reason})</span>}
+            </p>
+          )}
           {loss.sites.length > 0 && (
             <ul>
               {loss.sites.map((site) => (

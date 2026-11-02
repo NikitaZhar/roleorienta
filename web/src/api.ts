@@ -621,6 +621,8 @@ export interface Loss {
   };
   sites: { host: string; checkResult: string | null; careerUrl: string | null }[];
   missing: { title: string; url: string }[];
+  /** Последний добавленный адрес кадровой страницы и итог проверки (§243); null — адресов нет. */
+  lastAddress: { url: string; state: 'PENDING' | 'CONNECTED' | 'NOT_CONNECTED'; reason: string | null } | null;
 }
 
 /** @returns следующая компания с потерями; null — потерь нет (204) */

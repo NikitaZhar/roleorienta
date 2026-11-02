@@ -99,9 +99,20 @@ public final class AdminDtos {
      *
      * @param company компания и числа полноты сбора
      * @param sites   найденные сайты компании
-     * @param missing до 5 вакансий портала и profesia.sk, которых нет на её собственной странице
+     * @param missing     до 5 вакансий портала и profesia.sk, которых нет на её собственной странице
+     * @param lastAddress последний добавленный адрес кадровой страницы и итог его проверки (§243); {@code null} — нет
      */
-    public record Loss(LossCompany company, List<LossSite> sites, List<LossTitle> missing) {
+    public record Loss(LossCompany company, List<LossSite> sites, List<LossTitle> missing, LossAddress lastAddress) {
+    }
+
+    /**
+     * Адрес кадровой страницы, добавленный пользователем или администратором (§243).
+     *
+     * @param url    адрес
+     * @param state  {@code PENDING}, {@code CONNECTED}, {@code NOT_CONNECTED}
+     * @param reason причина «не подключена»; иначе {@code null}
+     */
+    public record LossAddress(String url, String state, String reason) {
     }
 
     /**
