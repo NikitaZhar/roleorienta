@@ -244,8 +244,11 @@ public class CareerScanHandler implements TaskHandler {
         Set<Board> boards = new LinkedHashSet<>(homePage.map(CareerLinks::boards).orElse(Set.of()));
         // Стартовый адрес — сама доска системы найма (ссылка со страницы компании на profesia.sk, §82).
         CareerLinks.board(home.toString()).ifPresent(boards::add);
+        // Бренды названия компании (§242): кадровая ссылка на домен с брендом компании, а не сайта, — тоже её.
+        Set<String> companyKeys = repository.company(site.companyId()).map(company -> SiteBrand.keys(company.name()))
+                .orElse(Set.of());
         Optional<String> careerLink = homePage.flatMap(page -> CareerLinks.careerPage(page,
-                URI.create(page.location()).getAuthority()));
+                URI.create(page.location()).getAuthority(), companyKeys));
         Optional<Document> careerPage = Optional.empty();
         if (boards.isEmpty()) {
             careerPage = careerLink.flatMap(link -> page(URI.create(link))).filter(CareerLinks::isCareerPage);
@@ -267,7 +270,7 @@ public class CareerScanHandler implements TaskHandler {
             }
         }
         if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
-            Rendered rendered = rendered(URI.create(homePage.get().location()));
+            Rendered rendered = rendered(URI.create(homePage.get().location()), companyKeys);
             if (rendered.found()) {
                 LOG.info("Site {} of company {}: career page found after scripts ran", site.host(), site.companyId());
                 boards = new LinkedHashSet<>(rendered.boards());
@@ -321,17 +324,18 @@ public class CareerScanHandler implements TaskHandler {
      * если в её HTML нет кадровых слов (страница тоже строится скриптом) — браузером; источники на ней — как обычно
      * ({@link CareerPages#boards}).
      *
-     * @param home главная по конечному адресу обычного запроса
+     * @param home        главная по конечному адресу обычного запроса
+     * @param companyKeys бренды названия компании (§242)
      * @return найденное; ничего — браузер выключен, страница не открылась или кадрового нет и там
      */
-    private Rendered rendered(URI home) {
+    private Rendered rendered(URI home, Set<String> companyKeys) {
         Optional<Document> built = pages.rendered(home);
         if (built.isEmpty()) {
             return new Rendered(Optional.empty(), Optional.empty(), Set.of());
         }
         Document page = built.get();
         Set<Board> boards = CareerLinks.boards(page);
-        Optional<String> link = CareerLinks.careerPage(page, URI.create(page.location()).getAuthority());
+        Optional<String> link = CareerLinks.careerPage(page, URI.create(page.location()).getAuthority(), companyKeys);
         if (!boards.isEmpty()) {
             return new Rendered(Optional.empty(), link, boards);
         }

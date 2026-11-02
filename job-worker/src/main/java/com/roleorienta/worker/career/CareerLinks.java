@@ -278,7 +278,21 @@ public final class CareerLinks {
      *         пусто — ссылки нет
      */
     static Optional<String> careerPage(Document page, String host) {
-        return careerLinks(page, host).stream().findFirst();
+        return careerPage(page, host, Set.of());
+    }
+
+    /**
+     * То же с брендами названия компании (§242): кадровая ссылка на хост другого домена принимается и тогда, когда в
+     * хосте — бренд компании, а не сайта: сайт бренда {@code rajo.sk} → {@code meggle.sk/kariera} у MEGGLE,
+     * {@code minebea-accesssolutions.eu} → {@code minebeamitsumi-jobs.eu} у Minebea.
+     *
+     * @param page        страница сайта
+     * @param host        хост сайта с портом, если он указан в адресе
+     * @param companyKeys бренды названия компании ({@link SiteBrand#keys}); пусто — только бренд сайта
+     * @return адрес первой кадровой ссылки; пусто — ссылки нет
+     */
+    static Optional<String> careerPage(Document page, String host, Set<String> companyKeys) {
+        return careerLinks(page, host, companyKeys).stream().findFirst();
     }
 
     /**
@@ -332,7 +346,7 @@ public final class CareerLinks {
                 listLinks.add(anchor.absUrl("href").replaceFirst("#.*$", ""));
             }
         }
-        List<String> links = careerLinks(page, careerPage.getAuthority()).stream()
+        List<String> links = careerLinks(page, careerPage.getAuthority(), Set.of()).stream()
                 .filter(link -> !normalized(link).equals(current)).toList();
         return Stream.concat(links.stream().filter(listLinks::contains),
                 links.stream().filter(link -> !listLinks.contains(link))).limit(limit).toList();
@@ -359,7 +373,7 @@ public final class CareerLinks {
      * ({@code /#career}) или в хосте сайта ({@code kariera.xxxlutz.sk}, {@code dm-jobs.sk}): сайт сам кадровый
      * (аудит §78).
      */
-    private static List<String> careerLinks(Document page, String host) {
+    private static List<String> careerLinks(Document page, String host, Set<String> companyKeys) {
         String siteHost = host.replaceFirst(":\\d+$", "");
         String domain = SiteBrand.registrable(withoutWww(siteHost));
         String brand = domain.split("\\.")[0];
@@ -386,7 +400,9 @@ public final class CareerLinks {
             } else if (!JOB_PORTAL_HOSTS.matcher(linkHost).find()
                     && (careerHost(linkHost) && sameDomainName(host, linkHost)
                         || careerWords && (RECRUITING_HOSTS.matcher(linkHost).find()
-                            || brand.length() >= MIN_BRAND && linkHost.contains(brand)))
+                            || brand.length() >= MIN_BRAND && linkHost.contains(brand)
+                            || companyKeys.stream().anyMatch(key -> key.length() >= MIN_BRAND
+                                    && linkHost.contains(key))))
                     && !otherDomain.contains(address)) {
                 otherDomain.add(address);
             }

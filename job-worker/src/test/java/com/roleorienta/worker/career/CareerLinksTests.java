@@ -58,6 +58,23 @@ class CareerLinksTests {
         assertThat(CareerLinks.groupLinkedHosts(page, Set.of("alfa"), 5)).isEmpty();
     }
 
+    /**
+     * Кадровая ссылка на домен с брендом компании, а не сайта (§242): сайт бренда {@code rajo.sk} компании MEGGLE →
+     * {@code meggle.sk/kariera}; без брендов компании ссылка не принимается, чужой бренд — тоже нет.
+     */
+    @Test
+    void acceptsCareerLinkToDomainWithCompanyBrand() {
+        Document rajo = Jsoup.parse("""
+                <a href="https://www.rajo.sk/produkty">Produkty</a>
+                <a href="https://www.meggle.sk/kariera">Kariéra v MEGGLE Slovakia</a>
+                """, "https://www.rajo.sk/");
+
+        assertThat(CareerLinks.careerPage(rajo, "www.rajo.sk", Set.of("meggle", "meggleslovakia")))
+                .contains("https://www.meggle.sk/kariera");
+        assertThat(CareerLinks.careerPage(rajo, "www.rajo.sk")).isEmpty();
+        assertThat(CareerLinks.careerPage(rajo, "www.rajo.sk", Set.of("alfa"))).isEmpty();
+    }
+
     @Test
     void findsCareerPageOfSameSite() {
         Document page = Jsoup.parse("""
