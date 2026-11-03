@@ -243,7 +243,7 @@ public class MetricsRepository {
                                                        WHEN 'UNREACHABLE' THEN 4 WHEN 'USE_FORBIDDEN' THEN 5 ELSE 6 END)
                                                   WHEN 1 THEN 'PAGE_FOUND' WHEN 2 THEN 'FORMAT_UNSUPPORTED'
                                                   WHEN 3 THEN 'NO_CAREER_PAGE' WHEN 4 THEN 'UNREACHABLE'
-                                                  WHEN 5 THEN 'USE_FORBIDDEN' ELSE 'NOT_CHECKED' END
+                                                  WHEN 5 THEN 'USE_FORBIDDEN' WHEN 6 THEN 'NOT_CHECKED' END
                                        FROM company_site st
                                        WHERE st.company_id = c.company_id AND st.status = 'FOUND'), 'NO_SITE') END
             FROM counted c

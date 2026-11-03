@@ -137,7 +137,8 @@ class MetricsRepositoryTests {
     /**
      * Полнота сбора (§234): компания R — вакансии портала «Backend Developer - Java (m/ž)» и «Skladník (muž/žena)»,
      * на своей кадровой странице — «Backend developer – Java» (то же название по правилу §220) и «Data Engineer»;
-     * компания N — вакансия портала, сайт без кадровой страницы; компания M — объявление profesia.sk и отметка «своей
+     * компания N — вакансия портала, сайт без кадровой страницы; компания S — вакансия портала, найденного сайта нет
+     * ({@code NO_SITE}: подсчёт по сайтам без строк даёт {@code NULL}, а не «не проверен», §245); компания M — объявление profesia.sk и отметка «своей
      * страницы нет» — в меру не входит; компания A из {@link #setUp()} — свой источник без вакансий портала, не
      * нанимающая по порталу — строки нет.
      */
@@ -146,6 +147,7 @@ class MetricsRepositoryTests {
         long read = company("10", "2026-10-01T00:00:00Z", null);
         long noPage = company("11", "2026-10-01T00:00:00Z", null);
         long marked = company("12", "2026-10-01T00:00:00Z", null);
+        long noSite = company("13", "2026-10-01T00:00:00Z", null);
         jdbcTemplate.update("UPDATE company SET no_own_career_page = TRUE WHERE id = ?", marked);
         site(noPage, "nopage.qq");
         jdbcTemplate.update("UPDATE company_site SET check_result = 'NO_CAREER_PAGE' WHERE company_id = ?", noPage);
@@ -157,18 +159,21 @@ class MetricsRepositoryTests {
         posting(own, "qq-o2", "Data Engineer");
         posting(companySource("sluzbyzamestnanosti", "qq-portal-n", noPage), "qq-p3", "Účtovník");
         posting(companySource("profesia", "qq-profesia-m", marked), "qq-p4", "Kuchár");
+        posting(companySource("sluzbyzamestnanosti", "qq-portal-s", noSite), "qq-p5", "Murár");
 
         repository.replaceDay(DAY, DAY.atStartOfDay(ZONE).toInstant(), DAY.plusDays(1).atStartOfDay(ZONE).toInstant());
 
         assertThat(coverage(read)).isEqualTo("2 1 2 READ");
         assertThat(coverage(noPage)).isEqualTo("1 0 0 NO_CAREER_PAGE");
         assertThat(coverage(marked)).isEqualTo("1 0 0 NO_OWN_PAGE");
+        assertThat(coverage(noSite)).isEqualTo("1 0 0 NO_SITE");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_coverage cc JOIN company co "
-                + "ON co.id = cc.company_id WHERE co.country = ?", Long.class, COUNTRY)).isEqualTo(3);
-        assertThat(value(COUNTRY, "coverage_companies", "")).isEqualTo(2);
-        assertThat(value(COUNTRY, "coverage_portal_vacancies", "")).isEqualTo(3);
+                + "ON co.id = cc.company_id WHERE co.country = ?", Long.class, COUNTRY)).isEqualTo(4);
+        assertThat(value(COUNTRY, "coverage_companies", "")).isEqualTo(3);
+        assertThat(value(COUNTRY, "coverage_portal_vacancies", "")).isEqualTo(4);
         assertThat(value(COUNTRY, "coverage_found_on_own", "")).isEqualTo(1);
         assertThat(value(COUNTRY, "coverage_companies", "READ")).isEqualTo(1);
+        assertThat(value(COUNTRY, "coverage_companies", "NO_SITE")).isEqualTo(1);
         assertThat(value(COUNTRY, "coverage_companies", "NO_OWN_PAGE")).isZero();
 
         // Пересчёт раз в час (§238) — та же таблица без показателей дня.
