@@ -1,0 +1,3435 @@
+
+
+<!DOCTYPE html>
+<html lang="sk-SK" class="h-100">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pracovné ponuky v zdravotníctve | AGEL Kariéra</title>
+    <link rel="profile" href="http://gmpg.org/xfn/11" />
+    <link rel="pingback" href="https://kariera.agel.sk/xmlrpc.php" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;700&family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+    <script id="agel-consent-mode-default">
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('consent','default',{"ad_storage":"denied","ad_user_data":"denied","ad_personalization":"denied","analytics_storage":"denied","functionality_storage":"denied","personalization_storage":"denied","security_storage":"granted","wait_for_update":500});gtag('set','ads_data_redaction',true);gtag('set','url_passthrough',false);
+</script>
+<script id="agel-consent-mode-adapter">
+window.agelConsentModeConfig={"source":"complianz","cookiePrefix":"cmplz_","categoryMap":{"statistics":["analytics_storage"],"marketing":["ad_storage","ad_user_data","ad_personalization"],"preferences":["functionality_storage","personalization_storage"]},"services":[{"handle":"hubspot","src":"https:\/\/js-eu1.hs-scripts.com\/146387623.js","category":"marketing","attrs":{"id":"hs-script-loader"}}]};
+/**
+ * AGEL Consent Mode — adaptér souhlasu pro Google Consent Mode v2.
+ *
+ * Vkládá se inline do <head> hned za `gtag('consent','default')` a před GTM. Synchronně přečte
+ * uložený souhlas z cookie nástroje (AGEL Cookie Manager / Complianz), pošle `consent update`
+ * a pak poslouchá události lišty. Při každé změně pošle do dataLayer i
+ * `{event: 'agel_consent_update', agel_consent: {statistics, marketing, preferences}}`.
+ *
+ * Konfigurace přichází v `window.agelConsentModeConfig` (viz Agel_Consent_Mode_Frontend).
+ */
+(function (w, d) {
+    'use strict';
+
+    var config = w.agelConsentModeConfig || {};
+    var categoryMap = config.categoryMap || {};
+    var categories = Object.keys(categoryMap);
+    var current = null;
+    var listeners = [];
+
+    function gtag() {
+        w.dataLayer = w.dataLayer || [];
+        w.dataLayer.push(arguments);
+    }
+
+    function readCookie(name) {
+        var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var match = d.cookie.match(new RegExp('(?:^|; )' + escaped + '=([^;]*)'));
+
+        return match ? match[1] : null;
+    }
+
+    function emptyState() {
+        var state = {};
+        categories.forEach(function (category) {
+            state[category] = false;
+        });
+
+        return state;
+    }
+
+    function copy(state) {
+        return state ? JSON.parse(JSON.stringify(state)) : null;
+    }
+
+    function sameState(a, b) {
+        return !!a && !!b && categories.every(function (category) {
+            return a[category] === b[category];
+        });
+    }
+
+    /* --- AGEL Cookie Manager ------------------------------------------------ */
+
+    function stateFromCookieManagerPayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return null;
+        }
+
+        var state = emptyState();
+        var accepted = payload.status === 'accepted';
+        var selected = payload.categories && typeof payload.categories === 'object' ? payload.categories : {};
+
+        categories.forEach(function (category) {
+            state[category] = accepted || !!selected[category];
+        });
+
+        return state;
+    }
+
+    function readCookieManager() {
+        var raw = readCookie(config.cookie || 'agel_cookie_consent');
+        if (raw === null) {
+            return null;
+        }
+
+        var value;
+        try {
+            value = decodeURIComponent(raw);
+        } catch (e) {
+            return null;
+        }
+
+        // Starší formát cookie: jen „accepted“ / „denied“.
+        if (value === 'accepted' || value === 'denied') {
+            return stateFromCookieManagerPayload({ status: value });
+        }
+
+        try {
+            return stateFromCookieManagerPayload(JSON.parse(value));
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function watchCookieManager() {
+        var onChange = function (event) {
+            var payload = event && event.detail ? event.detail.consent : null;
+            update(stateFromCookieManagerPayload(payload) || readCookieManager());
+        };
+
+        d.addEventListener('agel-cookie-consent-changed', onChange);
+        // Starší verze cookie manageru posílají jen tuto událost (a jen při udělení souhlasu).
+        d.addEventListener('agel-cookie-consent-allowed', onChange);
+    }
+
+    /* --- Complianz ---------------------------------------------------------- */
+
+    function readComplianz() {
+        var prefix = config.cookiePrefix || 'cmplz_';
+        var state = emptyState();
+        var found = false;
+
+        categories.forEach(function (category) {
+            var value = readCookie(prefix + category);
+            if (value !== null) {
+                found = true;
+                state[category] = value === 'allow';
+            }
+        });
+
+        return found ? state : null;
+    }
+
+    function watchComplianz() {
+        d.addEventListener('cmplz_fire_categories', function (event) {
+            var accepted = event && event.detail && event.detail.categories ? event.detail.categories : [];
+            var state = emptyState();
+            categories.forEach(function (category) {
+                state[category] = accepted.indexOf(category) !== -1;
+            });
+            update(state);
+        });
+
+        d.addEventListener('cmplz_revoke', function () {
+            update(emptyState());
+        });
+    }
+
+    /* --- Společné ----------------------------------------------------------- */
+
+    function toConsentMode(state) {
+        var result = {};
+        categories.forEach(function (category) {
+            (categoryMap[category] || []).forEach(function (type) {
+                result[type] = state[category] ? 'granted' : 'denied';
+            });
+        });
+
+        return result;
+    }
+
+    function update(state) {
+        if (!state || sameState(state, current)) {
+            return;
+        }
+
+        current = copy(state);
+        gtag('consent', 'update', toConsentMode(current));
+        w.dataLayer.push({ event: 'agel_consent_update', agel_consent: copy(current) });
+
+        listeners.forEach(function (callback) {
+            try {
+                callback(copy(current));
+            } catch (e) {
+                // Chyba v cizím callbacku nesmí zastavit ostatní.
+            }
+        });
+    }
+
+    w.agelConsent = {
+        /** Aktuální souhlas `{statistics, marketing, preferences}`, nebo null, dokud návštěvník nerozhodl. */
+        get: function () {
+            return copy(current);
+        },
+        /** Callback dostane nový stav při každé změně souhlasu. */
+        onChange: function (callback) {
+            listeners.push(callback);
+        },
+        /** Callback se zavolá jednou, jakmile je kategorie povolená (i hned, když už je). */
+        whenGranted: function (category, callback) {
+            var done = false;
+            var check = function (state) {
+                if (!done && state && state[category]) {
+                    done = true;
+                    callback();
+                }
+            };
+
+            listeners.push(check);
+            check(current);
+        }
+    };
+
+    /* --- Služby třetích stran (HubSpot …) ---------------------------------- */
+
+    function loadService(service) {
+        if (!service.src || d.querySelector('script[data-agel-consent-service="' + service.handle + '"]')) {
+            return;
+        }
+
+        var script = d.createElement('script');
+        var attrs = service.attrs || {};
+        Object.keys(attrs).forEach(function (name) {
+            script.setAttribute(name, attrs[name]);
+        });
+        script.setAttribute('data-agel-consent-service', service.handle);
+        script.async = true;
+        script.src = service.src;
+        (d.head || d.documentElement).appendChild(script);
+    }
+
+    (config.services || []).forEach(function (service) {
+        w.agelConsent.whenGranted(service.category, function () {
+            loadService(service);
+        });
+    });
+
+    if (config.source === 'agel-cookie-manager') {
+        update(readCookieManager());
+        watchCookieManager();
+    } else if (config.source === 'complianz') {
+        update(readComplianz());
+        watchComplianz();
+    }
+})(window, document);
+</script>
+<script id="agel-consent-mode-gtm">
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer',"GTM-WCTDWNFH");
+</script>
+<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />
+
+	<!-- This site is optimized with the Yoast SEO plugin v26.9 - https://yoast.com/product/yoast-seo-wordpress/ -->
+	<meta name="description" content="Prehľadávajte aktuálne pracovné ponunky v sieti AGEL — lekári, sestry, farmaceuti, IT. Filtrujte podľa profesie, mesta alebo nemocnice." />
+	<link rel="canonical" href="https://kariera.agel.sk/ponuka-prace/" />
+	<meta property="og:locale" content="sk_SK" />
+	<meta property="og:type" content="article" />
+	<meta property="og:title" content="Pracovné ponuky v zdravotníctve | AGEL Kariéra" />
+	<meta property="og:description" content="Prehľadávajte aktuálne pracovné ponunky v sieti AGEL — lekári, sestry, farmaceuti, IT. Filtrujte podľa profesie, mesta alebo nemocnice." />
+	<meta property="og:url" content="https://kariera.agel.sk/ponuka-prace/" />
+	<meta property="og:site_name" content="Kariéra" />
+	<meta property="article:modified_time" content="2026-10-08T09:09:43+00:00" />
+	<meta property="og:image" content="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/DSC03599-2-scaled-e1774428448368.jpg" />
+	<meta property="og:image:width" content="2223" />
+	<meta property="og:image:height" content="1390" />
+	<meta property="og:image:type" content="image/jpeg" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:label1" content="Predpokladaný čas čítania" />
+	<meta name="twitter:data1" content="3 minúty" />
+	<script type="application/ld+json" class="yoast-schema-graph">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://kariera.agel.sk/ponuka-prace/","url":"https://kariera.agel.sk/ponuka-prace/","name":"Pracovné ponuky v zdravotníctve | AGEL Kariéra","isPartOf":{"@id":"https://kariera.agel.sk/#website"},"datePublished":"2025-10-22T07:47:43+00:00","dateModified":"2026-10-08T09:09:43+00:00","description":"Prehľadávajte aktuálne pracovné ponunky v sieti AGEL — lekári, sestry, farmaceuti, IT. Filtrujte podľa profesie, mesta alebo nemocnice.","breadcrumb":{"@id":"https://kariera.agel.sk/ponuka-prace/#breadcrumb"},"inLanguage":"sk-SK","potentialAction":[{"@type":"ReadAction","target":["https://kariera.agel.sk/ponuka-prace/"]}]},{"@type":"BreadcrumbList","@id":"https://kariera.agel.sk/ponuka-prace/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Domovská stránka","item":"https://kariera.agel.sk/"},{"@type":"ListItem","position":2,"name":"Ponuka práce"}]},{"@type":"WebSite","@id":"https://kariera.agel.sk/#website","url":"https://kariera.agel.sk/","name":"Kariéra AGEL","description":"AGEL. Operujeme s talentom","alternateName":"Kariéra","potentialAction":[{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://kariera.agel.sk/?s={search_term_string}"},"query-input":{"@type":"PropertyValueSpecification","valueRequired":true,"valueName":"search_term_string"}}],"inLanguage":"sk-SK"}]}</script>
+	<!-- / Yoast SEO plugin. -->
+
+
+<link rel='dns-prefetch' href='//frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com' />
+<link rel="alternate" title="oEmbed (JSON)" type="application/json+oembed" href="https://kariera.agel.sk/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fkariera.agel.sk%2Fponuka-prace%2F" />
+<link rel="alternate" title="oEmbed (XML)" type="text/xml+oembed" href="https://kariera.agel.sk/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fkariera.agel.sk%2Fponuka-prace%2F&#038;format=xml" />
+<style id="wp-img-auto-sizes-contain-inline-css">
+img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
+/*# sourceURL=wp-img-auto-sizes-contain-inline-css */
+</style>
+<style id="wp-emoji-styles-inline-css">
+
+	img.wp-smiley, img.emoji {
+		display: inline !important;
+		border: none !important;
+		box-shadow: none !important;
+		height: 1em !important;
+		width: 1em !important;
+		margin: 0 0.07em !important;
+		vertical-align: -0.1em !important;
+		background: none !important;
+		padding: 0 !important;
+	}
+/*# sourceURL=wp-emoji-styles-inline-css */
+</style>
+<style id="wp-block-library-inline-css">
+:root{--wp-block-synced-color:#7a00df;--wp-block-synced-color--rgb:122,0,223;--wp-bound-block-color:var(--wp-block-synced-color);--wp-editor-canvas-background:#ddd;--wp-admin-theme-color:#007cba;--wp-admin-theme-color--rgb:0,124,186;--wp-admin-theme-color-darker-10:#006ba1;--wp-admin-theme-color-darker-10--rgb:0,107,160.5;--wp-admin-theme-color-darker-20:#005a87;--wp-admin-theme-color-darker-20--rgb:0,90,135;--wp-admin-border-width-focus:2px}@media (min-resolution:192dpi){:root{--wp-admin-border-width-focus:1.5px}}.wp-element-button{cursor:pointer}:root .has-very-light-gray-background-color{background-color:#eee}:root .has-very-dark-gray-background-color{background-color:#313131}:root .has-very-light-gray-color{color:#eee}:root .has-very-dark-gray-color{color:#313131}:root .has-vivid-green-cyan-to-vivid-cyan-blue-gradient-background{background:linear-gradient(135deg,#00d084,#0693e3)}:root .has-purple-crush-gradient-background{background:linear-gradient(135deg,#34e2e4,#4721fb 50%,#ab1dfe)}:root .has-hazy-dawn-gradient-background{background:linear-gradient(135deg,#faaca8,#dad0ec)}:root .has-subdued-olive-gradient-background{background:linear-gradient(135deg,#fafae1,#67a671)}:root .has-atomic-cream-gradient-background{background:linear-gradient(135deg,#fdd79a,#004a59)}:root .has-nightshade-gradient-background{background:linear-gradient(135deg,#330968,#31cdcf)}:root .has-midnight-gradient-background{background:linear-gradient(135deg,#020381,#2874fc)}:root{--wp--preset--font-size--normal:16px;--wp--preset--font-size--huge:42px}.has-regular-font-size{font-size:1em}.has-larger-font-size{font-size:2.625em}.has-normal-font-size{font-size:var(--wp--preset--font-size--normal)}.has-huge-font-size{font-size:var(--wp--preset--font-size--huge)}:root .has-text-align-center{text-align:center}:root .has-text-align-left{text-align:left}:root .has-text-align-right{text-align:right}.has-fit-text{white-space:nowrap!important}#end-resizable-editor-section{display:none}.aligncenter{clear:both}.items-justified-left{justify-content:flex-start}.items-justified-center{justify-content:center}.items-justified-right{justify-content:flex-end}.items-justified-space-between{justify-content:space-between}.screen-reader-text{word-wrap:normal!important;border:0;clip-path:inset(50%);height:1px;margin:-1px;overflow:hidden;padding:0;position:absolute;width:1px;word-break:normal!important}.screen-reader-text:focus{background-color:#ddd;clip-path:none;color:#444;display:block;font-size:1em;height:auto;left:5px;line-height:normal;padding:15px 23px 14px;text-decoration:none;top:5px;width:auto;z-index:100000}html :where(.has-border-color){border-style:solid}html :where([style^=border-color],[style*=";border-color"],[style*="; border-color"]){border-style:solid}html :where([style^=border-top-color],[style*=";border-top-color"],[style*="; border-top-color"]){border-top-style:solid}html :where([style^=border-right-color],[style*=";border-right-color"],[style*="; border-right-color"]){border-right-style:solid}html :where([style^=border-bottom-color],[style*=";border-bottom-color"],[style*="; border-bottom-color"]){border-bottom-style:solid}html :where([style^=border-left-color],[style*=";border-left-color"],[style*="; border-left-color"]){border-left-style:solid}html :where([style^=border-width],[style*=";border-width"],[style*="; border-width"]){border-style:solid}html :where([style^=border-top-width],[style*=";border-top-width"],[style*="; border-top-width"]){border-top-style:solid}html :where([style^=border-right-width],[style*=";border-right-width"],[style*="; border-right-width"]){border-right-style:solid}html :where([style^=border-bottom-width],[style*=";border-bottom-width"],[style*="; border-bottom-width"]){border-bottom-style:solid}html :where([style^=border-left-width],[style*=";border-left-width"],[style*="; border-left-width"]){border-left-style:solid}html :where(img[class*=wp-image-]){height:auto;max-width:100%}:where(figure){margin:0 0 1em}html :where(.is-position-sticky){--wp-admin--admin-bar--position-offset:var(--wp-admin--admin-bar--height,0px)}@media screen and (max-width:600px){html :where(.is-position-sticky){--wp-admin--admin-bar--position-offset:0px}}
+
+/*# sourceURL=/wp-includes/css/dist/block-library/common.min.css */
+</style>
+<link rel='stylesheet' id='wp-block-paragraph-css' href='https://kariera.agel.sk/wp-includes/blocks/paragraph/style.min.css?v=406d4117684ea5df4ae013da1cc85f8315a15896' media='all' />
+<style id="wp-block-columns-inline-css">
+.wp-block-columns{box-sizing:border-box;display:flex;flex-wrap:wrap!important}@media (min-width:782px){.wp-block-columns{flex-wrap:nowrap!important}}.wp-block-columns{align-items:normal!important}.wp-block-columns.are-vertically-aligned-top{align-items:flex-start}.wp-block-columns.are-vertically-aligned-center{align-items:center}.wp-block-columns.are-vertically-aligned-bottom{align-items:flex-end}@media (max-width:781px){.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column{flex-basis:100%!important}}@media (min-width:782px){.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column{flex-basis:0;flex-grow:1}.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column[style*=flex-basis]{flex-grow:0}}.wp-block-columns.is-not-stacked-on-mobile{flex-wrap:nowrap!important}.wp-block-columns.is-not-stacked-on-mobile>.wp-block-column{flex-basis:0;flex-grow:1}.wp-block-columns.is-not-stacked-on-mobile>.wp-block-column[style*=flex-basis]{flex-grow:0}:where(.wp-block-columns){margin-bottom:1.75em}:where(.wp-block-columns.has-background){padding:1.25em 2.375em}.wp-block-column{flex-grow:1;min-width:0;overflow-wrap:break-word;word-break:break-word}.wp-block-column.is-vertically-aligned-top{align-self:flex-start}.wp-block-column.is-vertically-aligned-center{align-self:center}.wp-block-column.is-vertically-aligned-bottom{align-self:flex-end}.wp-block-column.is-vertically-aligned-stretch{align-self:stretch}.wp-block-column.is-vertically-aligned-bottom,.wp-block-column.is-vertically-aligned-center,.wp-block-column.is-vertically-aligned-top{width:100%}
+/*# sourceURL=https://kariera.agel.sk/wp-includes/blocks/columns/style.min.css */
+</style>
+
+<style id="classic-theme-styles-inline-css">
+/*! This file is auto-generated */
+.wp-block-button__link{color:#fff;background-color:#32373c;border-radius:9999px;box-shadow:none;text-decoration:none;padding:calc(.667em + 2px) calc(1.333em + 2px);font-size:1.125em}.wp-block-file__button{background:#32373c;color:#fff;text-decoration:none}
+/*# sourceURL=/wp-includes/css/classic-themes.min.css */
+</style>
+
+<style id="global-styles-inline-css">
+:root{--wp--preset--aspect-ratio--square: 1;--wp--preset--aspect-ratio--4-3: 4/3;--wp--preset--aspect-ratio--3-4: 3/4;--wp--preset--aspect-ratio--3-2: 3/2;--wp--preset--aspect-ratio--2-3: 2/3;--wp--preset--aspect-ratio--16-9: 16/9;--wp--preset--aspect-ratio--9-16: 9/16;--wp--preset--color--black: #000000;--wp--preset--color--cyan-bluish-gray: #abb8c3;--wp--preset--color--white: #ffffff;--wp--preset--color--pale-pink: #f78da7;--wp--preset--color--vivid-red: #cf2e2e;--wp--preset--color--luminous-vivid-orange: #ff6900;--wp--preset--color--luminous-vivid-amber: #fcb900;--wp--preset--color--light-green-cyan: #7bdcb5;--wp--preset--color--vivid-green-cyan: #00d084;--wp--preset--color--pale-cyan-blue: #8ed1fc;--wp--preset--color--vivid-cyan-blue: #0693e3;--wp--preset--color--vivid-purple: #9b51e0;--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple: linear-gradient(135deg,rgb(6,147,227) 0%,rgb(155,81,224) 100%);--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan: linear-gradient(135deg,rgb(122,220,180) 0%,rgb(0,208,130) 100%);--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange: linear-gradient(135deg,rgb(252,185,0) 0%,rgb(255,105,0) 100%);--wp--preset--gradient--luminous-vivid-orange-to-vivid-red: linear-gradient(135deg,rgb(255,105,0) 0%,rgb(207,46,46) 100%);--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray: linear-gradient(135deg,rgb(238,238,238) 0%,rgb(169,184,195) 100%);--wp--preset--gradient--cool-to-warm-spectrum: linear-gradient(135deg,rgb(74,234,220) 0%,rgb(151,120,209) 20%,rgb(207,42,186) 40%,rgb(238,44,130) 60%,rgb(251,105,98) 80%,rgb(254,248,76) 100%);--wp--preset--gradient--blush-light-purple: linear-gradient(135deg,rgb(255,206,236) 0%,rgb(152,150,240) 100%);--wp--preset--gradient--blush-bordeaux: linear-gradient(135deg,rgb(254,205,165) 0%,rgb(254,45,45) 50%,rgb(107,0,62) 100%);--wp--preset--gradient--luminous-dusk: linear-gradient(135deg,rgb(255,203,112) 0%,rgb(199,81,192) 50%,rgb(65,88,208) 100%);--wp--preset--gradient--pale-ocean: linear-gradient(135deg,rgb(255,245,203) 0%,rgb(182,227,212) 50%,rgb(51,167,181) 100%);--wp--preset--gradient--electric-grass: linear-gradient(135deg,rgb(202,248,128) 0%,rgb(113,206,126) 100%);--wp--preset--gradient--midnight: linear-gradient(135deg,rgb(2,3,129) 0%,rgb(40,116,252) 100%);--wp--preset--font-size--small: 13px;--wp--preset--font-size--medium: 20px;--wp--preset--font-size--large: 36px;--wp--preset--font-size--x-large: 42px;--wp--preset--spacing--20: 0.44rem;--wp--preset--spacing--30: 0.67rem;--wp--preset--spacing--40: 1rem;--wp--preset--spacing--50: 1.5rem;--wp--preset--spacing--60: 2.25rem;--wp--preset--spacing--70: 3.38rem;--wp--preset--spacing--80: 5.06rem;--wp--preset--shadow--natural: 6px 6px 9px rgba(0, 0, 0, 0.2);--wp--preset--shadow--deep: 12px 12px 50px rgba(0, 0, 0, 0.4);--wp--preset--shadow--sharp: 6px 6px 0px rgba(0, 0, 0, 0.2);--wp--preset--shadow--outlined: 6px 6px 0px -3px rgb(255, 255, 255), 6px 6px rgb(0, 0, 0);--wp--preset--shadow--crisp: 6px 6px 0px rgb(0, 0, 0);}.wp-block-button{--wp--preset--dimension--25: 25%;--wp--preset--dimension--50: 50%;--wp--preset--dimension--75: 75%;--wp--preset--dimension--100: 100%;}:where(body) { margin: 0; }:where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}body{padding-top: 0px;padding-right: 0px;padding-bottom: 0px;padding-left: 0px;}:root :where(.wp-element-button, .wp-block-button__link){background-color: #32373c;border-width: 0;color: #fff;font-family: inherit;font-size: inherit;font-style: inherit;font-weight: inherit;letter-spacing: inherit;line-height: inherit;padding-top: calc(0.667em + 2px);padding-right: calc(1.333em + 2px);padding-bottom: calc(0.667em + 2px);padding-left: calc(1.333em + 2px);text-decoration: none;text-transform: inherit;}.has-black-color{color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-color{color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-color{color: var(--wp--preset--color--white) !important;}.has-pale-pink-color{color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-color{color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-color{color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-color{color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-color{color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-color{color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-color{color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-color{color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-color{color: var(--wp--preset--color--vivid-purple) !important;}.has-black-background-color{background-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-background-color{background-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-background-color{background-color: var(--wp--preset--color--white) !important;}.has-pale-pink-background-color{background-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-background-color{background-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-background-color{background-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-background-color{background-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-background-color{background-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-background-color{background-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-background-color{background-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-background-color{background-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-background-color{background-color: var(--wp--preset--color--vivid-purple) !important;}.has-black-border-color{border-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-border-color{border-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-border-color{border-color: var(--wp--preset--color--white) !important;}.has-pale-pink-border-color{border-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-border-color{border-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-border-color{border-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-border-color{border-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-border-color{border-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-border-color{border-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-border-color{border-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-border-color{border-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-border-color{border-color: var(--wp--preset--color--vivid-purple) !important;}.has-vivid-cyan-blue-to-vivid-purple-gradient-background{background: var(--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple) !important;}.has-light-green-cyan-to-vivid-green-cyan-gradient-background{background: var(--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan) !important;}.has-luminous-vivid-amber-to-luminous-vivid-orange-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange) !important;}.has-luminous-vivid-orange-to-vivid-red-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-orange-to-vivid-red) !important;}.has-very-light-gray-to-cyan-bluish-gray-gradient-background{background: var(--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray) !important;}.has-cool-to-warm-spectrum-gradient-background{background: var(--wp--preset--gradient--cool-to-warm-spectrum) !important;}.has-blush-light-purple-gradient-background{background: var(--wp--preset--gradient--blush-light-purple) !important;}.has-blush-bordeaux-gradient-background{background: var(--wp--preset--gradient--blush-bordeaux) !important;}.has-luminous-dusk-gradient-background{background: var(--wp--preset--gradient--luminous-dusk) !important;}.has-pale-ocean-gradient-background{background: var(--wp--preset--gradient--pale-ocean) !important;}.has-electric-grass-gradient-background{background: var(--wp--preset--gradient--electric-grass) !important;}.has-midnight-gradient-background{background: var(--wp--preset--gradient--midnight) !important;}.has-small-font-size{font-size: var(--wp--preset--font-size--small) !important;}.has-medium-font-size{font-size: var(--wp--preset--font-size--medium) !important;}.has-large-font-size{font-size: var(--wp--preset--font-size--large) !important;}.has-x-large-font-size{font-size: var(--wp--preset--font-size--x-large) !important;}
+:where(.wp-block-columns.is-layout-flex){gap: 2em;}:where(.wp-block-columns.is-layout-grid){gap: 2em;}
+/*# sourceURL=global-styles-inline-css */
+</style>
+
+<style id="agel-form-protection-inline-css">
+.agel-form-protection__hp{position:absolute!important;left:-10000px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important}.agel-form-protection.is-interactive .agel-form-protection__widget{margin-top:16px}
+/*# sourceURL=agel-form-protection-inline-css */
+</style>
+<link rel='stylesheet' id='cmplz-general-css' href='https://kariera.agel.sk/wp-content/plugins/complianz-gdpr/assets/css/cookieblocker.min.css?v=bded03714d007a2cb7397437b9a3d421d3380113' media='all' />
+<link rel='stylesheet' id='main-css' href='https://kariera.agel.sk/wp-content/themes/agel/assets/main.css?v=d663fcd2d876a9dc2d21dfcde1adfe031f6008ed' media='all' />
+<link rel='stylesheet' id='main-career-css' href='https://kariera.agel.sk/wp-content/themes/agel-career/assets/main.css?v=a0d5634e3d6ddae7e3109401388981f662404eae' media='all' />
+<link rel='stylesheet' id='utilities-css' href='https://kariera.agel.sk/wp-content/themes/agel/assets/utilities.css?v=d663fcd2d876a9dc2d21dfcde1adfe031f6008ed' media='all' />
+<script id="jquery-core-js" src="https://kariera.agel.sk/wp-includes/js/jquery/jquery.min.js?v=699a002b7b0ff4db2605c2dc456ee602f3f16960"></script>
+<script id="jquery-migrate-js" src="https://kariera.agel.sk/wp-includes/js/jquery/jquery-migrate.min.js?v=2f7211fc34f651ee1336b331d3c0096ae5ff42a6"></script>
+<script id="main-js-extra">
+var news_ajax = {"ajax_url":"https://kariera.agel.sk/wp-admin/admin-ajax.php"};
+var workplace_ajax = {"search_url":"https://kariera.agel.sk/workplace/search"};
+var dictionary_ajax = {"dictionary_search_url":"https://kariera.agel.sk/dictionary/search?nonce=03e1349263","dictionary_filter_url":"https://kariera.agel.sk/wp-admin/admin-ajax.php?action=dictionary_filter_letter&nonce=03e1349263"};
+//# sourceURL=main-js-extra
+</script>
+<script id="main-js" src="https://kariera.agel.sk/wp-content/themes/agel/assets/main.js?v=d663fcd2d876a9dc2d21dfcde1adfe031f6008ed"></script>
+<script id="main-career-js" src="https://kariera.agel.sk/wp-content/themes/agel-career/assets/main.js?v=a0d5634e3d6ddae7e3109401388981f662404eae"></script>
+<link rel="https://api.w.org/" href="https://kariera.agel.sk/wp-json/" /><link rel="alternate" title="JSON" type="application/json" href="https://kariera.agel.sk/wp-json/wp/v2/pages/12" /><link rel="EditURI" type="application/rsd+xml" title="RSD" href="https://kariera.agel.sk/xmlrpc.php?rsd" />
+<meta name="generator" content="WordPress 7.1.3" />
+<link rel='shortlink' href='https://kariera.agel.sk/?p=12' />
+			<style>.cmplz-hidden {
+					display: none !important;
+				}</style><link rel="icon" href="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/cropped-favicon-1-150x150.png" sizes="32x32" />
+<link rel="icon" href="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/cropped-favicon-1-300x300.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/cropped-favicon-1-300x300.png" />
+<meta name="msapplication-TileImage" content="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/cropped-favicon-1-300x300.png" />
+<style id="core-block-supports-inline-css">
+.wp-container-core-columns-is-layout-8f761849{flex-wrap:nowrap;}
+/*# sourceURL=core-block-supports-inline-css */
+</style>
+
+</head>
+
+<body data-cmplz=1 class="wp-singular page-template-default page page-id-12 wp-theme-agel wp-child-theme-agel-career p-0 overflow-y-visible color-scheme-default">
+    <header>
+                    <div class="lazyblock-header-48Flv wp-block-lazyblock-header">
+<div class="block block-header w-100 scheme-light-primary bg-primary header position-relative z-1050 position-fixed">
+    <div class="container d-flex align-items-center justify-content-between py-12 py-lg-0">
+        <div class="d-flex align-items-center">
+                            <a class="d-none d-md-inline-block" href="https://kariera.agel.sk" aria-label="Kariéra">
+                    <div class="navbar-brand my-20">
+                                                    <img decoding="async" src="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/index-logo.png" alt="Website logo" width="176" height="54"  />
+                                            </div>
+                </a>
+                            
+                            <a class="d-block d-md-none" href="https://kariera.agel.sk" aria-label="Kariéra">
+                    <div class="navbar-brand h-max-32">
+                        <img decoding="async" src="https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/2026/03/index-logo_sm.png" alt="Website logo" class="h-max-32"  />
+                    </div>
+                </a>
+                        
+                    </div>
+
+        <div class="d-flex align-items-center justify-content-end gap-2 gap-lg-38 py-0 py-lg-24">
+            <a class="rounded-circle text-primary-500 d-block d-lg-none p-2 lh-0" data-bs-toggle="offcanvas"
+               href="#offcanvas-search" role="button" aria-controls="offcanvas-search" aria-label="Vyhľadávanie">
+                
+        <svg class="icon icon--search " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-search"></use>
+        </svg>
+
+                    </a>
+
+            
+            
+            <div class="d-none d-lg-flex align-items-center gap-4">
+
+
+                
+                
+                <a id="header-search-input" class="p-12 search-input rounded-circle bg-primary-200 text-primary-500 search-button lh-0"
+                   data-bs-toggle="offcanvas" href="#offcanvas-search" role="button" aria-controls="offcanvas-search" aria-label="Vyhľadávanie">
+                    
+        <svg class="icon icon--search " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-search"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+                        <nav class="d-flex d-lg-none navbar navbar-expand-lg border-0">
+                <a class="d-block toggle-navigation d-lg-none bg-lack text-primary-700 p-2 lh-0"
+                   data-bs-toggle="offcanvas" href="#offcanvas-main-navigation" role="button" aria-label="Menu"
+                   aria-controls="offcanvas-main-navigation">
+                    <span class="close">
+                        
+        <svg class="icon icon--menu " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-menu"></use>
+        </svg>
+
+                            </span>
+
+                    <span class="open">
+                        
+        <svg class="icon icon--x-close " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-x-close"></use>
+        </svg>
+
+                            </span>
+                </a>
+            </nav>
+                    </div>
+    </div>
+
+    
+<div class="container bg-primary">
+    <nav class="d-block d-lg-none py-2 text-primary-700" aria-label="breadcrumb">
+        <ol class="breadcrumb align-items-center m-0">
+            <li class="breadcrumb-item d-flex align-items-center gap-2">
+                <a href="https://kariera.agel.sk"
+                   class="d-flex align-items-center text-decoration-none text-primary-700 gap-6">
+                    <div class="d-block lh-0 breadcrumb-icon w-16 h-16 w-lg-20 h-lg-20">
+                        
+        <svg class="icon icon--home " width="20"
+             height="20">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-home"></use>
+        </svg>
+
+                            </div>
+
+                    Hlavná stránka                </a>
+            </li>
+        </ol>
+    </nav>
+</div>
+
+        <nav class="navbar navbar-expand-lg bg-primary-200">
+        <div class="container">
+            <div class="collapse navbar-collapse" id="main-navigation">
+                <ul class="navbar-nav">
+                    <div class="menu-header-kariera-sk-container"><ul id="menu-header-kariera-sk" class="navbar-nav" itemscope itemtype="http://www.schema.org/SiteNavigationElement"><li  id="menu-item-572" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-572 nav-item"><a itemprop="url" href="https://kariera.agel.sk/preco-agel/" class="nav-link"><span itemprop="name">Prečo AGEL</a></li>
+<li  id="menu-item-573" class="menu-item menu-item-type-post_type menu-item-object-page current-menu-item page_item page-item-12 current_page_item active menu-item-573 nav-item"><a itemprop="url" href="https://kariera.agel.sk/ponuka-prace/" class="nav-link" aria-current="page"><span itemprop="name">Ponuka práce</a></li>
+<li  id="menu-item-574" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-574 nav-item"><a itemprop="url" href="https://kariera.agel.sk/studenti-a-absolventi/" class="nav-link"><span itemprop="name">Študenti a absolventi</a></li>
+</ul></div>                </ul>
+            </div>
+        </div>
+    </nav>
+    </div>
+
+<div class="offcanvas offcanvas-start" tabindex="-1" id="offcanvas-main-navigation" style="padding-top: 105px;">
+    <div class="offcanvas-body px-20 ">
+        <div class="w-100 p-5"><ul id="menu-header-kariera-sk-1" class="navbar-nav navbar-mobile" itemscope itemtype="http://www.schema.org/SiteNavigationElement"><li  class="menu-item menu-item-type-post_type menu-item-object-page menu-item-572 nav-item"><a itemprop="url" href="https://kariera.agel.sk/preco-agel/" class="nav-link"><span itemprop="name">Prečo AGEL</a></li>
+<li  class="menu-item menu-item-type-post_type menu-item-object-page current-menu-item page_item page-item-12 current_page_item active menu-item-573 nav-item"><a itemprop="url" href="https://kariera.agel.sk/ponuka-prace/" class="nav-link" aria-current="page"><span itemprop="name">Ponuka práce</a></li>
+<li  class="menu-item menu-item-type-post_type menu-item-object-page menu-item-574 nav-item"><a itemprop="url" href="https://kariera.agel.sk/studenti-a-absolventi/" class="nav-link"><span itemprop="name">Študenti a absolventi</a></li>
+</ul></div>    </div>
+
+    <div class="offcanvas-footer p-20 pt-0 pb-16">
+        <hr class="m-0 mb-24 bg-secondary-350">
+
+        <div class="d-flex flex-column gap-2">
+            
+            
+                    </div>
+    </div>
+</div>
+
+<!-- MEGA MENU -->
+        <div class="offcanvas offcanvas-nav offcanvas-top rounded-bottom-4 w-100 border-0 bg-transparent offcanvas-o-nemocnici"
+         id="offcanvas-207"
+         style="padding-top: 149px; height: auto;">
+        <div class="offcanvas-body m-0 p-0">
+            <div class="container">
+                <div class="offcanvas-content px-60 py-64 bg-white-100 rounded-bottom-16">
+                                    </div>
+            </div>
+        </div>
+    </div>
+        <div class="offcanvas offcanvas-nav offcanvas-top rounded-bottom-4 w-100 border-0 bg-transparent offcanvas-odborna-verejnost"
+         id="offcanvas-205"
+         style="padding-top: 149px; height: auto;">
+        <div class="offcanvas-body m-0 p-0">
+            <div class="container">
+                <div class="offcanvas-content px-60 py-64 bg-white-100 rounded-bottom-16">
+                                    </div>
+            </div>
+        </div>
+    </div>
+        <div class="offcanvas offcanvas-nav offcanvas-top rounded-bottom-4 w-100 border-0 bg-transparent offcanvas-informacie-pre-pacientov-a-navstevy"
+         id="offcanvas-203"
+         style="padding-top: 149px; height: auto;">
+        <div class="offcanvas-body m-0 p-0">
+            <div class="container">
+                <div class="offcanvas-content px-60 py-64 bg-white-100 rounded-bottom-16">
+                                    </div>
+            </div>
+        </div>
+    </div>
+        <div class="offcanvas offcanvas-nav offcanvas-top rounded-bottom-4 w-100 border-0 bg-transparent offcanvas-kariera"
+         id="offcanvas-200"
+         style="padding-top: 149px; height: auto;">
+        <div class="offcanvas-body m-0 p-0">
+            <div class="container">
+                <div class="offcanvas-content px-60 py-64 bg-white-100 rounded-bottom-16">
+                    
+<div class="wp-block-columns is-layout-flex wp-container-core-columns-is-layout-8f761849 wp-block-columns-is-layout-flex">
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow"><div class="lazyblock-mega-menu-list-ZqlyU1 wp-block-lazyblock-mega-menu-list">
+<div class="block block-mega-menu-list">
+        <div class="mega-menu-block">
+        <div class="d-block p-32 card-block">
+            <div class="d-flex gap-32 position-relative">
+                                <div class="d-block w-min-120">
+                    
+<svg width="120" height="120"
+     viewBox="0 0 180 180"
+     fill="none" xmlns="http://www.w3.org/2000/svg" class="img-fluid">
+    <defs>
+        <mask id="rotated-mask-1" maskUnits="userSpaceOnUse"
+              x="0" y="0" width="180" height="180">
+            <g transform="translate(90 90) scale(1) rotate(0) scale(1) translate(-90 -90)">
+                <path d="M135 180C125.815 180 116.98 177.238 109.457 172.014C103.609 167.952 96.8106 165.928 90 165.928C83.1894 165.928 76.3912 167.952 70.5429 172.014C63.0199 177.238 54.185 180 45 180C20.1944 180 0 159.817 0 134.997C0 125.811 2.76168 116.976 7.98522 109.452C16.108 97.7546 16.108 82.2454 7.98522 70.5478C2.76168 63.0119 0 54.1762 0 45.0031C0 20.1958 20.1819 0 45 0C54.185 0 63.0199 2.76192 70.5429 7.98584C76.3912 12.0475 83.1894 14.0721 90 14.0721C96.8106 14.0721 103.609 12.0475 109.457 7.98584C116.992 2.76192 125.815 0 135 0C159.806 0 180 20.1833 180 45.0031C180 54.1887 177.238 63.0244 172.015 70.5478C163.904 82.2454 163.904 97.7546 172.015 109.452C177.238 116.976 180 125.811 180 134.997C180 159.817 159.818 180 135 180Z"
+                      fill="white"/>
+            </g>
+        </mask>
+    </defs>
+
+    <image
+        href=""
+        x="0"
+        y="0"
+        width="180"
+        height="180"
+        preserveAspectRatio="xMidYMid slice"
+        mask="url(#rotated-mask-1)"
+    />
+</svg>
+                </div>
+                
+                <div class="d-block">
+                                        <div class="fs-5 fw-500 lh-28 text-secondary mb-4">
+                        Pre záujemcov o prácu                    </div>
+                    
+                    
+                                        <a href="https://kariera.agel.sk/preco-si-vybrat-agel/" class="fs-5 fw-500 lh-28 d-flex align-items-center gap-2 link-arrow text-decoration-none stretched-link">
+                        Zistiť viac
+                        <span class="d-block p-1 text-primary lh-0">
+                            
+        <svg class="icon icon--arrow-up-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-up-right"></use>
+        </svg>
+
+                                </span>
+                    </a>
+                                    </div>
+            </div>
+        </div>
+
+        <div class="px-32 my-3 line-block">
+            <div class="border-bottom-secondary-350"></div>
+        </div>
+    </div>
+        <div class="mega-menu-block">
+        <div class="d-block p-32 card-block">
+            <div class="d-flex gap-32 position-relative">
+                                <div class="d-block w-min-120">
+                    
+<svg width="120" height="120"
+     viewBox="0 0 180 180"
+     fill="none" xmlns="http://www.w3.org/2000/svg" class="img-fluid">
+    <defs>
+        <mask id="rotated-mask-2" maskUnits="userSpaceOnUse"
+              x="0" y="0" width="180" height="180">
+            <g transform="translate(90 90) scale(1) rotate(0) scale(1) translate(-90 -90)">
+                <path d="M135 180C125.815 180 116.98 177.238 109.457 172.014C103.609 167.952 96.8106 165.928 90 165.928C83.1894 165.928 76.3912 167.952 70.5429 172.014C63.0199 177.238 54.185 180 45 180C20.1944 180 0 159.817 0 134.997C0 125.811 2.76168 116.976 7.98522 109.452C16.108 97.7546 16.108 82.2454 7.98522 70.5478C2.76168 63.0119 0 54.1762 0 45.0031C0 20.1958 20.1819 0 45 0C54.185 0 63.0199 2.76192 70.5429 7.98584C76.3912 12.0475 83.1894 14.0721 90 14.0721C96.8106 14.0721 103.609 12.0475 109.457 7.98584C116.992 2.76192 125.815 0 135 0C159.806 0 180 20.1833 180 45.0031C180 54.1887 177.238 63.0244 172.015 70.5478C163.904 82.2454 163.904 97.7546 172.015 109.452C177.238 116.976 180 125.811 180 134.997C180 159.817 159.818 180 135 180Z"
+                      fill="white"/>
+            </g>
+        </mask>
+    </defs>
+
+    <image
+        href=""
+        x="0"
+        y="0"
+        width="180"
+        height="180"
+        preserveAspectRatio="xMidYMid slice"
+        mask="url(#rotated-mask-2)"
+    />
+</svg>
+                </div>
+                
+                <div class="d-block">
+                                        <div class="fs-5 fw-500 lh-28 text-secondary mb-4">
+                        Pre študentov a absolventov                    </div>
+                    
+                    
+                                        <a href="https://kariera.agel.sk/studenti-a-absolventi/" class="fs-5 fw-500 lh-28 d-flex align-items-center gap-2 link-arrow text-decoration-none stretched-link">
+                        Zistiť viac
+                        <span class="d-block p-1 text-primary lh-0">
+                            
+        <svg class="icon icon--arrow-up-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-up-right"></use>
+        </svg>
+
+                                </span>
+                    </a>
+                                    </div>
+            </div>
+        </div>
+
+        <div class="px-32 my-3 line-block">
+            <div class="border-bottom-secondary-350"></div>
+        </div>
+    </div>
+        <div class="mega-menu-block">
+        <div class="d-block p-32 card-block">
+            <div class="d-flex gap-32 position-relative">
+                                <div class="d-block w-min-120">
+                    
+<svg width="120" height="120"
+     viewBox="0 0 180 180"
+     fill="none" xmlns="http://www.w3.org/2000/svg" class="img-fluid">
+    <defs>
+        <mask id="rotated-mask-3" maskUnits="userSpaceOnUse"
+              x="0" y="0" width="180" height="180">
+            <g transform="translate(90 90) scale(1) rotate(0) scale(1) translate(-90 -90)">
+                <path d="M135 180C125.815 180 116.98 177.238 109.457 172.014C103.609 167.952 96.8106 165.928 90 165.928C83.1894 165.928 76.3912 167.952 70.5429 172.014C63.0199 177.238 54.185 180 45 180C20.1944 180 0 159.817 0 134.997C0 125.811 2.76168 116.976 7.98522 109.452C16.108 97.7546 16.108 82.2454 7.98522 70.5478C2.76168 63.0119 0 54.1762 0 45.0031C0 20.1958 20.1819 0 45 0C54.185 0 63.0199 2.76192 70.5429 7.98584C76.3912 12.0475 83.1894 14.0721 90 14.0721C96.8106 14.0721 103.609 12.0475 109.457 7.98584C116.992 2.76192 125.815 0 135 0C159.806 0 180 20.1833 180 45.0031C180 54.1887 177.238 63.0244 172.015 70.5478C163.904 82.2454 163.904 97.7546 172.015 109.452C177.238 116.976 180 125.811 180 134.997C180 159.817 159.818 180 135 180Z"
+                      fill="white"/>
+            </g>
+        </mask>
+    </defs>
+
+    <image
+        href=""
+        x="0"
+        y="0"
+        width="180"
+        height="180"
+        preserveAspectRatio="xMidYMid slice"
+        mask="url(#rotated-mask-3)"
+    />
+</svg>
+                </div>
+                
+                <div class="d-block">
+                                        <div class="fs-5 fw-500 lh-28 text-secondary mb-4">
+                        Otvorené pracovné pozície                    </div>
+                    
+                    
+                                        <a href="https://kariera.agel.sk/ponuka-prace/" class="fs-5 fw-500 lh-28 d-flex align-items-center gap-2 link-arrow text-decoration-none stretched-link">
+                        Zistiť viac
+                        <span class="d-block p-1 text-primary lh-0">
+                            
+        <svg class="icon icon--arrow-up-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-up-right"></use>
+        </svg>
+
+                                </span>
+                    </a>
+                                    </div>
+            </div>
+        </div>
+
+        <div class="px-32 my-3 line-block">
+            <div class="border-bottom-secondary-350"></div>
+        </div>
+    </div>
+    </div>
+</div></div>
+
+
+
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow"><div class="lazyblock-mega-menu-image-with-text-v2-Z1S60dQ wp-block-lazyblock-mega-menu-image-with-text-v2">
+<div class="block block-mega-menu-image-with-text">
+    <div class="card p-32 bg-primary-650">
+        <div class="card-header mb-32 bg-transparent">
+                            
+<svg width="240" height="240"
+     viewBox="0 0 180 180"
+     fill="none" xmlns="http://www.w3.org/2000/svg" class="img-fluid object-fit-cover rounded-16">
+    <defs>
+        <mask id="rotated-mask-4" maskUnits="userSpaceOnUse"
+              x="0" y="0" width="180" height="180">
+            <g transform="translate(90 90) scale(1) rotate(0) scale(1) translate(-90 -90)">
+                <path d="M135 180C125.815 180 116.98 177.238 109.457 172.014C103.609 167.952 96.8106 165.928 90 165.928C83.1894 165.928 76.3912 167.952 70.5429 172.014C63.0199 177.238 54.185 180 45 180C20.1944 180 0 159.817 0 134.997C0 125.811 2.76168 116.976 7.98522 109.452C16.108 97.7546 16.108 82.2454 7.98522 70.5478C2.76168 63.0119 0 54.1762 0 45.0031C0 20.1958 20.1819 0 45 0C54.185 0 63.0199 2.76192 70.5429 7.98584C76.3912 12.0475 83.1894 14.0721 90 14.0721C96.8106 14.0721 103.609 12.0475 109.457 7.98584C116.992 2.76192 125.815 0 135 0C159.806 0 180 20.1833 180 45.0031C180 54.1887 177.238 63.0244 172.015 70.5478C163.904 82.2454 163.904 97.7546 172.015 109.452C177.238 116.976 180 125.811 180 134.997C180 159.817 159.818 180 135 180Z"
+                      fill="white"/>
+            </g>
+        </mask>
+    </defs>
+
+    <image
+        href=""
+        x="0"
+        y="0"
+        width="180"
+        height="180"
+        preserveAspectRatio="xMidYMid slice"
+        mask="url(#rotated-mask-4)"
+    />
+</svg>
+                    </div>
+
+        <div class="card-footer bg-transparent">
+            <figure class="mb-42">
+                                <blockquote class="blockquote fs-5 fw-500 lh-28 text-primary-300">
+                    <q>Ako zdravotná sestra som mám možnosť pracovať v prostredí, kde je prioritou kvalitná starostlivosť a ľudský prístup. Prácu v tíme odborníkov som si veľmi vážila a každodenný kontakt s pacientmi mi potvrdil, že pomoc druhým má skutočný zmysel.</q>
+                </blockquote>
+                            </figure>
+
+            <figure>
+                                <figcaption class="blockquote-footer mb-2">
+                    <cite title="Source Title" class="fs-5 fw-500 lh-5 text-primary-300">Jana P.</cite>
+                </figcaption>
+                            </figure>
+
+                        <div class="fs-13 fw-500 lh-13 text-primary-75 text-uppercase mb-32">
+                NEMOCNICA AGEL KOŠICE            </div>
+            
+                            <div class="border-bottom-primary-25"></div>
+                    </div>
+    </div>
+</div>
+</div></div>
+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- // MEGA MENU -->
+
+
+
+<div class="header-modal modal fade" id="consultation-modal-form" tabindex="-1" aria-labelledby="consultation-modal-form-title">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-16 position-relative">
+            <button type="button" class="btn-close position-absolute top-0 end-0 m-4 z-3" data-bs-dismiss="modal" aria-label="Close"></button>
+
+            <div class="modal-body p-20 pt-48 p-lg-64 text-center">
+                                    <h4 class="fs-20 fs-lg-4 fw-700 lh-28 lh-lg-34 text-secondary mb-4">
+                        Rezervácia vstupnej konzultácie                    </h4>
+                
+                                    <div class="fs-6 fs-lg-5 lh-24 lh-28 text-secondary mb-2">
+                        Volajte na našu infolinku                    </div>
+                
+                                    <div class="fs-22 fs-lg-4 fw-500 lh-30 lh-lg-34 text-secondary mb-2">
+                        045/5550 966                    </div>
+                
+                <div class="d-flex align-items-center justify-content-center gap-3 pb-4 border-bottom-secondary-25">
+                    <div class="lh-0 text-secondary-100">
+                        
+        <svg class="icon icon--clock " width="20"
+             height="20">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-clock"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="d-flex align-items-center gap-10">
+                                                    <div class="fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100">
+                                Po – Pia                            </div>
+                        
+                                                    <div class="fs-6 fs-lg-5 fw-500 lh-24 lh-28 text-secondary-100">
+                                9:00 – 11:00, 13:00 – 17:00                            </div>
+                                            </div>
+                </div>
+
+                                    <div class="fs-6 fs-lg-5 lh-24 lh-28 text-secondary text-center mb-32 mt-4">
+                        Alebo vyplňte formulár a my sa Vám čoskoro ozveme.                    </div>
+                
+                <form class="consultation contact wpmvc-form" action="https://kariera.agel.sk/reservation" method="post" onsubmit="return false;">
+                <div class="d-block text-start">
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-6">
+                            <div class="form-group" data-attribute="first_name"><label for="first_name" class="form-control-label fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100 mb-6">Meno</label><input type="text" name="Reservation[first_name]" class="form-control border-secondary-50 py-2 px-3" id="first_name" required="required" value=""></div>                        </div>
+
+                        <div class="col-12 col-lg-6">
+                            <div class="form-group" data-attribute="last_name"><label for="last_name" class="form-control-label fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100 mb-6">Priezvisko</label><input type="text" name="Reservation[last_name]" class="form-control border-secondary-50 py-2 px-3" id="last_name" required="required" value=""></div>                        </div>
+
+                        <div class="col-12">
+                            <div class="form-group" data-attribute="phone"><label for="phone" class="form-control-label fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100 mb-6">Telefón</label><input type="text" name="Reservation[phone]" class="form-control border-secondary-50 py-2 px-3" id="phone" required="required" value=""></div>                        </div>
+
+                        <div class="col-12">
+                            <div class="form-group" data-attribute="email"><label for="email" class="form-control-label fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100 mb-6">Email</label><input type="text" name="Reservation[email]" class="form-control border-secondary-50 py-2 px-3" id="email" required="required" value=""></div>                        </div>
+
+                        <div class="col-12">
+                            <div class="form-group" data-attribute="note"><label for="note-textarea" class="form-control-label fs-6 fs-lg-5 lh-24 lh-28 text-secondary-100 mb-6">Poznámka</label><textarea name="Reservation[note]" class="form-control border-secondary-50" id="note-textarea" rows="4" maxlength="300"></textarea></div>                            <small id="note-char-count" class="text-secondary-300 d-block text-end mt-2">0/XY</small>
+                        </div>
+
+                        <input type="hidden" id="_wpnonce" name="_wpnonce" value="a11c29e1e9" /><input type="hidden" name="_wp_http_referer" value="/ponuka-prace/" />
+                        <div class="col-12">
+                                    <div class="agel-form-protection" data-attribute="agel_form_protection" data-action="reservation">
+            <div class="agel-form-protection__hp" aria-hidden="true">
+                <label>
+                    Website
+                    <input type="text" name="agel_website" value="" tabindex="-1" autocomplete="off">
+                </label>
+            </div>
+            <input type="hidden" name="agel_elapsed" value="">
+            <input type="hidden" name="agel_turnstile_token" value="">
+            <input type="hidden" name="agel_turnstile_unavailable" value="">
+            <input type="hidden" name="agel_turnstile_error" value="">
+            <div class="agel-form-protection__widget"></div>
+        </div>
+                                </div>
+
+                        <div class="col-12">
+                            <button class="btn btn-secondary w-100 mt-32"
+                                    id="contact-modal-submit">
+                                Odoslať                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="response d-none overflow-hidden mt-4">
+                    <div class="alert alert-success px-24 py-3 m-0">
+                        Ďakujeme za odoslanie formulára.                        Čo najskôr vás budeme kontaktovať.                    </div>
+                </div>
+
+                </form>            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="offcanvas offcanvas-nav offcanvas-top shadow-none bg-primary-900 container px-0 w-100 bg-lg-transparent border-0 offcanvas-search h-100 rounded-top-16 top-104 "
+     id="offcanvas-search" aria-modal="true" role="dialog">
+    <div class="offcanvas-body m-0 p-0 rounded-top-12 w-100 mx-auto rounded-lg-bottom-16">
+        <div class="container px-0 px-lg-20 bg-primary-900 bg-lg-white-100 rounded-lg-bottom-16">
+            <div class="pt-32 px-20 pb-4 px-lg-60 py-lg-64 position-relative mt-0 h-100 h-lg-auto container-shadow">
+                <div class="row gx-0 gx-lg-42 h-100 h-lg-auto">
+                    <div class="col-12 col-lg">
+                        <form class="position-relative"
+                              id="form-search"
+                              method="post"
+                              action="https://kariera.agel.sk/search">
+
+                            <div class="d-none">
+                                <div class="form-group" data-attribute="nonce"><label for="nonce" class="form-label"></label><input type="hidden" name="Search[nonce]" class="form-control" id="nonce" value="c3cf07463e"></div>                            </div>
+
+                            <div class="card card-fixed-height border-0 bg-primary-900 rounded-16 p-0 h-max-592">
+                                <div class="card-header p-0 p-lg-32">
+                                    <div class="form-group search-active-input d-block position-relative mx--12 mt-0" data-attribute="query">
+<input type="text" name="Search[query]" class="form-control p-3 ps-40 pe-40 bg-transparent border-0 text-secondary-100 start-12" id="input-search" placeholder="Zadajte hľadaný výraz" aria-label="Zadajte hľadaný výraz" value="">
+
+<span class="position-absolute top-50 start-0 translate-middle-y ps-0 text-secondary-100 start-10 ms-10">
+    
+        <svg class="icon icon--search " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-search"></use>
+        </svg>
+
+        </span>
+
+<button class="position-absolute top-50 end-0 translate-middle-y d-flex align-items-center d-none border-0 bg-transparent fs-10 lh-10 cursor-pointer p-1"
+        type="button" id="clear-search">
+    <span class="fs-6 lh-24 text-secondary-50 me-1">
+        Zmazať    </span>
+
+    <span class="btn-close p-6 border-0 bg-transparent text-secondary-50" aria-label="Close"></span>
+</button>
+</div>
+                                    <hr class="mb-32 mt-2 mb-lg-0 border-bottom-secondary-350">
+                                </div>
+
+                                <div class="card-body card-body-scrollable p-0 pt-lg-0 p-lg-32">
+                                    <div class="response"></div>
+
+                                    <div class="common-search d-block mt-32 ">
+                                        <div class="fs-6 fw-500 lh-24 text-secondary mb-4">
+                                            Často hľadané výrazy                                        </div>
+
+                                                                            </div>
+
+                                    <hr class="mb-32 mt-32 mb-lg-0 border-bottom-secondary-350 d-block d-lg-none">
+                                </div>
+                            </div>
+
+                            <div class="position-absolute bottom-0 start-0 w-100 h-112 gradient-2 z-2 rounded-bottom-16 d-none d-lg-block"></div>
+                        </form>
+                    </div>
+
+                                    </div>
+
+                <div class="position-absolute top-0 end-0 pt-48 d-none d-lg-block">
+                    <button type="button" class="btn-close text-reset p-2" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>        
+            </header>
+
+<main id="main" class="site-main has-nav has-header">
+    <article id="post-12" class="post-12 page type-page status-publish hentry">
+    <div class="content">
+
+        <div class="lazyblock-job-offers-Co4DO wp-block-lazyblock-job-offers">
+<div class="pt-lg-32">
+	
+<div class="container bg-primary bg-lg-transparent px-0 d-none d-lg-block">
+    <nav class="block-breadcrumbs container top-100 start-0 px-0 position-relative z-10 mx-3" aria-label="breadcrumb">
+        <ol class="breadcrumb align-items-center m-0">
+            <li class="breadcrumb-item d-flex align-items-center gap-2">
+                <div class="d-block lh-0 breadcrumb-icon w-16 h-16 w-lg-20 h-lg-20">
+                    
+        <svg class="icon icon--home " width="20"
+             height="20">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-home"></use>
+        </svg>
+
+                        </div>
+
+                <a href="https://kariera.agel.sk" class="text-decoration-none text-secondary-100 breadcrumb-text">
+                    Hlavná stránka                </a>
+            </li>
+
+            
+            
+                        <li class="breadcrumb-item breadcrumb-text text-secondary-100" aria-current="page">
+                                    Ponuka práce                            </li>
+                    </ol>
+    </nav>
+</div>
+</div>
+
+<div class="content">
+	<section id="jobOffersBlock" class="block block-job-offers pt-80 pb-120 fs-18">
+		<div class="container">
+            			<h1 class="mb-80 text-secondary">Ponuka práce</h1>
+            
+            <form class="job-offers-form" method="post" onsubmit="return false;"
+                  action="https://kariera.agel.sk/career/jobs">
+                <div class="mb-48 mb-lg-80">
+                    
+<div class="form-group row gy-20 gx-15" id="jobOffersMainFiltersForm">
+    <div class="col-md-6">
+        <label for="jobsOffersFilterKeywords" class="mb-6 text-secondary">
+            Vyber alebo napíš hľadanú profesiu či kľúčové slovo        </label>
+
+        <div class="job-offers-choices">
+            <select name="keywords[]" id="jobsOffersFilterKeywords" multiple>
+                <option value=""></option>
+                                <option value="account-manager" data-profession >
+                    Account manager                </option>
+                                <option value="administrativny-pracovnik-pracovnicka" data-profession >
+                    Administratívny pracovník/pracovníčka                </option>
+                                <option value="asistent-asistentka" data-profession >
+                    Asistent/asistentka                </option>
+                                <option value="elektrikar-elektrikarka" data-profession >
+                    Elektrikár/elektrikárka                </option>
+                                <option value="farmaceut-farmaceutka" data-profession >
+                    Farmaceut/farmaceutka                </option>
+                                <option value="fyzioterapeut-fyzioterapeutka" data-profession >
+                    Fyzioterapeut/fyzioterapeutka                </option>
+                                <option value="hlavna-zdravotna-sestra" data-profession >
+                    Hlavná zdravotná sestra                </option>
+                                <option value="it-technicky-specialista-it-technicka-specialistka-podpory" data-profession >
+                    IT (technický) špecialista/IT (technická) špecialistka podpory                </option>
+                                <option value="it-konzultant-it-konzultantka" data-profession >
+                    IT konzultant/IT konzultantka                </option>
+                                <option value="kuchar-kucharka" data-profession >
+                    Kuchár/kuchárka                </option>
+                                <option value="lekar-lekarka" data-profession >
+                    Lekár/lekárka                </option>
+                                <option value="logoped-logopedka-liecebny-pedagog-liecebna-pedagogicka" data-profession >
+                    Logopéd/logopédka, liečebný pedagóg/liečebná pedagogička                </option>
+                                <option value="maliar-maliarka-natierac-natieracka" data-profession >
+                    Maliar/maliarka, natierač/natieračka                </option>
+                                <option value="medicinsky-farmaceuticky-reprezentant-medicinska-farmaceuticka-reprezentantka" data-profession >
+                    Medicínsky (farmaceutický) reprezentant/medicínska (farmaceutická) reprezentantka                </option>
+                                <option value="mzdovy-uctovnik-mzdova-uctovnicka" data-profession >
+                    Mzdový účtovník/mzdová účtovníčka                </option>
+                                <option value="porodna-asistentka-porodny-asistent" data-profession >
+                    Pôrodná asistentka/pôrodný asistent                </option>
+                                <option value="radiologicky-asistent-radiologicka-asistentka" data-profession >
+                    Rádiologický asistent/rádiologická asistentka                </option>
+                                <option value="recepcny-recepcna" data-profession >
+                    Recepčný/recepčná                </option>
+                                <option value="recruiter-recruiterka-specialista-specialistka-vyberov" data-profession >
+                    Recruiter/recruiterka, špecialista/špecialistka výberov                </option>
+                                <option value="sanitar-sanitarka" data-profession >
+                    Sanitár/sanitárka                </option>
+                                <option value="specialista-specialistka-nakupu-zdravotnej-starostlivosti" data-profession >
+                    Špecialista/špecialistka nákupu zdravotnej starostlivosti                </option>
+                                <option value="udrzbar-udrzbarka" data-profession >
+                    Údržbár/údržbárka                </option>
+                                <option value="upratovac-upratovacka" data-profession >
+                    Upratovač/upratovačka                </option>
+                                <option value="zdravotna-sestra" data-profession >
+                    Zdravotná sestra                </option>
+                                <option value="zdravotnicky-asistent-zdravotnicka-asistentka" data-profession >
+                    Zdravotnícky asistent/zdravotnícka asistentka                </option>
+                                <option value="zdravotnicky-laborant-zdravotnicka-laborantka" data-profession >
+                    Zdravotnícky laborant/zdravotnícka laborantka                </option>
+                                <option value="zdravotnicky-zachranar-zdravotnicka-zachranarka" data-profession >
+                    Zdravotnícky záchranár/zdravotnícka záchranárka                </option>
+                                <option value="zubny-lekar-zubna-lekarka" data-profession >
+                    Zubný lekár/zubná lekárka                </option>
+                
+                                            </select>
+        </div>
+    </div>
+
+    
+    <div class="col-md-3">
+        <label for="jobsOffersFilterCity" class="mb-6 text-secondary">
+            Mesto        </label>
+
+        <select name="city" id="jobsOffersFilterCity" class="form-select">
+            <option value="">Všetky mestá</option>
+
+                        <option value="banska-bystrica" >
+                Banská Bystrica            </option>
+                        <option value="banska-stiavnica" >
+                Banská Štiavnica            </option>
+                        <option value="bardejov" >
+                Bardejov            </option>
+                        <option value="bratislava" >
+                Bratislava            </option>
+                        <option value="bratislavsky-kraj" >
+                Bratislavský kraj            </option>
+                        <option value="handlova" >
+                Handlová            </option>
+                        <option value="karvina" >
+                Karviná            </option>
+                        <option value="kezmarok" >
+                Kežmarok            </option>
+                        <option value="komarno" >
+                Komárno            </option>
+                        <option value="kosice" >
+                Košice            </option>
+                        <option value="krompachy" >
+                Krompachy            </option>
+                        <option value="levice" >
+                Levice            </option>
+                        <option value="levoca" >
+                Levoča            </option>
+                        <option value="lucenec" >
+                Lučenec            </option>
+                        <option value="nitriansky-kraj" >
+                Nitriansky kraj            </option>
+                        <option value="ruzomberok" >
+                Ružomberok            </option>
+                        <option value="skalica" >
+                Skalica            </option>
+                        <option value="sliac" >
+                Sliač            </option>
+                        <option value="ziar-nad-hronom" >
+                Žiar nad Hronom            </option>
+                        <option value="zvolen" >
+                Zvolen            </option>
+                    </select>
+    </div>
+
+    <div class="col-md-3 d-flex align-items-md-end">
+        <button type="submit" class="btn btn-primary w-100">
+            Vyhľadať        </button>
+    </div>
+
+        <div class="col-12 job-offers-recent" id="jobOffersRecentProfessions" hidden
+         data-url="">
+        <span class="job-offers-recent-title text-secondary">Naposledy ste hľadali:</span>
+
+        <span class="job-offers-recent-items"></span>
+
+        <button type="button" class="job-offers-recent-clear btn btn-link p-0 fs-14">
+            Vymazať        </button>
+    </div>
+</div>
+                </div>
+
+                                <div class="modal fade" id="jobOffersFiltersModal" tabindex="-1" aria-labelledby="jobOffersFiltersModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header pb-0">
+                                <h5 class="modal-title h3" id="jobOffersFiltersModalLabel">Filtrovanie ponúk</h5>
+
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+
+                            <div id="jobOffersFiltersModalBody" class="modal-body"></div>
+
+                                                        <div class="modal-footer px-32 pb-32">
+                                <button type="button" class="btn btn-primary w-100 m-0" data-bs-dismiss="modal">
+                                    Použiť filter                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="job-offers-content position-relative">
+                    
+<div class="d-block d-md-none pb-20">
+    <button type="button" class="btn btn-link d-inline-flex align-items-center p-0 text-decoration-underline"
+            data-bs-toggle="modal" data-bs-target="#jobOffersFiltersModal">
+        
+        <svg class="icon icon--filter-funnel " width="20"
+             height="20">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-filter-funnel"></use>
+        </svg>
+
+                <span class="ms-10">Rozšírené filtrovanie</span>
+    </button>
+
+        <div id="jobOffersActiveFilters" class="job-offers-active-filters mt-16"
+         data-remove-label="Zrušiť filter"
+         data-salary-label="Mzda od" hidden>
+        <template>
+            
+        <svg class="icon icon--x-close " width="14"
+             height="14">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-x-close"></use>
+        </svg>
+
+                </template>
+    </div>
+</div>
+
+<div id="job-offers-content" class="row gx-lg-64">
+    <aside id="jobOffersSidebar" class="col-md-4 d-none d-md-block">
+        
+
+<div class="bg-primary-750 rounded-16" id="jobOffersSidebarFiltersForm">
+        <input type="hidden" name="show_salary_filter" value="1">
+    <input type="hidden" name="salary_currency" value="eur">
+    <input type="hidden" name="show_hospital_filter" value="0">
+
+        <section class="form-group">
+        <button class="collapse-btn h5 d-flex justify-content-between mb-0 px-24 py-28 w-100 bg-transparent border-0 font-primary fw-medium text-start text-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseJobOffersTypes" aria-expanded="false" aria-controls="collapseJobOffersTypes">
+            <span>Druh pracovného pomeru</span>
+
+            <span class="collapse-chevron w-22 h-22 lh-24 text-secondary">
+                
+        <svg class="icon icon--chevron-up " width="22"
+             height="22">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-up"></use>
+        </svg>
+
+                    </span>
+        </button>
+
+        <div id="collapseJobOffersTypes" class="collapse show">
+            <div class="p-24 pt-0 d-flex flex-column gap-8">
+                                <div class="form-check m-0">
+                    <label class="form-check-label d-flex justify-content-between w-100 text-secondary">
+                        <span>
+                                                        <input class="form-check-input border-secondary" type="checkbox"
+                                                                                                         name="types[0]" value="plny-uvazok">
+
+                            Plný úväzok                        </span>
+
+                        <span class="text-secondary-50">205</span>
+                    </label>
+                </div>
+                                <div class="form-check m-0">
+                    <label class="form-check-label d-flex justify-content-between w-100 text-secondary">
+                        <span>
+                                                        <input class="form-check-input border-secondary" type="checkbox"
+                                                                                                         name="types[1]" value="skrateny-uvazok">
+
+                            Skrátený úväzok                        </span>
+
+                        <span class="text-secondary-50">26</span>
+                    </label>
+                </div>
+                            </div>
+        </div>
+    </section>
+    
+        <hr class="m-0">
+
+    <section class="form-group">
+        <button class="h5 d-flex justify-content-between mb-0 px-24 py-28 w-100 bg-transparent border-0 font-primary fw-medium text-start text-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseJobOffersSalary" aria-expanded="false" aria-controls="collapseJobOffersSalary">
+            <span>Mzda od</span>
+
+            <span class="collapse-chevron w-22 h-22 lh-24 text-secondary">
+                
+        <svg class="icon icon--chevron-up " width="22"
+             height="22">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-up"></use>
+        </svg>
+
+                    </span>
+        </button>
+
+        <div id="collapseJobOffersSalary" class="collapse show">
+            <div class="p-24 pt-0 d-flex flex-column gap-8">
+                <div class="job-offers-salary">
+                    <input type="text" name="salary_from"
+                           value=""
+                           class="job-offers-salary-field form-control ps-15 pe-40" placeholder="0">
+
+                                        <span class="job-offers-salary-currency">
+                        
+        <svg class="icon icon--symbol-euro " width="15"
+             height="16">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-symbol-euro"></use>
+        </svg>
+
+                            </span>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <hr class="m-0">
+
+        <section class="form-group">
+        <button class="h5 d-flex justify-content-between mb-0 px-24 py-28 w-100 bg-transparent border-0 font-primary fw-medium text-start text-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseJobOffersProfessions" aria-expanded="false" aria-controls="collapseJobOffersProfessions">
+            <span>Profesia</span>
+
+            <span class="collapse-chevron w-22 h-22 lh-24 text-secondary">
+                
+        <svg class="icon icon--chevron-up " width="22"
+             height="22">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-up"></use>
+        </svg>
+
+                    </span>
+        </button>
+
+        <div id="collapseJobOffersProfessions" class="collapse show">
+            <div class="p-24 pt-0 job-offers-professions">
+                    <div class="d-flex flex-column gap-8">
+                    <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="account-manager">
+
+                        Account manager                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="administrativny-pracovnik-pracovnicka">
+
+                        Administratívny pracovník/pracovníčka                    </span>
+
+                    <span class="text-secondary-50">
+                        3                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="asistent-asistentka">
+
+                        Asistent/asistentka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="elektrikar-elektrikarka">
+
+                        Elektrikár/elektrikárka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="farmaceut-farmaceutka">
+
+                        Farmaceut/farmaceutka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="fyzioterapeut-fyzioterapeutka">
+
+                        Fyzioterapeut/fyzioterapeutka                    </span>
+
+                    <span class="text-secondary-50">
+                        4                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="hlavna-zdravotna-sestra">
+
+                        Hlavná zdravotná sestra                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="it-technicky-specialista-it-technicka-specialistka-podpory">
+
+                        IT (technický) špecialista/IT (technická) špecialistka podpory                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="it-konzultant-it-konzultantka">
+
+                        IT konzultant/IT konzultantka                    </span>
+
+                    <span class="text-secondary-50">
+                        2                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="kuchar-kucharka">
+
+                        Kuchár/kuchárka                    </span>
+
+                    <span class="text-secondary-50">
+                        4                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="lekar-lekarka">
+
+                        Lekár/lekárka                    </span>
+
+                    <span class="text-secondary-50">
+                        102                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="logoped-logopedka-liecebny-pedagog-liecebna-pedagogicka">
+
+                        Logopéd/logopédka, liečebný pedagóg/liečebná pedagogička                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="maliar-maliarka-natierac-natieracka">
+
+                        Maliar/maliarka, natierač/natieračka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="medicinsky-farmaceuticky-reprezentant-medicinska-farmaceuticka-reprezentantka">
+
+                        Medicínsky (farmaceutický) reprezentant/medicínska (farmaceutická) reprezentantka                    </span>
+
+                    <span class="text-secondary-50">
+                        2                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="mzdovy-uctovnik-mzdova-uctovnicka">
+
+                        Mzdový účtovník/mzdová účtovníčka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="porodna-asistentka-porodny-asistent">
+
+                        Pôrodná asistentka/pôrodný asistent                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="radiologicky-asistent-radiologicka-asistentka">
+
+                        Rádiologický asistent/rádiologická asistentka                    </span>
+
+                    <span class="text-secondary-50">
+                        4                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="recepcny-recepcna">
+
+                        Recepčný/recepčná                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="recruiter-recruiterka-specialista-specialistka-vyberov">
+
+                        Recruiter/recruiterka, špecialista/špecialistka výberov                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="sanitar-sanitarka">
+
+                        Sanitár/sanitárka                    </span>
+
+                    <span class="text-secondary-50">
+                        7                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="specialista-specialistka-nakupu-zdravotnej-starostlivosti">
+
+                        Špecialista/špecialistka nákupu zdravotnej starostlivosti                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="udrzbar-udrzbarka">
+
+                        Údržbár/údržbárka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="upratovac-upratovacka">
+
+                        Upratovač/upratovačka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="zdravotna-sestra">
+
+                        Zdravotná sestra                    </span>
+
+                    <span class="text-secondary-50">
+                        46                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="zdravotnicky-asistent-zdravotnicka-asistentka">
+
+                        Zdravotnícky asistent/zdravotnícka asistentka                    </span>
+
+                    <span class="text-secondary-50">
+                        10                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="zdravotnicky-laborant-zdravotnicka-laborantka">
+
+                        Zdravotnícky laborant/zdravotnícka laborantka                    </span>
+
+                    <span class="text-secondary-50">
+                        3                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="zdravotnicky-zachranar-zdravotnicka-zachranarka">
+
+                        Zdravotnícky záchranár/zdravotnícka záchranárka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                                <div class="form-check mb-0 d-flex align-items-center gap-8">
+                <label class="form-check-label d-flex justify-content-between flex-grow-1 text-secondary">
+                    <span>
+                                                <input class="form-check-input border-secondary" type="checkbox"
+                                                                                             name="professions[]" value="zubny-lekar-zubna-lekarka">
+
+                        Zubný lekár/zubná lekárka                    </span>
+
+                    <span class="text-secondary-50">
+                        1                    </span>
+                </label>
+
+                            </div>
+
+                        </div>
+                </div>
+        </div>
+    </section>
+    
+
+    
+        <hr class="m-0">
+
+    <section class="form-group">
+        <button class="h5 d-flex justify-content-between mb-0 px-24 py-28 w-100 bg-transparent border-0 font-primary fw-medium text-start text-secondary"
+                type="button" data-bs-toggle="collapse" data-bs-target="#collapseJobOffersValidForGraduate"
+                aria-expanded="false" aria-controls="collapseJobOffersValidForGraduate">
+            <span>Iné</span>
+
+            <span class="collapse-chevron w-22 h-22 lh-24 text-secondary">
+                
+        <svg class="icon icon--chevron-up " width="22"
+             height="22">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-up"></use>
+        </svg>
+
+                    </span>
+        </button>
+
+        <div id="collapseJobOffersValidForGraduate" class="collapse show">
+            <div class="p-24 pt-0 d-flex flex-column gap-8">
+                <div class="form-check mb-0">
+                    <label class="form-check-label d-flex justify-content-between w-100 text-secondary">
+                        <span>
+                                                        <input class="form-check-input border-secondary" type="checkbox"
+                                                                                                         name="valid_for_graduate" value="1">
+
+                            Ponuky vhodné pre absolventa                        </span>
+
+                        <span class="text-secondary-50">
+                            85                        </span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </section>
+    </div>
+    </aside>
+
+    <div class="col-md-8">
+        <div class="mb-20 text-secondary">
+            Pracovné ponuky: <span class="fw-500">205 výsledkov</span>        </div>
+
+        <div class="d-flex flex-column gap-16 gap-lg-32 mb-40 mb-lg-64">
+            
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-laboratorneho-diagonstika-diagnosticku-v-mikrobiologii-agel-lab-zvolen/" class="text-secondary">
+                Pracovná ponuka pre laboratórneho diagonstika/diagnostičku v mikrobiológii &#8211; AGEL Lab, Zvolen            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-laboratorneho-diagonstika-diagnosticku-v-mikrobiologii-agel-lab-zvolen/" class="text-secondary-100 text-decoration-none">
+                Kuzmányho nábrežie, Zvolen, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">1 935 – 3 657 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-laboratorneho-diagonstika-diagnosticku-v-mikrobiologii-agel-lab-zvolen/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">03. 11. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/aplikacny-administrator-m-z/" class="text-secondary">
+                Aplikačný administrátor (M/Ž)            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/aplikacny-administrator-m-z/" class="text-secondary-100 text-decoration-none">
+                Skalica, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">1 147 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/aplikacny-administrator-m-z/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">03. 11. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+                            
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-timu-instrumentarka-na-jzs-agel-clinic-jelacicova-2/" class="text-secondary">
+                Staňte sa súčasťou nášho tímu &#8211; Inštrumentárka na JZS &#8211; AGEL Clinic Jelačičova            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-timu-instrumentarka-na-jzs-agel-clinic-jelacicova-2/" class="text-secondary-100 text-decoration-none">
+                Jelačičova 8, Ružinov, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">2 000 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-timu-instrumentarka-na-jzs-agel-clinic-jelacicova-2/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">31. 10. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-medicinskeho-reprezentanta-m-z-v-bratislavskom-kraji-agel-lab-bratislava-3/" class="text-secondary">
+                Pracovná ponuka pre medicínskeho reprezentanta (m/ž) v Bratislavskom kraji – AGEL Lab, Bratislava            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-medicinskeho-reprezentanta-m-z-v-bratislavskom-kraji-agel-lab-bratislava-3/" class="text-secondary-100 text-decoration-none">
+                Bratislavský kraj (Práca vyžaduje cestovanie (obchodný zástupca, vodič, atď.))            </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">1 700 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/pracovna-ponuka-pre-medicinskeho-reprezentanta-m-z-v-bratislavskom-kraji-agel-lab-bratislava-3/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">31. 10. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-noveho-timu-manazer-ka-jzs-veduca-sestra-m-z-v-zdravotnickom-zariadeni-v-ruzomberku/" class="text-secondary">
+                Staňte sa súčasťou nového tímu &#8211; Manažér/ka JZS/vedúca sestra (m/ž) v zdravotníckom zariadení v Ružomberku            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-noveho-timu-manazer-ka-jzs-veduca-sestra-m-z-v-zdravotnickom-zariadeni-v-ruzomberku/" class="text-secondary-100 text-decoration-none">
+                Ružomberok, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">1 800 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-noveho-timu-manazer-ka-jzs-veduca-sestra-m-z-v-zdravotnickom-zariadeni-v-ruzomberku/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">31. 10. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-laboratorneho-timu-ako-lekar-lekarka-pre-oblast-patologie-agel-lab-bratislava-2/" class="text-secondary">
+                Staňte sa súčasťou nášho laboratórneho tímu ako lekár/lekárka pre oblasť patológie &#8211;  AGEL Lab, Bratislava            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-laboratorneho-timu-ako-lekar-lekarka-pre-oblast-patologie-agel-lab-bratislava-2/" class="text-secondary-100 text-decoration-none">
+                Údernícka 9, Petržalka, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">2 286 – 5 182 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/stante-sa-sucastou-nasho-laboratorneho-timu-ako-lekar-lekarka-pre-oblast-patologie-agel-lab-bratislava-2/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">30. 10. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+
+        
+<div class="d-block">
+    
+<article class="bg-white rounded-12 shadow-sm text-secondary">
+    <header class="p-30 bg-secondary-600 border-bottom border-primary-750 rounded-top-12">
+                <h2 class="h4 mb-12 text-break">
+            <a href="https://kariera.agel.sk/ponuka-prace/hladame-sestru-m-z-pre-neurologicke-oddelenie-naborovy-prispevok-3000e/" class="text-secondary">
+                Hľadáme sestru (m/ž) pre neurologické oddelenie &#8211; náborový príspevok 3000€            </a>
+        </h2>
+
+        <p class="mb-0 fw-medium text-secondary-100">
+            <a href="https://kariera.agel.sk/ponuka-prace/hladame-sestru-m-z-pre-neurologicke-oddelenie-naborovy-prispevok-3000e/" class="text-secondary-100 text-decoration-none">
+                Fakultná nemocnica AGEL Košice-Šaca, Lúčna, Šaca, Slovensko             </a>
+        </p>
+    </header>
+
+    <section class="px-30 pt-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto mb-10 mb-lg-20 order-1 order-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--file " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-file"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">Plný úväzok</div>
+                </div>
+            </div>
+
+                        <div class="col-lg-auto mb-20 order-0 order-lg-1">
+                <div class="d-inline-flex align-items-center px-15 py-6 bg-secondary-15 rounded-pill fw-medium">
+                    
+        <svg class="icon icon--bank-note " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-bank-note"></use>
+        </svg>
+
+        
+                    <span class="ms-10">1 524 € / mesiac</span>
+                </div>
+            </div>
+                    </div>
+    </section>
+
+    <footer class="px-30 pb-30">
+        <div class="row justify-content-between align-items-center">
+            <div class="col-lg-auto order-1 order-lg-0">
+                <a href="https://kariera.agel.sk/ponuka-prace/hladame-sestru-m-z-pre-neurologicke-oddelenie-naborovy-prispevok-3000e/" class="fw-medium text-primary">
+                    Detail ponuky 
+        <svg class="icon icon--arrow-right " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-arrow-right"></use>
+        </svg>
+
+                        </a>
+            </div>
+
+            <div class="col-lg-auto order-0 order-lg-1 mb-30 mb-lg-0">
+                <div class="d-flex">
+                    <div class="w-18 h-18 lh-22">
+                        
+        <svg class="icon icon--calendar " width="18"
+             height="18">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-calendar"></use>
+        </svg>
+
+                            </div>
+
+                    <div class="ms-10">30. 10. 2026</div>
+                </div>
+            </div>
+        </div>
+    </footer>
+</article>
+</div>
+        </div>
+
+        
+<div class="d-flex d-lg-inline-flex">
+    <div class="text-center w-100">
+                <button type="button" class="btn btn-load-more btn-outline-secondary mb-32 w-100 w-100">
+            Zobraziť viac        </button>
+        
+        <ul class="pagination justify-content-between justify-content-lg-start">
+            <li class="page-item disabled">
+                                    <span class="prev page-numbers page-link w-32 h-32 d-flex align-items-center justify-content-center bg-primary-850 rotate-180 pe-auto" href="#">
+                    
+        <svg class="icon icon--chevron-right " width="16"
+             height="16">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                        </span>
+                            </li>
+
+                                <li class="page-item active">
+                                                <span class="page-numbers page-link w-32 h-32 pe-auto lh-20">
+                            1                        </span>
+                                            </li>
+                                    <li class="page-item ">
+                                                <button class="page-numbers page-link w-32 h-32 pe-auto lh-20" data-page="2">
+                            2                        </button>
+                                            </li>
+                                    <li class="page-item ">
+                                                <button class="page-numbers page-link w-32 h-32 pe-auto lh-20" data-page="3">
+                            3                        </button>
+                                            </li>
+                                    <li class="page-item ">
+                                                <button class="page-numbers page-link w-32 h-32 pe-auto lh-20" data-page="4">
+                            4                        </button>
+                                            </li>
+                                    <li class="page-item disabled"><span class="page-link w-32 h-32">…</span></li>
+                                    <li class="page-item ">
+                                                <button class="page-numbers page-link w-32 h-32 pe-auto lh-20" data-page="30">
+                            30                        </button>
+                                            </li>
+                
+            <li class="page-item ">
+                                <button class="next page-numbers page-link w-32 h-32 d-flex align-items-center justify-content-center bg-primary-850 pe-auto"
+                        data-page="2" aria-label="Next">
+                    
+        <svg class="icon icon--chevron-right " width="16"
+             height="16">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                        </button>
+                            </li>
+        </ul>
+    </div>
+
+    <input type="hidden" name="load_more">
+    <input type="hidden" name="offset" value="1">
+    <input type="hidden" name="page" value="1">
+</div>
+
+    </div>
+</div>
+                </div>
+            </form>
+		</div>
+	</section>
+</div>
+</div>
+    </div>
+</article>
+</main>
+
+
+<footer>
+            <div class="lazyblock-footer-Zwzxc9 wp-block-lazyblock-footer">
+<div class="block block-information bg-primary-850 py-48 pb-lg-40 pt-lg-80">
+    <div class="container">
+        <div class="row">
+            <div class="col-12 offset-lg-1 col-lg-10">
+                <div class="row">
+                    <div class="col-12 col-lg-4">
+                        <div class="d-block d-lg-flex flex-column gap-2 h-100 mb-48 mb-lg-0">
+                                                        <a href="https://kariera.agel.sk/nastartuj-svoju-karieru-u-nas/ponuka-prace/" class="btn btn-outline-primary px-4 d-flex align-items-center justify-content-center justify-content-lg-start gap-2 w-100 w-max-lg-230 mb-2 mb-lg-0">
+                                <div class="d-block lh-0">
+                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                        </div>
+
+                                <div class="fs-5 lh-18">
+                                    Ponuka práce                                </div>
+                            </a>
+                            
+                                                        <a href="https://kariera.agel.sk/preco-agel/" class="btn btn-primary px-4 d-flex align-items-center justify-content-center justify-content-lg-start gap-2 w-100 w-max-lg-230">
+                                <div class="d-block lh-0">
+                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                        </div>
+
+                                <div class="fs-5 lh-18">
+                                    Prečo AGEL                                </div>
+                            </a>
+                                                    </div>
+                    </div>
+
+                    <div class="col-12 col-lg-4">
+                        
+                                                <div class="d-flex flex-column justify-content-center py-lg-10">
+                            <div class="d-flex flex-column justify-content-center gap-4">
+                                
+                                                                <div class="d-flex">
+                                    <a href="/cdn-cgi/l/email-protection#721913001b170013321315171e5c0119" class="d-flex align-items-center text-secondary gap-6">
+                                        <div class="lh-0">
+                                            
+        <svg class="icon icon--mail " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-mail"></use>
+        </svg>
+
+                                                </div>
+
+                                        <div class="fs-6 fs-lg-5 lh-24 lh-lg-28">
+                                            <span class="__cf_email__" data-cfemail="4f242e3d262a3d2e0f2e282a23613c24">[email&#160;protected]</span>                                        </div>
+                                    </a>
+                                </div>
+                                                            </div>
+                        </div>
+                                            </div>
+
+                    <div class="col-12 col-lg-4">
+                        <div class="d-none d-lg-block">
+                            <h5 class="fs-20 fw-700 lh-28 font-primary text-secondary mb-3">
+                                Sledujte nás na sociálnych sieťach                            </h5>
+
+                            <div class="d-flex align-items-center gap-60 gap-lg-50">
+                                                                <a href="https://www.facebook.com/AGELSK.sk/" aria-label="Facebook"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--facebook " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-facebook"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                                <a href="https://www.instagram.com/agel_sk/?hl=sk" aria-label="Instagram"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--instagram " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-instagram"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                                <a href="https://www.linkedin.com/company/agel-sk-a.s./?originalSubdomain=sk" aria-label="LinkedIn"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--linkedin " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-linkedin"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pb-48 mb-lg-48 border-bottom border-secondary-25"></div>
+
+        <div class="row">
+            <div class="col-12 offset-lg-1 col-lg-10">
+                <div class="row gy-48 gy-lg-0">
+                    <div class="col-12 col-lg-8">
+                        <div class="row gy-lg-40">
+                            <div class="col-12 col-lg-6">
+                                <div class="d-flex flex-column gap-4 mb-24 mb-lg-0">
+                                    <div class="accordion-wrapper" id="accordionMain">
+                                                                                <div class="fs-6 fs-lg-5 fw-500 lh-24 lh-lg-28 text-secondary d-none d-md-block">
+                                            Viac o spoločnosti AGEL                                        </div>
+                                        
+                                                                                <div class="accordion-trigger d-md-none fs-6 fw-500 text-secondary py-3 pe-auto">
+                                            Viac o spoločnosti AGEL                                        </div>
+                                        
+                                                                                <div class="accordion-content d-flex flex-column gap-3 gap-lg-4 mt-24">
+                                                                                                                                    <a href="http://agel.sk" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                <div class="d-none d-md-block text-primary">
+                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                        </div>
+
+                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                    AGEL Slovensko                                                </div>
+                                            </a>
+                                                                                                                                                                                <a href="http://agel.cz" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                <div class="d-none d-md-block text-primary">
+                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                        </div>
+
+                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                    AGEL Česká republika                                                </div>
+                                            </a>
+                                                                                                                                                                                <a href="http://agellab.sk" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                <div class="d-none d-md-block text-primary">
+                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                        </div>
+
+                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                    AGEL Lab                                                </div>
+                                            </a>
+                                                                                                                                                                                <a href="https://nadacia.agelsk.sk/" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                <div class="d-none d-md-block text-primary">
+                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                        </div>
+
+                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                    NADÁCIA AGEL                                                </div>
+                                            </a>
+                                                                                                                                </div>
+                                                                            </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <div class="d-flex flex-column gap-4 mb-24 mb-lg-0">
+                                    <div class="accordion-wrapper" id="accordionMain">
+                                                                                <div class="fs-6 fs-lg-5 fw-500 lh-24 lh-lg-28 text-secondary d-none d-md-block mb-4">
+                                            Rýchly prehľad                                        </div>
+                                        
+                                                                                <div class="accordion-trigger d-md-none fs-6 fw-500 text-secondary py-3 pe-auto">
+                                            Rýchly prehľad                                        </div>
+                                        
+
+                                        
+                                                                                            <div class="accordion-content d-flex flex-column gap-3 gap-lg-4 mt-24">
+                                                                                                                                                                        <a href="https://kariera.agel.sk/preco-agel/" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                                <div class="d-none d-md-block text-primary">
+                                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                                        </div>
+
+                                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                                    Prečo AGEL                                                                </div>
+                                                            </a>
+                                                                                                                                                                                                                                <a href="https://kariera.agel.sk/nastartuj-svoju-karieru-u-nas/ponuka-prace/" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                                <div class="d-none d-md-block text-primary">
+                                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                                        </div>
+
+                                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                                    Ponuka práce                                                                </div>
+                                                            </a>
+                                                                                                                                                                                                                                <a href="https://kariera.agel.sk/studenti-a-absolventi/" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                                <div class="d-none d-md-block text-primary">
+                                                                    
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                                        </div>
+
+                                                                <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                                    Študenti a absolventi                                                                </div>
+                                                            </a>
+                                                                                                                                                            </div>
+                                                                                                                        </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <div class="d-flex flex-column gap-4 mb-24 mb-lg-0">
+                                    <div class="accordion-wrapper" id="accordionMain">
+                                        
+                                        
+                                                                            </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <div class="d-flex flex-column gap-4 mb-24 mb-lg-0">
+                                    <div class="accordion-wrapper navbar-nav" id="accordionMain">
+                                                                                <div class="fs-6 fs-lg-5 fw-500 lh-24 lh-lg-28 text-secondary d-none d-md-block">
+                                            Ďalšie informácie                                        </div>
+                                        
+                                                                                <div class="accordion-trigger d-md-none fs-6 fw-500 text-secondary py-3 pe-auto">
+                                            Ďalšie informácie                                        </div>
+                                        
+                                                                                <div class="accordion-content d-flex flex-column gap-3 gap-lg-4 mt-24">
+                                                                                                                                            <a href="https://www.agel.sk/o-nas/ochrana-osobnych-udajov.html" class="d-flex align-items-center gap-2 text-secondary text-decoration-underline">
+                                                    <div class="d-none d-md-block text-primary">
+                                                        
+        <svg class="icon icon--chevron-right " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-chevron-right"></use>
+        </svg>
+
+                                                            </div>
+
+                                                    <div class="fs-6 fs-lg-5 lh-24 lh-lg-28 text-secondary">
+                                                        Ochrana osobných údajov                                                    </div>
+                                                </a>
+                                                                                                                                    </div>
+                                                                            </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-lg-4">
+                                                <div class="d-flex flex-column gap-4 mb-24 mb-lg-0">
+                            <div class="accordion-wrapper navbar-nav" id="accordionMain">
+                                
+                                
+                                                            </div>
+                        </div>
+                                            </div>
+
+                    <div class="col-12">
+                        <div class="d-block d-lg-none">
+                            <h5 class="fs-20 fw-700 lh-28 text-secondary mb-3">
+                                Sledujte nás na sociálnych sieťach                            </h5>
+
+                            <div class="d-flex align-items-center gap-60 gap-lg-50">
+                                                                <a href="https://www.facebook.com/AGELSK.sk/" aria-label="Facebook"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--facebook " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-facebook"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                                <a href="https://www.instagram.com/agel_sk/?hl=sk" aria-label="Instagram"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--instagram " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-instagram"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                                <a href="https://www.linkedin.com/company/agel-sk-a.s./?originalSubdomain=sk" aria-label="LinkedIn"
+                                   target="_blank"
+                                   class="d-block text-secondary">
+                                    
+        <svg class="icon icon--linkedin " width="24"
+             height="24">
+
+            <use href="https://kariera.agel.sk/wp-content/themes/agel/assets/sprite.svg?ver=1793715003#icon-linkedin"></use>
+        </svg>
+
+                                        </a>
+                                
+                                                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="block block-footer footer bg-primary-500 text-center">
+    <div class="container">
+        <div class="py-32 pt-lg-4 pb-lg-60">
+            <div class="mb-4">
+                                <a class="d-none d-lg-block" href="https://kariera.agel.sk" aria-label="Kariéra">
+                                    </a>
+
+                <a class="d-block d-lg-none" href="https://kariera.agel.sk" aria-label="Kariéra">
+                                    </a>
+                            </div>
+
+                        <div href="#" class="fs-15 fs-lg-18 lh-22 lh-lg-28 text-decoration-underline text-primary-300">
+                AGEL &copy; 2026 Všetky práva vyhradené            </div>
+                    </div>
+    </div>
+</div>
+</div>    </footer>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp-*.php","/wp-admin/*","/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/*","/wp-content/*","/wp-content/plugins/*","/wp-content/themes/agel-career/*","/wp-content/themes/agel/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+
+<!-- Consent Management powered by Complianz | GDPR/CCPA Cookie Consent https://wordpress.org/plugins/complianz-gdpr -->
+<div id="cmplz-cookiebanner-container"><div class="cmplz-cookiebanner cmplz-hidden banner-1 banner-a optin cmplz-bottom-right cmplz-categories-type-view-preferences" aria-modal="true" data-nosnippet="true" role="dialog" aria-live="polite" aria-labelledby="cmplz-header-1-optin" aria-describedby="cmplz-message-1-optin">
+	<div class="cmplz-header">
+		<div class="cmplz-logo"></div>
+		<div class="cmplz-title" id="cmplz-header-1-optin">Táto webová stránka používa cookies</div>
+		<div class="cmplz-close" tabindex="0" role="button" aria-label="Zavrieť okno">
+			<svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="times" class="svg-inline--fa fa-times fa-w-11" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 352 512"><path fill="currentColor" d="M242.72 256l100.07-100.07c12.28-12.28 12.28-32.19 0-44.48l-22.24-22.24c-12.28-12.28-32.19-12.28-44.48 0L176 189.28 75.93 89.21c-12.28-12.28-32.19-12.28-44.48 0L9.21 111.45c-12.28 12.28-12.28 32.19 0 44.48L109.28 256 9.21 356.07c-12.28 12.28-12.28 32.19 0 44.48l22.24 22.24c12.28 12.28 32.2 12.28 44.48 0L176 322.72l100.07 100.07c12.28 12.28 32.2 12.28 44.48 0l22.24-22.24c12.28-12.28 12.28-32.19 0-44.48L242.72 256z"></path></svg>
+		</div>
+	</div>
+
+	<div class="cmplz-divider cmplz-divider-header"></div>
+	<div class="cmplz-body">
+		<div class="cmplz-message" id="cmplz-message-1-optin"><p>Tento web používa na poskytovanie služieb, personalizáciu a analýzu návštevnosti súbory cookie. Informácie o používaní našej stránky tiež zdieľame so sociálnymi médiami a analytickými partnermi. <a href="https://nemocnicaskalica.agel.sk/o-nemocnici/ochrana-osobnych-udajov/cookies">Viac informácií</a>.</p></div>
+		<!-- categories start -->
+		<div class="cmplz-categories">
+			<details class="cmplz-category cmplz-functional" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Funkčné</span>
+							<span class='cmplz-always-active'>
+								<span class="cmplz-banner-checkbox">
+									<input type="checkbox"
+										   id="cmplz-functional-optin"
+										   data-category="cmplz_functional"
+										   class="cmplz-consent-checkbox cmplz-functional"
+										   size="40"
+										   value="1"/>
+									<label class="cmplz-label" for="cmplz-functional-optin"><span class="screen-reader-text">Funkčné</span></label>
+								</span>
+								Vždy aktívny							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-functional">Technická skladba alebo prístup je striktne nepotrebná pre legálnu potrebu využívania obnoviteľných služieb explicitne vyžiadaná ako účastník alebo používateľ, alebo pre jediný prostriedok, ktorý prepravuje z prenosu komunikácie cez elektronickú komunikáciu.</span>
+				</div>
+			</details>
+
+			<details class="cmplz-category cmplz-preferences" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Predvoľby</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-preferences-optin"
+									   data-category="cmplz_preferences"
+									   class="cmplz-consent-checkbox cmplz-preferences"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-preferences-optin"><span class="screen-reader-text">Predvoľby</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-preferences">Technické uloženie alebo prístup je potrebný na legitímny účel ukladania preferencií, ktoré si účastník alebo používateľ nepožaduje.</span>
+				</div>
+			</details>
+
+			<details class="cmplz-category cmplz-statistics" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Štatistiky</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-statistics-optin"
+									   data-category="cmplz_statistics"
+									   class="cmplz-consent-checkbox cmplz-statistics"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-statistics-optin"><span class="screen-reader-text">Štatistiky</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-statistics">Technická skladba alebo prístup, ktorý sa používa výlučne pre štatistické účely.</span>
+					<span class="cmplz-description-statistics-anonymous">Technické úložisko alebo prístup, ktorý sa používa výlučne na anonymné štatistické účely. Bez predvolania, dobrovoľného plnenia zo strany vášho poskytovateľa internetových služieb alebo dodatočných záznamov od tretej strany, informácie uložené alebo získané len na tento účel sa zvyčajne nedajú použiť na vašu identifikáciu.</span>
+				</div>
+			</details>
+			<details class="cmplz-category cmplz-marketing" >
+				<summary>
+						<span class="cmplz-category-header">
+							<span class="cmplz-category-title">Marketing</span>
+							<span class="cmplz-banner-checkbox">
+								<input type="checkbox"
+									   id="cmplz-marketing-optin"
+									   data-category="cmplz_marketing"
+									   class="cmplz-consent-checkbox cmplz-marketing"
+									   size="40"
+									   value="1"/>
+								<label class="cmplz-label" for="cmplz-marketing-optin"><span class="screen-reader-text">Marketing</span></label>
+							</span>
+							<span class="cmplz-icon cmplz-open">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"  height="18" ><path d="M224 416c-8.188 0-16.38-3.125-22.62-9.375l-192-192c-12.5-12.5-12.5-32.75 0-45.25s32.75-12.5 45.25 0L224 338.8l169.4-169.4c12.5-12.5 32.75-12.5 45.25 0s12.5 32.75 0 45.25l-192 192C240.4 412.9 232.2 416 224 416z"/></svg>
+							</span>
+						</span>
+				</summary>
+				<div class="cmplz-description">
+					<span class="cmplz-description-marketing">Technická skladba alebo prístup je potrebný na zabezpečenie používateľských profilov pri odosielaní reklamy alebo pri použití webovej stránky alebo cez severné webové stránky na podobné marketingové účely.</span>
+				</div>
+			</details>
+		</div><!-- categories end -->
+			</div>
+
+	<div class="cmplz-links cmplz-information">
+		<ul>
+			<li><a class="cmplz-link cmplz-manage-options cookie-statement" href="#" data-relative_url="#cmplz-manage-consent-container">Spravovať možnosti</a></li>
+			<li><a class="cmplz-link cmplz-manage-third-parties cookie-statement" href="#" data-relative_url="#cmplz-cookies-overview">Správa služieb</a></li>
+			<li><a class="cmplz-link cmplz-manage-vendors tcf cookie-statement" href="#" data-relative_url="#cmplz-tcf-wrapper">Spravovať {vendor_count} dodávateľov</a></li>
+			<li><a class="cmplz-link cmplz-external cmplz-read-more-purposes tcf" target="_blank" rel="noopener noreferrer nofollow" href="https://cookiedatabase.org/tcf/purposes/" aria-label="Read more about TCF purposes on Cookie Database">Prečítajte si viac o týchto účeloch</a></li>
+		</ul>
+			</div>
+
+	<div class="cmplz-divider cmplz-footer"></div>
+
+	<div class="cmplz-buttons">
+		<button class="cmplz-btn cmplz-accept">Prijať</button>
+		<button class="cmplz-btn cmplz-deny">Odmietnuť</button>
+		<button class="cmplz-btn cmplz-view-preferences">Zobraziť nastavenie</button>
+		<button class="cmplz-btn cmplz-save-preferences">Uložiť nastavenie</button>
+		<a class="cmplz-btn cmplz-manage-options tcf cookie-statement" href="#" data-relative_url="#cmplz-manage-consent-container">Zobraziť nastavenie</a>
+			</div>
+
+	
+	<div class="cmplz-documents cmplz-links">
+		<ul>
+			<li><a class="cmplz-link cookie-statement" href="#" data-relative_url="">{title}</a></li>
+			<li><a class="cmplz-link privacy-statement" href="#" data-relative_url="">{title}</a></li>
+			<li><a class="cmplz-link impressum" href="#" data-relative_url="">{title}</a></li>
+		</ul>
+			</div>
+</div>
+</div>
+					<div id="cmplz-manage-consent" data-nosnippet="true"><button class="cmplz-btn cmplz-hidden cmplz-manage-consent manage-consent-1">Správa súhlasu</button>
+
+</div>
+<div class="modal fade"
+     id="formprax"
+     tabindex="-1"
+     aria-labelledby="form-label-29259"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title fs-5 fw-700 font-secondary" id="form-label-29259">
+                    Záujem o odbornú prax                </div>
+
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body pt-0">
+                <form action="https://kariera.agel.sk/form/submit"
+                      method="post"
+                      enctype="multipart/form-data"
+                      class="agel-form"
+                      onsubmit="return false">
+
+                    <input type="hidden" name="post_id" value="29259">
+                    <input type="hidden" name="page_url" value="https://kariera.agel.sk/ponuka-prace/">
+                    <input type="hidden" name="page_name" value="Ponuka práce">
+                                        <input type="hidden" name="page_id" value="12">
+
+                    <input type="hidden" id="_wpnonce" name="_wpnonce" value="c315c4ab91" /><input type="hidden" name="_wp_http_referer" value="/ponuka-prace/" />
+                    <div class="row g-3">
+                        
+<p class="wp-block-paragraph">Týmto formulárom vyjadrujete svoj záujem o bližšie informácie o možnom absolvovaní odbornej praxe v jednom z vybraných zdravotníckych zariadení siete AGEL. Na vašu žiadosť budeme reagovať v priebehu niekoľkých dní. Ďakujeme za pochopenie.</p>
+
+
+
+<div class="wp-block-columns is-layout-flex wp-container-core-columns-is-layout-8f761849 wp-block-columns-is-layout-flex">
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="Z1JCm2p" class="form-label">
+            Meno
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="Z1JCm2p"
+               name="meno"
+               placeholder=""
+               aria-describedby="help-Z1JCm2p">
+        
+        
+        
+            </div>
+</div>
+</div>
+
+
+
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="ZPtnRM" class="form-label">
+            Priezvisko
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="ZPtnRM"
+               name="priezvisko"
+               placeholder=""
+               aria-describedby="help-ZPtnRM">
+        
+        
+        
+            </div>
+</div>
+</div>
+</div>
+
+
+
+<div class="col-12 col-lg-6">
+    <div class="form-group">
+        <label for="1C70hO" class="form-label">
+            Telefónne číslo
+                    </label>
+
+                <input class="form-control"
+               type="phone"
+               id="1C70hO"
+               name="telefonne-cislo"
+               placeholder=""
+               aria-describedby="help-1C70hO">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-6">
+    <div class="form-group">
+        <label for="Z1dsWwq" class="form-label">
+            E-mail
+                    </label>
+
+                <input class="form-control"
+               type="email"
+               id="Z1dsWwq"
+               name="e-mail"
+               placeholder=""
+               aria-describedby="help-Z1dsWwq">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-6">
+    <div class="form-group">
+        <label for="ZNlRHe" class="form-label">
+            Názov školy
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="ZNlRHe"
+               name="nazov-skoly"
+               placeholder=""
+               aria-describedby="help-ZNlRHe">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-3">
+    <div class="form-group">
+        <label for="1FAajV" class="form-label">
+            Študijný odbor
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="1FAajV"
+               name="studijny-odbor"
+               placeholder=""
+               aria-describedby="help-1FAajV">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-3">
+    <div class="form-group">
+        <label for="1P1aUI" class="form-label">
+            Ročník štúdia
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="1P1aUI"
+               name="rocnik-studia"
+               placeholder=""
+               aria-describedby="help-1P1aUI">
+        
+        
+        
+            </div>
+</div>
+
+
+<div class="lazyblock-form-select-2nUq50 wp-block-lazyblock-form-select">
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="2nUq50" class="form-label">
+            Výber zdravotníckeho zariadenia, kde mám záujem absolvovať prax: 
+                    </label>
+
+
+        <select class="form-select" id="2nUq50" name="vyber-zdravotnickeho-zariadenia-kde-mam-zaujem-absolvovat-prax"
+            aria-describedby="help-2nUq50"
+                required="required"         >
+                            <option value="">Výber zdravotníckeho zariadenia</option>
+                                        <option value="AGEL Clinic Bratislava">AGEL Clinic Bratislava</option>
+                            <option value="AGEL Mammacentrum Sv. Agáty Banská Bystrica">AGEL Mammacentrum Sv. Agáty Banská Bystrica</option>
+                            <option value="Fakultná nemocnica AGEL Skalica">Fakultná nemocnica AGEL Skalica</option>
+                            <option value="Fakultná nemocnica AGEL Košice-Šaca">Fakultná nemocnica AGEL Košice-Šaca</option>
+                            <option value="Kardiocentrum AGEL Košice">Kardiocentrum AGEL Košice</option>
+                            <option value="Nemocnica AGEL Levoča">Nemocnica AGEL Levoča</option>
+                            <option value="Nemocnica AGEL Krompachy">Nemocnica AGEL Krompachy</option>
+                            <option value="Nemocnica AGEL Zvolen">Nemocnica AGEL Zvolen</option>
+                            <option value="Nemocnica dr. Vojtecha Alexandra v Kežmarku">Nemocnica dr. Vojtecha Alexandra v Kežmarku</option>
+                            <option value="Nemocnica AGEL Bánovce">Nemocnica AGEL Bánovce</option>
+                            <option value="Nemocnica AGEL Handlová">Nemocnica AGEL Handlová</option>
+                            <option value="Nemocnica AGEL Komárno">Nemocnica AGEL Komárno</option>
+                            <option value="Nemocnica AGEL Levice">Nemocnica AGEL Levice</option>
+                            <option value="Nemocnica AGEL Krupina">Nemocnica AGEL Krupina</option>
+                            <option value="Nemocnica AGEL Zlaté Moravce">Nemocnica AGEL Zlaté Moravce</option>
+                            <option value="Nemocnica AGEL Žiar nad Hronom a Banská Štiavnica">Nemocnica AGEL Žiar nad Hronom a Banská Štiavnica</option>
+                            <option value="Nemocnica AGEL Hlohovec">Nemocnica AGEL Hlohovec</option>
+                    </select>
+
+
+
+            </div>
+</div>
+</div>
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="SxMcO" class="form-label">
+            Oddelenie, kde mám záujem absolvovať prax:
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="SxMcO"
+               name="oddelenie-kde-mam-zaujem-absolvovat-prax"
+               placeholder=""
+               aria-describedby="help-SxMcO">
+        
+        
+        
+            </div>
+</div>
+
+
+<div class="lazyblock-form-select-jAjXg wp-block-lazyblock-form-select">
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="jAjXg" class="form-label">
+            Záujem o typ aktivity:
+                    </label>
+
+
+        <select class="form-select" id="jAjXg" name="zaujem-o-typ-aktivity"
+            aria-describedby="help-jAjXg"
+                required="required"         >
+                            <option value="">Typ aktivity</option>
+                                        <option value="Povinná prax">Povinná prax</option>
+                            <option value="Dobrovoľná prax">Dobrovoľná prax</option>
+                            <option value="Odborná stáž">Odborná stáž</option>
+                            <option value="Pracovná pozícia">Pracovná pozícia</option>
+                    </select>
+
+
+
+            </div>
+</div>
+</div>
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="1xQzR1" class="form-label">
+            Termín praxe
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="1xQzR1"
+               name="termin-praxe"
+               placeholder="od DD.MM.RR - do DD.MM.RR"
+               aria-describedby="help-1xQzR1">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="ZuSyv0" class="form-label">
+            Správa
+                        <span>(Nepovinné)</span>
+                    </label>
+
+        
+                <textarea class="form-control"
+                  type="textarea"
+                  id="ZuSyv0"
+                  name="sprava"
+                  placeholder="Ak máte ďalšie otázky alebo potrebujete doplniť akúkoľvek informáciu, napíšte správu tu."
+                  aria-describedby="help-ZuSyv0"></textarea>
+        
+        
+            </div>
+</div>
+
+
+
+<p class="wp-block-paragraph" style="font-size:12px"><small>Vyplnením tohto dotazníka súhlasíte s evidenciou a spracovaním osobných údajov podľa Zákona 18/2018 Z.z. a Nariadenia (EU) 2016/679 . V zmysle Zákona č. 18/2018 Z.z. o ochrane osobných údajov a Nariadenia Európskeho parlamentu a Rady (EU) 2016/679 z 27. apríla 2016 o ochrane fyzických osôb pri spracovaní osobných údajov a o voľnom pohybe takýchto údajov, ktorým sa zrušuje smernica 95/46/ES o ochrane osobných údajov dobrovoľne súhlasím so správou, spracovaním a uchovaním mojich osobných údajov v rozsahu uvedenom v dotazníku, prevádzkovateľom spoločnosťou AGEL SSC a.s. a dotknutým spoločnostiam patriacim do skupiny AGEL, ako samostatným prevádzkovateľom, špecifikovaným na webovom sídle <a href="https://www.agel.sk/zoznam-spolocnosti.html">(Zoznam spoločností | AGEL SK)</a>, ktoré som poskytol/la vyššie uvedenej spoločnosti za účelom uloženia do databázy študentov. Pri spracúvaní osobných údajov v žiadnom prípade nebude dochádzať k cezhraničnému prenosu do tretích krajín. Súhlas je možné kedykoľvek odvolať, inak súhlas zanikne po uplynutí 6 rokov odo dňa jeho udelenia a údaje budú anonymizované a ďalej využívané výlučne pre štatistické účely.</small></p>
+
+
+
+<div class="col-12">
+    <div class="form-group">
+        <div class="form-check text-start text-secondary mb-32" data-attribute="agreement">
+            <label for="agreement-ZPH9w8"
+                   class="form-check-label text-secondary fs-6 fs-lg-5 lh-24 lh-lg-28">
+                Súhlasím a súčasne potvrdzujem oboznámenie sa so spracúvaním osobných údajov na <a href="https://www.agel.sk/o-nas/ochrana-osobnych-udajov.html" target="_blank">marketingové účely</a>.            </label>
+
+            <div class="d-none">
+                <input type="hidden" name="agreement" value="0">
+            </div>
+
+            <input type="checkbox" name="agreement" value="1" class="form-check-input"  required="required"                    id="agreement-ZPH9w8">
+        </div>
+
+                        <div class="form-check text-start text-secondary mb-32" data-attribute="agreement">
+                    <label for="agreement2-ZPH9w8"
+                           class="form-check-label text-secondary fs-6 fs-lg-5 lh-24 lh-lg-28">
+                        Súhlasím s tým, aby mi boli zasielané informácie o voľných pracovných miestach v zdravotníckych zariadeniach AGEL, informácie o pripravovaných aktivitách a ponukách pre študentov lekárskych fakúlt v Slovenskej republike.                    </label>
+
+                    <div class="d-none">
+                        <input type="hidden" name="optional_check" value="Nie">
+                    </div>
+
+                    <input type="checkbox" name="optional_check" value="Áno" class="form-check-input"
+                            required="required"                            id="agreement2-ZPH9w8">
+                </div>
+        
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100">
+        Odoslať    </button>
+</div>
+                    </div>
+
+                            <div class="agel-form-protection" data-attribute="agel_form_protection" data-action="form">
+            <div class="agel-form-protection__hp" aria-hidden="true">
+                <label>
+                    Website
+                    <input type="text" name="agel_website" value="" tabindex="-1" autocomplete="off">
+                </label>
+            </div>
+            <input type="hidden" name="agel_elapsed" value="">
+            <input type="hidden" name="agel_turnstile_token" value="">
+            <input type="hidden" name="agel_turnstile_unavailable" value="">
+            <input type="hidden" name="agel_turnstile_error" value="">
+            <div class="agel-form-protection__widget"></div>
+        </div>
+        
+                    <div class="alert alert-success success-message mt-3 d-none" role="alert"></div>
+                    <div class="alert alert-danger fail-message mt-3 d-none" role="alert"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade"
+     id="offer-respond"
+     tabindex="-1"
+     aria-labelledby="form-label-29167"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title fs-5 fw-700 font-secondary" id="form-label-29167">
+                    Reakcia na pracovnú ponuku                </div>
+
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body pt-0">
+                <form action="https://kariera.agel.sk/form/submit"
+                      method="post"
+                      enctype="multipart/form-data"
+                      class="agel-form"
+                      onsubmit="return false">
+
+                    <input type="hidden" name="post_id" value="29167">
+                    <input type="hidden" name="page_url" value="https://kariera.agel.sk/ponuka-prace/">
+                    <input type="hidden" name="page_name" value="Ponuka práce">
+                                        <input type="hidden" name="page_id" value="12">
+
+                    <input type="hidden" id="_wpnonce" name="_wpnonce" value="ff16e068d2" /><input type="hidden" name="_wp_http_referer" value="/ponuka-prace/" />
+                    <div class="row g-3">
+                        
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="ZBUEfT" class="form-label">
+            Meno a priezvisko:
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="ZBUEfT"
+               name="name"
+               placeholder=""
+               aria-describedby="help-ZBUEfT">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="23CRt9" class="form-label">
+            E-mail:
+                    </label>
+
+                <input class="form-control"
+               type="email"
+               id="23CRt9"
+               name="email"
+               placeholder=""
+               aria-describedby="help-23CRt9">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="181Tme" class="form-label">
+            Telefónne číslo
+                    </label>
+
+                <input class="form-control"
+               type="text"
+               id="181Tme"
+               name="phonenr"
+               placeholder=""
+               aria-describedby="help-181Tme">
+        
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="lW8P0" class="form-label">
+            Príloha
+                    </label>
+
+        
+        
+                <input class="form-control"
+               type="file"
+               id="lW8P0"
+               name="attachment"
+               aria-describedby="help-lW8P0">
+        
+                <div id="help-lW8P0" class="form-text">
+            sem vložte životopis, motivačný list, alebo iné.         </div>
+            </div>
+</div>
+
+
+
+<div class="col-12 col-lg-12">
+    <div class="form-group">
+        <label for="Z1jTJsz" class="form-label">
+            Správa
+                        <span>(Nepovinné)</span>
+                    </label>
+
+        
+                <textarea class="form-control"
+                  type="textarea"
+                  id="Z1jTJsz"
+                  name="message"
+                  placeholder=""
+                  aria-describedby="help-Z1jTJsz"></textarea>
+        
+        
+            </div>
+</div>
+
+
+
+<div class="col-12">
+    <div class="form-group">
+        <div class="form-check text-start text-secondary mb-32" data-attribute="agreement">
+            <label for="agreement-Z15xLDa"
+                   class="form-check-label text-secondary fs-6 fs-lg-5 lh-24 lh-lg-28">
+                Súhlasím a súčasne potvrdzujem oboznámenie sa so spracúvaním osobných údajov na <a href="https://www.agel.sk/o-nas/ochrana-osobnych-udajov.html" target="_blank">marketingové účely</a>.            </label>
+
+            <div class="d-none">
+                <input type="hidden" name="agreement" value="0">
+            </div>
+
+            <input type="checkbox" name="agreement" value="1" class="form-check-input"  required="required"                    id="agreement-Z15xLDa">
+        </div>
+
+        
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100">
+        Odoslať    </button>
+</div>
+                    </div>
+
+                            <div class="agel-form-protection" data-attribute="agel_form_protection" data-action="form">
+            <div class="agel-form-protection__hp" aria-hidden="true">
+                <label>
+                    Website
+                    <input type="text" name="agel_website" value="" tabindex="-1" autocomplete="off">
+                </label>
+            </div>
+            <input type="hidden" name="agel_elapsed" value="">
+            <input type="hidden" name="agel_turnstile_token" value="">
+            <input type="hidden" name="agel_turnstile_unavailable" value="">
+            <input type="hidden" name="agel_turnstile_error" value="">
+            <div class="agel-form-protection__widget"></div>
+        </div>
+        
+                    <div class="alert alert-success success-message mt-3 d-none" role="alert"></div>
+                    <div class="alert alert-danger fail-message mt-3 d-none" role="alert"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<script id="agel-form-protection-js-extra">
+var agelFormProtection = {"siteKey":"","configUrl":"https://kariera.agel.sk/wp-admin/admin-ajax.php?action=agel_form_protection_config","scriptUrl":"https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"};
+//# sourceURL=agel-form-protection-js-extra
+</script>
+<script id="agel-form-protection-js" src="https://kariera.agel.sk/wp-content/plugins/agel-core/assets/js/form-protection.js?v=a0d5634e3d6ddae7e3109401388981f662404eae"></script>
+<script id="cmplz-cookiebanner-js-extra">
+var complianz = {"prefix":"cmplz_","user_banner_id":"1","set_cookies":[],"block_ajax_content":"","banner_version":"16","version":"7.4.7","store_consent":"","do_not_track_enabled":"","consenttype":"optin","region":"eu","geoip":"","dismiss_timeout":"","disable_cookiebanner":"","soft_cookiewall":"","dismiss_on_scroll":"","cookie_expiry":"365","url":"https://kariera.agel.sk/wp-json/complianz/v1/","locale":"lang=sk&locale=sk_SK","set_cookies_on_root":"","cookie_domain":"","current_policy_id":"36","cookie_path":"/","categories":{"statistics":"\u0161tatistiky","marketing":"marketing"},"tcf_active":"","placeholdertext":"Kliknut\u00edm prijmete s\u00fabory cookie {category} a povol\u00edte tento obsah","css_file":"https://frifkdelvlxr.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/frifkdelvlxr/b/agl-buc-content-prd-gerc-pz6/o/uploads/sites/22/complianz/css/banner-{banner_id}-{type}.css?v=16","page_links":{"eu":{"cookie-statement":{"title":"Z\u00e1sady pou\u017e\u00edvania s\u00faborov cookie ","url":"https://kariera.agel.sk/zasady-pouzivania-suborov-cookie-eu/"}}},"tm_categories":"1","forceEnableStats":"","preview":"","clean_cookies":"","aria_label":"Kliknut\u00edm prijmete s\u00fabory cookie {category} a povol\u00edte tento obsah"};
+//# sourceURL=cmplz-cookiebanner-js-extra
+</script>
+<script defer id="cmplz-cookiebanner-js" src="https://kariera.agel.sk/wp-content/plugins/complianz-gdpr/cookiebanner/js/complianz.min.js?v=7bf10c7f24c0748941d5e40a8533237ad2423544"></script>
+<script id="wpmvc-form-js" src="https://kariera.agel.sk/wp-content/vendor/devstudio-rs/wpmvc/assets/js/wpmvc-form.js?v=630db25b99d4485c0e5f4f85e6fb266092ea271a"></script>
+<script id="wp-emoji-settings" type="application/json">
+{"baseUrl":"https://s.w.org/images/core/emoji/17.0.2/72x72/","ext":".png","svgUrl":"https://s.w.org/images/core/emoji/17.0.2/svg/","svgExt":".svg","source":{"concatemoji":"https://kariera.agel.sk/wp-includes/js/wp-emoji-release.min.js?v=f22dbf3ca264c461c6c2254a49dafda4bcd3b5f3"}}
+</script>
+<script type="module">
+/*! This file is auto-generated */
+var e="script#wp-emoji-settings",t=document.querySelector(e);if(!(t instanceof HTMLScriptElement))throw new Error("Element missing: "+e);const r=JSON.parse(t.text),s=(window._wpemojiSettings=r,"wpEmojiSettingsSupports"),o=["flag","emoji"];function i(e){try{var t={supportTests:e,timestamp:(new Date).valueOf()};sessionStorage.setItem(s,JSON.stringify(t))}catch(e){}}function c(e,t,n){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);t=new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data);e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(n,0,0);const r=new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data);return t.every((e,t)=>e===r[t])}function p(e,t){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);var n=e.getImageData(16,16,1,1);for(let e=0;e<n.data.length;e++)if(0!==n.data[e])return!1;return!0}function u(e,t,n,r){switch(t){case"flag":return n(e,"\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f","\ud83c\udff3\ufe0f\u200b\u26a7\ufe0f")?!1:!n(e,"\ud83c\udde8\ud83c\uddf6","\ud83c\udde8\u200b\ud83c\uddf6")&&!n(e,"\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f","\ud83c\udff4\u200b\udb40\udc67\u200b\udb40\udc62\u200b\udb40\udc65\u200b\udb40\udc6e\u200b\udb40\udc67\u200b\udb40\udc7f");case"emoji":return!r(e,"\ud83e\u1fac8")}return!1}function f(e,t,n,r){let a;const s=(a="undefined"!=typeof WorkerGlobalScope&&self instanceof WorkerGlobalScope?new OffscreenCanvas(300,150):document.createElement("canvas")).getContext("2d",{willReadFrequently:!0}),o=(s.textBaseline="top",s.font="600 32px Arial",{});return e.forEach(e=>{o[e]=t(s,e,n,r)}),o}function a(e){var t=document.createElement("script");t.src=e,t.defer=!0,document.head.appendChild(t)}r.supports={everything:!0,everythingExceptFlag:!0},new Promise(t=>{let n=function(){try{var e=JSON.parse(sessionStorage.getItem(s));if("object"==typeof e&&"number"==typeof e.timestamp&&(new Date).valueOf()<e.timestamp+604800&&"object"==typeof e.supportTests)return e.supportTests}catch(e){}return null}();if(!n){if("undefined"!=typeof Worker&&"undefined"!=typeof OffscreenCanvas&&"undefined"!=typeof URL&&URL.createObjectURL&&"undefined"!=typeof Blob)try{var e="postMessage("+f.toString()+"("+[JSON.stringify(o),u.toString(),c.toString(),p.toString()].join(",")+"));",r=new Blob([e],{type:"text/javascript"});const a=new Worker(URL.createObjectURL(r),{name:"wpTestEmojiSupports"});return void(a.onmessage=e=>{i(n=e.data),a.terminate(),t(n)})}catch(e){}i(n=f(o,u,c,p))}t(n)}).then(e=>{for(const n in e)r.supports[n]=e[n],r.supports.everything=r.supports.everything&&r.supports[n],"flag"!==n&&(r.supports.everythingExceptFlag=r.supports.everythingExceptFlag&&r.supports[n]);var t;r.supports.everythingExceptFlag=r.supports.everythingExceptFlag&&!r.supports.flag,r.supports.everything||((t=r.source||{}).concatemoji?a(t.concatemoji):t.wpemoji&&t.twemoji&&(a(t.twemoji),a(t.wpemoji)))});
+//# sourceURL=https://kariera.agel.sk/wp-includes/js/wp-emoji-loader.min.js
+</script>
+
+</body>
+</html><!-- WP Fastest Cache file was created in 1.395 seconds, on 03.11.2026 @ 15:30 --><!-- via php -->

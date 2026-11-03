@@ -60,10 +60,20 @@ public final class CareerPageList {
 
     private static final Set<String> SCHEMES = Set.of("http", "https");
     private static final Set<String> LAYOUT_TAGS = Set.of("header", "nav", "footer");
+    /** Внутри них {@code header} и {@code footer} — карточки, а не сайта (§255). */
+    private static final Set<String> CARD_CONTAINERS = Set.of("article", "main");
     private static final Set<String> CARD_TAGS = Set.of("li", "tr", "article", "div", "section", "p", "td");
 
     private static final Pattern FILE = Pattern.compile("(?i)\\.(pdf|docx?|xlsx?|jpe?g|png|gif|zip)$");
     private static final Pattern PAGINATION_PATH = Pattern.compile("(?i)/(page|strana|stranka)/\\d+/?$");
+    /** Последняя часть адреса — сам список вакансий, а не вакансия (§255). */
+    private static final Pattern LIST_SLUG = Pattern.compile("(?i)ponuka-prace|ponuky-prace|volne-pozicie"
+            + "|volne-pracovne-(?:pozicie|miesta)|pracovne-(?:ponuky|pozicie|miesta)|kariera|careers?|jobs?|praca|pozicie"
+            + "|open-positions|vacancies|stellenangebote");
+
+    /** Номер страницы списка в адресе: {@code ?strana=2}, {@code &page=2}, {@code /page/2/} (§255). */
+    private static final Pattern PAGE_NUMBER = Pattern.compile(
+            "(?i)(?:[?&](?:strana|stranka|page|p|pg)=|/(?:page|strana|stranka)/)(\\d{1,4})(?=$|[&/#])");
 
     /** Текст ссылки — пункт меню или кнопка, а не название вакансии (без диакритики, нижний регистр). */
     private static final Pattern NOT_TITLE = Pattern.compile("^(kariera|career|careers|jobs?|praca|pozicie|"
@@ -71,7 +81,10 @@ public final class CareerPageList {
             + "o nas|kontakt|kontakty|domov|home|viac|viac info|viac informacii|detail|detaily|zobrazit|"
             + "zobrazit viac|citat viac|read more|more|apply|uchadzat sa|prihlasit sa|reagovat|dalej|spat|back|"
             + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|pracovne prilezitosti|\\d+|"
-            + "citat cely clanok|cely clanok|viac o nas|dozvediet sa viac|learn more|zistit viac)$");
+            + "citat cely clanok|cely clanok|viac o nas|dozvediet sa viac|learn more|zistit viac|"
+            + "(zobrazit|pozriet|otvorit|citat|zistit)( \\S+){0,3}|"
+            + "(show|view|read|see) (more|details?|job|position|offer)( \\S+){0,2}|"
+            + "(detail|detaily|viac)( \\S+){0,2} (ponuky|pozicie|pracovnej ponuky|informacii|info))$");
 
     /**
      * Родительский путь не списка вакансий (§252, эталон §247): события, статьи, новости, страницы «почему мы» на
@@ -79,7 +92,8 @@ public final class CareerPageList {
      * или пути их больше не делает списком.
      */
     private static final Pattern NOT_JOBS_PATH = Pattern.compile("(?i)event|podujat|clan(?:ok|ky)|blog|news|novink"
-            + "|aktualit|magazin|why-|culture|diversit|benefit|o-nas|about|pribeh|stories|tim/|team/");
+            + "|aktualit|magazin|why-|culture|diversit|benefit|o-nas|about|pribeh|stories|tim/|team/|spoznaj"
+            + "|zivot-v|life-at|faq|otazky");
 
     /** Название в карточке по порядку предпочтения: заголовок, затем элемент с «title» или «position» в классе (§252). */
     private static final List<String> TITLE_SELECTORS = List.of("h1, h2, h3, h4, h5, h6",
@@ -147,6 +161,12 @@ public final class CareerPageList {
                 continue;
             }
             String path = link.getPath().replaceAll("/+$", "");
+            // Та же страница с другим запросом — отбор, сортировка, «в избранное» (Dr.Max, §255), не вакансия; ссылка
+            // на сам список («…/ponuka-prace/» с главной кадрового сайта AGEL) — тоже.
+            if (path.equals(base.getPath().replaceAll("/+$", "")) && link.getQuery() != null
+                    || LIST_SLUG.matcher(path.substring(path.lastIndexOf('/') + 1)).matches()) {
+                continue;
+            }
             String parent = path.substring(0, path.lastIndexOf('/') + 1);
             // Ссылки вакансий в корне сайта — только на кадровом хосте (§252: ponukyprace.manuvia.com/<вакансия>/).
             if (parent.length() <= 1 && !(careerHost && ROOT_VACANCY.matcher(path).find()) || path.isEmpty()
@@ -224,12 +244,33 @@ public final class CareerPageList {
             URI link = uri(anchor.absUrl("href"));
             boolean next = "next".equalsIgnoreCase(anchor.attr("rel"))
                     || NEXT_TEXT.matcher(plain(anchor.text())).matches();
-            if (next && link != null && sameSite(base.getHost(), link.getHost())
+            if (next && link != null && !link.equals(base) && sameSite(base.getHost(), link.getHost())
+                    && !visited.contains(link.toString())) {
+                return Optional.of(link);
+            }
+        }
+        // Нумерация без «далее» (§255: Manuvia «1 2 … 16» — ?strana=2, Lugera — /page/2/): ссылка с номером следующей
+        // страницы, номер — в её адресе.
+        String following = String.valueOf(pageNumber(base) + 1);
+        for (Element anchor : page.select("a[href]")) {
+            URI link = uri(anchor.absUrl("href"));
+            if (link != null && following.equals(anchor.text().strip()) && sameSite(base.getHost(), link.getHost())
+                    && PAGE_NUMBER.matcher(link.toString()).results()
+                            .anyMatch(number -> following.equals(number.group(1)))
                     && !visited.contains(link.toString())) {
                 return Optional.of(link);
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * @param address адрес страницы списка
+     * @return номер страницы из адреса ({@code ?strana=3}, {@code ?page=3}, {@code /page/3/}); нет — 1
+     */
+    static int pageNumber(URI address) {
+        return PAGE_NUMBER.matcher(address.toString()).results().map(found -> Integer.parseInt(found.group(1)))
+                .findFirst().orElse(1);
     }
 
     /**
@@ -328,7 +369,7 @@ public final class CareerPageList {
         return sameSite(base.getHost(), link.getHost()) && link.getPath() != null && !link.getPath().isEmpty()
                 && !FILE.matcher(link.getPath()).find() && !link.toString().equals(withoutFragment(base))
                 && count >= 1 && count <= MAX_TITLE_WORDS && !NOT_TITLE.matcher(words).matches()
-                && anchor.parents().stream().noneMatch(parent -> LAYOUT_TAGS.contains(parent.tagName()));
+                && !inLayout(anchor);
     }
 
     /**
@@ -350,6 +391,22 @@ public final class CareerPageList {
         Element copy = card.clone();
         copy.select("a").remove();
         return copy.text().replaceAll("\\s+", " ").strip();
+    }
+
+    /**
+     * Ссылка в меню, шапке или подвале сайта (§255): {@code nav} — всегда; {@code header} и {@code footer} — только
+     * сайта, а не карточки: внутри {@code article} или {@code main} это шапка и подвал карточки вакансии (AGEL: название
+     * — в {@code <article><header>}).
+     */
+    private static boolean inLayout(Element anchor) {
+        for (Element parent : anchor.parents()) {
+            String tag = parent.tagName();
+            if ("nav".equals(tag) || LAYOUT_TAGS.contains(tag)
+                    && parent.parents().stream().noneMatch(outer -> CARD_CONTAINERS.contains(outer.tagName()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
