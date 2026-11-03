@@ -314,7 +314,8 @@ public final class CareerLinks {
 
     /**
      * Своего списка вакансий нет — он на площадке (§251; RAVEN, StVPS, Slovenské elektrárne): кадровая страница сама на
-     * площадке (переадресация на profesia.sk) или ведёт на страницу компании на площадке.
+     * площадке (переадресация на profesia.sk) или ведёт со своего содержимого (не из меню, шапки, подвала) на страницу
+     * компании на площадке.
      *
      * @param careerPage открытая кадровая страница без читаемого
      * @return {@code true} — вакансии компании — на площадке (берутся с портала и profesia.sk)
@@ -324,7 +325,10 @@ public final class CareerLinks {
         if (location != null && location.getHost() != null && JOB_PORTAL_HOSTS.matcher(lower(location.getHost())).find()) {
             return true;
         }
+        // Ссылка в меню, шапке или подвале — значок «мы на profesia.sk», а не замена списка (аудит §257).
         return careerPage.select("a[href]").stream()
+                .filter(anchor -> anchor.parents().stream()
+                        .noneMatch(parent -> Set.of("nav", "header", "footer").contains(parent.tagName())))
                 .anyMatch(anchor -> PORTAL_COMPANY_LINK.matcher(anchor.absUrl("href")).find());
     }
 

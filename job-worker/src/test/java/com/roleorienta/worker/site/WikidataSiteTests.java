@@ -145,6 +145,31 @@ class WikidataSiteTests {
     }
 
     /**
+     * Сайт из Wikidata на том же хосте, что и сайт из Common Crawl (аудит §257): строка переходит к Wikidata — компания
+     * больше не попадает в шаг снова и снова.
+     */
+    @Test
+    void wikidataTakesOverCommonCrawlSiteOnSameHost() {
+        jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) SELECT id, "
+                + "'127.0.0.1', 'http://127.0.0.1/kontakt', 'COMMON_CRAWL', 'REGISTRATION_NUMBER' FROM company "
+                + "WHERE registration_number = ?", OPENS);
+
+        handler.enqueue("first");
+        runQueuedTasks();
+
+        assertThat(sites()).contains(
+                OPENS + ":127.0.0.1:WIKIDATA:WIKIDATA:FOUND:http://www.wikidata.org/entity/Q" + OPENS);
+        int sites = jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class);
+
+        handler.enqueue("second");
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(sites);
+        assertThat(sites()).doesNotContain(OPENS + ":127.0.0.1:COMMON_CRAWL:REGISTRATION_NUMBER:FOUND:"
+                + "http://127.0.0.1/kontakt");
+    }
+
+    /**
      * Весь пакет к проверке (2 компании) — сайты с временным отказом: ничего не записано, следующее задание
      * цепочки не ставится — цепочка ждёт следующего дня, а не крутится вхолостую (аудит §54).
      */

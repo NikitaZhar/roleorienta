@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
+import com.roleorienta.worker.adapter.careerpage.CareerPageAdapter;
 import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.HttpResult;
@@ -61,7 +62,8 @@ import org.springframework.stereotype.Component;
  * <p>Полное чтение, давшее меньше половины открытых публикаций источника (при не меньше
  * {@value #MIN_OPEN_FOR_DROP} открытых), считается неполным ({@link PartialReason#COUNT_DROP}, §248): такой обвал —
  * обычно сбой разбора или ответ системы найма «пусто», а не уход вакансий; прежние вакансии не закрываются (принцип
- * владельца «лучше лишние, чем потерянные»).</p>
+ * владельца «лучше лишние, чем потерянные»). Третий обвал подряд ({@value #DROP_CONFIRMATIONS} прежних) — настоящее
+ * сокращение: чтение полное (§257). Фраза «вакансий нет» на своей кадровой странице — не обвал (§257).</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -79,6 +81,12 @@ public class ReadSourceHandler implements TaskHandler {
 
     /** С какого числа открытых публикаций источника обвал чтения считается сбоем (§248). */
     static final int MIN_OPEN_FOR_DROP = 5;
+
+    /**
+     * После стольких обвалов подряд следующий — настоящее сокращение или «вакансий нет», а не сбой (§257): чтение
+     * полное, пропавшие закрываются по общему правилу.
+     */
+    static final int DROP_CONFIRMATIONS = 2;
 
     private static final Logger LOG = LoggerFactory.getLogger(ReadSourceHandler.class);
 
@@ -144,7 +152,8 @@ public class ReadSourceHandler implements TaskHandler {
                 Set<String> unverified = new HashSet<>();
                 List<String> open = recorder.openExternalIds(source);
                 PartialReason reason = read.partialReason();
-                if (reason == null && countDropped(read.postings().size() + read.notRead().size(), open.size())) {
+                if (reason == null && countDropped(read.postings().size() + read.notRead().size(), open.size())
+                        && !saysNoVacancies(source, read) && !recorder.dropRepeated(source, DROP_CONFIRMATIONS)) {
                     LOG.warn("Source {}: complete read gave {} postings of {} open — treated as partial",
                             source.getId(), read.postings().size() + read.notRead().size(), open.size());
                     reason = PartialReason.COUNT_DROP;
@@ -166,6 +175,19 @@ public class ReadSourceHandler implements TaskHandler {
                 yield toOutcome(unavailable.failure());
             }
         };
+    }
+
+    /**
+     * Своя кадровая страница сказала «вакансий нет» (аудит §257): пустое полное чтение careerpage бывает только при
+     * этой фразе — иначе адаптер отдаёт {@link PartialReason#LIST_NOT_RECOGNIZED}; это не обвал.
+     *
+     * @param source источник
+     * @param read   полное чтение
+     * @return {@code true} — пустое полное чтение своей кадровой страницы
+     */
+    static boolean saysNoVacancies(Source source, SourceReadResult.Read read) {
+        return CareerPageAdapter.PROVIDER.equals(source.getProvider()) && read.postings().isEmpty()
+                && read.notRead().isEmpty();
     }
 
     /**

@@ -26,13 +26,17 @@ public class SiteScanRepository {
 
     /**
      * Сайт с тем же хостом, найденный другим способом (Wikidata, портал, адрес по названию), снимает отказ
-     * {@code REJECTED} правила Common Crawl (§86): подтверждение другим источником сильнее. Дописывается к
-     * {@code INSERT INTO company_site … ON CONFLICT (company_id, host)} вместо {@code DO NOTHING}.
+     * {@code REJECTED} правила Common Crawl (§86) и заменяет источник сайта из Common Crawl (§257: иначе компания с
+     * таким сайтом оставалась «к проверке» шагом Wikidata и «по названию» навсегда — они ищут компании без найденного
+     * сайта не из Common Crawl): подтверждение другим источником сильнее — источник, способ и доказательство
+     * становятся новыми; найденный сайт остаётся найденным.
+     * Дописывается к {@code INSERT INTO company_site … ON CONFLICT (company_id, host)} вместо {@code DO NOTHING}.
      */
     public static final String RESTORE_REJECTED = """
-            DO UPDATE SET status = EXCLUDED.status, source = EXCLUDED.source, proof = EXCLUDED.proof,
+            DO UPDATE SET status = CASE WHEN company_site.status = 'FOUND' THEN 'FOUND' ELSE EXCLUDED.status END,
+                source = EXCLUDED.source, proof = EXCLUDED.proof, evidence_url = EXCLUDED.evidence_url,
                 start_url = coalesce(EXCLUDED.start_url, company_site.start_url), checked_at = NULL
-            WHERE company_site.status = 'REJECTED'""";
+            WHERE company_site.status = 'REJECTED' OR company_site.source = 'COMMON_CRAWL'""";
 
     /**
      * Правило Common Crawl (решение владельца §75; стенограмма §86): сайт компании из Common Crawl засчитывается

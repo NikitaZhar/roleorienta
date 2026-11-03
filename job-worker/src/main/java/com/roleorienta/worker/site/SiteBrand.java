@@ -2,6 +2,7 @@ package com.roleorienta.worker.site;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -235,7 +236,8 @@ public final class SiteBrand {
 
     /**
      * Слова названия для брендов: {@link #asciiWords} без точек по краям и без доменов {@code .sk}; точка внутри слова —
-     * домен другой зоны (берётся имя до точки) или часть бренда (точка убирается: «Dr.Max» — {@code drmax}).
+     * домен другой зоны (берётся имя до точки), часть бренда (точка убирается: «Dr.Max» — {@code drmax}) или инициалы
+     * (часть из одной буквы: «J.S.B.» — слово пропускается).
      */
     private static List<String> nameWords(String companyName) {
         List<String> clean = new ArrayList<>();
@@ -245,10 +247,15 @@ public final class SiteBrand {
                 continue;
             }
             int dot = stripped.lastIndexOf('.');
-            if (dot >= 0) {
-                // «firma.com» — бренд «firma»; «dr.max» — бренд «drmax» (§250: иначе адресов нет совсем).
-                stripped = NAME_ZONES.contains(stripped.substring(dot + 1))
-                        ? stripped.substring(0, stripped.indexOf('.')) : stripped.replace(".", "");
+            if (dot >= 0 && NAME_ZONES.contains(stripped.substring(dot + 1))) {
+                // «firma.com» — бренд «firma».
+                stripped = stripped.substring(0, stripped.indexOf('.'));
+            } else if (dot >= 0 && Arrays.stream(stripped.split("\\.")).anyMatch(part -> part.length() < 2)) {
+                // Инициалы «J.S.B.» — не бренд «jsb» (аудит §257): слово пропускается.
+                continue;
+            } else if (dot >= 0) {
+                // «dr.max» — бренд «drmax» (§250: иначе адресов нет совсем).
+                stripped = stripped.replace(".", "");
             }
             if (!stripped.isEmpty()) {
                 clean.add(stripped);

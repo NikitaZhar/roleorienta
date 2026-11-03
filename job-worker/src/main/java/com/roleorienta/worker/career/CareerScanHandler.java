@@ -50,6 +50,7 @@ import org.springframework.stereotype.Component;
  *       и если переадресация не привела на главную).
  *       Нет ссылки, ссылка не кадровая или главная не открылась — пробные адреса: {@code /kariera},
  *       {@code /sk/kariera}, {@code /careers}, {@code /kariera-a-praca}, {@code /pre-uchadzacov},
+ *       {@code /pracovne-ponuky}, {@code /volne-pozicie}, {@code /ponuka-prace}, {@code /volne-pracovne-miesta} (§251),
  *       {@code kariera.|jobs.|careers.<домен>}, {@code jobs.|careers.<бренд>.com}, {@code www.<бренд>-jobs.sk}. На
  *       кадровой странице — те же ссылки на доски; нет и их — страница с разметкой {@code JobPosting} (она сама или
  *       одна из первых {@value CareerPages#VACANCY_CHECKS} ссылок вглубь) подключается как источник {@code jobposting}; нет и
@@ -63,6 +64,10 @@ import org.springframework.stereotype.Component;
  *       и ссылки, которые строит скрипт, переадресация скриптом; на построенной странице — те же доски и кадровая
  *       ссылка. Не нашлось и там — главная может быть страницей группы: сайты компаний группы по ссылкам с неё, если
  *       подтверждены как сайт этой компании, добавляются ей (§237).</li>
+ *   <li>Доски на площадках вакансий (profesia.sk, istp.sk, kariera.sk …, {@link CareerLinks#onJobPortal}) своим
+ *       каналом не считаются — вакансии площадок берутся с портала и profesia.sk (§251). Кадровая страница без
+ *       читаемого, сама на площадке или со ссылкой из своего содержимого на страницу компании на площадке, — итог
+ *       {@code PORTAL_ONLY} («своего списка нет», {@link CareerLinks#portalOnly}).</li>
  *   <li>Найденное подключается как источник и связывается с компанией: доска, на которую ссылается
  *       подтверждённый по IČO сайт компании, принадлежит ей (гейт принадлежности, бизнес-описание
  *       §4.2). Итог — с причиной; перепроверка через {@link CareerProperties#recheckAfter()}.</li>

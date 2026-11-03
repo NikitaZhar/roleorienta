@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import org.assertj.core.groups.Tuple;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
@@ -190,5 +191,44 @@ class CareerPageListTests {
                 """, "https://ponukyprace.manuvia.com/ponuky/");
         assertThat(CareerPageList.vacancies(manuvia)).extracting(Item::title)
                 .containsExactly("Operátor/ka výroby | Nitra", "Supervízor výroby");
+    }
+
+    /**
+     * Пограничные случаи аудита §257: раздел не вакансий — вся часть пути; вакансии — та же страница с запросом;
+     * «2 x» не счётчик; заголовок карточки — название, подвал записи — не вакансия; листание скриптом — только словом
+     * и не выключенное.
+     */
+    @Test
+    void auditEdgeCases() {
+        String jobs = "<a href=\"%s1\">Operátor výroby</a><a href=\"%s2\">Skladník</a>";
+        // Раздел не вакансий — вся последняя часть пути, а не подстрока (§257).
+        assertThat(CareerPageList.vacancies(Jsoup.parse(jobs.formatted("/o-nas/kariera/p-", "/o-nas/kariera/p-"),
+                "https://www.firma.sk/o-nas/kariera/"))).hasSize(2);
+        assertThat(CareerPageList.vacancies(page(jobs.formatted("/kariera/agriculture/j-", "/kariera/agriculture/j-"))))
+                .hasSize(2);
+        assertThat(CareerPageList.vacancies(page(jobs.formatted("/kariera/events/e-", "/kariera/events/e-")))).isEmpty();
+        // Вакансии — та же страница с запросом.
+        assertThat(CareerPageList.vacancies(Jsoup.parse(jobs.formatted("/kariera?id=", "/kariera?id="),
+                "https://www.firma.sk/kariera"))).extracting(Item::url)
+                .containsExactly("https://www.firma.sk/kariera?id=1", "https://www.firma.sk/kariera?id=2");
+        // «2 x Operátor» — число вакансий в названии, а не счётчик.
+        assertThat(CareerPageList.vacancies(page("<a href=\"/kariera/1\">2 x Operátor</a><a href=\"/kariera/2\">Zvárač</a>")))
+                .extracting(Item::title).containsExactly("2 x Operátor", "Zvárač");
+        // Заголовок карточки — название, не место; подвал записи — не вакансия.
+        Document cards = page("""
+                <article><h3>Mechanik</h3><p>Nitra</p><a href="/kariera/d-1">Detail</a>
+                <footer><a href="/kariera/stitok/vyroba">Výroba</a></footer></article>
+                <article><h3>Zvárač</h3><p>Trnava</p><a href="/kariera/d-2">Detail</a>
+                <footer><a href="/kariera/stitok/servis">Servis</a></footer></article>
+                """);
+        assertThat(CareerPageList.vacancies(cards)).extracting(Item::title, Item::card)
+                .containsExactly(Tuple.tuple("Mechanik", "Nitra"),
+                        Tuple.tuple("Zvárač", "Trnava"));
+        // Стрелка карусели, выключенная «Ďalej» и вкладка без href — не листание скриптом.
+        assertThat(CareerPageList.scriptNext(page("<a class=\"slick-next\">›</a>"))).isFalse();
+        assertThat(CareerPageList.scriptNext(page("<ul class=\"pagination\"><li class=\"disabled\"><a href=\"#\">Ďalej</a>"
+                + "</li></ul>"))).isFalse();
+        assertThat(CareerPageList.scriptNext(page("<a>Ďalej</a>"))).isFalse();
+        assertThat(CareerPageList.scriptNext(page("<div class=\"pager\"><a>Ďalej</a></div>"))).isTrue();
     }
 }

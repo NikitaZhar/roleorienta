@@ -185,6 +185,12 @@ class MetricsRepositoryTests {
         jdbcTemplate.update("UPDATE company_site SET check_result = 'PORTAL_ONLY' WHERE company_id = ?", noPage);
         repository.refreshCoverage();
         assertThat(coverage(noPage)).isEqualTo("1 0 0 NO_OWN_PAGE");
+
+        // Другой сайт компании с найденной страницей важнее ссылки на площадку (аудит §257).
+        site(noPage, "druhy-qq.sk");
+        jdbcTemplate.update("UPDATE company_site SET check_result = 'FORMAT_UNSUPPORTED' WHERE host = 'druhy-qq.sk'");
+        repository.refreshCoverage();
+        assertThat(coverage(noPage)).isEqualTo("1 0 0 FORMAT_UNSUPPORTED");
     }
 
     private long companySource(String provider, String board, long companyId) {

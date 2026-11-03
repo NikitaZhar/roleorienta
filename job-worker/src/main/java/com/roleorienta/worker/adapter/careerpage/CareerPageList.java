@@ -24,10 +24,16 @@ import org.jsoup.nodes.Element;
  *
  * <ul>
  *   <li>Вакансия — ссылка того же регистрируемого домена ({@code kariera.firma.sk} у {@code www.firma.sk}), вне
- *       {@code header}, {@code nav}, {@code footer}; не файл ({@code .pdf} …), не сама страница; текст — от 1 до
+ *       {@code nav}, {@code footer} и шапки сайта (шапка {@code header} внутри {@code article}/{@code main} — шапка
+ *       карточки, §255); не файл ({@code .pdf} …), не сама страница; название ({@link #title(Element)}) — от 1 до
  *       {@value #MAX_TITLE_WORDS} слов и не пункт меню ({@link #NOT_TITLE}).</li>
+ *   <li>Название — заголовок внутри ссылки ({@link #TITLE_SELECTORS}); у кнопки «подробнее» — заголовок её карточки;
+ *       иначе текст ссылки без номера карточки впереди ({@link #LEADING_COUNTER}; «2 x Operátor» не трогается) (§252).</li>
  *   <li>Ссылки группируются по родительскому пути ({@code /kariera/casnik} → {@code /kariera/}); корень и пути
- *       страниц списка ({@code /page/2/}) не в счёт. Список — самая большая группа с кадровым словом
+ *       страниц списка ({@code /page/2/}) не в счёт; вакансии корня сайта — только на кадровом хосте с номером в адресе
+ *       ({@link #ROOT_VACANCY}); ссылки той же страницы с запросом ({@code /kariera?id=1}) — группа самой страницы, а при
+ *       страницах вакансий под ней — отбор и сортировка (§255, §257); группа раздела не вакансий ({@link #NOT_JOBS_SEGMENT}:
+ *       события, статьи, «почему мы») не в счёт. Список — самая большая группа с кадровым словом
  *       ({@link #CAREER_PATH}) в родительском пути или в хосте ссылок ({@code careers.firma.com}; §183: без этого
  *       условия самой большой группой часто оказывались товары, меню и новости сайта; §186: только путь терял
  *       отдельные кадровые сайты).</li>
@@ -35,9 +41,11 @@ import org.jsoup.nodes.Element;
  *       вакансий хотя бы одна открывшаяся — с признаком текста вакансии ({@link #JOB_TEXT}) в основном тексте
  *       ({@code main}, иначе {@code body} без {@code header}, {@code nav}, {@code footer}). Проверку делают те, кто
  *       открывает страницы: чтение источника и проверка сайта.</li>
- *   <li>Место — текст карточки вакансии без текста ссылок (название, кнопки): самый большой родитель ссылки, в
- *       котором нет других вакансий и не больше {@value #MAX_CARD} символов.</li>
- *   <li>Следующая страница списка — {@code rel="next"} или ссылка «Ďalej», «Ďalšia», «Next», «»».</li>
+ *   <li>Место — текст карточки вакансии без текста ссылок и заголовка (название, кнопки): самый большой родитель
+ *       ссылки, в котором нет других вакансий и не больше {@value #MAX_CARD} символов.</li>
+ *   <li>Следующая страница списка — {@code rel="next"}, ссылка «Ďalej», «Ďalšia», «Next», «»» или номер следующей
+ *       страницы (§255). «Далее» словом, ведущая на ту же страницу, якорь или скрипт, — листает скрипт
+ *       ({@link #scriptNext}); стрелки каруселей и выключенные ссылки — нет (§257).</li>
  *   <li>Фраза «вакансий нет» ({@link #NO_VACANCIES}) — пустой список полный.</li>
  * </ul>
  */
@@ -87,13 +95,14 @@ public final class CareerPageList {
             + "(detail|detaily|viac)( \\S+){0,2} (ponuky|pozicie|pracovnej ponuky|informacii|info))$");
 
     /**
-     * Родительский путь не списка вакансий (§252, эталон §247): события, статьи, новости, страницы «почему мы» на
-     * кадровом сайте (Kaufland {@code /events2/}, T-Systems {@code /careers/why-t-systems/}) — кадровое слово в хосте
-     * или пути их больше не делает списком.
+     * Последняя часть родительского пути — раздел не вакансий (§252, эталон §247): события, статьи, новости, страницы
+     * «почему мы» на кадровом сайте (Kaufland {@code /events2/}, T-Systems {@code /careers/why-t-systems/}) — кадровое
+     * слово в хосте их больше не делает списком. Сравнивается вся часть пути, а не подстрока (аудит §257:
+     * {@code /o-nas/kariera/}, {@code /kariera/agriculture/} — списки).
      */
-    private static final Pattern NOT_JOBS_PATH = Pattern.compile("(?i)event|podujat|clan(?:ok|ky)|blog|news|novink"
-            + "|aktualit|magazin|why-|culture|diversit|benefit|o-nas|about|pribeh|stories|tim/|team/|spoznaj"
-            + "|zivot-v|life-at|faq|otazky");
+    private static final Pattern NOT_JOBS_SEGMENT = Pattern.compile("(?i)events?\\d*|podujatia|clanky?|clanok|blog"
+            + "|news|novinky|aktuality|magazin|why-.*|culture|diversity|benefity?|benefits|o-nas|about(?:-us)?"
+            + "|pribehy?|stories|tim|team|spoznaj-.*|zivot-v.*|life-at.*|faq|otazky|casto-kladene-otazky");
 
     /** Название в карточке по порядку предпочтения: заголовок, затем элемент с «title» или «position» в классе (§252). */
     private static final List<String> TITLE_SELECTORS = List.of("h1, h2, h3, h4, h5, h6",
@@ -103,7 +112,10 @@ public final class CareerPageList {
     private static final Pattern ROOT_VACANCY = Pattern.compile("\\d{3,}");
 
     /** Номер карточки перед названием («10 Poradca …», Tatra banka, §252). */
-    private static final Pattern LEADING_COUNTER = Pattern.compile("^\\d{1,3}\\s+(?=\\p{L})");
+    private static final Pattern LEADING_COUNTER = Pattern.compile("^\\d{1,3}\\s+(?![xX×]\\s)(?=\\p{L})");
+
+    /** Родитель кнопки длиннее — уже не карточка: заголовок вакансии в нем не ищется (§252). */
+    private static final int MAX_TITLE_CARD = 2 * 400;
 
     /**
      * Кадровое слово в родительском пути или хосте: группа ссылок под ним может быть списком (§183: «karriere» —
@@ -119,6 +131,10 @@ public final class CareerPageList {
     private static final Pattern JOB_TEXT = Pattern.compile("poziadavk|napln prace|ponukame|mzd[ay]|nastup|"
             + "pracovn[yeo] pomer|uvazok|zivotopis|requirement|responsibilit|qualification|we offer|salary|"
             + "your profile|job description|pozadavk|nabizime|anforderung|aufgaben|wir bieten|ihr profil");
+
+    /** «Далее» словом, а не стрелкой: стрелки «›» бывают у каруселей (аудит §257) — для {@link #scriptNext}. */
+    private static final Pattern NEXT_WORD = Pattern.compile(
+            "^(dalej|dalsia|dalsie|next|dalsia strana|nasledujuca( strana)?|next page)\\s*(»|›|>)?$");
 
     private static final Pattern NEXT_TEXT = Pattern.compile(
             "^(dalej|dalsia|dalsie|next|»|›|>|dalsia strana|nasledujuca( strana)?|next page)\\s*(»|›|>)?$");
@@ -137,7 +153,7 @@ public final class CareerPageList {
      * Вакансия списка.
      *
      * @param url   адрес страницы вакансии без якоря
-     * @param title название — текст ссылки
+     * @param title название ({@link #title(Element)}: заголовок в ссылке или в карточке, иначе текст ссылки)
      * @param card  текст карточки без текста ссылок (место и прочее); пусто — нет
      */
     public record Item(String url, String title, String card) {
@@ -154,6 +170,12 @@ public final class CareerPageList {
         }
         Map<String, Map<String, Element>> groups = new LinkedHashMap<>();
         boolean careerHost = CAREER_PATH.matcher(base.getHost()).find();
+        String basePath = base.getPath().replaceAll("/+$", "");
+        // Ссылки отбора на саму страницу отбрасываются, только когда у списка есть страницы вакансий под ней (Dr.Max:
+        // …/volne-pozicie/detail-kariery?id=); иначе вакансии и есть ссылки с запросом ({@code /kariera?id=1}, аудит §257).
+        boolean detailPages = page.select("a[href]").stream().map(anchor -> uri(anchor.absUrl("href")))
+                .anyMatch(link -> link != null && sameSite(base.getHost(), link.getHost())
+                        && link.getPath() != null && link.getPath().startsWith(basePath + "/"));
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
             String title = title(anchor);
@@ -163,14 +185,16 @@ public final class CareerPageList {
             String path = link.getPath().replaceAll("/+$", "");
             // Та же страница с другим запросом — отбор, сортировка, «в избранное» (Dr.Max, §255), не вакансия; ссылка
             // на сам список («…/ponuka-prace/» с главной кадрового сайта AGEL) — тоже.
-            if (path.equals(base.getPath().replaceAll("/+$", "")) && link.getQuery() != null
-                    || LIST_SLUG.matcher(path.substring(path.lastIndexOf('/') + 1)).matches()) {
+            boolean samePage = path.equals(basePath) && link.getQuery() != null;
+            if (samePage && detailPages
+                    || !samePage && LIST_SLUG.matcher(path.substring(path.lastIndexOf('/') + 1)).matches()) {
                 continue;
             }
-            String parent = path.substring(0, path.lastIndexOf('/') + 1);
+            // Вакансии — сама страница с запросом ({@code /kariera?id=1}): группа — путь страницы, а не корень сайта.
+            String parent = samePage ? path + "/" : path.substring(0, path.lastIndexOf('/') + 1);
             // Ссылки вакансий в корне сайта — только на кадровом хосте (§252: ponukyprace.manuvia.com/<вакансия>/).
             if (parent.length() <= 1 && !(careerHost && ROOT_VACANCY.matcher(path).find()) || path.isEmpty()
-                    || PAGINATION_PATH.matcher(link.getPath()).find() || NOT_JOBS_PATH.matcher(parent).find()) {
+                    || PAGINATION_PATH.matcher(link.getPath()).find() || notJobs(parent)) {
                 continue;
             }
             Map<String, Element> group = groups.computeIfAbsent(parent, key -> new LinkedHashMap<>());
@@ -274,6 +298,15 @@ public final class CareerPageList {
     }
 
     /**
+     * @param parent родительский путь группы ссылок
+     * @return {@code true} — последняя часть пути — раздел не вакансий ({@link #NOT_JOBS_SEGMENT})
+     */
+    private static boolean notJobs(String parent) {
+        String trimmed = parent.replaceAll("/+$", "");
+        return NOT_JOBS_SEGMENT.matcher(trimmed.substring(trimmed.lastIndexOf('/') + 1)).matches();
+    }
+
+    /**
      * Ссылка «следующая страница», которую листает скрипт (§252: Tatra banka — «Ďalšia strana» с {@code href="#"}): по
      * ней не перейти, список прочитан не весь.
      *
@@ -282,16 +315,34 @@ public final class CareerPageList {
      */
     public static boolean scriptNext(Document page) {
         return page.select("a").stream()
-                .filter(anchor -> NEXT_TEXT.matcher(plain(anchor.text())).matches())
-                .filter(anchor -> !anchor.hasAttr("disabled") && !"true".equals(anchor.attr("aria-disabled"))
-                        && !anchor.className().toLowerCase(Locale.ROOT).contains("disabled"))
+                .filter(anchor -> NEXT_WORD.matcher(plain(anchor.text())).matches())
+                .filter(anchor -> !disabled(anchor) && !disabled(anchor.parent()))
                 .anyMatch(anchor -> {
                     String href = anchor.attr("href").strip().toLowerCase(Locale.ROOT);
                     URI target = uri(anchor.absUrl("href"));
                     URI self = uri(page.location());
-                    return href.isEmpty() || href.startsWith("#") || href.startsWith("javascript:")
-                            || target != null && target.equals(self);
+                    // Без href — только кнопка скрипта (onclick или блок листания), не вкладка и не аккордеон (аудит §257).
+                    return !anchor.hasAttr("href") && (anchor.hasAttr("onclick") || inPaging(anchor))
+                            || anchor.hasAttr("href") && (href.isEmpty() || href.startsWith("#")
+                                    || href.startsWith("javascript:") || target != null && target.equals(self));
                 });
+    }
+
+    /**
+     * @return {@code true} — ссылка в блоке листания: у родителя или деда класс с «pag» (pagination, pager, paging)
+     */
+    private static boolean inPaging(Element anchor) {
+        return anchor.parents().stream().limit(2)
+                .anyMatch(parent -> parent.className().toLowerCase(Locale.ROOT).contains("pag"));
+    }
+
+    /**
+     * @return {@code true} — элемент выключен: атрибут {@code disabled}, {@code aria-disabled="true"} или класс с
+     *         «disabled» (Bootstrap ставит его на {@code <li>} вокруг ссылки последней страницы, аудит §257)
+     */
+    private static boolean disabled(Element element) {
+        return element != null && (element.hasAttr("disabled") || "true".equals(element.attr("aria-disabled"))
+                || element.className().toLowerCase(Locale.ROOT).contains("disabled"));
     }
 
     /**
@@ -314,7 +365,7 @@ public final class CareerPageList {
     }
 
     /**
-     * Название вакансии (§252, эталон §247): заголовок внутри ссылки ({@link #TITLE_SELECTOR}) — ссылка охватывает всю
+     * Название вакансии (§252, эталон §247): заголовок внутри ссылки ({@link #TITLE_SELECTORS}) — ссылка охватывает всю
      * карточку (Penta: «… Nemocnice Penta Hospitals …», BENU: «… 1600 EUR / Mesiac»); текст ссылки — кнопка
      * («viac info», «Viac informácií») — заголовок карточки вокруг ссылки (XENEX, Manuvia); иначе текст ссылки. Номер
      * карточки впереди отрезается.
@@ -331,7 +382,7 @@ public final class CareerPageList {
             for (int level = 0; level < CARD_LEVELS && around.parent() != null; level++) {
                 around = around.parent();
                 // Родитель с такой же кнопкой другой вакансии — уже не карточка, а список.
-                if (around.text().length() > MAX_CARD * 2 || around.select("a[href]").stream()
+                if (around.text().length() > MAX_TITLE_CARD || around.select("a[href]").stream()
                         .anyMatch(other -> !other.attr("href").equals(href) && other.text().equals(text))) {
                     break;
                 }
@@ -390,18 +441,20 @@ public final class CareerPageList {
         }
         Element copy = card.clone();
         copy.select("a").remove();
+        // Заголовок карточки — название, а не место (аудит §257: карточка «h3 + кнопка Detail»).
+        copy.select(TITLE_SELECTORS.get(0)).remove();
         return copy.text().replaceAll("\\s+", " ").strip();
     }
 
     /**
-     * Ссылка в меню, шапке или подвале сайта (§255): {@code nav} — всегда; {@code header} и {@code footer} — только
-     * сайта, а не карточки: внутри {@code article} или {@code main} это шапка и подвал карточки вакансии (AGEL: название
-     * — в {@code <article><header>}).
+     * Ссылка в меню, шапке или подвале сайта (§255): {@code nav} и {@code footer} — всегда (подвал записи WordPress в
+     * {@code article} — метки и рубрики, аудит §257); {@code header} — только сайта: внутри {@code article} или
+     * {@code main} это шапка карточки вакансии (AGEL: название — в {@code <article><header>}).
      */
     private static boolean inLayout(Element anchor) {
         for (Element parent : anchor.parents()) {
             String tag = parent.tagName();
-            if ("nav".equals(tag) || LAYOUT_TAGS.contains(tag)
+            if ("nav".equals(tag) || "footer".equals(tag) || "header".equals(tag)
                     && parent.parents().stream().noneMatch(outer -> CARD_CONTAINERS.contains(outer.tagName()))) {
                 return true;
             }

@@ -37,6 +37,17 @@ public class CrawlLog {
     }
 
     /**
+     * @param sourceId источник
+     * @param reads    сколько последних обходов смотреть
+     * @return {@code true} — все {@code reads} последних обходов источника неполные из-за обвала числа публикаций
+     *         ({@link PartialReason#COUNT_DROP}, §257)
+     */
+    @Transactional(readOnly = true)
+    public boolean dropRepeated(long sourceId, int reads) {
+        return runs.countDropsAmongLast(sourceId, reads) == reads;
+    }
+
+    /**
      * Сохраняет обход с итогом и пересчитывает доступность его источника: ответ списка — доступен;
      * отказ — серия отказов (см. {@link Source#markFailure}).
      *

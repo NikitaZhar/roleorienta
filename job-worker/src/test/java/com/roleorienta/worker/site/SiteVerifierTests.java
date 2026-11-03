@@ -234,6 +234,8 @@ class SiteVerifierTests {
         assertThat(SiteBrand.keys(name)).startsWith("drmax");
         assertThat(SiteBrand.addresses(name)).startsWith(new SiteAddress("www.drmax.sk", ""));
         assertThat(SiteBrand.keys("Firma.com s.r.o.")).containsExactly("firma");
+        // Инициалы — не бренд (аудит §257): «J.S.B. Trans» — только «trans».
+        assertThat(SiteBrand.keys("J.S.B. Trans s.r.o.")).containsExactly("trans");
         org.jsoup.nodes.Document page = org.jsoup.Jsoup.parse(html("Lekáreň Dr.Max", "<p>Lekáreň Dr.Max. " + FILLER
                 + "</p>"), "https://www.drmax.sk/");
         assertThat(SiteBrand.confirmed("www.drmax.sk", page, page.outerHtml(), name)).isTrue();

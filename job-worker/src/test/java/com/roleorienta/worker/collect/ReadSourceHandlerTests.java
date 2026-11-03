@@ -221,6 +221,28 @@ class ReadSourceHandlerTests {
     }
 
     /**
+     * Обвал держится (§257): два прежних чтения — тоже обвал, значит вакансий правда меньше («вакансий нет», сокращение)
+     * — чтение полное, иначе прежние не закрылись бы никогда.
+     */
+    @Test
+    void repeatedCountDropIsCompleteRead() {
+        Source source = mock(Source.class);
+        when(source.getId()).thenReturn(1L);
+        when(source.getProvider()).thenReturn("workday");
+        when(source.getBoard()).thenReturn(BOARD);
+        when(adapter.read(BOARD, null)).thenReturn(SourceReadResult.Read.full(List.of(), List.of()));
+        when(recorder.openExternalIds(source)).thenReturn(List.of("a", "b", "c", "d", "e", "f"));
+        when(recorder.externalIdsWithContent(source)).thenReturn(Set.of());
+        when(recorder.dropRepeated(source, ReadSourceHandler.DROP_CONFIRMATIONS)).thenReturn(true);
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        ArgumentCaptor<CrawlRun> run = ArgumentCaptor.forClass(CrawlRun.class);
+        verify(recorder).record(run.capture(), eq(List.of()), eq(Set.of()), eq(Set.of()), eq(Map.of()));
+        assertThat(run.getValue().isComplete()).isTrue();
+    }
+
+    /**
      * Граница обвала (§248): меньше 5 открытых — не обвал (малый источник); половина и больше — не обвал; меньше
      * половины — обвал, и пустой ответ при открытых — тоже.
      */

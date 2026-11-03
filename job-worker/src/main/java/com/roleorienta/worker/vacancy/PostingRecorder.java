@@ -203,6 +203,19 @@ public class PostingRecorder {
     }
 
     /**
+     * Обвал числа публикаций подтверждён (§257): столько последних чтений источника подряд уже были неполными из-за
+     * обвала ({@code COUNT_DROP}) — новый обвал не сбой, а настоящее сокращение или «вакансий нет»: чтение полное.
+     *
+     * @param source источник
+     * @param reads  сколько обвалов подряд подтверждают его
+     * @return {@code true} — последние {@code reads} чтений — обвалы
+     */
+    @Transactional(readOnly = true)
+    public boolean dropRepeated(Source source, int reads) {
+        return crawlLog.dropRepeated(source.getId(), reads);
+    }
+
+    /**
      * @param source источник
      * @return внешние id незакрытых публикаций источника, дольше не подтверждённые — первыми (§218): проверка пропавших
      *         за чтение ограничена числом и так доходит до каждой

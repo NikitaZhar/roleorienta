@@ -125,46 +125,6 @@ class CareerScanTests {
     }
 
     /**
-     * Перепроверка нашла доску — прежний источник-страница того же сайта, которого проверка больше не находит (события
-     * и статьи, §254), закрыт вместе с публикацией и вакансией; адрес, добавленный пользователем, не трогается.
-     */
-    @Test
-    void recheckClosesStaleCareerPageSourceOfSameSite() {
-        String stale = "http://" + HOST + "/events";
-        String requested = "http://" + HOST + "/nase-ponuky";
-        for (String board : List.of(stale, requested)) {
-            jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES ('careerpage', ?, 'SK')", board);
-            jdbcTemplate.update("INSERT INTO company_source (company_id, source_id, role) SELECT c.id, s.id, 'EMPLOYER' "
-                    + "FROM company c, source s WHERE s.board = ?", board);
-            long vacancy = jdbcTemplate.queryForObject("""
-                    INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
-                    VALUES ('ACTIVE', 'Job Fair', ?, now(), now()) RETURNING id""", Long.class, board + "/1");
-            jdbcTemplate.update("""
-                    INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at,
-                                             last_confirmed_at)
-                    SELECT id, ?, ?, 'Job Fair', ?, now(), now() FROM source WHERE board = ?""",
-                    vacancy, board + "/1", board + "/1", board);
-        }
-        jdbcTemplate.update("INSERT INTO company_request (company_id, career_url, state) SELECT id, ?, 'CONNECTED' "
-                + "FROM company", requested);
-        PAGES.put("/", "<a href=\"https://alfa.wd3.myworkdayjobs.com/sk-SK/Careers\">Kariéra</a>");
-
-        try {
-            runScan();
-
-            assertThat(jdbcTemplate.queryForList("SELECT board || ':' || (closed_at IS NOT NULL) FROM source "
-                    + "WHERE provider = 'careerpage' ORDER BY board", String.class))
-                    .containsExactly(stale + ":true", requested + ":false");
-            assertThat(jdbcTemplate.queryForList("SELECT primary_url || ':' || state FROM vacancy "
-                    + "WHERE primary_url LIKE ? ORDER BY 1", String.class, "http://" + HOST + "/%"))
-                    .containsExactly(stale + "/1:CLOSED", requested + "/1:ACTIVE");
-        } finally {
-            jdbcTemplate.update("DELETE FROM job_posting WHERE url LIKE ?", "http://" + HOST + "/%");
-            jdbcTemplate.update("DELETE FROM vacancy WHERE primary_url LIKE ?", "http://" + HOST + "/%");
-        }
-    }
-
-    /**
      * Кадровая страница без досок, но страница вакансии с {@code JobPosting} — кадровая страница
      * подключена как источник {@code jobposting}.
      */

@@ -393,5 +393,8 @@ class CareerLinksTests {
                 "https://www.profesia.sk/praca/slovenske-elektrarne/C5070"))).isTrue();
         assertThat(CareerLinks.portalOnly(Jsoup.parse("<a href=\"https://www.profesia.sk/\">Profesia</a>",
                 "https://www.acme.sk/kariera"))).isFalse();
+        // Значок площадки в подвале — не замена своего списка (аудит §257).
+        assertThat(CareerLinks.portalOnly(Jsoup.parse("<p>Kariéra</p><footer><a href=\"https://www.profesia.sk/praca/acme/"
+                + "C123\">Profesia</a></footer>", "https://www.acme.sk/kariera"))).isFalse();
     }
 }
