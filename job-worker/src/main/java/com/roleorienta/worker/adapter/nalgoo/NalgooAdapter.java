@@ -13,6 +13,11 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +36,9 @@ import org.springframework.stereotype.Component;
  *       общий разбор мест). Фильтра страны нет: доска — одного работодателя.</li>
  *   <li>Текст — {@code GET <api>/organizations/<организация>/jobs/<id>}, поле {@code content} (HTML).</li>
  *   <li>Отказ или неразобранный ответ — источник недоступен (чтение одним запросом).</li>
+ *   <li>Имя организации в API бывает не равно поддомену сайта ({@code danucem.nalgoo-jobs.com} — организация
+ *       {@code danucem-slovensko}, §253): пустой список — имя берётся со страницы сайта ({@code "organization"}) и
+ *       список читается ещё раз; найденное имя помнится до перезапуска.</li>
  * </ul>
  */
 @Component
@@ -43,6 +51,12 @@ public class NalgooAdapter implements SourceAdapter {
     private static final Pattern JOB_ID = Pattern.compile("\\d{1,12}");
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger LOG = LoggerFactory.getLogger(NalgooAdapter.class);
+    /** Имя организации в данных сайта Nalgoo (кавычки бывают экранированы), как в {@code CareerLinks}. */
+    private static final Pattern ORGANIZATION = Pattern.compile(
+            "\\\\?\"organization\\\\?\"\\s*:\\s*\\\\?\"([a-z0-9-]+)", Pattern.CASE_INSENSITIVE);
+
+    /** Доска → имя организации в API, когда они различаются (§253). */
+    private final Map<String, String> organizations = new ConcurrentHashMap<>();
 
     private final ExternalHttpClient httpClient;
     private final NalgooProperties properties;
@@ -67,7 +81,21 @@ public class NalgooAdapter implements SourceAdapter {
             return new SourceReadResult.Unavailable(new HttpResult.PermanentFailure(
                     HttpResult.Kind.BLOCKED, "Not a Nalgoo organization: " + board));
         }
-        HttpResult result = httpClient.get(URI.create(jobsUrl(board)));
+        SourceReadResult read = readOrganization(organizations.getOrDefault(board, board));
+        if (read instanceof SourceReadResult.Read found && found.postings().isEmpty()
+                && !organizations.containsKey(board)) {
+            Optional<String> organization = siteOrganization(board);
+            if (organization.isPresent() && !organization.get().equals(board)) {
+                LOG.info("Nalgoo board {}: organization in API is {}", board, organization.get());
+                organizations.put(board, organization.get());
+                return readOrganization(organization.get());
+            }
+        }
+        return read;
+    }
+
+    private SourceReadResult readOrganization(String organization) {
+        HttpResult result = httpClient.get(URI.create(jobsUrl(organization)));
         if (!(result instanceof HttpResult.Success success)) {
             return new SourceReadResult.Unavailable(result);
         }
@@ -100,7 +128,8 @@ public class NalgooAdapter implements SourceAdapter {
         if (!BOARD.matcher(board).matches() || !JOB_ID.matcher(externalId).matches()) {
             return null;
         }
-        if (!(httpClient.get(URI.create(jobsUrl(board) + "/" + externalId)) instanceof HttpResult.Success success)) {
+        if (!(httpClient.get(URI.create(jobsUrl(organizations.getOrDefault(board, board)) + "/" + externalId))
+                instanceof HttpResult.Success success)) {
             return null;
         }
         try {
@@ -111,6 +140,20 @@ public class NalgooAdapter implements SourceAdapter {
             LOG.warn("Nalgoo posting {} of {}: malformed answer", externalId, board);
             return null;
         }
+    }
+
+    /**
+     * @param board поддомен сайта Nalgoo
+     * @return имя организации из данных страницы {@code https://<board>.nalgoo-jobs.com/}; пусто — не открылась или
+     *         имени нет
+     */
+    private Optional<String> siteOrganization(String board) {
+        if (!(httpClient.get(URI.create(properties.siteUrl().replace("{board}", board)))
+                instanceof HttpResult.Success site)) {
+            return Optional.empty();
+        }
+        Matcher organization = ORGANIZATION.matcher(site.body());
+        return organization.find() ? Optional.of(organization.group(1).toLowerCase(Locale.ROOT)) : Optional.empty();
     }
 
     private String jobsUrl(String board) {

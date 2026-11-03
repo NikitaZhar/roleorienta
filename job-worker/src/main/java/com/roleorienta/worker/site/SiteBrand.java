@@ -42,6 +42,10 @@ public final class SiteBrand {
     private static final Pattern BRAND = Pattern.compile("[a-z0-9-]+");
     private static final Pattern PAIR = Pattern.compile("\\s*([A-Za-z]+)\\s*&\\s*([A-Za-z]+)");
     private static final int NAME_DOMAIN_MIN = 4;
+    /** Зоны: слово названия с точкой и такой зоной — домен ({@code firma.com}), иначе точка — часть бренда. */
+    private static final Set<String> NAME_ZONES = Set.of("sk", "com", "cz", "eu", "net", "org", "info", "biz");
+    /** Точка между буквами: «Dr.Max» в тексте страницы — «DrMax» (§250). */
+    private static final Pattern INNER_DOT = Pattern.compile("(?<=\\p{L})\\.(?=\\p{L})");
     private static final String WWW = "www.";
     private static final int RAW_SCAN_LIMIT = 300_000;
     private static final Pattern LEGAL_FORMS = Pattern.compile(
@@ -60,7 +64,8 @@ public final class SiteBrand {
             + "materska sukromna senior seniori centrum technicka technicke euro eko agro stav stavby servis sluzby "
             + "domov nemocnica klub group trade invest energy auto transport logistics logistika consulting system "
             + "systems tech media plus slovak slovensko slovakia sk sr union global service services company "
-            + "spolocnost druzstvo podnik farma market obchod real reality smart green best top super slovenske")
+            + "spolocnost druzstvo podnik farma market obchod real reality smart green best top super slovenske "
+            + "holding stores")
             .split(" "));
 
     private SiteBrand() {
@@ -82,20 +87,24 @@ public final class SiteBrand {
         if (!plainHost.endsWith(".sk") && !slovakSignal(page.location(), text)) {
             return false;
         }
+        String joined = undotted(text);
         List<String> inText = new ArrayList<>();
         for (String brand : keys(companyName)) {
-            if (matchesDomain(brand, plainHost) && word(brand).matcher(text).find()) {
+            if (matchesDomain(brand, plainHost)
+                    && (word(brand).matcher(text).find() || word(brand).matcher(joined).find())) {
                 inText.add(brand);
             }
         }
         if (inText.isEmpty()) {
             return false;
         }
-        if (!secondWordInText(companyName, inText, text)) {
+        if (!secondWordInText(companyName, inText, joined)) {
             return false;
         }
         if (inText.stream().allMatch(brand -> brand.length() <= SHORT_BRAND_MAX)) {
-            return inText.stream().anyMatch(brand -> word(brand).matcher(ascii(page.title())).find());
+            String title = ascii(page.title());
+            return inText.stream().anyMatch(brand -> word(brand).matcher(title).find()
+                    || word(brand).matcher(undotted(title)).find());
         }
         return true;
     }
@@ -225,13 +234,23 @@ public final class SiteBrand {
     }
 
     /**
-     * Слова названия для брендов: {@link #asciiWords} без точек по краям и без доменов {@code .sk}.
+     * Слова названия для брендов: {@link #asciiWords} без точек по краям и без доменов {@code .sk}; точка внутри слова —
+     * домен другой зоны (берётся имя до точки) или часть бренда (точка убирается: «Dr.Max» — {@code drmax}).
      */
     private static List<String> nameWords(String companyName) {
         List<String> clean = new ArrayList<>();
         for (String word : asciiWords(companyName)) {
             String stripped = word.replaceAll("^\\.+|\\.+$", "");
-            if (!stripped.isEmpty() && !word.endsWith(".sk")) {
+            if (stripped.isEmpty() || word.endsWith(".sk")) {
+                continue;
+            }
+            int dot = stripped.lastIndexOf('.');
+            if (dot >= 0) {
+                // «firma.com» — бренд «firma»; «dr.max» — бренд «drmax» (§250: иначе адресов нет совсем).
+                stripped = NAME_ZONES.contains(stripped.substring(dot + 1))
+                        ? stripped.substring(0, stripped.indexOf('.')) : stripped.replace(".", "");
+            }
+            if (!stripped.isEmpty()) {
                 clean.add(stripped);
             }
         }
@@ -272,6 +291,14 @@ public final class SiteBrand {
 
     private static String ascii(String text) {
         return Normalizer.normalize(text, Normalizer.Form.NFKD).replaceAll("\\p{M}", "");
+    }
+
+    /**
+     * @param text текст без диакритики
+     * @return текст, где точка между буквами убрана: «Dr.Max» — «DrMax»
+     */
+    private static String undotted(String text) {
+        return INNER_DOT.matcher(text).replaceAll("");
     }
 
     private static boolean parked(String html) {

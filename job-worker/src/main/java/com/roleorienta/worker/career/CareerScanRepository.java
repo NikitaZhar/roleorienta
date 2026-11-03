@@ -1,11 +1,16 @@
 package com.roleorienta.worker.career;
 
+import com.roleorienta.worker.site.SiteBrand;
 import com.roleorienta.worker.site.SiteScanRepository;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 public class CareerScanRepository {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CareerScanRepository.class);
 
     /**
      * Основной сайт компании (алгоритм поиска сайта версии 3, технический документ §5.1; стенограмма §52):
@@ -59,7 +66,8 @@ public class CareerScanRepository {
                                      AND cs.role <> 'GROUP')
                             THEN 'CONNECTED'
                        ELSE CASE max(CASE check_result WHEN 'SOURCE_FOUND' THEN 5 WHEN 'USE_FORBIDDEN' THEN 4
-                                              WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
+                                              WHEN 'FORMAT_UNSUPPORTED' THEN 3 WHEN 'PORTAL_ONLY' THEN 2
+                                              WHEN 'NO_CAREER_PAGE' THEN 2 ELSE 1 END)
                        WHEN 5 THEN 'CONNECTED' WHEN 4 THEN 'USE_FORBIDDEN' WHEN 3 THEN 'FORMAT_UNSUPPORTED'
                        WHEN 2 THEN 'PAGE_NOT_FOUND' ELSE 'SOURCE_UNAVAILABLE' END END,
                    now(), now()
@@ -185,7 +193,68 @@ public class CareerScanRepository {
         }
         link(site.companyId(), boards, site.candidate() ? Role.GROUP : role);
         if (!site.candidate()) {
+            if (result == CheckResult.SOURCE_FOUND || result == CheckResult.PORTAL_ONLY) {
+                closeStalePages(site, boards);
+            }
             jdbcTemplate.update(COMPANY_RESULT, site.companyId());
+        }
+    }
+
+    /**
+     * Перепроверка сайта нашла доски (или «своего списка нет») — прежние источники-страницы компании ({@code careerpage},
+     * {@code jobposting}) на домене этого сайта или на площадке вакансий, которых проверка больше не нашла, закрываются
+     * вместе с публикациями и вакансиями без другой открытой публикации (§254, эталон §247: события и статьи Kaufland,
+     * журнал profesia.sk у Slovenské elektrárne читались как вакансии, а закрыть их чтение не может — оно теперь
+     * неполное). Не трогаются: адреса, добавленные пользователем или администратором ({@code company_request}),
+     * источники, связанные и с другой компанией, источники других сайтов компании.
+     */
+    /**
+     * @param board адрес доски-страницы
+     * @return хост; {@code null} — не адрес
+     */
+    private static String hostOf(String board) {
+        try {
+            return new URI(board.replace(" ", "%20")).getHost();
+        } catch (URISyntaxException malformed) {
+            return null;
+        }
+    }
+
+    private void closeStalePages(Site site, Set<Board> boards) {
+        String siteDomain = SiteBrand.registrable(site.host().replaceFirst(":\\d+$", ""));
+        List<Board> linked = jdbcTemplate.query("""
+                SELECT s.provider, s.board FROM company_source cs JOIN source s ON s.id = cs.source_id
+                WHERE cs.company_id = ? AND cs.role = 'EMPLOYER' AND s.closed_at IS NULL
+                  AND s.provider IN ('careerpage', 'jobposting')
+                  AND NOT EXISTS (SELECT 1 FROM company_request r WHERE r.company_id = cs.company_id
+                                  AND r.career_url = s.board)
+                  AND NOT EXISTS (SELECT 1 FROM company_source o WHERE o.source_id = s.id
+                                  AND o.company_id <> cs.company_id)
+                ORDER BY s.id
+                """, (row, number) -> new Board(row.getString("provider"), row.getString("board")), site.companyId());
+        for (Board stale : linked) {
+            String host = hostOf(stale.board());
+            if (boards.contains(stale) || host == null
+                    || !(CareerLinks.jobPortal(host) || SiteBrand.registrable(host).equals(siteDomain))) {
+                continue;
+            }
+            jdbcTemplate.update("""
+                    UPDATE vacancy v SET state = 'CLOSED', closed_at = now()
+                    WHERE v.state <> 'CLOSED'
+                      AND EXISTS (SELECT 1 FROM job_posting p JOIN source s ON s.id = p.source_id
+                                  WHERE p.vacancy_id = v.id AND s.provider = ? AND s.board = ? AND p.closed_at IS NULL)
+                      AND NOT EXISTS (SELECT 1 FROM job_posting p JOIN source s ON s.id = p.source_id
+                                      WHERE p.vacancy_id = v.id AND NOT (s.provider = ? AND s.board = ?)
+                                        AND p.closed_at IS NULL)
+                    """, stale.provider(), stale.board(), stale.provider(), stale.board());
+            jdbcTemplate.update("""
+                    UPDATE job_posting SET closed_at = now(), confirmed = FALSE
+                    WHERE closed_at IS NULL AND source_id = (SELECT id FROM source WHERE provider = ? AND board = ?)
+                    """, stale.provider(), stale.board());
+            jdbcTemplate.update("UPDATE source SET closed_at = now() WHERE provider = ? AND board = ?",
+                    stale.provider(), stale.board());
+            LOG.info("Company {}: stale career page source {} closed after recheck of {}", site.companyId(),
+                    stale.board(), site.host());
         }
     }
 
@@ -299,7 +368,12 @@ public class CareerScanRepository {
         /** Использование не разрешено: нет основания для провайдера или агентства, запрет robots.txt. */
         USE_FORBIDDEN,
         /** Домен продаётся: сайт переадресует на площадку продажи доменов, сайт отклонён (§135). */
-        DOMAIN_FOR_SALE
+        DOMAIN_FOR_SALE,
+        /**
+         * Своего списка нет — кадровая страница ведёт на страницу компании на площадке или переадресует на неё (§251):
+         * вакансии компании берутся с портала и profesia.sk, как при отметке администратора «своей страницы нет».
+         */
+        PORTAL_ONLY
     }
 
     /**

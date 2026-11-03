@@ -52,6 +52,9 @@ public final class CareerPageList {
     /** Символов в тексте карточки вакансии не больше. */
     static final int MAX_CARD = 400;
 
+    /** На сколько уровней вверх от ссылки-кнопки ищется заголовок карточки (§252). */
+    private static final int CARD_LEVELS = 3;
+
     /** Сколько первых символов текста страницы проверяется на фразу «вакансий нет». */
     private static final int TEXT_LIMIT = 300_000;
 
@@ -67,7 +70,26 @@ public final class CareerPageList {
             + "volne (pracovne )?(pozicie|miesta)|pracovne (ponuky|pozicie|miesta)|ponuka prace|ponuky prace|"
             + "o nas|kontakt|kontakty|domov|home|viac|viac info|viac informacii|detail|detaily|zobrazit|"
             + "zobrazit viac|citat viac|read more|more|apply|uchadzat sa|prihlasit sa|reagovat|dalej|spat|back|"
-            + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|pracovne prilezitosti|\\d+)$");
+            + "next|previous|predchadzajuca|dalsia|english|slovensky|en|sk|de|pracovne prilezitosti|\\d+|"
+            + "citat cely clanok|cely clanok|viac o nas|dozvediet sa viac|learn more|zistit viac)$");
+
+    /**
+     * Родительский путь не списка вакансий (§252, эталон §247): события, статьи, новости, страницы «почему мы» на
+     * кадровом сайте (Kaufland {@code /events2/}, T-Systems {@code /careers/why-t-systems/}) — кадровое слово в хосте
+     * или пути их больше не делает списком.
+     */
+    private static final Pattern NOT_JOBS_PATH = Pattern.compile("(?i)event|podujat|clan(?:ok|ky)|blog|news|novink"
+            + "|aktualit|magazin|why-|culture|diversit|benefit|o-nas|about|pribeh|stories|tim/|team/");
+
+    /** Название в карточке по порядку предпочтения: заголовок, затем элемент с «title» или «position» в классе (§252). */
+    private static final List<String> TITLE_SELECTORS = List.of("h1, h2, h3, h4, h5, h6",
+            "[class*=title], [class*=Title]", "[class*=position], [class*=Position]");
+
+    /** Вакансия в корне кадрового хоста — с номером в адресе ({@code /operator-vyroby-11196/}), не пункт меню. */
+    private static final Pattern ROOT_VACANCY = Pattern.compile("\\d{3,}");
+
+    /** Номер карточки перед названием («10 Poradca …», Tatra banka, §252). */
+    private static final Pattern LEADING_COUNTER = Pattern.compile("^\\d{1,3}\\s+(?=\\p{L})");
 
     /**
      * Кадровое слово в родительском пути или хосте: группа ссылок под ним может быть списком (§183: «karriere» —
@@ -84,7 +106,8 @@ public final class CareerPageList {
             + "pracovn[yeo] pomer|uvazok|zivotopis|requirement|responsibilit|qualification|we offer|salary|"
             + "your profile|job description|pozadavk|nabizime|anforderung|aufgaben|wir bieten|ihr profil");
 
-    private static final Pattern NEXT_TEXT = Pattern.compile("^(dalej|dalsia|dalsie|next|»|›|>)\\s*(»|›|>)?$");
+    private static final Pattern NEXT_TEXT = Pattern.compile(
+            "^(dalej|dalsia|dalsie|next|»|›|>|dalsia strana|nasledujuca( strana)?|next page)\\s*(»|›|>)?$");
 
     /** «Вакансий нет» (без диакритики, нижний регистр). */
     private static final Pattern NO_VACANCIES = Pattern.compile(
@@ -116,20 +139,23 @@ public final class CareerPageList {
             return List.of();
         }
         Map<String, Map<String, Element>> groups = new LinkedHashMap<>();
+        boolean careerHost = CAREER_PATH.matcher(base.getHost()).find();
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
-            String title = anchor.text().strip();
+            String title = title(anchor);
             if (link == null || !candidate(anchor, link, base, title)) {
                 continue;
             }
             String path = link.getPath().replaceAll("/+$", "");
             String parent = path.substring(0, path.lastIndexOf('/') + 1);
-            if (parent.length() <= 1 || PAGINATION_PATH.matcher(link.getPath()).find()) {
+            // Ссылки вакансий в корне сайта — только на кадровом хосте (§252: ponukyprace.manuvia.com/<вакансия>/).
+            if (parent.length() <= 1 && !(careerHost && ROOT_VACANCY.matcher(path).find()) || path.isEmpty()
+                    || PAGINATION_PATH.matcher(link.getPath()).find() || NOT_JOBS_PATH.matcher(parent).find()) {
                 continue;
             }
             Map<String, Element> group = groups.computeIfAbsent(parent, key -> new LinkedHashMap<>());
             Element known = group.get(link.toString());
-            if (known == null || known.text().strip().length() < title.length()) {
+            if (known == null || title(known).length() < title.length()) {
                 group.put(link.toString(), anchor);
             }
         }
@@ -142,7 +168,7 @@ public final class CareerPageList {
         Map<String, Element> links = largest.get().getValue();
         List<Item> items = new ArrayList<>();
         links.forEach((url, anchor) -> {
-            items.add(new Item(url, anchor.text().strip(), card(anchor, links)));
+            items.add(new Item(url, title(anchor), card(anchor, links)));
         });
         return items;
     }
@@ -207,6 +233,27 @@ public final class CareerPageList {
     }
 
     /**
+     * Ссылка «следующая страница», которую листает скрипт (§252: Tatra banka — «Ďalšia strana» с {@code href="#"}): по
+     * ней не перейти, список прочитан не весь.
+     *
+     * @param page страница списка
+     * @return {@code true} — есть активная ссылка «далее» на {@code #}, {@code javascript:} или на саму страницу
+     */
+    public static boolean scriptNext(Document page) {
+        return page.select("a").stream()
+                .filter(anchor -> NEXT_TEXT.matcher(plain(anchor.text())).matches())
+                .filter(anchor -> !anchor.hasAttr("disabled") && !"true".equals(anchor.attr("aria-disabled"))
+                        && !anchor.className().toLowerCase(Locale.ROOT).contains("disabled"))
+                .anyMatch(anchor -> {
+                    String href = anchor.attr("href").strip().toLowerCase(Locale.ROOT);
+                    URI target = uri(anchor.absUrl("href"));
+                    URI self = uri(page.location());
+                    return href.isEmpty() || href.startsWith("#") || href.startsWith("javascript:")
+                            || target != null && target.equals(self);
+                });
+    }
+
+    /**
      * @param page страница
      * @return в тексте страницы фраза «вакансий нет»
      */
@@ -223,6 +270,53 @@ public final class CareerPageList {
     private static boolean underCareer(String parent, Set<String> urls) {
         return CAREER_PATH.matcher(parent).find() || urls.stream().map(CareerPageList::uri).filter(Objects::nonNull)
                 .anyMatch(link -> CAREER_PATH.matcher(link.getHost()).find());
+    }
+
+    /**
+     * Название вакансии (§252, эталон §247): заголовок внутри ссылки ({@link #TITLE_SELECTOR}) — ссылка охватывает всю
+     * карточку (Penta: «… Nemocnice Penta Hospitals …», BENU: «… 1600 EUR / Mesiac»); текст ссылки — кнопка
+     * («viac info», «Viac informácií») — заголовок карточки вокруг ссылки (XENEX, Manuvia); иначе текст ссылки. Номер
+     * карточки впереди отрезается.
+     *
+     * @param anchor ссылка
+     * @return название; пусто — нет
+     */
+    static String title(Element anchor) {
+        String title = heading(anchor).orElse(anchor.text());
+        if (NOT_TITLE.matcher(plain(title)).matches() || title.isBlank()) {
+            String href = anchor.attr("href");
+            String text = anchor.text();
+            Element around = anchor;
+            for (int level = 0; level < CARD_LEVELS && around.parent() != null; level++) {
+                around = around.parent();
+                // Родитель с такой же кнопкой другой вакансии — уже не карточка, а список.
+                if (around.text().length() > MAX_CARD * 2 || around.select("a[href]").stream()
+                        .anyMatch(other -> !other.attr("href").equals(href) && other.text().equals(text))) {
+                    break;
+                }
+                Optional<String> found = heading(around);
+                if (found.isPresent()) {
+                    title = found.get();
+                    break;
+                }
+            }
+        }
+        return LEADING_COUNTER.matcher(title.replaceAll("\\s+", " ").strip()).replaceFirst("");
+    }
+
+    /**
+     * @param element ссылка или карточка
+     * @return текст первого непустого элемента названия ({@link #TITLE_SELECTORS} по порядку) внутри; пусто — нет
+     */
+    private static Optional<String> heading(Element element) {
+        for (String selector : TITLE_SELECTORS) {
+            for (Element found : element.select(selector)) {
+                if (!found.text().isBlank() && !NOT_TITLE.matcher(plain(found.text())).matches()) {
+                    return Optional.of(found.text());
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /**

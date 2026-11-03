@@ -6,6 +6,7 @@ import com.roleorienta.worker.adapter.PostingCheck;
 import com.roleorienta.worker.adapter.SourceAdapter;
 import com.roleorienta.worker.adapter.SourceReadResult;
 import com.roleorienta.worker.crawl.CrawlRun;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.snapshot.SnapshotStore;
 import com.roleorienta.worker.source.Source;
@@ -56,6 +57,11 @@ import org.springframework.stereotype.Component;
  * публикация проверяется отдельно ({@link SourceAdapter#check}, не больше
  * {@link CollectProperties#maxChecksPerRead()} за чтение): есть — сведения обновляются, нет —
  * отсутствие засчитывается, не проверена — не засчитывается (бизнес-описание §4.3).</p>
+ *
+ * <p>Полное чтение, давшее меньше половины открытых публикаций источника (при не меньше
+ * {@value #MIN_OPEN_FOR_DROP} открытых), считается неполным ({@link PartialReason#COUNT_DROP}, §248): такой обвал —
+ * обычно сбой разбора или ответ системы найма «пусто», а не уход вакансий; прежние вакансии не закрываются (принцип
+ * владельца «лучше лишние, чем потерянные»).</p>
  */
 @Component
 public class ReadSourceHandler implements TaskHandler {
@@ -70,6 +76,9 @@ public class ReadSourceHandler implements TaskHandler {
 
     /** У скольких первых публикаций чтения спрашивается название работодателя (§123: Workday даёт его не у всех). */
     private static final int MAX_EMPLOYER_NAME_ATTEMPTS = 5;
+
+    /** С какого числа открытых публикаций источника обвал чтения считается сбоем (§248). */
+    static final int MIN_OPEN_FOR_DROP = 5;
 
     private static final Logger LOG = LoggerFactory.getLogger(ReadSourceHandler.class);
 
@@ -133,14 +142,21 @@ public class ReadSourceHandler implements TaskHandler {
                 storeSnapshots(source, run, read.responses());
                 List<FetchedPosting> postings = new ArrayList<>(read.postings());
                 Set<String> unverified = new HashSet<>();
-                if (read.complete() && source.getCountry() != null) {
-                    checkMissing(adapter, source, postings, read.notRead(), unverified);
+                List<String> open = recorder.openExternalIds(source);
+                PartialReason reason = read.partialReason();
+                if (reason == null && countDropped(read.postings().size() + read.notRead().size(), open.size())) {
+                    LOG.warn("Source {}: complete read gave {} postings of {} open — treated as partial",
+                            source.getId(), read.postings().size() + read.notRead().size(), open.size());
+                    reason = PartialReason.COUNT_DROP;
+                }
+                if (reason == null && source.getCountry() != null) {
+                    checkMissing(adapter, source, postings, notListed(open, postings, read.notRead()), unverified);
                 }
                 Detailed detailed = withDetail(adapter, source, postings);
                 postings = detailed.postings();
                 nameEmployer(adapter, source, postings);
                 Map<String, Instant> postedAt = withPostedDates(adapter, source, detailed, read.postedAt(), task.id());
-                run.read(postings.size(), read.partialReason());
+                run.read(postings.size(), reason);
                 recorder.record(run, postings, unverified, read.notRead(), postedAt);
                 yield new TaskOutcome.Done();
             }
@@ -150,6 +166,17 @@ public class ReadSourceHandler implements TaskHandler {
                 yield toOutcome(unavailable.failure());
             }
         };
+    }
+
+    /**
+     * Обвал чтения (§248): список дал меньше половины открытых публикаций источника.
+     *
+     * @param listed публикаций в списке (прочитанные и непрочитанные окна по кругу)
+     * @param open   открытых публикаций источника до чтения
+     * @return {@code true} — не меньше {@value #MIN_OPEN_FOR_DROP} открытых и в списке меньше половины
+     */
+    static boolean countDropped(int listed, int open) {
+        return open >= MIN_OPEN_FOR_DROP && listed * 2 < open;
     }
 
     /**
@@ -163,20 +190,29 @@ public class ReadSourceHandler implements TaskHandler {
     }
 
     /**
-     * Проверяет известные незакрытые публикации, которых нет в отфильтрованном списке: найденные
-     * добавляются в {@code postings}, непроверенные — в {@code unverified}. Публикации из списка, не прочитанные в
-     * это чтение ({@code notRead}, окно по кругу), не проверяются: они в списке есть (аудит §121; проверка
-     * по умолчанию отвечает «нет» и закрыла бы их).
+     * Известные незакрытые публикации, которых нет в отфильтрованном списке. Публикации из списка, не прочитанные в
+     * это чтение ({@code notRead}, окно по кругу), сюда не входят: они в списке есть (аудит §121; проверка по
+     * умолчанию отвечает «нет» и закрыла бы их).
+     *
+     * @param open     открытые публикации источника, дольше не подтверждённые — первыми
+     * @param postings прочитанные публикации
+     * @param notRead  в списке, но не прочитаны
+     * @return пропавшие из списка в порядке {@code open}
      */
-    private void checkMissing(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
-            Set<String> notRead, Set<String> unverified) {
+    static List<String> notListed(List<String> open, List<FetchedPosting> postings, Set<String> notRead) {
         Set<String> listed = new HashSet<>(notRead);
         postings.forEach(posting -> listed.add(posting.externalId()));
+        return open.stream().filter(externalId -> !listed.contains(externalId)).toList();
+    }
+
+    /**
+     * Проверяет пропавшие из отфильтрованного списка публикации ({@link #notListed}): найденные добавляются в
+     * {@code postings}, непроверенные — в {@code unverified}.
+     */
+    private void checkMissing(SourceAdapter adapter, Source source, List<FetchedPosting> postings,
+            List<String> missing, Set<String> unverified) {
         int budget = properties.maxChecksPerRead();
-        for (String externalId : recorder.openExternalIds(source)) {
-            if (listed.contains(externalId)) {
-                continue;
-            }
+        for (String externalId : missing) {
             PostingCheck check = budget-- > 0 ? adapter.check(source.getBoard(), externalId)
                     : new PostingCheck.Unknown("Check limit reached");
             switch (check) {

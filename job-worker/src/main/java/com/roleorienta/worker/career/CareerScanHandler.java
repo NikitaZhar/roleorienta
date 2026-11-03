@@ -91,7 +91,7 @@ public class CareerScanHandler implements TaskHandler {
     private static final int MAX_URL = 2000;
     /** Пробные адреса кадровой страницы на сайте, когда на главной нет ссылки или главная закрыта. */
     private static final List<String> CAREER_PATHS = List.of("/kariera", "/sk/kariera", "/careers", "/kariera-a-praca",
-            "/pre-uchadzacov");
+            "/pre-uchadzacov", "/pracovne-ponuky", "/volne-pozicie", "/ponuka-prace", "/volne-pracovne-miesta");
     /** Пробные кадровые поддомены домена сайта. */
     private static final List<String> CAREER_SUBDOMAINS = List.of("kariera", "jobs", "careers");
     /** Пробные кадровые хосты бренда сайта ({@code %s} — первое слово регистрируемого домена), как в скрипте замера. */
@@ -269,6 +269,10 @@ public class CareerScanHandler implements TaskHandler {
                 }
             }
         }
+        // Страницы самой площадки (журнал profesia.sk, меню) — не доски компании (§251: кадровая страница Slovenské
+        // elektrárne переадресует на profesia.sk); доски систем найма по ссылкам со страницы компании на площадке — её.
+        boards = boards.stream().filter(board -> !CareerLinks.onJobPortal(board))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
             Rendered rendered = rendered(URI.create(homePage.get().location()), companyKeys);
             if (rendered.found()) {
@@ -297,6 +301,7 @@ public class CareerScanHandler implements TaskHandler {
             permitted = Set.of();
         } else {
             result = !boards.isEmpty() ? CheckResult.SOURCE_FOUND
+                    : careerPage.filter(CareerLinks::portalOnly).isPresent() ? CheckResult.PORTAL_ONLY
                     : careerPage.isPresent() ? CheckResult.FORMAT_UNSUPPORTED : CheckResult.NO_CAREER_PAGE;
         }
         repository.record(site, permitted, result, careerUrl, role.orElse(Role.EMPLOYER));

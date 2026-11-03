@@ -239,8 +239,10 @@ public class MetricsRepository {
                                      WHERE cs.company_id = c.company_id AND cs.role = 'GROUP' AND s.closed_at IS NULL)
                             THEN 'GROUP_ONLY'
                         ELSE coalesce((SELECT CASE min(CASE st.check_result WHEN 'SOURCE_FOUND' THEN 1
+                                                       WHEN 'PORTAL_ONLY' THEN 0
                                                        WHEN 'FORMAT_UNSUPPORTED' THEN 2 WHEN 'NO_CAREER_PAGE' THEN 3
                                                        WHEN 'UNREACHABLE' THEN 4 WHEN 'USE_FORBIDDEN' THEN 5 ELSE 6 END)
+                                                  WHEN 0 THEN 'NO_OWN_PAGE'
                                                   WHEN 1 THEN 'PAGE_FOUND' WHEN 2 THEN 'FORMAT_UNSUPPORTED'
                                                   WHEN 3 THEN 'NO_CAREER_PAGE' WHEN 4 THEN 'UNREACHABLE'
                                                   WHEN 5 THEN 'USE_FORBIDDEN' WHEN 6 THEN 'NOT_CHECKED' END

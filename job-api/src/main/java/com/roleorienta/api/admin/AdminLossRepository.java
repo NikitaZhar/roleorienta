@@ -29,7 +29,8 @@ public class AdminLossRepository {
      * Очередь потерь (§235, §239) — только там, где помочь может администратор, и только после всех способов ядра
      * (решения владельца 2026-11-02): своя кадровая страница не найдена — сайта нет (поиск сайта по названию пройден),
      * на сайте страницы нет, сайт не открывается или запрещает чтение; все найденные сайты компании уже проверены (с
-     * браузером без окна и переходом со страницы группы, §236, §237). Страница найдена, но не читается или читается не
+     * браузером без окна и переходом со страницы группы, §236, §237); второй и следующие сайты из Common Crawl ядро не
+     * проверяет (§80) — их «не проверен» компанию не держит (§250). Страница найдена, но не читается или читается не
      * полностью — работа ядра (чтение любой кадровой страницы, п. 5а шаг 3), не администратора: в очередь не
      * попадает, видна в показателях. Без порога по числу вакансий; без отметок «своей страницы нет» и «не
      * работодатель», не отложенные («Later») и без адреса кадровой страницы, который ещё проверяется или добавлен после
@@ -42,7 +43,11 @@ public class AdminLossRepository {
               AND cc.found_on_own < cc.portal_titles
               AND (cc.channel <> 'NO_SITE' OR c.site_name_checked_at IS NOT NULL)
               AND NOT EXISTS (SELECT 1 FROM company_site st WHERE st.company_id = c.id AND st.status = 'FOUND'
-                              AND st.checked_at IS NULL)
+                              AND st.checked_at IS NULL
+                              AND NOT (st.source = 'COMMON_CRAWL'
+                                       AND EXISTS (SELECT 1 FROM company_site o WHERE o.company_id = c.id
+                                                   AND o.status = 'FOUND' AND o.id <> st.id
+                                                   AND (o.source <> 'COMMON_CRAWL' OR o.id < st.id))))
               AND NOT c.no_own_career_page AND NOT c.not_employer AND c.terminated_on IS NULL
               AND (c.loss_postponed_until IS NULL OR c.loss_postponed_until <= now())
               AND NOT EXISTS (SELECT 1 FROM company_request r WHERE r.company_id = c.id

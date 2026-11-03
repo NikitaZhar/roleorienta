@@ -42,7 +42,8 @@ public class WikidataSiteRepository {
 
     /**
      * Компании к проверке: действующие компании Словакии — активной страны сбора — с номером из Wikidata, без
-     * найденного сайта и без записи сайта из Wikidata (проверенная компания второй раз не берётся).
+     * найденного сайта (сайт из Common Crawl не в счёт, §250) и без записи сайта из Wikidata (проверенная компания
+     * второй раз не берётся).
      *
      * @param numbers IČO из Wikidata
      * @param limit   не больше
@@ -62,7 +63,8 @@ public class WikidataSiteRepository {
                     WHERE c.country = ? AND c.terminated_on IS NULL
                       AND c.registration_number IN (%s)
                       AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id
-                                      AND (s.status = 'FOUND' OR s.source = 'WIKIDATA'))
+                                      AND (s.status = 'FOUND' AND s.source <> 'COMMON_CRAWL'
+                                           OR s.source = 'WIKIDATA'))
                     ORDER BY c.id LIMIT ?
                     """.formatted(String.join(",", Collections.nCopies(chunk.size(), "?"))),
                     (row, number) -> new DueCompany(row.getLong(1), row.getString(2)), arguments.toArray()));

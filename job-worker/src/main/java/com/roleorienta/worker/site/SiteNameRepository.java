@@ -27,9 +27,11 @@ public class SiteNameRepository {
     /**
      * Компании к проверке: действующие компании Словакии — активной страны сбора — приоритетные ({@code priority},
      * §71), с признаком найма (у компании есть источник вакансий: портал или доска системы найма; решение владельца,
-     * §48) или с числом сотрудников не меньше {@code minEmployees} (RÚZ, §53), без найденного сайта, не
+     * §48) или с числом сотрудников не меньше {@code minEmployees} (RÚZ, §53), без найденного сайта (сайт из Common
+     * Crawl не в счёт, §250: чужой сайт с IČO компании — pojdeto.sk у Slovak Telekom — не должен снимать поиск), не
      * проверенные по названию или проверенные давнее срока; без отметки «не работодатель» (§138). Сначала
-     * приоритетные, затем не проверенные.
+     * приоритетные, затем нанимающие (строка {@code company_coverage} — открытая вакансия портала или profesia.sk, §249,
+     * как перепроверка сайтов §240), затем не проверенные.
      *
      * @param limit        не больше
      * @param recheckAfter срок до повторной проверки
@@ -43,10 +45,13 @@ public class SiteNameRepository {
                 WHERE c.country = ? AND c.terminated_on IS NULL AND NOT c.not_employer
                   AND (c.priority OR c.employees_min >= ?
                        OR EXISTS (SELECT 1 FROM company_source cs WHERE cs.company_id = c.id))
-                  AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND')
+                  AND NOT EXISTS (SELECT 1 FROM company_site s WHERE s.company_id = c.id AND s.status = 'FOUND'
+                                  AND s.source <> 'COMMON_CRAWL')
                   AND (c.site_name_checked_at IS NULL
                        OR c.site_name_checked_at < now() - make_interval(secs => ?))
-                ORDER BY c.priority DESC, c.site_name_checked_at NULLS FIRST, c.id
+                ORDER BY c.priority DESC,
+                         EXISTS (SELECT 1 FROM company_coverage cov WHERE cov.company_id = c.id) DESC,
+                         c.site_name_checked_at NULLS FIRST, c.id
                 LIMIT ?
                 """, (row, number) -> new DueCompany(row.getLong(1), row.getString(2), row.getString(3)),
                 COUNTRY, minEmployees, (double) recheckAfter.toSeconds(), limit);

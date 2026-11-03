@@ -223,6 +223,25 @@ class SiteVerifierTests {
         assertThat(SiteBrand.brandHome("www.alfaplast-slovakia.sk", NAME)).isFalse();
     }
 
+    /**
+     * Точка в названии (§250): «Dr.Max Holding SK» — бренд {@code drmax} (раньше «dr.max» отбрасывался и адресов не
+     * было), «Holding» — общее слово; «Dr.Max» в тексте страницы подтверждает {@code www.drmax.sk}. Слово с зоной —
+     * домен: «Firma.com» — бренд {@code firma}. «Tesco Stores» — «Stores» общее: второго слова не нужно.
+     */
+    @Test
+    void dottedNameGivesBrandAndConfirmsSite() {
+        String name = "Dr.Max Holding SK, a.s.";
+        assertThat(SiteBrand.keys(name)).startsWith("drmax");
+        assertThat(SiteBrand.addresses(name)).startsWith(new SiteAddress("www.drmax.sk", ""));
+        assertThat(SiteBrand.keys("Firma.com s.r.o.")).containsExactly("firma");
+        org.jsoup.nodes.Document page = org.jsoup.Jsoup.parse(html("Lekáreň Dr.Max", "<p>Lekáreň Dr.Max. " + FILLER
+                + "</p>"), "https://www.drmax.sk/");
+        assertThat(SiteBrand.confirmed("www.drmax.sk", page, page.outerHtml(), name)).isTrue();
+        org.jsoup.nodes.Document tesco = org.jsoup.Jsoup.parse(html("Tesco", "<p>Tesco Slovensko. " + FILLER
+                + "</p>"), "https://www.tesco.sk/");
+        assertThat(SiteBrand.confirmed("www.tesco.sk", tesco, tesco.outerHtml(), "TESCO STORES SR, a.s.")).isTrue();
+    }
+
     private Verdict verify(String host) {
         return verifier.verify(host, "", NUMBER, NAME);
     }

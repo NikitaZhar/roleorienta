@@ -1,5 +1,6 @@
 package com.roleorienta.worker.collect;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -25,12 +26,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Запрос детали публикаций (текст и места) при чтении: только без сохранённого текста и в пределах потолка;
  * проверка публикаций, пропавших из списка с фильтром по стране; название работодателя источника без компании; дата
- * размещения из детали.
+ * размещения из детали; обвал числа публикаций — неполное чтение (§248).
  */
 class ReadSourceHandlerTests {
 
@@ -191,6 +193,43 @@ class ReadSourceHandlerTests {
         verify(adapter).employerName(BOARD, "e");
         verify(adapter, never()).employerName(BOARD, "f");
         verify(sources, never()).nameEmployer(any(), any());
+    }
+
+    /**
+     * Обвал (§248): у источника со страной 6 открытых публикаций, «полное» чтение дало 2 (пустой ответ системы найма,
+     * не тот список) — чтение неполное, пропавшие не проверяются и не засчитываются отсутствующими.
+     */
+    @Test
+    void treatsSharpCountDropAsPartialRead() {
+        Source source = mock(Source.class);
+        when(source.getId()).thenReturn(1L);
+        when(source.getProvider()).thenReturn("workday");
+        when(source.getBoard()).thenReturn(BOARD);
+        when(source.getCountry()).thenReturn("SK");
+        when(adapter.read(BOARD, "SK")).thenReturn(SourceReadResult.Read.full(
+                List.of(posting("a", "t"), posting("b", "t")), List.of()));
+        when(recorder.openExternalIds(source)).thenReturn(List.of("a", "b", "c", "d", "e", "f"));
+        when(recorder.externalIdsWithContent(source)).thenReturn(Set.of());
+
+        handler(source).handle(new TaskRecord(1, ReadSourceHandler.TYPE, ReadSourceHandler.payload(1), 0));
+
+        verify(adapter, never()).check(any(), any());
+        ArgumentCaptor<CrawlRun> run = ArgumentCaptor.forClass(CrawlRun.class);
+        verify(recorder).record(run.capture(), eq(List.of(posting("a", "t"), posting("b", "t"))), eq(Set.of()),
+                eq(Set.of()), eq(Map.of()));
+        assertThat(run.getValue().isComplete()).isFalse();
+    }
+
+    /**
+     * Граница обвала (§248): меньше 5 открытых — не обвал (малый источник); половина и больше — не обвал; меньше
+     * половины — обвал, и пустой ответ при открытых — тоже.
+     */
+    @Test
+    void countDropNeedsFiveOpenAndLessThanHalfListed() {
+        assertThat(ReadSourceHandler.countDropped(0, 4)).isFalse();
+        assertThat(ReadSourceHandler.countDropped(3, 6)).isFalse();
+        assertThat(ReadSourceHandler.countDropped(2, 6)).isTrue();
+        assertThat(ReadSourceHandler.countDropped(0, 5)).isTrue();
     }
 
     @SuppressWarnings("unchecked")

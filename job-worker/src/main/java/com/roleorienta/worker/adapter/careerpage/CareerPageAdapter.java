@@ -115,6 +115,10 @@ public class CareerPageAdapter implements SourceAdapter {
             }
             Optional<URI> next = CareerPageList.nextPage(page, visited);
             if (next.isEmpty()) {
+                if (CareerPageList.scriptNext(page)) {
+                    // Следующую страницу листает скрипт — хвост списка не прочитан, прежние вакансии не закрываются.
+                    partial = PartialReason.PAGE_FAILED;
+                }
                 break;
             }
             if (number == properties.maxPages()) {

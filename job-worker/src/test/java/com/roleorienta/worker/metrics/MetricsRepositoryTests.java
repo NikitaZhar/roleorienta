@@ -180,6 +180,11 @@ class MetricsRepositoryTests {
         jdbcTemplate.update("DELETE FROM company_coverage");
         repository.refreshCoverage();
         assertThat(coverage(read)).isEqualTo("2 1 2 READ");
+
+        // Своего списка нет, вакансии — на площадке (§251): как отметка «своей страницы нет».
+        jdbcTemplate.update("UPDATE company_site SET check_result = 'PORTAL_ONLY' WHERE company_id = ?", noPage);
+        repository.refreshCoverage();
+        assertThat(coverage(noPage)).isEqualTo("1 0 0 NO_OWN_PAGE");
     }
 
     private long companySource(String provider, String board, long companyId) {

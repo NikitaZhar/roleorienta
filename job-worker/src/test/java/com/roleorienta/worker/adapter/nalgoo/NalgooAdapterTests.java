@@ -53,8 +53,8 @@ class NalgooAdapterTests {
             }
         });
         server.start();
-        adapter = new NalgooAdapter(httpClient, new NalgooProperties(
-                "http://127.0.0.1:" + server.getAddress().getPort() + "/api/v3"));
+        String stub = "http://127.0.0.1:" + server.getAddress().getPort();
+        adapter = new NalgooAdapter(httpClient, new NalgooProperties(stub + "/api/v3", stub + "/site/{board}/"));
         answers.put("/api/v3/organizations/billa/jobs", sample("nalgoo-billa-jobs.json"));
         answers.put("/api/v3/organizations/foxconn/jobs", sample("nalgoo-foxconn-jobs.json"));
         answers.put("/api/v3/organizations/billa/jobs/83976", sample("nalgoo-billa-job.json"));
@@ -112,5 +112,23 @@ class NalgooAdapterTests {
 
     private static String sample(String name) throws IOException {
         return Files.readString(SAMPLES.resolve(name), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Имя организации в API не равно поддомену (§253, Danucem: {@code danucem.nalgoo-jobs.com} — организация
+     * {@code danucem-slovensko}): пустой список — имя со страницы сайта, список читается по нему; текст — тоже.
+     */
+    @Test
+    void readsOrganizationNamedOnSiteWhenBoardListIsEmpty() {
+        answers.put("/api/v3/organizations/danucem/jobs", "[]");
+        answers.put("/site/danucem/", "<script>self.__next_f.push([1,\"{\\\"organization\\\":\\\"danucem-slovensko\\\"}\"])"
+                + "</script>");
+        answers.put("/api/v3/organizations/danucem-slovensko/jobs", "[{\"id\": 93516, \"title\": \"Dispečer\", "
+                + "\"url\": \"https://danucem.nalgoo-jobs.com/jobs/93516\", \"location\": \"Rohožník\"}]");
+
+        SourceReadResult.Read read = (SourceReadResult.Read) adapter.read("danucem");
+
+        assertThat(read.postings()).extracting(FetchedPosting::title).containsExactly("Dispečer");
+        assertThat(read.complete()).isTrue();
     }
 }

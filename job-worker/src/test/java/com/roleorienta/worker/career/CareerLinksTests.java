@@ -363,4 +363,35 @@ class CareerLinksTests {
                 + "<a href=\"https://acme.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en\">Login</a>");
         assertThat(CareerLinks.taleoBoards(rest)).isEmpty();
     }
+
+    /**
+     * Эталон §247 (§251): ссылка на список — первой, анкета — последней (TRANSFER: «Žiadosť o zamestnanie» раньше
+     * «Kariéra» → {@code /pracovne-ponuky}); путь с дефисом и «Hľadám si prácu» — кадровые (TRIGON); profesia.sk — не
+     * кадровая страница компании; страница со ссылкой на страницу компании на profesia.sk или сама на profesia.sk —
+     * своего списка нет (RAVEN, StVPS, Slovenské elektrárne).
+     */
+    @Test
+    void ranksListOverFormAndRecognisesPortalOnlyPages() {
+        Document transfer = Jsoup.parse("""
+                <a href="/ziadost-o-zamestnanie">Žiadosť o prácu</a><a href="/pracovne-ponuky">Kariéra</a>
+                """, "https://transferpersonal.sk/");
+        assertThat(CareerLinks.careerPage(transfer, "transferpersonal.sk"))
+                .contains("https://transferpersonal.sk/pracovne-ponuky");
+        Document trigon = Jsoup.parse("<a href=\"/pracovne-ponuky/\">Hľadám si prácu</a>",
+                "https://trigon-consulting.sk/");
+        assertThat(CareerLinks.careerPage(trigon, "trigon-consulting.sk"))
+                .contains("https://trigon-consulting.sk/pracovne-ponuky/");
+        Document profesiaLink = Jsoup.parse("<a href=\"https://www.profesia.sk/praca/raven/C8902\">Kariéra TU</a>",
+                "https://www.raven.sk/");
+        assertThat(CareerLinks.careerPage(profesiaLink, "www.raven.sk")).isEmpty();
+
+        assertThat(CareerLinks.portalOnly(Jsoup.parse("<p>Kariéra</p><a href=\"http://www.profesia.sk/praca/raven/C8902\">"
+                + "TU</a>", "https://www.raven.sk/clanek/214/kariera"))).isTrue();
+        assertThat(CareerLinks.portalOnly(Jsoup.parse("<a href=\"https://www.profesia.sk/praca/?company_id=33206&amp;x=1\">"
+                + "POZRIEŤ PONUKU</a>", "https://www.stvps.sk/kariera/"))).isTrue();
+        assertThat(CareerLinks.portalOnly(Jsoup.parse("<p>Práca Slovenské elektrárne</p>",
+                "https://www.profesia.sk/praca/slovenske-elektrarne/C5070"))).isTrue();
+        assertThat(CareerLinks.portalOnly(Jsoup.parse("<a href=\"https://www.profesia.sk/\">Profesia</a>",
+                "https://www.acme.sk/kariera"))).isFalse();
+    }
 }

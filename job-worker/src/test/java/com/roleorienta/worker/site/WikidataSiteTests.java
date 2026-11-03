@@ -118,7 +118,8 @@ class WikidataSiteTests {
 
     /**
      * Все страницы ответа прочитаны; сайты записаны по итогу открытия; найденный сайт снимает итог «сайт не
-     * найден»; повторный шаг ничего не добавляет и кандидата не проверяет снова.
+     * найден»; сайт из Common Crawl компанию с шага не снимает (§250: у {@code HAS_SITE} записан и сайт из Wikidata);
+     * повторный шаг ничего не добавляет и кандидата не проверяет снова.
      */
     @Test
     void recordsWikidataSitesByOpening() {
@@ -129,6 +130,7 @@ class WikidataSiteTests {
                 MISSING + ":127.0.0.1:WIKIDATA:WIKIDATA:CANDIDATE:http://www.wikidata.org/entity/Q1234567",
                 OPENS + ":127.0.0.1:WIKIDATA:WIKIDATA:FOUND:http://www.wikidata.org/entity/Q" + OPENS,
                 CLOSED + ":127.0.0.1:WIKIDATA:WIKIDATA_403:FOUND:http://www.wikidata.org/entity/Q" + CLOSED,
+                HAS_SITE + ":127.0.0.1:WIKIDATA:WIKIDATA:FOUND:http://www.wikidata.org/entity/Q" + HAS_SITE,
                 HAS_SITE + ":has-site.sk:COMMON_CRAWL:REGISTRATION_NUMBER:FOUND:http://has-site.sk/kontakt",
                 FORBIDDEN + ":127.0.0.1:WIKIDATA:WIKIDATA:CANDIDATE:http://www.wikidata.org/entity/Q" + FORBIDDEN);
         assertThat(jdbcTemplate.queryForObject("SELECT s.start_url FROM company_site s JOIN company c ON c.id = "
@@ -139,7 +141,7 @@ class WikidataSiteTests {
         handler.enqueue("second");
         runQueuedTasks();
 
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_site", Integer.class)).isEqualTo(6);
     }
 
     /**
@@ -150,7 +152,7 @@ class WikidataSiteTests {
     void chainStopsWhenWholeBatchFailsTemporarily() {
         jdbcTemplate.update("INSERT INTO company_site (company_id, host, evidence_url, source, proof) SELECT id, "
                 + "'done-' || registration_number || '.sk', 'http://done.sk', 'WIKIDATA', 'WIKIDATA' FROM company "
-                + "WHERE registration_number IN (?, ?, ?, ?)", OPENS, CLOSED, MISSING, FORBIDDEN);
+                + "WHERE registration_number IN (?, ?, ?, ?, ?)", OPENS, CLOSED, MISSING, FORBIDDEN, HAS_SITE);
         for (String number : BUSY) {
             jdbcTemplate.update("""
                     INSERT INTO company (country, registration_number, name, registry) VALUES ('SK', ?, ?, 'RPO')

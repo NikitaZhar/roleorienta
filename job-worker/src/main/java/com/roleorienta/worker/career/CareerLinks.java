@@ -13,9 +13,12 @@ import com.roleorienta.worker.site.SiteBrand;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -108,7 +111,8 @@ public final class CareerLinks {
      */
     private static final Pattern CAREER_WORDS = Pattern.compile(
             "kari[eé]r|career|\\bjobs?\\b|\\bpr[aá]ca u n[aá]s|\\bpr[aá]ca vo? |pre uch[aá]dza[čc]"
-                    + "|vo[ľl]n[ée] (?:poz[ií]cie|miesta|pracovn)|pracovn[ée] (?:ponuky|poz[ií]cie|miesta)|ponuky pr[aá]ce"
+                    + "|vo[ľl]n[ée][ -](?:poz[ií]cie|miesta|pracovn)|pracovn[ée][ -](?:ponuky|poz[ií]cie|miesta)"
+                    + "|ponuk[ay][ -]pr[aá]ce|h[ľl]ad[aá]m (?:si )?pr[aá]cu"
                     + "|pridaj sa|po[ďd]te k n[aá]m|join us|work with us|zamestnanie|n[aá]bor",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     /** Ссылка на список вакансий, а не на страницу о работе в компании (§241). */
@@ -120,8 +124,21 @@ public final class CareerLinks {
     private static final int CAREER_TEXT_LIMIT = 300_000;
     /** Площадки вакансий и продажи доменов — не кадровая страница компании (скрипт: {@code FOOTER_HOSTS}). */
     private static final Pattern JOB_PORTAL_HOSTS = Pattern.compile(
-            "almacareer|jobs\\.cz|prace\\.cz|atmoskop|platy\\.(?:sk|cz)|teamio|cvonline|hugedomains|sedo|afternic",
+            "almacareer|jobs\\.cz|prace\\.cz|atmoskop|platy\\.(?:sk|cz)|teamio|cvonline|hugedomains|sedo|afternic"
+                    + "|profesia\\.(?:sk|cz)|istp\\.sk|sluzbyzamestnanosti|(?:^|\\.)(?:kariera|praca)\\.sk$",
             Pattern.CASE_INSENSITIVE);
+    /**
+     * Ссылка на страницу компании на площадке вакансий (§251): profesia.sk ({@code /praca/<компания>/C123},
+     * {@code ?company_id=}), jobs.cz — её список вакансий не на собственной странице, а на площадке.
+     */
+    private static final Pattern PORTAL_COMPANY_LINK = Pattern.compile(
+            "profesia\\.(?:sk|cz)/(?:en/)?(?:praca|work|prace)/[^/?#]+/C\\d+|profesia\\.(?:sk|cz)/[^#]*[?&]company_id=\\d+"
+                    + "|jobs\\.cz/[^#]*[?&]company",
+            Pattern.CASE_INSENSITIVE);
+    /** Ссылка на анкету или форму, а не на список вакансий (§251: TRANSFER — «Žiadosť o zamestnanie»). */
+    private static final Pattern FORM_WORDS = Pattern.compile(
+            "[žz]iados[ťt]|formul[aá]r|[žz]ivotopis|\\bcv\\b|apply|prihl[aá]s|registr|login|spontan",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     /** Хосты систем найма (скрипт: {@code ATS_HOSTS}). */
     private static final Pattern RECRUITING_HOSTS = Pattern.compile(
             "myworkdayjobs|myworkdaysite|greenhouse|personio|smartrecruiters|successfactors|nalgoo|nelisa|topjobs|teamtailor|recruitee"
@@ -296,6 +313,42 @@ public final class CareerLinks {
     }
 
     /**
+     * Своего списка вакансий нет — он на площадке (§251; RAVEN, StVPS, Slovenské elektrárne): кадровая страница сама на
+     * площадке (переадресация на profesia.sk) или ведёт на страницу компании на площадке.
+     *
+     * @param careerPage открытая кадровая страница без читаемого
+     * @return {@code true} — вакансии компании — на площадке (берутся с портала и profesia.sk)
+     */
+    static boolean portalOnly(Document careerPage) {
+        URI location = uri(careerPage.location());
+        if (location != null && location.getHost() != null && JOB_PORTAL_HOSTS.matcher(lower(location.getHost())).find()) {
+            return true;
+        }
+        return careerPage.select("a[href]").stream()
+                .anyMatch(anchor -> PORTAL_COMPANY_LINK.matcher(anchor.absUrl("href")).find());
+    }
+
+    /**
+     * @param board доска
+     * @return {@code true} — доска — страница площадки вакансий (careerpage или jobposting на profesia.sk), не компании
+     */
+    static boolean onJobPortal(Board board) {
+        URI address = uri(board.board().contains("://") ? board.board() : "https://" + board.board());
+        return address != null && address.getHost() != null && jobPortal(address.getHost());
+    }
+
+    /**
+     * Порядок кадровых ссылок (§251): сначала ссылки на список вакансий ({@link #LIST_WORDS}), затем остальные, в
+     * конце — анкеты и формы ({@link #FORM_WORDS}); внутри — порядок на странице.
+     */
+    private static int rank(String textAndAddress) {
+        if (LIST_WORDS.matcher(textAndAddress).find()) {
+            return 0;
+        }
+        return FORM_WORDS.matcher(textAndAddress).find() ? 2 : 1;
+    }
+
+    /**
      * Сайты компаний группы со страницы группы (§237): ссылки на хосты другого регистрируемого домена, в первой части
      * которого есть бренд названия компании ({@code zos.sk} → {@code www.zostt.sk}, {@code www.zoszv.sk} у «ŽOS
      * Trnava»); площадки вакансий не берутся. Чей это сайт — решает проверка сайта (IČO или бренд на его странице).
@@ -382,6 +435,7 @@ public final class CareerLinks {
         boolean onCareerSite = careerSite(siteHost);
         List<String> own = new ArrayList<>();
         List<String> otherDomain = new ArrayList<>();
+        Map<String, Integer> ranks = new HashMap<>();
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
             if (link == null || link.getHost() == null) {
@@ -390,6 +444,7 @@ public final class CareerLinks {
             String linkHost = lower(link.getHost());
             String address = link.toASCIIString().replaceFirst("#.*$", "");
             boolean careerWords = CAREER_WORDS.matcher(anchor.text() + " " + link).find();
+            ranks.merge(address, rank(anchor.text() + " " + link), Math::min);
             if (normalized(address).equals(self) && !onCareerSite
                     && (link.getFragment() == null || !CAREER_WORDS.matcher(link.getFragment()).find())) {
                 continue;
@@ -408,6 +463,9 @@ public final class CareerLinks {
                 otherDomain.add(address);
             }
         }
+        Comparator<String> byRank = Comparator.comparingInt(ranks::get);
+        own.sort(byRank);
+        otherDomain.sort(byRank);
         own.addAll(otherDomain);
         return own;
     }

@@ -230,6 +230,15 @@ class AdminMetricsAcceptanceTests {
                 INSERT INTO company_site (company_id, host, evidence_url, source, status, proof)
                 VALUES (?, 'unchecked.loss.example', 'https://unchecked.loss.example/', 'STATE_PORTAL', 'FOUND',
                         'REGISTRATION_NUMBER')""", unchecked);
+        // Второй сайт из Common Crawl ядро не проверяет (§80): его «не проверен» компанию из очереди не убирает (§250).
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof, check_result, checked_at)
+                VALUES (?, 'small.loss.example', 'https://small.loss.example/', 'STATE_PORTAL', 'FOUND',
+                        'REGISTRATION_NUMBER', 'NO_CAREER_PAGE', now())""", small);
+        jdbcTemplate.update("""
+                INSERT INTO company_site (company_id, host, evidence_url, source, status, proof)
+                VALUES (?, 'cc.small.loss.example', 'https://cc.small.loss.example/', 'COMMON_CRAWL', 'FOUND',
+                        'REGISTRATION_NUMBER')""", small);
         long portal = lossSource("sluzbyzamestnanosti", "qw-loss-portal", big);
         long own = lossSource("careerpage", "qw-loss-own", big);
         lossPosting(portal, "Java Developer (m/ž)");

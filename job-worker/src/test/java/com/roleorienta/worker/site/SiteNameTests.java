@@ -219,6 +219,27 @@ class SiteNameTests {
     }
 
     /**
+     * Нанимающие — первыми после приоритетных (§249): у {@link #DELTA} строка полноты сбора (открытая вакансия портала),
+     * у {@link #BETA} — нет; обе к проверке по названию — {@link #DELTA} раньше.
+     */
+    @Test
+    void hiringCompanyIsCheckedBeforeOthers() {
+        jdbcTemplate.update("""
+                INSERT INTO company_coverage (company_id, portal_titles, found_on_own, own_vacancies, channel)
+                SELECT id, 1, 0, 0, 'NO_SITE' FROM company WHERE registration_number = ?""", DELTA);
+        try {
+            List<String> due = repository.dueCompanies(100, properties.recheckAfter(), properties.minEmployees())
+                    .stream().map(SiteNameRepository.DueCompany::registrationNumber).toList();
+
+            assertThat(due).contains(DELTA, BETA);
+            assertThat(due.indexOf(DELTA)).isLessThan(due.indexOf(BETA));
+        } finally {
+            jdbcTemplate.update("DELETE FROM company_coverage WHERE company_id IN (SELECT id FROM company "
+                    + "WHERE registration_number = ?)", DELTA);
+        }
+    }
+
+    /**
      * Отметка администратора «не работодатель» (§138): {@link #DELTA} (50 сотрудников) по названию не проверяется.
      */
     @Test

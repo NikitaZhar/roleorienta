@@ -150,4 +150,45 @@ class CareerPageListTests {
     private static Document page(String body) {
         return Jsoup.parse("<html><body>" + body + "</body></html>", LIST);
     }
+
+    /**
+     * Эталон §247 (§252): ссылка на всю карточку — название из заголовка (Penta); кнопка «viac info» — заголовок карточки
+     * (XENEX); номер карточки впереди отрезается (Tatra banka); события на кадровом хосте — не список (Kaufland);
+     * вакансии в корне кадрового хоста с номером в адресе — список (Manuvia), пункты меню без номера — нет; «Ďalšia
+     * strana» на {@code #} — листает скрипт.
+     */
+    @Test
+    void readsTitlesFromCardsAndSkipsNonJobLists() {
+        Document penta = page("""
+                <a href="/kariera/agent-call-centra/"><h3>Agent call centra vo Svidníku</h3><p>Centrála Penta</p></a>
+                <a href="/kariera/kuchar/"><h3>Kuchár – Nemocnica Topoľčany</h3><p>1600 EUR / Mesiac</p></a>
+                """);
+        assertThat(CareerPageList.vacancies(penta)).extracting(Item::title)
+                .containsExactly("Agent call centra vo Svidníku", "Kuchár – Nemocnica Topoľčany");
+        Document xenex = page("""
+                <div><h4>Stavbyvedúci</h4><p>Riadenie výstavby.</p><a href="/kariera/stavbyveduci/">viac info</a></div>
+                <div><h4>Rozpočtár</h4><p>Príprava rozpočtov.</p><a href="/kariera/rozpoctar/">viac info</a></div>
+                """);
+        assertThat(CareerPageList.vacancies(xenex)).extracting(Item::title).containsExactly("Stavbyvedúci", "Rozpočtár");
+        Document tatra = page("<a href=\"/kariera/1\">10 Poradca banky (M/Ž) pre Šaľu</a>"
+                + "<a href=\"/kariera/2\">2 IT tester</a>"
+                + "<a href=\"#\">Ďalšia strana</a>");
+        assertThat(CareerPageList.vacancies(tatra)).extracting(Item::title)
+                .containsExactly("Poradca banky (M/Ž) pre Šaľu", "IT tester");
+        assertThat(CareerPageList.scriptNext(tatra)).isTrue();
+        assertThat(CareerPageList.scriptNext(page("<a href=\"/kariera/?page=2\">Ďalšia strana</a>"))).isFalse();
+
+        Document events = Jsoup.parse("""
+                <a href="/events2/kariera-euba">Kariérna cesta 2026 - EUBA</a>
+                <a href="/events2/job-fair-umb">Job Fair EF UMB</a>
+                """, "https://kariera.kaufland.sk/volne-pracovne-pozicie");
+        assertThat(CareerPageList.vacancies(events)).isEmpty();
+        Document manuvia = Jsoup.parse("""
+                <a href="/operator-vyroby-nitra-11196/">Operátor/ka výroby | Nitra</a>
+                <a href="/supervizor-vyroby-13769/">Supervízor výroby</a>
+                <a href="/poradna-a-clanky/">Poradňa a články</a>
+                """, "https://ponukyprace.manuvia.com/ponuky/");
+        assertThat(CareerPageList.vacancies(manuvia)).extracting(Item::title)
+                .containsExactly("Operátor/ka výroby | Nitra", "Supervízor výroby");
+    }
 }
