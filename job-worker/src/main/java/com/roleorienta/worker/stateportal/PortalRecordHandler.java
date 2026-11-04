@@ -28,7 +28,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 /**
- * Задание {@code PORTAL_RECORD}: вакансии источника портала (доска — IČO работодателя) из общего списка
+ * Задание {@code PORTAL_RECORD}: вакансии источника портала (доска — IČO работодателя, у работодателя без IČO —
+ * {@link PortalListRepository#NAME_BOARD} и название, §258) из общего списка
  * ({@code portal_offer}) — без запросов к порталу за списком (стенограмма §107). Вакансии работодателя, которые видели с начала
  * обхода, записываются обычной записью публикаций ({@link PostingRecorder}) с обходом источника ({@code crawl_run}):
  *

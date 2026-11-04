@@ -182,7 +182,8 @@ public class PortalListHandler implements TaskHandler {
     }
 
     /**
-     * Завершённый обход: работодателям с вакансиями без источника подключается источник портала, затем каждому
+     * Завершённый обход: работодателям с вакансиями без источника подключается источник портала — из реестра с
+     * компанией, вне реестра и без IČO без неё (§258), — затем каждому
      * источнику портала к чтению (один канал на компанию) — запись из общего списка ({@link PortalRecordHandler}):
      * полное чтение, а если в обходе пропущены страницы — неполное ({@link PartialReason#PAGE_FAILED}, отсутствие не
      * засчитывается). Вызывается до отметки «обход завершён»: сбой здесь оставляет обход незавершённым, и следующий
@@ -192,14 +193,16 @@ public class PortalListHandler implements TaskHandler {
     private void recordCycle(long cycle) {
         List<PortalListRepository.NewEmployer> employers = repository.employersToConnect(cycle);
         employers.forEach(repository::connect);
+        List<PortalListRepository.UnregisteredEmployer> unregistered = repository.employersWithoutCompany(cycle);
+        unregistered.forEach(repository::connectWithoutCompany);
         PartialReason reason = repository.hasSkippedPages(cycle) ? PartialReason.PAGE_FAILED : null;
         int recorded = 0;
         for (Source source : portalSources()) {
             recorded += taskService.enqueue(PortalRecordHandler.TYPE, recordKeyPrefix(source) + "c" + cycle,
                     PortalRecordHandler.payload(source.getId(), cycle, reason)) ? 1 : 0;
         }
-        LOG.info("State portal list cycle {}: {} employers connected, {} sources to record", cycle, employers.size(),
-                recorded);
+        LOG.info("State portal list cycle {}: {} employers connected, {} without company, {} sources to record", cycle,
+                employers.size(), unregistered.size(), recorded);
     }
 
     /**

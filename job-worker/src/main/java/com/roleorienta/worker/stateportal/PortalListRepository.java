@@ -26,6 +26,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class PortalListRepository {
 
+    /**
+     * Начало доски источника портала у работодателя без IČO (бизнес-описание §4.1, стенограмма §258): {@code name:} и
+     * название работодателя из объявления. Доска остальных источников портала — IČO; у этих объявлений его нет.
+     */
+    public static final String NAME_BOARD = "name:";
+
+    /**
+     * Доска по названию работодателя ({@link #NAME_BOARD}) в пределах длины {@code source.board} (200); {@code %s} —
+     * выражение названия.
+     */
+    private static final String NAME_BOARD_OF = "left('" + NAME_BOARD + "' || %s, 200)";
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -237,7 +249,8 @@ public class PortalListRepository {
      * IČO работодателей, у которых вакансия из {@code externalIds} определена, но ещё не записана в их источник портала
      * (провайдер портала, доска — IČO): для ленты «новые сверху». Вакансия, IČO которой определился не в тот час,
      * когда она появилась, записывается с ближайшей лентой, пока она на первой странице. Вакансия со ссылкой не
-     * http(s) не берётся: запись публикаций её пропускает, и лента писала бы работодателю каждый час (§109).
+     * http(s) не берётся: запись публикаций её пропускает, и лента писала бы работодателю каждый час (§109). Вакансии
+     * без IČO ({@link #NAME_BOARD}, §258) лентой не пишутся — по итогу обхода.
      *
      * @param externalIds id вакансий страницы
      * @return IČO работодателей
@@ -319,20 +332,77 @@ public class PortalListRepository {
     }
 
     /**
-     * Публикации источника портала из общего списка: вакансии работодателя, которые видели с начала обхода (полным
-     * обходом или лентой).
+     * Работодатели общего списка, которых нет в реестре (бизнес-описание §4.1, решение владельца 2026-11-03, §258): IČO
+     * вакансии, которую видели с начала обхода, не найден среди компаний страны (в том числе предприниматели-физлица,
+     * которых приём реестра не берёт, §24) или у вакансии IČO нет — доска {@link #NAME_BOARD} с названием из
+     * объявления. Только работодатели без источника портала. Компания закрыта в реестре — работодатель в реестре есть,
+     * сюда не входит.
      *
-     * @param registrationNumber IČO работодателя (доска источника)
-     * @param cycle              номер обхода
+     * @param cycle номер обхода
+     * @return доска и название работодателя из объявления
+     */
+    public List<UnregisteredEmployer> employersWithoutCompany(long cycle) {
+        return jdbcTemplate.query("""
+                SELECT o.board, min(o.employer_name) FROM (
+                    SELECT coalesce(o.registration_number, %s) AS board, left(o.employer_name, 300) AS employer_name
+                    FROM portal_offer o
+                    WHERE o.last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
+                      AND EXISTS (SELECT 1 FROM collection_country cc WHERE cc.country = 'SK' AND cc.active)
+                      AND NOT EXISTS (SELECT 1 FROM company c WHERE c.country = 'SK'
+                                      AND c.registration_number IN (o.registration_number,
+                                                                    ltrim(o.registration_number, '0')))) o
+                WHERE NOT EXISTS (SELECT 1 FROM source s WHERE s.provider = ? AND s.board = o.board)
+                GROUP BY o.board
+                """.formatted(NAME_BOARD_OF.formatted("o.employer_name")),
+                (row, number) -> new UnregisteredEmployer(row.getString(1), row.getString(2)), cycle,
+                StatePortalAdapter.PROVIDER);
+    }
+
+    /**
+     * Подключает работодателю вне реестра источник портала без компании при записанном основании использования
+     * ({@code source_permission}); работодатель на экране — название из объявления ({@code source.employer_name},
+     * как у источников profesia.sk, V86). Появится компания с тем же IČO в реестре — {@link #connect} свяжет её с этим
+     * источником. Повторный вызов дублей не создаёт.
+     *
+     * @param employer доска и название работодателя
+     */
+    public void connectWithoutCompany(UnregisteredEmployer employer) {
+        jdbcTemplate.update("""
+                INSERT INTO source (provider, board, country, employer_name) SELECT ?, ?, 'SK', ?
+                WHERE EXISTS (SELECT 1 FROM source_permission WHERE scope = 'PROVIDER' AND provider = ?
+                              AND decision = 'ALLOW')
+                ON CONFLICT (provider, board) DO NOTHING
+                """, StatePortalAdapter.PROVIDER, employer.board(), employer.name(), StatePortalAdapter.PROVIDER);
+    }
+
+    /**
+     * Публикации источника портала из общего списка: вакансии работодателя, которые видели с начала обхода (полным
+     * обходом или лентой). Доска {@link #NAME_BOARD} — вакансии без IČO с этим названием работодателя (§258): нашёлся
+     * IČO позже — вакансия уходит в источник с IČO, здесь закрывается по общему правилу.
+     *
+     * @param board доска источника: IČO работодателя или {@link #NAME_BOARD} и название
+     * @param cycle номер обхода
      * @return публикации без текста (деталь не читается — отбор по названию, как прежде)
      */
-    public List<FetchedPosting> postingsOf(String registrationNumber, long cycle) {
+    public List<FetchedPosting> postingsOf(String board, long cycle) {
+        String employer = board.startsWith(NAME_BOARD)
+                ? "registration_number IS NULL AND " + NAME_BOARD_OF.formatted("employer_name") + " = ?"
+                : "registration_number = ?";
         return jdbcTemplate.query("""
                 SELECT external_id, title, url, place FROM portal_offer
-                WHERE registration_number = ? AND last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
+                WHERE %s AND last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
                 ORDER BY external_id
-                """, (row, number) -> new FetchedPosting(row.getString(1), row.getString(2), row.getString(3),
-                        row.getString(4), null), registrationNumber, cycle);
+                """.formatted(employer), (row, number) -> new FetchedPosting(row.getString(1), row.getString(2),
+                        row.getString(3), row.getString(4), null), board, cycle);
+    }
+
+    /**
+     * Работодатель общего списка вне реестра (§258).
+     *
+     * @param board доска источника портала: IČO или {@link #NAME_BOARD} и название
+     * @param name  название работодателя из объявления
+     */
+    public record UnregisteredEmployer(String board, String name) {
     }
 
     /**

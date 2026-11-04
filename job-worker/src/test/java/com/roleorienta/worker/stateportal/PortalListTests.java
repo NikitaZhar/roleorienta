@@ -66,6 +66,8 @@ class PortalListTests {
     private static final String UUID_C = "0a0a0a0a-1111-4111-8111-000000000003";
     private static final String UUID_E = "0a0a0a0a-1111-4111-8111-000000000005";
     private static final String UUID_F = "0a0a0a0a-1111-4111-8111-000000000006";
+    /** Объявление площадки работодателя {@link #NOBODY} без IČO: источник портала по названию (§258). */
+    private static final String WORKI = "https://www.worki.sk/ponuka/1";
     /**
      * Полный обход «старые сверху»: страницы по две записи — 2, 2, 2, 0; на второй странице запись без работодателя
      * пропускается — страница с одной годной вакансией обход не завершает.
@@ -76,7 +78,7 @@ class PortalListTests {
             "{\"uuid\":\"0a0a0a0a-1111-4111-8111-000000000009\",\"nazovPracovnehoMiesta\":\"Bez firmy\","
                     + "\"priznakZdroj\":1}",
             own(UUID_C, "Vodič", DETAIL),
-            external("https://www.worki.sk/ponuka/1", "Kuchár", NOBODY),
+            external(WORKI, "Kuchár", NOBODY),
             own(UUID_E, "Predavač (muž/žena)", LISTED));
     private static final int MAX_TASK_ROUNDS = 10;
     private static final AtomicInteger NAME_SEARCHES = new AtomicInteger();
@@ -200,7 +202,8 @@ class PortalListTests {
 
     /**
      * Завершённый обход: источник портала подключён работодателю из реестра ({@link #LISTED}), но не агентству и не
-     * компании со своей кадровой страницей; его вакансии записаны полным чтением (§107).
+     * компании со своей кадровой страницей; его вакансии записаны полным чтением (§107). Работодатель без IČO
+     * ({@link #NOBODY}) — источник по названию без компании, с названием из объявления, вакансия записана (§258).
      */
     @Test
     void completedCycleConnectsEmployersAndRecordsFullRead() {
@@ -211,9 +214,13 @@ class PortalListTests {
                 + "JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id "
                 + "WHERE s.provider = 'sluzbyzamestnanosti'", String.class))
                 .containsExactly(LISTED_NUMBER + ":" + LISTED_NUMBER);
-        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":ACTIVE");
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":ACTIVE", WORKI + ":ACTIVE");
         assertThat(jdbcTemplate.queryForList("SELECT state FROM crawl_run WHERE source_id IN (" + PORTAL_SOURCES + ")",
-                String.class)).containsExactly("COMPLETE");
+                String.class)).containsExactly("COMPLETE", "COMPLETE");
+        assertThat(jdbcTemplate.queryForList("SELECT s.board || '|' || s.employer_name FROM source s "
+                + "WHERE s.provider = 'sluzbyzamestnanosti' "
+                + "AND NOT EXISTS (SELECT 1 FROM company_source cs WHERE cs.source_id = s.id)", String.class))
+                .containsExactly(PortalListRepository.NAME_BOARD + NOBODY + "|" + NOBODY);
     }
 
     /**
@@ -230,7 +237,8 @@ class PortalListTests {
                 + "JOIN source s ON s.id = cs.source_id JOIN company c ON c.id = cs.company_id "
                 + "WHERE s.provider = 'sluzbyzamestnanosti'", String.class))
                 .containsExactlyInAnyOrder(LISTED_NUMBER + ":" + LISTED_NUMBER, OWN_PAGE_NUMBER + ":" + OWN_PAGE_NUMBER);
-        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_C + ":ACTIVE", UUID_E + ":ACTIVE");
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_C + ":ACTIVE", UUID_E + ":ACTIVE",
+                WORKI + ":ACTIVE");
     }
 
     /**
@@ -243,14 +251,14 @@ class PortalListTests {
         withoutE = true;
 
         for (int cycle = 0; cycle < 3; cycle++) {
-            assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE",
+            assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", WORKI + ":ACTIVE",
                     UUID_E + (cycle == 0 ? ":ACTIVE" : ":NEEDS_RECHECK"));
             jdbcTemplate.update("UPDATE portal_cycle SET started_at = started_at - interval '1 day'");
             assertThat(handler.startCycleIfDue()).isTrue();
             runQueuedTasks();
         }
 
-        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":CLOSED");
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", WORKI + ":ACTIVE", UUID_E + ":CLOSED");
     }
 
     /**
@@ -270,10 +278,10 @@ class PortalListTests {
 
         assertThat(jdbcTemplate.queryForList("SELECT external_id || ':' || missing_complete_reads FROM job_posting "
                 + "WHERE source_id IN (" + PORTAL_SOURCES + ")", String.class))
-                .containsExactlyInAnyOrder(UUID_A + ":0", UUID_E + ":0", UUID_F + ":0");
+                .containsExactlyInAnyOrder(UUID_A + ":0", UUID_E + ":0", UUID_F + ":0", WORKI + ":0");
         assertThat(jdbcTemplate.queryForList("SELECT state || ':' || coalesce(partial_reason, '-') FROM crawl_run "
                 + "WHERE source_id IN (" + PORTAL_SOURCES + ") ORDER BY id", String.class))
-                .containsExactly("COMPLETE:-", "PARTIAL:NEW_OFFERS");
+                .containsExactly("COMPLETE:-", "COMPLETE:-", "PARTIAL:NEW_OFFERS");
     }
 
     /**
@@ -284,7 +292,7 @@ class PortalListTests {
     void feedSkipsSourceWithPendingRecord() {
         handler.startCycleIfDue();
         runQueuedTasks();
-        long sourceId = jdbcTemplate.queryForObject(PORTAL_SOURCES, Long.class);
+        long sourceId = jdbcTemplate.queryForObject(PORTAL_SOURCES + " AND board = ?", Long.class, LISTED_NUMBER);
         taskService.enqueue(PortalRecordHandler.TYPE, "portal-record:" + sourceId + ":c999",
                 PortalRecordHandler.payload(sourceId, 1, null));
         handler.enqueueFeed("2026-10-14T12");
@@ -315,7 +323,39 @@ class PortalListTests {
         assertThat(jdbcTemplate.queryForObject("SELECT skipped_pages || ':' || (completed_at IS NOT NULL) "
                 + "FROM portal_cycle", String.class)).isEqualTo("1:true");
         assertThat(jdbcTemplate.queryForList("SELECT state || ':' || coalesce(partial_reason, '-') FROM crawl_run "
-                + "WHERE source_id IN (" + PORTAL_SOURCES + ")", String.class)).containsExactly("PARTIAL:PAGE_FAILED");
+                + "WHERE source_id IN (" + PORTAL_SOURCES + ")", String.class))
+                .containsExactly("PARTIAL:PAGE_FAILED", "PARTIAL:PAGE_FAILED");
+    }
+
+    /**
+     * Работодатель с IČO, которого нет в реестре ({@link #LISTED} без компании): источник портала без компании с
+     * названием из объявления, вакансии записаны (§258); компания с тем же IČO появилась в реестре — следующий обход
+     * связывает её с тем же источником, а не создаёт второй.
+     */
+    @Test
+    void employerOutsideRegistryGetsSourceAndLaterCompany() {
+        jdbcTemplate.update("DELETE FROM company WHERE registration_number = ?", LISTED_NUMBER);
+        handler.startCycleIfDue();
+        runQueuedTasks();
+
+        long sourceId = jdbcTemplate.queryForObject(PORTAL_SOURCES + " AND board = ?", Long.class, LISTED_NUMBER);
+        assertThat(jdbcTemplate.queryForObject("SELECT employer_name FROM source WHERE id = ?", String.class, sourceId))
+                .isEqualTo(LISTED);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM company_source WHERE source_id = ?",
+                Integer.class, sourceId)).isZero();
+        assertThat(postings()).containsExactlyInAnyOrder(UUID_A + ":ACTIVE", UUID_E + ":ACTIVE", WORKI + ":ACTIVE");
+
+        jdbcTemplate.update("INSERT INTO company (country, registration_number, name, registry) "
+                + "VALUES ('SK', ?, 'Company listed', 'RPO')", LISTED_NUMBER);
+        jdbcTemplate.update("UPDATE portal_cycle SET started_at = now() - interval '1 day'");
+        assertThat(handler.startCycleIfDue()).isTrue();
+        runQueuedTasks();
+
+        assertThat(jdbcTemplate.queryForList("SELECT cs.source_id FROM company_source cs JOIN company c "
+                + "ON c.id = cs.company_id WHERE c.registration_number = ?", Long.class, LISTED_NUMBER))
+                .containsExactly(sourceId);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM (" + PORTAL_SOURCES + ") portal", Integer.class))
+                .isEqualTo(2);
     }
 
     private List<String> postings() {
