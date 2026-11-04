@@ -211,6 +211,22 @@ class CareerPageListTests {
         assertThat(CareerPageList.vacancies(Jsoup.parse(jobs.formatted("/kariera?id=", "/kariera?id="),
                 "https://www.firma.sk/kariera"))).extracting(Item::url)
                 .containsExactly("https://www.firma.sk/kariera?id=1", "https://www.firma.sk/kariera?id=2");
+        // Одна ссылка под страницей (меню, «Benefity») не отключает вакансии с запросом (повторная проверка §257).
+        assertThat(CareerPageList.vacancies(Jsoup.parse("<nav><a href=\"/kariera/studenti\">Študenti</a></nav>"
+                + "<a href=\"/kariera/benefity\">Benefity</a>" + jobs.formatted("/kariera?id=", "/kariera?id="),
+                "https://www.firma.sk/kariera"))).extracting(Item::title).containsExactly("Operátor výroby", "Skladník");
+        // Отбор и сортировка на той же странице — не вакансии (вторая повторная проверка §257).
+        assertThat(CareerPageList.vacancies(Jsoup.parse("<a href=\"/kariera?lokalita=ba\">Bratislava</a>"
+                + "<a href=\"/kariera?lokalita=ke\">Košice</a><a href=\"/kariera?lokalita=za\">Žilina</a>"
+                + "<a href=\"/praca/operator\">Operátor</a><a href=\"/praca/skladnik\">Skladník</a>",
+                "https://www.firma.sk/kariera"))).extracting(Item::title).containsExactly("Operátor", "Skladník");
+        assertThat(CareerPageList.vacancies(Jsoup.parse("<a href=\"/kariera?sort=date\">Najnovšie</a>"
+                + "<a href=\"/kariera?sort=name\">Podľa názvu</a><a href=\"/kariera/operator\">Operátor</a>",
+                "https://www.firma.sk/kariera"))).extracting(Item::title).containsExactly("Operátor");
+        assertThat(CareerPageList.vacancies(Jsoup.parse("<a href=\"/kariera?position=vyroba\">Výroba</a>"
+                + "<a href=\"/kariera?position=logistika\">Logistika</a><a href=\"/kariera?job=brigady\">Brigády</a>"
+                + "<a href=\"/praca/operator\">Operátor</a><a href=\"/praca/skladnik\">Skladník</a>",
+                "https://www.firma.sk/kariera"))).extracting(Item::title).containsExactly("Operátor", "Skladník");
         // «2 x Operátor» — число вакансий в названии, а не счётчик.
         assertThat(CareerPageList.vacancies(page("<a href=\"/kariera/1\">2 x Operátor</a><a href=\"/kariera/2\">Zvárač</a>")))
                 .extracting(Item::title).containsExactly("2 x Operátor", "Zvárač");

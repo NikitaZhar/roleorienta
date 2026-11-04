@@ -31,8 +31,9 @@ import org.jsoup.nodes.Element;
  *       иначе текст ссылки без номера карточки впереди ({@link #LEADING_COUNTER}; «2 x Operátor» не трогается) (§252).</li>
  *   <li>Ссылки группируются по родительскому пути ({@code /kariera/casnik} → {@code /kariera/}); корень и пути
  *       страниц списка ({@code /page/2/}) не в счёт; вакансии корня сайта — только на кадровом хосте с номером в адресе
- *       ({@link #ROOT_VACANCY}); ссылки той же страницы с запросом ({@code /kariera?id=1}) — группа самой страницы, а при
- *       страницах вакансий под ней — отбор и сортировка (§255, §257); группа раздела не вакансий ({@link #NOT_JOBS_SEGMENT}:
+ *       ({@link #ROOT_VACANCY}); ссылки той же страницы с запросом — вакансии отдельной группой, только если параметр —
+ *       номер вакансии ({@link #VACANCY_PARAMETER}: {@code /kariera?id=1}); отбор, сортировка, «в избранное» — нет
+ *       (§255, §257); группа раздела не вакансий ({@link #NOT_JOBS_SEGMENT}:
  *       события, статьи, «почему мы») не в счёт. Список — самая большая группа с кадровым словом
  *       ({@link #CAREER_PATH}) в родительском пути или в хосте ссылок ({@code careers.firma.com}; §183: без этого
  *       условия самой большой группой часто оказывались товары, меню и новости сайта; §186: только путь терял
@@ -115,7 +116,15 @@ public final class CareerPageList {
     private static final Pattern LEADING_COUNTER = Pattern.compile("^\\d{1,3}\\s+(?![xX×]\\s)(?=\\p{L})");
 
     /** Родитель кнопки длиннее — уже не карточка: заголовок вакансии в нем не ищется (§252). */
-    private static final int MAX_TITLE_CARD = 2 * 400;
+    private static final int MAX_TITLE_CARD = 2 * MAX_CARD;
+
+    /**
+     * Параметр-номер вакансии у ссылки на саму страницу списка ({@code /kariera?id=1}, {@code ?jobId=}, {@code ?pozicia=}),
+     * значение — с цифрой: только он делает такую ссылку вакансией; отбор по категории ({@code ?position=vyroba},
+     * {@code ?job=brigady}) — нет (аудит §257).
+     */
+    private static final Pattern VACANCY_PARAMETER = Pattern.compile(
+            "(?i)(?:^|&)(?:id|job_?id|position_?id|offer_?id|vacancy_?id|ad_?id|job|position|pozicia|ponuka|detail)=[^&]*\\d");
 
     /**
      * Кадровое слово в родительском пути или хосте: группа ссылок под ним может быть списком (§183: «karriere» —
@@ -171,11 +180,6 @@ public final class CareerPageList {
         Map<String, Map<String, Element>> groups = new LinkedHashMap<>();
         boolean careerHost = CAREER_PATH.matcher(base.getHost()).find();
         String basePath = base.getPath().replaceAll("/+$", "");
-        // Ссылки отбора на саму страницу отбрасываются, только когда у списка есть страницы вакансий под ней (Dr.Max:
-        // …/volne-pozicie/detail-kariery?id=); иначе вакансии и есть ссылки с запросом ({@code /kariera?id=1}, аудит §257).
-        boolean detailPages = page.select("a[href]").stream().map(anchor -> uri(anchor.absUrl("href")))
-                .anyMatch(link -> link != null && sameSite(base.getHost(), link.getHost())
-                        && link.getPath() != null && link.getPath().startsWith(basePath + "/"));
         for (Element anchor : page.select("a[href]")) {
             URI link = uri(anchor.absUrl("href"));
             String title = title(anchor);
@@ -185,13 +189,15 @@ public final class CareerPageList {
             String path = link.getPath().replaceAll("/+$", "");
             // Та же страница с другим запросом — отбор, сортировка, «в избранное» (Dr.Max, §255), не вакансия; ссылка
             // на сам список («…/ponuka-prace/» с главной кадрового сайта AGEL) — тоже.
+            // Та же страница с запросом — вакансия, только если параметр — номер вакансии ({@code /kariera?id=1}, своя
+            // группа {@code /kariera?}); отбор, сортировка, «в избранное» ({@code ?lokalita=ba}, {@code ?sort=date},
+            // Dr.Max {@code ?add_whislist_id=}, §255) — не вакансии (аудит §257).
             boolean samePage = path.equals(basePath) && link.getQuery() != null;
-            if (samePage && detailPages
+            if (samePage && !VACANCY_PARAMETER.matcher(link.getQuery()).find()
                     || !samePage && LIST_SLUG.matcher(path.substring(path.lastIndexOf('/') + 1)).matches()) {
                 continue;
             }
-            // Вакансии — сама страница с запросом ({@code /kariera?id=1}): группа — путь страницы, а не корень сайта.
-            String parent = samePage ? path + "/" : path.substring(0, path.lastIndexOf('/') + 1);
+            String parent = samePage ? path + "?" : path.substring(0, path.lastIndexOf('/') + 1);
             // Ссылки вакансий в корне сайта — только на кадровом хосте (§252: ponukyprace.manuvia.com/<вакансия>/).
             if (parent.length() <= 1 && !(careerHost && ROOT_VACANCY.matcher(path).find()) || path.isEmpty()
                     || PAGINATION_PATH.matcher(link.getPath()).find() || notJobs(parent)) {
@@ -302,7 +308,7 @@ public final class CareerPageList {
      * @return {@code true} — последняя часть пути — раздел не вакансий ({@link #NOT_JOBS_SEGMENT})
      */
     private static boolean notJobs(String parent) {
-        String trimmed = parent.replaceAll("/+$", "");
+        String trimmed = parent.replaceAll("[/?]+$", "");
         return NOT_JOBS_SEGMENT.matcher(trimmed.substring(trimmed.lastIndexOf('/') + 1)).matches();
     }
 
