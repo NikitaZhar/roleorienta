@@ -32,7 +32,8 @@ public class TitleOccupationRepository {
     /**
      * Переучивает и перераспознаёт одной транзакцией: выученные головы заменяются целиком; у открытых публикаций без
      * кода портала распознанная группа — выученная голова, иначе однозначный синоним ESCO (у названия одной профессии
-     * ESCO — одна группа, у одинаковых названий разных профессий — одна и та же), иначе нет. Меняются только
+     * ESCO — одна группа, у одинаковых названий разных профессий — одна и та же), иначе ответ языковой модели на то
+     * же название ({@code title_classification}, §262), иначе нет. Меняются только
      * отличающиеся значения; у закрытых публикаций распознанная группа не трогается; у публикаций, получивших код
      * портала после распознавания, распознанная снимается (аудит §222: иначе вакансия подходила бы и чужой группе).
      * Строки блокируются по порядку id ({@code FOR UPDATE}), запись публикаций упорядочивает изменения так же
@@ -62,12 +63,13 @@ public class TitleOccupationRepository {
                     FROM esco_label l JOIN esco_occupation e ON e.id = l.occupation_id
                     GROUP BY 1 HAVING count(DISTINCT e.group_code) = 1 AND length(title_head(l.label)) >= ?),
                 recognized AS (
-                    SELECT p.id, coalesce(t.code, esco.code) AS code
+                    SELECT p.id, coalesce(t.code, esco.code, c.code) AS code
                     FROM job_posting p
                     LEFT JOIN title_occupation t ON t.head = title_head(p.title)
                     LEFT JOIN esco ON esco.head = title_head(p.title)
+                    LEFT JOIN title_classification c ON c.title_key = same_title(p.title)
                     WHERE p.occupation_code IS NULL AND p.closed_at IS NULL
-                      AND p.title_occupation_code IS DISTINCT FROM coalesce(t.code, esco.code)
+                      AND p.title_occupation_code IS DISTINCT FROM coalesce(t.code, esco.code, c.code)
                     ORDER BY p.id
                     FOR UPDATE OF p)
                 UPDATE job_posting p SET title_occupation_code = r.code
