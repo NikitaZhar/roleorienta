@@ -184,7 +184,7 @@ public class PortalListHandler implements TaskHandler {
     /**
      * Завершённый обход: работодателям с вакансиями без источника подключается источник портала — из реестра с
      * компанией, вне реестра и без IČO без неё (§258), — затем каждому
-     * источнику портала к чтению (один канал на компанию) — запись из общего списка ({@link PortalRecordHandler}):
+     * источнику портала — запись из общего списка ({@link PortalRecordHandler}):
      * полное чтение, а если в обходе пропущены страницы — неполное ({@link PartialReason#PAGE_FAILED}, отсутствие не
      * засчитывается). Вызывается до отметки «обход завершён»: сбой здесь оставляет обход незавершённым, и следующий
      * тик начинает новый с первой страницы (прогресс обхода теряется; любая ошибка БД в задании обхода — тоже),
@@ -229,11 +229,11 @@ public class PortalListHandler implements TaskHandler {
     }
 
     /**
-     * Источники портала к записи: правило «один канал на компанию» — как у чтения источников, без учёта времени
-     * прошлого чтения ({@link SourceRepository#findChannelSources}; §111).
+     * Источники портала к записи: все незакрытые, без учёта времени прошлого чтения
+     * ({@link SourceRepository#findOpenByProvider}; §111, §260).
      */
     private List<Source> portalSources() {
-        return sources.findChannelSources(StatePortalAdapter.PROVIDER);
+        return sources.findOpenByProvider(StatePortalAdapter.PROVIDER);
     }
 
     private static String recordKeyPrefix(Source source) {

@@ -279,12 +279,11 @@ public class PortalListRepository {
     }
 
     /**
-     * Работодатели с вакансиями обхода, которым подключается источник портала (бизнес-описание §4.1, «один канал на
-     * компанию»): IČO вакансии, которую видели с начала обхода, есть в реестре (страна — активная страна сбора),
-     * компания действует, не кадровое агентство и не имеет своего источника (кадровый сайт группы, роль
-     * {@code GROUP}, §81, и своя кадровая страница, найденная разбором сайта, провайдер {@code careerpage}, §225, не в
-     * счёт — как в {@code SourceRepository.ONE_CHANNEL}). Прежде то же решал шаг «проверка работодателей» (§45, удалён
-     * §107).
+     * Работодатели с вакансиями обхода, которым подключается источник портала (бизнес-описание §4.1, все каналы
+     * компании, §260): IČO вакансии, которую видели с начала обхода, есть в реестре (страна — активная страна сбора),
+     * компания действует и не кадровое агентство; свой источник компании (система найма, кадровая страница) портал не
+     * отключает — одна вакансия двух каналов склеивается при записи ({@code PostingRecorder}). Прежде то же решал шаг
+     * «проверка работодателей» (§45, удалён §107). Компания, уже связанная с этим источником портала, не повторяется.
      *
      * @param cycle номер обхода
      * @return работодатели с компанией
@@ -298,8 +297,9 @@ public class PortalListRepository {
                 WHERE o.last_seen_at >= (SELECT started_at FROM portal_cycle WHERE id = ?)
                   AND c.terminated_on IS NULL AND NOT c.agency
                   AND NOT EXISTS (SELECT 1 FROM company_source cs JOIN source s ON s.id = cs.source_id
-                                  WHERE cs.company_id = c.id AND cs.role <> 'GROUP' AND s.provider <> 'careerpage')
-                """, (row, number) -> new NewEmployer(row.getString(1), row.getLong(2)), cycle);
+                                  WHERE cs.company_id = c.id AND s.provider = ? AND s.board = o.registration_number)
+                """, (row, number) -> new NewEmployer(row.getString(1), row.getLong(2)), cycle,
+                StatePortalAdapter.PROVIDER);
     }
 
     /**

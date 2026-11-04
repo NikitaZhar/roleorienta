@@ -23,11 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
  * (бизнес-описание §4.3).
  *
  * <ul>
- *   <li>Новая публикация присоединяется к незакрытой вакансии той же компании из другого её источника, если
+ *   <li>Новая публикация присоединяется к незакрытой вакансии того же работодателя из другого его источника, если
  *       ссылка совпадает без схемы, {@code www.} и {@code /} в конце или совпадают провайдер, хост и внешний id
- *       (§139: одна доска, подключённая дважды, языковые разделы); иначе — новая вакансия. Существующие
- *       вакансии между собой не объединяются (технический документ §16.14). Название и ссылку вакансии задаёт её
- *       первая публикация: присоединённая подтверждает вакансию, но их не меняет (аудит §143).</li>
+ *       (§139: одна доска, подключённая дважды, языковые разделы), иначе — если совпадают название и место
+ *       ({@link SameVacancy#byTitle}, §260: одна вакансия на кадровой странице и на портале); иначе — новая
+ *       вакансия. Существующие вакансии между собой при записи не объединяются (накопленные дубли склеила миграция
+ *       V92). Название и ссылку вакансии задаёт её первая публикация: присоединённая подтверждает вакансию, но их не
+ *       меняет (аудит §143); сопоставление вакансии пересчитывается (у присоединённой — свои место и текст).</li>
  *   <li>Полное чтение: новая публикация — новая вакансия; известная — обновление сведений и
  *       подтверждение; отсутствующая — счётчик отсутствия, закрытие после
  *       {@link VacancyProperties#closeAfterMissingReads()} полных чтений подряд.</li>
@@ -117,6 +119,8 @@ public class PostingRecorder {
         Set<Long> touched = new HashSet<>();
         Set<String> notVerified = new HashSet<>(unverified);
         Set<String> joined = new HashSet<>(postings.findJoinedExternalIds(source.getId()));
+        Set<Long> taken = known.values().stream().map(posting -> posting.getVacancy().getId())
+                .collect(Collectors.toCollection(HashSet::new));
         SameVacancy same = null;
         for (FetchedPosting posting : fetched) {
             if (!isWebUrl(posting.url())) {
@@ -131,12 +135,14 @@ public class PostingRecorder {
                 if (same == null) {
                     same = SameVacancy.of(postings.findNeighbourPostings(source.getId()));
                 }
-                Optional<Vacancy> found = sameVacancy(same, source, posting);
+                Optional<Vacancy> found = sameVacancy(same, source, posting, taken);
                 Vacancy vacancy = found.orElseGet(() ->
                         vacancies.save(new Vacancy(posting.title(), posting.url(), now)));
                 vacancy.notePosted(posted);
                 postings.save(new JobPosting(source, vacancy, posting, now));
+                taken.add(vacancy.getId());
                 if (found.isPresent()) {
+                    vacancy.resetMatch();
                     touched.add(vacancy.getId());
                 }
                 continue;
@@ -169,8 +175,18 @@ public class PostingRecorder {
         refreshStates(touched, now);
     }
 
-    private Optional<Vacancy> sameVacancy(SameVacancy same, Source source, FetchedPosting posting) {
-        Optional<Vacancy> found = same.find(source.getProvider(), posting).flatMap(vacancies::findById);
+    /**
+     * Вакансия, к которой присоединяется новая публикация: по ссылке или внешнему id, иначе по названию и месту —
+     * ключи новой публикации считает БД ({@link JobPostingRepository#sameTitle}), только если у работодателя есть
+     * кандидаты с названием (у компании с одним источником запросов нет).
+     */
+    private Optional<Vacancy> sameVacancy(SameVacancy same, Source source, FetchedPosting posting, Set<Long> taken) {
+        Optional<Long> id = same.find(source.getProvider(), posting);
+        if (id.isEmpty() && same.hasTitles()) {
+            id = same.byTitle(postings.sameTitle(posting.title()),
+                    postings.sameTitle(posting.location() == null ? "" : posting.location()), taken);
+        }
+        Optional<Vacancy> found = id.flatMap(vacancies::findById);
         found.ifPresent(vacancy -> LOG.info("Source {}: posting {} joins vacancy {} of another source",
                 source.getId(), posting.externalId(), vacancy.getId()));
         return found;

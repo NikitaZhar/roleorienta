@@ -49,7 +49,7 @@ public class AdminSourceRepository {
     }
 
     /**
-     * Источник отмечается закрытым: больше не читается (job-worker, {@code SourceRepository.ONE_CHANNEL}).
+     * Источник отмечается закрытым: больше не читается (job-worker, {@code SourceRepository.OPEN}).
      *
      * @param sourceId источник
      * @return {@code false} — источника нет, он уже закрыт или связан с компанией

@@ -14,33 +14,21 @@ import org.springframework.transaction.annotation.Transactional;
 public interface SourceRepository extends JpaRepository<Source, Long> {
 
     /**
-     * Один канал на компанию (общая часть запросов): все незакрытые источники (закрывает администратор, §206), кроме
-     * источника канала ниже кадровой страницы (государственный портал, {@code ?1}), если у его компании есть другой
-     * незакрытый источник — у компании читается один канал (бизнес-описание §4.1); кадровый сайт группы (роль
-     * {@code GROUP}, §81) и своя кадровая страница, найденная разбором сайта (провайдер {@code careerpage},
-     * {@code CareerPageAdapter.PROVIDER}; §225: у 218 из 481 компании она давала меньше вакансий, чем портал), портал
-     * не отключают.
+     * Незакрытые источники (закрывает администратор, §206) — общая часть запросов. Читаются все каналы компании
+     * (решение владельца 2026-11-03, бизнес-описание §4.1, стенограмма §260; заменяет «один канал на компанию»):
+     * кадровые страницы, системы найма, государственный портал и площадка; одна вакансия разных каналов — одна запись
+     * ({@code PostingRecorder}).
      */
-    String ONE_CHANNEL = """
-            SELECT s.* FROM source s
-            WHERE s.closed_at IS NULL
-              AND (s.provider <> ?1
-                   OR NOT EXISTS (SELECT 1 FROM company_source own
-                                  JOIN company_source other ON other.company_id = own.company_id
-                                                               AND other.role <> 'GROUP'
-                                  JOIN source o ON o.id = other.source_id AND o.closed_at IS NULL
-                                  WHERE own.source_id = s.id AND o.provider <> ?1
-                                    AND o.provider <> 'careerpage'))
-            """;
+    String OPEN = "SELECT s.* FROM source s WHERE s.closed_at IS NULL";
 
     /**
-     * Источники к чтению (общая часть запросов {@link #findToRead} и {@link #findNextToRead}): {@link #ONE_CHANNEL} и
-     * только те, чьё последнее чтение (обход {@code crawl_run}) началось раньше, чем {@code ?2} секунд назад, или
+     * Источники к чтению (общая часть запросов {@link #findToRead} и {@link #findNextToRead}): {@link #OPEN} и
+     * только те, чьё последнее чтение (обход {@code crawl_run}) началось раньше, чем {@code ?1} секунд назад, или
      * которых ещё не читали — чтение не реже раза в сутки по времени, а не по дате (§103).
      */
-    String TO_READ = ONE_CHANNEL + """
+    String TO_READ = OPEN + """
               AND NOT EXISTS (SELECT 1 FROM crawl_run r
-                              WHERE r.source_id = s.id AND r.started_at > now() - make_interval(secs => ?2))
+                              WHERE r.source_id = s.id AND r.started_at > now() - make_interval(secs => ?1))
             """;
 
     /** Порядок: сначала не читавшиеся, затем читавшиеся давнее. */
@@ -53,42 +41,39 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
      * PostgreSQL, Spring Data превращает строки в {@link Source}.
      * https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html
      *
-     * @param channelProvider    провайдер канала ниже кадровой страницы
-     * @param readAfterSeconds   через сколько секунд после начала последнего чтения источник читается снова
+     * @param readAfterSeconds через сколько секунд после начала последнего чтения источник читается снова
      * @return источники к чтению, сначала не читавшиеся и читавшиеся давнее
      */
     @Query(nativeQuery = true, value = TO_READ + BY_LAST_READ)
-    List<Source> findToRead(String channelProvider, double readAfterSeconds);
+    List<Source> findToRead(double readAfterSeconds);
 
     /**
-     * Источники канала ниже кадровой страницы (государственный портал) с правилом «один канал на компанию»
-     * ({@link #ONE_CHANNEL}), без учёта времени прошлого чтения — им записываются вакансии из общего списка портала
-     * (§107, §111).
+     * Незакрытые источники провайдера ({@link #OPEN}) без учёта времени прошлого чтения — источникам государственного
+     * портала ими записываются вакансии из общего списка (§107, §111).
      *
-     * @param channelProvider провайдер канала ниже кадровой страницы
-     * @return источники этого провайдера к записи
+     * @param provider провайдер
+     * @return источники провайдера по id
      */
-    @Query(nativeQuery = true, value = ONE_CHANNEL + " AND s.provider = ?1 ORDER BY s.id")
-    List<Source> findChannelSources(String channelProvider);
+    @Query(nativeQuery = true, value = OPEN + " AND s.provider = ?1 ORDER BY s.id")
+    List<Source> findOpenByProvider(String provider);
 
     /**
      * Следующий источник провайдера с общим хостом, которому пора читаться ({@link #TO_READ}) и по которому нет
      * незавершённого чтения (в очереди, выполняется, ждёт повтора; не менявшееся больше суток — брошено, как
      * {@code TaskService#activeKeys}). Ключ задания чтения — {@code read:<источник>:<час>}.
      *
-     * @param channelProvider  провайдер канала ниже кадровой страницы
      * @param readAfterSeconds через сколько секунд после начала последнего чтения источник читается снова
      * @param provider         провайдер с общим хостом
      * @return источник, если есть
      */
     @Query(nativeQuery = true, value = TO_READ + """
-              AND s.provider = ?3
+              AND s.provider = ?2
               AND NOT EXISTS (SELECT 1 FROM task t
                               WHERE t.type = 'READ_SOURCE' AND t.state IN ('QUEUED', 'RUNNING', 'WAITING')
                                 AND t.updated_at > now() - interval '1 day'
                                 AND t.task_key LIKE 'read:' || s.id || ':%')
             """ + BY_LAST_READ + " LIMIT 1")
-    Optional<Source> findNextToRead(String channelProvider, double readAfterSeconds, String provider);
+    Optional<Source> findNextToRead(double readAfterSeconds, String provider);
 
     /**
      * Провайдеры, у которых чтение источника в очереди или выполняется (не менявшееся больше суток — брошено).

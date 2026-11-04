@@ -15,20 +15,43 @@ import org.springframework.data.repository.query.Param;
 public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
 
     /**
-     * Открытые публикации других источников компаний этого источника (через {@code company_source}, любая роль) у
-     * незакрытых вакансий — кандидаты на присоединение новой публикации (§139; один запрос на чтение — аудит §143).
+     * Открытые публикации других источников работодателя этого источника у незакрытых вакансий — кандидаты на
+     * присоединение новой публикации (§139, §260; один запрос на чтение — аудит §143). Работодатель — компании
+     * источника ({@code company_source}, любая роль), у источника без компании — источники без компании с тем же
+     * названием работодателя ({@code source.employer_name} по {@code same_title}: источник портала вне реестра и источник
+     * profesia.sk, §259). Ключ названия ({@code same_title}, V92) — только если оба источника не кадровый сайт группы
+     * (роль {@code GROUP}: доска группы — вакансии многих стран и компаний), ключ места — {@code same_title} места.
      *
      * @param sourceId источник читаемых публикаций
-     * @return строки: id вакансии, ссылка, провайдер, внешний id; по id вакансии
+     * @return строки: id вакансии, ссылка, провайдер, внешний id, ключ названия ({@code null} — не сравнивается),
+     *         ключ места (пусто — места нет); по id вакансии
      */
     @Query(value = """
-            SELECT p.vacancy_id, p.url, s.provider, p.external_id
+            SELECT p.vacancy_id, p.url, s.provider, p.external_id,
+                   CASE WHEN n.by_title THEN same_title(p.title) END AS title_key,
+                   same_title(coalesce(p.location, '')) AS place_key
             FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id JOIN source s ON s.id = p.source_id
-            WHERE p.source_id IN (SELECT o.source_id FROM company_source o JOIN company_source m
-                                  ON m.company_id = o.company_id WHERE m.source_id = :sourceId)
-              AND p.source_id <> :sourceId AND p.closed_at IS NULL AND v.state <> 'CLOSED'
+            JOIN (SELECT o.source_id, bool_or(o.role <> 'GROUP' AND m.role <> 'GROUP') AS by_title
+                  FROM company_source o JOIN company_source m ON m.company_id = o.company_id
+                  WHERE m.source_id = :sourceId GROUP BY o.source_id
+                  UNION ALL
+                  SELECT o.id, TRUE FROM source o JOIN source m ON m.id = :sourceId
+                  WHERE m.employer_name IS NOT NULL AND same_title(o.employer_name) = same_title(m.employer_name)
+                    AND NOT EXISTS (SELECT 1 FROM company_source x WHERE x.source_id IN (o.id, m.id))) n
+                 ON n.source_id = p.source_id
+            WHERE p.source_id <> :sourceId AND p.closed_at IS NULL AND v.state <> 'CLOSED'
             ORDER BY p.vacancy_id""", nativeQuery = true)
     List<Object[]> findNeighbourPostings(@Param("sourceId") long sourceId);
+
+    /**
+     * Ключ сравнения названия или места — функция БД {@code same_title} (V90, V92): одно правило для склейки при
+     * записи, склейки накопленных (V92), отсева profesia.sk (§220) и показателей полноты.
+     *
+     * @param text название или место; пустая строка — пустой ключ
+     * @return текст без регистра, диакритики, скобок, зарплаты, пометок пола и знаков
+     */
+    @Query(value = "SELECT same_title(:text)", nativeQuery = true)
+    String sameTitle(@Param("text") String text);
 
     /**
      * @param sourceId источник

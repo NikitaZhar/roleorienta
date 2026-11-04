@@ -61,7 +61,7 @@ public class ReadSourcePlanner {
     public void enqueueDue() {
         Set<String> pending = taskService.activeKeys(ReadSourceHandler.TYPE).stream()
                 .map(ReadSourcePlanner::sourcePrefix).collect(Collectors.toSet());
-        for (Source source : sources.findToRead(StatePortalAdapter.PROVIDER, readAfterSeconds())) {
+        for (Source source : sources.findToRead(readAfterSeconds())) {
             if (!StatePortalAdapter.PROVIDER.equals(source.getProvider())
                     && !StatePortalAdapter.PROFESIA_PROVIDER.equals(source.getProvider())
                     && !properties.sharedHostProviders().contains(source.getProvider())
@@ -80,7 +80,7 @@ public class ReadSourcePlanner {
         Set<String> reading = new HashSet<>(sources.providersReading());
         for (String provider : properties.sharedHostProviders()) {
             if (!reading.contains(provider)) {
-                sources.findNextToRead(StatePortalAdapter.PROVIDER, readAfterSeconds(), provider)
+                sources.findNextToRead(readAfterSeconds(), provider)
                         .ifPresent(this::enqueue);
             }
         }

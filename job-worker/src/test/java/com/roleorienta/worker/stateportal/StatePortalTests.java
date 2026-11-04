@@ -265,11 +265,11 @@ class StatePortalTests {
     }
 
     /**
-     * Один канал на компанию: источник портала компании со своей кадровой страницей к чтению не ставится,
-     * источник работодателя без своей страницы — ставится.
+     * Все каналы компании (§260): источник портала компании со своей кадровой страницей к чтению ставится, как и
+     * источник работодателя без своей страницы и сама кадровая страница.
      */
     @Test
-    void portalSourceIsNotReadWhenCompanyHasOwnPage() {
+    void portalSourceIsReadWhenCompanyHasOwnPage() {
         for (String number : List.of(EMPLOYER, OWN_PAGE)) {
             jdbcTemplate.update("INSERT INTO source (provider, board, country) VALUES (?, ?, 'SK')",
                     StatePortalAdapter.PROVIDER, number);
@@ -280,11 +280,11 @@ class StatePortalTests {
                     """, number, StatePortalAdapter.PROVIDER, number);
         }
 
-        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+        List<String> toRead = sources.findToRead(0).stream()
                 .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
 
-        assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + EMPLOYER, "greenhouse:own-page-test")
-                .doesNotContain(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE);
+        assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + EMPLOYER, "greenhouse:own-page-test",
+                StatePortalAdapter.PROVIDER + ":" + OWN_PAGE);
     }
 
     /**
@@ -302,17 +302,16 @@ class StatePortalTests {
                 """, OWN_PAGE, StatePortalAdapter.PROVIDER, OWN_PAGE);
         jdbcTemplate.update("UPDATE source SET provider = 'careerpage' WHERE board = 'own-page-test'");
 
-        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+        List<String> toRead = sources.findToRead(0).stream()
                 .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
 
         assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE, "careerpage:own-page-test");
-        assertThat(sources.findChannelSources(StatePortalAdapter.PROVIDER).stream().map(source -> source.getBoard()))
+        assertThat(sources.findOpenByProvider(StatePortalAdapter.PROVIDER).stream().map(source -> source.getBoard()))
                 .contains(OWN_PAGE);
     }
 
     /**
-     * Закрытый администратором источник (§206, аудит §211) не читается и каналом компании не считается: портал этой
-     * компании снова читается.
+     * Закрытый администратором источник (§206, аудит §211) не читается; портал этой компании читается.
      */
     @Test
     void closedSourceIsNotReadAndDoesNotDisablePortal() {
@@ -326,7 +325,7 @@ class StatePortalTests {
         jdbcTemplate.update("UPDATE source SET closed_at = now() WHERE provider = 'greenhouse' AND board = "
                 + "'own-page-test'");
 
-        List<String> toRead = sources.findToRead(StatePortalAdapter.PROVIDER, 0).stream()
+        List<String> toRead = sources.findToRead(0).stream()
                 .map(source -> source.getProvider() + ":" + source.getBoard()).toList();
 
         assertThat(toRead).contains(StatePortalAdapter.PROVIDER + ":" + OWN_PAGE)
