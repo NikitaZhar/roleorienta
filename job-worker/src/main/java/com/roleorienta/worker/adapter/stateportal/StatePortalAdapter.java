@@ -197,8 +197,21 @@ public class StatePortalAdapter implements SourceAdapter {
      * @param occupation   группа ISCO-08 (4 цифры) профессии своей вакансии портала; {@code null} — нет
      * @param employerLink ссылка на вакансию у работодателя объявления profesia.sk (§209); {@code null} — не
      *                     выяснена (не объявление profesia или переадресация не получена — спросить позже)
+     * @param positions    позиции profesia.sk, указанные работодателем (§267); у своей вакансии портала — пусто
      */
-    public record OfferDetails(Instant postedAt, String occupation, EmployerLink employerLink) {
+    public record OfferDetails(Instant postedAt, String occupation, EmployerLink employerLink,
+            List<ProfesiaPosition> positions) {
+
+        /**
+         * Сведения без позиций profesia.sk.
+         *
+         * @param postedAt     дата размещения
+         * @param occupation   группа ISCO-08
+         * @param employerLink ссылка на вакансию у работодателя
+         */
+        public OfferDetails(Instant postedAt, String occupation, EmployerLink employerLink) {
+            this(postedAt, occupation, employerLink, List.of());
+        }
 
         /**
          * Сведения без ссылки на работодателя (своя вакансия портала, объявление без кнопки отклика у работодателя).
@@ -256,7 +269,8 @@ public class StatePortalAdapter implements SourceAdapter {
      * последнее изменение — датой размещения не считается), ни профессии. Своя вакансия портала — страница
      * {@code /pracovne-ponuky/<uuid>}: дата — «Dátum a čas vytvorenia», профессия — «Profesia (SK ISCO-08)»; объявление
      * profesia.sk — страница по его адресу: дата — разметка schema.org {@code itemprop="datePosted"} («Dátum
-     * zverejnenia»), профессии нет; ссылка на вакансию у работодателя — {@link #employerLink}.
+     * zverejnenia»), профессии нет, позиции profesia.sk — {@link ProfesiaPosition#of} (§267); ссылка на вакансию у
+     * работодателя — {@link #employerLink}.
      *
      * @param externalId внешний id публикации
      * @param url        адрес объявления (для profesia.sk)
@@ -304,7 +318,7 @@ public class StatePortalAdapter implements SourceAdapter {
         Element posted = document.selectFirst("[itemprop=datePosted]");
         return Optional.of(new OfferDetails(posted == null ? null
                 : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null,
-                linkWanted ? employerLink(document) : null));
+                linkWanted ? employerLink(document) : null, ProfesiaPosition.of(document)));
     }
 
     /**

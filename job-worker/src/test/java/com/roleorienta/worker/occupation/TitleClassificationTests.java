@@ -101,6 +101,28 @@ class TitleClassificationTests {
         verify(classifier, never()).classify(any());
     }
 
+    /**
+     * Позиция profesia.sk без группы (§267) получает группу распознаванием по её названию; решение владельца не
+     * перезаписывается.
+     */
+    @Test
+    void profesiaPositionGetsGroupAndOwnerDecisionStays() {
+        jdbcTemplate.update("""
+                INSERT INTO profesia_position (slug, name) VALUES ('servicenow-test-developer', 'ServiceNow Developer')""");
+        jdbcTemplate.update("""
+                INSERT INTO profesia_position (slug, name, code, mapped_by) VALUES ('owner-test-position', 'ServiceNow Lead',
+                '2511', 'OWNER')""");
+        when(examples.refresh()).thenReturn(true);
+        when(classifier.classify(any())).thenAnswer(call -> answers(call.getArgument(0)));
+
+        handler.handle(new TaskRecord(0, TitleClassificationHandler.TYPE, "{}", 0));
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT slug || ' ' || code || ' ' || mapped_by FROM profesia_position
+                WHERE slug IN ('servicenow-test-developer', 'owner-test-position') ORDER BY slug""", String.class))
+                .containsExactly("owner-test-position 2511 OWNER", "servicenow-test-developer 2512 bge-m3");
+    }
+
     @Test
     void portalTitleWithCodeIsExampleAndKeepsVector() {
         posting(source(), "Vodič MKD (muž/žena)", "8322");

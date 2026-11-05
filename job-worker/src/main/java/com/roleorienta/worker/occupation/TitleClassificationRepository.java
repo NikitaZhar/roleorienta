@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,6 +80,32 @@ public class TitleClassificationRepository {
                   AND c.title_key = ANY (SELECT same_title(t) FROM unnest(CAST(? AS TEXT[])) t)
                 """, (PreparedStatement statement) -> statement.setArray(1,
                         statement.getConnection().createArrayOf("text", answers.keySet().toArray())));
+    }
+
+    /**
+     * @return позиции каталога profesia.sk без группы ISCO-08 (§267): ключ и название; ещё не сопоставленные
+     */
+    public Map<String, String> unmappedProfesiaPositions() {
+        Map<String, String> positions = new LinkedHashMap<>();
+        jdbcTemplate.query("SELECT slug, name FROM profesia_position WHERE mapped_by IS NULL ORDER BY slug",
+                row -> {
+                    positions.put(row.getString(1), row.getString(2));
+                });
+        return positions;
+    }
+
+    /**
+     * Группы ISCO-08 позиций profesia.sk по ответу распознавания (§267; способ — {@code mapped_by}); позицию, которую
+     * уже сопоставил владелец или прежний ответ, не трогает.
+     *
+     * @param codes ключ позиции → код группы (пусто — не распознано)
+     * @param model каким способом распознано
+     */
+    @Transactional
+    public void mapProfesiaPositions(Map<String, String> codes, String model) {
+        codes.forEach((slug, code) -> jdbcTemplate.update("""
+                UPDATE profesia_position SET code = ?, mapped_by = ?, mapped_at = now()
+                WHERE slug = ? AND mapped_by IS NULL""", code.isEmpty() ? null : code, model, slug));
     }
 
     /**

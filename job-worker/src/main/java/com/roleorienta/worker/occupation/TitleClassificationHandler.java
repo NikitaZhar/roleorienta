@@ -4,6 +4,8 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -50,6 +52,23 @@ public class TitleClassificationHandler implements TaskHandler {
         this.properties = properties;
     }
 
+    /**
+     * Позиции каталога profesia.sk, которые ещё без группы ISCO-08 (§267), — тем же распознаванием по названию позиции
+     * («Predavač/predavačka», «Database Administrator»); владелец проверяет и исправляет ({@code mapped_by = 'OWNER'}).
+     */
+    private void mapProfesiaPositions() {
+        Map<String, String> positions = repository.unmappedProfesiaPositions();
+        if (positions.isEmpty()) {
+            return;
+        }
+        Map<String, String> byName = classifier.classify(List.copyOf(new LinkedHashSet<>(positions.values())));
+        Map<String, String> codes = new HashMap<>();
+        positions.forEach((slug, name) -> codes.put(slug, byName.getOrDefault(name, "")));
+        repository.mapProfesiaPositions(codes, properties.model());
+        LOG.info("Profesia positions mapped: {}, with a group: {}", codes.size(),
+                codes.values().stream().filter(code -> !code.isEmpty()).count());
+    }
+
     @Override
     public String type() {
         return TYPE;
@@ -62,6 +81,7 @@ public class TitleClassificationHandler implements TaskHandler {
                 LOG.info("Title classification waits: examples are not ready yet");
                 return new TaskOutcome.Done();
             }
+            mapProfesiaPositions();
             List<String> titles = repository.unrecognized(properties.limits().titlesPerTask());
             Map<String, String> answers = classifier.classify(titles);
             int postings = repository.save(answers, properties.model());

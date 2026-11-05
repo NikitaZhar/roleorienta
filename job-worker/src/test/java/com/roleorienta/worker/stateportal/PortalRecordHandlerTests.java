@@ -7,9 +7,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.roleorienta.worker.adapter.stateportal.ProfesiaPosition;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
 import com.roleorienta.worker.crawl.CrawlRun;
@@ -47,6 +49,8 @@ class PortalRecordHandlerTests {
     private static final Instant POSTED = Instant.parse("2026-10-14T00:00:00Z");
     private static final String FREIGHT_HANDLERS = "9333";
     private static final String EMPLOYER_JOB = "https://employer.example/jobs/1";
+    private static final List<ProfesiaPosition> POSITIONS = List.of(
+            new ProfesiaPosition("predavac-predavacka", "Predavač/predavačka"));
     /** Публикации источника: две без даты, одна с датой, объявление profesia.sk без даты, объявление другой площадки. */
     private static final List<FetchedPosting> POSTINGS = List.of(posting(UUID_A), posting(UUID_DATED),
             posting(UUID_B), posting(PROFESIA), posting(OTHER_SITE));
@@ -72,7 +76,7 @@ class PortalRecordHandlerTests {
                 .thenReturn(Optional.of(new StatePortalAdapter.OfferDetails(null, FREIGHT_HANDLERS)));
         when(adapter.offerPage(eq(PROFESIA), anyString(), anyBoolean()))
                 .thenReturn(Optional.of(new StatePortalAdapter.OfferDetails(POSTED, null,
-                        new StatePortalAdapter.EmployerLink(EMPLOYER_JOB))));
+                        new StatePortalAdapter.EmployerLink(EMPLOYER_JOB), POSITIONS)));
     }
 
     /**
@@ -93,6 +97,25 @@ class PortalRecordHandlerTests {
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of(PROFESIA, POSTED));
         verify(repository).recordOccupations(SOURCE_ID, Map.of(UUID_B, FREIGHT_HANDLERS));
         verify(repository).recordEmployerLinks(SOURCE_ID, Map.of(PROFESIA, EMPLOYER_JOB));
+        verify(repository).recordProfesiaPositions(SOURCE_ID, Map.of(PROFESIA, POSITIONS));
+    }
+
+    /**
+     * Объявление profesia.sk с датой и выясненной ссылкой, но без прочитанных позиций (накопленное до §267) — страница
+     * запрашивается без переадресации; позиции прочитаны — больше не запрашивается.
+     */
+    @Test
+    void profesiaOfferWithoutPositionsIsRequested() {
+        when(recorder.externalIdsWithPostedDate(source)).thenReturn(Set.of(UUID_DATED, PROFESIA));
+        when(repository.externalIdsWithEmployerLinkChecked(SOURCE_ID)).thenReturn(Set.of(PROFESIA));
+
+        handler(POSTINGS.size()).handle(task(0));
+        verify(adapter).offerPage(eq(PROFESIA), anyString(), eq(false));
+        verify(repository).recordProfesiaPositions(SOURCE_ID, Map.of(PROFESIA, POSITIONS));
+
+        when(repository.externalIdsWithProfesiaPositionsChecked(SOURCE_ID)).thenReturn(Set.of(PROFESIA));
+        handler(POSTINGS.size()).handle(task(0));
+        verify(adapter, times(1)).offerPage(eq(PROFESIA), anyString(), anyBoolean());
     }
 
     /**
@@ -133,6 +156,7 @@ class PortalRecordHandlerTests {
         verify(adapter, never()).offerPage(anyString(), anyString(), anyBoolean());
         verify(recorder).record(run, POSTINGS, Set.of(), Set.of(), Map.of());
         verify(repository).recordOccupations(SOURCE_ID, Map.of());
+        verify(repository).recordProfesiaPositions(SOURCE_ID, Map.of());
     }
 
     private PortalRecordHandler handler(int offerPagesPerRecord) {

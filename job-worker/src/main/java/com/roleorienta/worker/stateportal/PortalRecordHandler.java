@@ -3,6 +3,7 @@ package com.roleorienta.worker.stateportal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.roleorienta.worker.adapter.stateportal.ProfesiaPosition;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.adapter.stateportal.StatePortalProperties;
 import com.roleorienta.worker.crawl.CrawlRun;
@@ -45,7 +46,7 @@ import org.springframework.stereotype.Component;
  * ({@link StatePortalAdapter#offerPage}) у публикаций, чья вакансия ещё без даты (своя вакансия портала или объявление
  * profesia.sk), у которых страница ради кода профессии ещё не прочитана (своя вакансия портала — «Profesia (SK
  * ISCO-08)»; прочитана без кода — больше не запрашивается, аудит §211) или у объявления profesia.sk ещё не выяснена
- * ссылка на вакансию работодателя (кнопка отклика, §209), не больше
+ * ссылка на вакансию работодателя (кнопка отклика, §209) или позиции profesia.sk (§267), не больше
  * {@code app.state-portal.offer-pages-per-record} страниц за задание, до записи (HTTP не держит транзакцию). Не
  * получено — следующая запись спросит снова; такие публикации обходятся по кругу с места, зависящего от номера задания
  * (как у детали при чтении источника, §128, аудит §133): новые получают сведения за одну-две записи, накопленные —
@@ -129,6 +130,7 @@ public class PortalRecordHandler implements TaskHandler {
         }
         repository.recordOccupations(source.getId(), facts.occupations());
         repository.recordEmployerLinks(source.getId(), facts.employerLinks());
+        repository.recordProfesiaPositions(source.getId(), facts.positions());
         return new TaskOutcome.Done();
     }
 
@@ -142,17 +144,19 @@ public class PortalRecordHandler implements TaskHandler {
         Set<String> dated = recorder.externalIdsWithPostedDate(source);
         Set<String> coded = repository.externalIdsWithOccupation(source.getId());
         Set<String> linked = repository.externalIdsWithEmployerLinkChecked(source.getId());
+        Set<String> positioned = repository.externalIdsWithProfesiaPositionsChecked(source.getId());
         List<FetchedPosting> missing = postings.stream().filter(posting -> {
             String id = posting.externalId();
             return !dated.contains(id) && StatePortalAdapter.hasPostedDate(id)
                     || !coded.contains(id) && StatePortalAdapter.hasOccupation(id)
-                    || !linked.contains(id) && StatePortalAdapter.hasEmployerLink(id);
+                    || (!linked.contains(id) || !positioned.contains(id)) && StatePortalAdapter.hasEmployerLink(id);
         }).toList();
         int budget = Math.min(properties.offerPagesPerRecord(), missing.size());
         int start = missing.isEmpty() ? 0 : (int) Math.floorMod(seed, (long) missing.size());
         Map<String, Instant> dates = new HashMap<>();
         Map<String, String> occupations = new HashMap<>();
         Map<String, String> links = new HashMap<>();
+        Map<String, List<ProfesiaPosition>> positions = new HashMap<>();
         for (int offset = 0; offset < budget; offset++) {
             FetchedPosting posting = missing.get((start + offset) % missing.size());
             adapter.offerPage(posting.externalId(), posting.url(), !linked.contains(posting.externalId())).ifPresent(page -> {
@@ -168,15 +172,20 @@ public class PortalRecordHandler implements TaskHandler {
                 if (page.employerLink() != null && !linked.contains(id)) {
                     links.put(id, page.employerLink().url());
                 }
+                // Позиции profesia.sk (§267): страница объявления прочитана — и без позиций больше не запрашивается.
+                if (StatePortalAdapter.hasEmployerLink(id) && !positioned.contains(id)) {
+                    positions.put(id, page.positions());
+                }
             });
         }
         if (budget > 0) {
-            LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}, employer links {}",
-                    source.getId(), budget, dates.size(),
+            LOG.info("Portal source {} offer pages: requested {}, posted dates {}, occupations {}, employer links {}, "
+                    + "with profesia positions {}", source.getId(), budget, dates.size(),
                     occupations.values().stream().filter(Objects::nonNull).count(),
-                    links.values().stream().filter(Objects::nonNull).count());
+                    links.values().stream().filter(Objects::nonNull).count(),
+                    positions.values().stream().filter(list -> !list.isEmpty()).count());
         }
-        return new OfferFacts(dates, occupations, links);
+        return new OfferFacts(dates, occupations, links, positions);
     }
 
     /**
@@ -187,9 +196,11 @@ public class PortalRecordHandler implements TaskHandler {
      *                      кода на странице нет)
      * @param employerLinks ссылки на вакансию у работодателя по внешнему id объявлений profesia.sk ({@code null} —
      *                      страница прочитана, ссылки нет)
+     * @param positions     позиции profesia.sk по внешнему id объявлений, чья страница прочитана (§267; пусто — позиций
+     *                      нет)
      */
     private record OfferFacts(Map<String, Instant> postedAt, Map<String, String> occupations,
-            Map<String, String> employerLinks) {
+            Map<String, String> employerLinks, Map<String, List<ProfesiaPosition>> positions) {
     }
 
     private static JsonNode parse(String payload) {

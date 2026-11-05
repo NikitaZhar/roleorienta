@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Объявления profesia.sk, которых нет на государственном портале (§219, {@code profesia_offer}, V86), и их источники
@@ -97,17 +98,22 @@ public class ProfesiaOfferRepository {
     }
 
     /**
-     * @param num         объявление
-     * @param offer       сведения его страницы
-     * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика (§266); {@code null} — прежняя остаётся
+     * Сведения страницы, ссылка на вакансию у работодателя (§266; не выяснена — прежняя остаётся) и позиции
+     * profesia.sk (§267) — одной транзакцией.
+     *
+     * @param num  объявление
+     * @param read прочитанная страница
      */
-    public void saveRead(long num, Offer offer, String employerUrl) {
+    @Transactional
+    public void saveRead(long num, ProfesiaPages.OfferFound read) {
+        Offer offer = read.offer();
         jdbcTemplate.update("""
                 UPDATE profesia_offer SET page_read_at = now(), title = ?, employer_name = ?, location = ?, content = ?,
-                       posted_at = ?, employer_url = coalesce(?, employer_url)
+                       posted_at = ?, employer_url = coalesce(?, employer_url), positions_read = TRUE
                 WHERE num = ?
                 """, offer.title(), offer.employerName(), offer.location(), offer.content(),
-                offer.postedAt() == null ? null : Timestamp.from(offer.postedAt()), employerUrl, num);
+                offer.postedAt() == null ? null : Timestamp.from(offer.postedAt()), read.employerUrl(), num);
+        ProfesiaPositionRecords.save(jdbcTemplate, num, read.positions());
     }
 
     /**

@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
  * на почту ({@code DigestTick}); 1020 — постановка пересчёта профессии по названию ({@code TitleOccupationTick}); 1021 —
  * пересчёт полноты сбора по компаниям ({@code CoverageTick}); 1022 — постановка распознавания позиции по названию
  * ({@code TitleClassificationTick}); 1023 — источники по ссылке на вакансию у работодателя
- * ({@code EmployerLinkSources}).</p>
+ * ({@code EmployerLinkSources}); 1024 — постановка чтения позиций profesia.sk ({@code ProfesiaPositionsTick}).</p>
  */
 @Component
 public class PostgresLeaderLock {

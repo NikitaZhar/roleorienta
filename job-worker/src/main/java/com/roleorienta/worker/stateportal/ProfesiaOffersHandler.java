@@ -127,7 +127,7 @@ public class ProfesiaOffersHandler implements TaskHandler {
             }
             switch (pages.offer(offer.url())) {
                 case OfferFound found -> {
-                    repository.saveRead(offer.num(), found.offer(), found.employerUrl());
+                    repository.saveRead(offer.num(), found);
                     touched.add(offer.employer());
                 }
                 case OfferGone missing -> {

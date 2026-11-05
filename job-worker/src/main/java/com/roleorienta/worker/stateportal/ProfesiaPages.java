@@ -1,5 +1,6 @@
 package com.roleorienta.worker.stateportal;
 
+import com.roleorienta.worker.adapter.stateportal.ProfesiaPosition;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
@@ -102,10 +103,26 @@ public class ProfesiaPages {
     public OfferRead offer(String url) {
         return switch (page(url)) {
             case Read read -> ProfesiaOfferPage.parse(read.document())
-                    .<OfferRead>map(offer -> new OfferFound(offer, employerUrl(read.document())))
+                    .<OfferRead>map(offer -> new OfferFound(offer, employerUrl(read.document()),
+                            ProfesiaPosition.of(read.document())))
                     .orElseGet(OfferUnparsed::new);
             case Failed failed -> new OfferUnavailable(failed.failure());
             case Gone gone -> new OfferGone();
+        };
+    }
+
+    /**
+     * Позиции profesia.sk со страницы объявления (§267) — для объявлений, чья страница ради них ещё не читалась.
+     *
+     * @param url адрес объявления
+     * @return позиции (пусто — их нет или объявления больше нет: читать снова незачем); {@code Optional.empty()} —
+     *         profesia.sk временно недоступна, спросить позже
+     */
+    public Optional<List<ProfesiaPosition>> positions(String url) {
+        return switch (page(url)) {
+            case Read read -> Optional.of(ProfesiaPosition.of(read.document()));
+            case Gone gone -> Optional.of(List.of());
+            case Failed failed -> Optional.empty();
         };
     }
 
@@ -180,8 +197,10 @@ public class ProfesiaPages {
     /**
      * @param offer       сведения объявления
      * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика; {@code null} — нет или не выяснена
+     * @param positions   позиции profesia.sk, указанные работодателем (§267); пусто — нет
      */
-    record OfferFound(ProfesiaOfferPage.Offer offer, String employerUrl) implements OfferRead {
+    record OfferFound(ProfesiaOfferPage.Offer offer, String employerUrl, List<ProfesiaPosition> positions)
+            implements OfferRead {
     }
 
     /** Объявления нет: удалено или закрыто robots.txt. */

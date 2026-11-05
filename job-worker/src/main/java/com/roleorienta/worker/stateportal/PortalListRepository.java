@@ -1,6 +1,7 @@
 package com.roleorienta.worker.stateportal;
 
 import com.roleorienta.worker.adapter.stateportal.PortalOffer;
+import com.roleorienta.worker.adapter.stateportal.ProfesiaPosition;
 import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.vacancy.FetchedPosting;
 import java.sql.Array;
@@ -65,6 +66,66 @@ public class PortalListRepository {
         return new HashSet<>(jdbcTemplate.queryForList(
                 "SELECT external_id FROM job_posting WHERE source_id = ? AND employer_link_checked",
                 String.class, sourceId));
+    }
+
+    /**
+     * @param sourceId источник портала
+     * @return внешние id его объявлений profesia.sk, у которых позиции со страницы уже прочитаны (§267)
+     */
+    public Set<String> externalIdsWithProfesiaPositionsChecked(long sourceId) {
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT external_id FROM job_posting WHERE source_id = ? AND profesia_positions_checked",
+                String.class, sourceId));
+    }
+
+    /**
+     * Открытые публикации объявлений profesia.sk любого источника (общий список портала, добор с profesia.sk), у которых
+     * позиции со страницы ещё не прочитаны (§267) и объявление не прочитано ради них добором; сначала работодатели с
+     * большим числом таких объявлений.
+     *
+     * @param limit сколько
+     * @return источник, внешний id, адрес страницы объявления
+     */
+    public List<UncheckedAd> uncheckedProfesiaAds(int limit) {
+        return jdbcTemplate.query("""
+                WITH ad AS (SELECT p.source_id, p.external_id, p.url,
+                                   count(*) OVER (PARTITION BY p.source_id) AS per_source
+                            FROM job_posting p
+                            WHERE p.closed_at IS NULL AND p.external_id LIKE 'profesia:%'
+                              AND NOT p.profesia_positions_checked
+                              AND NOT EXISTS (SELECT 1 FROM profesia_offer o WHERE o.positions_read
+                                              AND 'profesia:' || o.num = p.external_id))
+                SELECT source_id, external_id, url FROM ad ORDER BY per_source DESC, source_id, external_id LIMIT ?
+                """, (row, number) -> new UncheckedAd(row.getLong(1), row.getString(2), row.getString(3)), limit);
+    }
+
+    /**
+     * Публикация объявления profesia.sk без прочитанных позиций.
+     *
+     * @param sourceId   источник
+     * @param externalId внешний id {@code profesia:<номер>}
+     * @param url        адрес страницы объявления
+     */
+    public record UncheckedAd(long sourceId, String externalId, String url) {
+    }
+
+    /**
+     * Позиции profesia.sk со страниц объявлений (§267): записываются по номеру объявления, публикация отмечается
+     * прочитанной и без позиций — повторно ради них не запрашивается; одной транзакцией.
+     *
+     * @param sourceId  источник портала
+     * @param positions позиции по внешнему id объявления, чья страница прочитана
+     */
+    @Transactional
+    public void recordProfesiaPositions(long sourceId, Map<String, List<ProfesiaPosition>> positions) {
+        positions.forEach((externalId, list) -> {
+            long num = ProfesiaPositionRecords.number(externalId);
+            if (num >= 0) {
+                ProfesiaPositionRecords.save(jdbcTemplate, num, list);
+            }
+            jdbcTemplate.update("UPDATE job_posting SET profesia_positions_checked = TRUE WHERE source_id = ? "
+                    + "AND external_id = ?", sourceId, externalId);
+        });
     }
 
     /**
