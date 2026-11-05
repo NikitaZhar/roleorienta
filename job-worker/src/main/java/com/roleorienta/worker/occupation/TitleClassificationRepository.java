@@ -138,19 +138,19 @@ public class TitleClassificationRepository {
      * сразу). https://jdbc.postgresql.org/documentation/query/#getting-results-based-on-a-cursor
      *
      * @param model модель векторов
-     * @return код и вектор каждого примера
+     * @return код, источник и вектор каждого примера
      */
     @Transactional(readOnly = true)
     public List<Labeled> examples(String model) {
         List<Labeled> examples = new ArrayList<>();
         jdbcTemplate.query(connection -> {
             PreparedStatement statement = connection.prepareStatement(
-                    "SELECT code, vector FROM title_example WHERE model = ?");
+                    "SELECT code, source = 'PORTAL', vector FROM title_example WHERE model = ?");
             statement.setFetchSize(FETCH_SIZE);
             statement.setString(1, model);
             return statement;
         }, row -> {
-            examples.add(new Labeled(row.getString(1), floats(row.getBytes(2))));
+            examples.add(new Labeled(row.getString(1), row.getBoolean(2), floats(row.getBytes(3))));
         });
         return examples;
     }
@@ -184,8 +184,9 @@ public class TitleClassificationRepository {
      * Пример для поиска ближайших.
      *
      * @param code   группа ISCO-08
+     * @param portal пример — название вакансии портала (иначе — название профессии ESCO; у них разный порог сходства)
      * @param vector вектор длины 1
      */
-    public record Labeled(String code, float[] vector) {
+    public record Labeled(String code, boolean portal, float[] vector) {
     }
 }

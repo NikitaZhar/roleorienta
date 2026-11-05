@@ -114,6 +114,7 @@ class TitleClassificationTests {
         assertThat(repository.pendingExamples("test-model", 1000)).doesNotContain(driver);
         assertThat(repository.examples("test-model")).singleElement().satisfies(example -> {
             assertThat(example.code()).isEqualTo("8322");
+            assertThat(example.portal()).isTrue();
             assertThat(example.vector()).containsExactly(0.6f, -0.8f);
         });
     }

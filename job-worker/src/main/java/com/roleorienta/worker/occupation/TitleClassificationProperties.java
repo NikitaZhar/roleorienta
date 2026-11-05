@@ -32,10 +32,14 @@ public record TitleClassificationProperties(@DefaultValue("false") boolean enabl
      * @param examplesPerTask новых примеров с известным кодом за задание: первый раз их около 50 тыс. (≈ 12 мин на
      *                        Apple M5) — частями, чтобы задание укладывалось в аренду
      * @param neighbours      сколько ближайших примеров голосуют за код
-     * @param minSimilarity   сходство с ближайшим примером не ниже — иначе «не понять» (замер §263: «Find out more»,
-     *                        «Apply Now» — 0,5–0,7; настоящие названия — 0,8 и выше)
+     * @param minSimilarity   сходство с ближайшим примером-названием портала не ниже — иначе «не понять» (замер §263:
+     *                        «Find out more», «Apply Now» — 0,5–0,7; настоящие названия — 0,8 и выше)
+     * @param minEscoSimilarity сходство с ближайшим примером-названием профессии ESCO не ниже — иначе «не понять»
+     *                        (§264: общие английские названия «Senior Associate», «Senior Manager», «Trainee» похожи
+     *                        на названия ESCO «senior sales assistant», «senior sales manager» на 0,8–0,9)
      */
     public record Limits(@DefaultValue("5000") int titlesPerTask, @DefaultValue("20000") int examplesPerTask,
-            @DefaultValue("5") int neighbours, @DefaultValue("0.8") double minSimilarity) {
+            @DefaultValue("5") int neighbours, @DefaultValue("0.8") double minSimilarity,
+            @DefaultValue("0.9") double minEscoSimilarity) {
     }
 }

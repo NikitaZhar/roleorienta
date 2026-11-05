@@ -12,8 +12,11 @@ import org.springframework.stereotype.Component;
  * Распознавание позиции по похожему названию с известным кодом ({@link TitleClassifier}; стенограмма §263): название
  * вакансии получает вектор ({@link OllamaEmbedder}), среди примеров ({@code title_example}: названия вакансий портала
  * с кодом профессии и названия профессий ESCO) ищутся ближайшие по сходству, код — тот, за который больше суммарное
- * сходство ближайших ({@code limits.neighbours}). Сходство с самым близким примером ниже {@code limits.min-similarity}
- * — «не понять» (пустое значение): у «Find out more», «Apply Now» похожих примеров нет.
+ * сходство ближайших ({@code limits.neighbours}). Сходство с самым близким примером ниже порога — «не понять» (пустое
+ * значение): у «Find out more», «Apply Now» похожих примеров нет. Порог у примера-названия портала —
+ * {@code limits.min-similarity} (0,8), у примера-названия профессии ESCO — {@code limits.min-esco-similarity} (0,9):
+ * короткие общие названия ESCO («director», «senior sales assistant») похожи на общие английские названия вакансий
+ * («Director», «Senior Associate») сильнее, чем названия портала, хотя профессии разные (§264).
  *
  * <p>Замер §263 на 200 названиях портала с кодом (сами они из примеров исключены): совпадение по 4 знакам ISCO-08 —
  * 59 %, по 2 знакам — 66 %; языковая модель Qwen 2.5 7B на тех же названиях — 14 % и 36 %. Примеров портала с
@@ -55,7 +58,7 @@ public class SimilarTitleClassifier implements TitleClassifier {
         float[][] vectors = embedder.embed(titles);
         TitleClassificationProperties.Limits limits = properties.limits();
         List<String> codes = IntStream.range(0, titles.size()).parallel()
-                .mapToObj(index -> code(vectors[index], examples, limits.neighbours(), limits.minSimilarity()))
+                .mapToObj(index -> code(vectors[index], examples, limits))
                 .toList();
         Map<String, String> answers = new HashMap<>();
         for (int index = 0; index < titles.size(); index++) {
@@ -67,14 +70,14 @@ public class SimilarTitleClassifier implements TitleClassifier {
     /**
      * Код по ближайшим примерам: голосование суммой сходства; при равенстве — код более близкого примера.
      *
-     * @param vector        вектор названия (длины 1)
-     * @param examples      примеры с векторами длины 1
-     * @param neighbours    сколько ближайших голосуют
-     * @param minSimilarity сходство с ближайшим не ниже — иначе «не понять»
+     * @param vector   вектор названия (длины 1)
+     * @param examples примеры с векторами длины 1
+     * @param limits   сколько ближайших голосуют; порог сходства ближайшего — у примера портала и у примера ESCO
      * @return код группы или пусто
      */
-    static String code(float[] vector, List<TitleClassificationRepository.Labeled> examples, int neighbours,
-            double minSimilarity) {
+    static String code(float[] vector, List<TitleClassificationRepository.Labeled> examples,
+            TitleClassificationProperties.Limits limits) {
+        int neighbours = limits.neighbours();
         int[] nearest = new int[neighbours];
         double[] similarity = new double[neighbours];
         Arrays.fill(similarity, Double.NEGATIVE_INFINITY);
@@ -91,7 +94,8 @@ public class SimilarTitleClassifier implements TitleClassifier {
                 nearest[place] = example;
             }
         }
-        if (similarity[0] < minSimilarity) {
+        if (similarity[0] == Double.NEGATIVE_INFINITY || similarity[0] < (examples.get(nearest[0]).portal()
+                ? limits.minSimilarity() : limits.minEscoSimilarity())) {
             return "";
         }
         Map<String, Double> votes = new LinkedHashMap<>();

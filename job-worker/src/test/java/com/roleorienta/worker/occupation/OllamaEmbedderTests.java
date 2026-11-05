@@ -77,7 +77,7 @@ class OllamaEmbedderTests {
         return new OllamaEmbedder(new TitleClassificationProperties(true, "test-model",
                 new TitleClassificationProperties.Api("http://127.0.0.1:" + server.getAddress().getPort()
                         + "/api/embed", Duration.ofSeconds(5), 2),
-                new TitleClassificationProperties.Limits(10, 10, 5, 0.8)));
+                new TitleClassificationProperties.Limits(10, 10, 5, 0.8, 0.9)));
     }
 
     /** Каждому тексту — вектор (3, 4): длина 5, после приведения — (0,6; 0,8). */
