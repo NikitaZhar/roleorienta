@@ -62,8 +62,8 @@
 ## Стек
 
 Java 21, Spring Boot 4.1.1, PostgreSQL 16, Flyway, RabbitMQ 4, SeaweedFS (S3), Apache HttpClient 5, Jsoup, Playwright
-(Chromium без окна — страницы сайтов, которые строит скрипт), Ollama с моделью Qwen 2.5 7B (распознавание позиции
-вакансии по названию, на том же компьютере, бесплатно), Maven,
+(Chromium без окна — страницы сайтов, которые строит скрипт), Ollama с моделью векторов bge-m3 (распознавание позиции
+вакансии по похожему названию с известным кодом, на том же компьютере, бесплатно), Maven,
 JUnit 5 + Testcontainers, Checkstyle, GitHub Actions; SPA — React 19, TypeScript, Vite (Node.js скачивает
 frontend-maven-plugin, ставить не нужно).
 
@@ -113,6 +113,6 @@ ops/restore.sh backups/<файл>.dump --replace    # рабочая база и
 `MAIL_HOST`, `MAIL_PORT` (587), `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, ссылка в письме — `APP_URL`; для Brevo —
 `smtp-relay.brevo.com`, логин и ключ SMTP из кабинета Brevo, отправитель — подтверждённый в нём адрес; без
 `DIGEST_ENABLED` сводки не отправляются, и `/actuator/health` воркера почтовый сервер не проверяет); распознавание
-позиции вакансий локальной языковой моделью (job-worker) — `TITLE_CLASSIFICATION_ENABLED=true` и запущенная Ollama
-(`brew install ollama`, `ollama serve`, `ollama pull qwen2.5:7b`; адрес — `OLLAMA_URL`, модель —
+позиции вакансий по похожему названию (job-worker) — `TITLE_CLASSIFICATION_ENABLED=true` и запущенная Ollama
+(`brew install ollama`, `ollama serve`, `ollama pull bge-m3`; адрес — `OLLAMA_EMBED_URL`, модель —
 `TITLE_CLASSIFICATION_MODEL`); без них вакансии без кода профессии распознаются только правилами; значения по умолчанию совпадают с `docker-compose.yml`.

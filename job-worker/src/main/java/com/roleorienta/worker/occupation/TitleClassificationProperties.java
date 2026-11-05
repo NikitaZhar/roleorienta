@@ -5,36 +5,37 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Настройки распознавания позиции локальной языковой моделью ({@code app.title-classification.*}; стенограмма §262).
- * Модель работает на компьютере, где запущен job-worker (Ollama): бесплатно, без внешних платных сервисов (принцип
- * проекта — только бесплатные источники, технический документ).
+ * Настройки распознавания позиции по похожему названию ({@code app.title-classification.*}; стенограмма §262, §263).
+ * Модель векторов работает на компьютере, где запущен job-worker (Ollama): бесплатно, без внешних платных сервисов
+ * (принцип проекта — только бесплатные источники, технический документ).
  *
  * @param enabled такт ставит задания распознавания ({@code TITLE_CLASSIFICATION_ENABLED})
- * @param model   модель Ollama ({@code TITLE_CLASSIFICATION_MODEL})
- * @param api     адрес Ollama, срок ответа, размер контекста
- * @param limits  пачки и проверка точности
+ * @param model   модель векторов Ollama ({@code TITLE_CLASSIFICATION_MODEL}); векторы другой модели не сравниваются
+ * @param api     адрес Ollama, срок ответа, размер запроса
+ * @param limits  объём задания и правило ответа
  */
 @ConfigurationProperties("app.title-classification")
 public record TitleClassificationProperties(@DefaultValue("false") boolean enabled,
-        @DefaultValue("qwen2.5:7b") String model, @DefaultValue Api api, @DefaultValue Limits limits) {
+        @DefaultValue("bge-m3") String model, @DefaultValue Api api, @DefaultValue Limits limits) {
 
     /**
-     * @param endpoint      адрес чата Ollama ({@code OLLAMA_URL})
-     * @param timeout       срок ответа на одну пачку
-     * @param contextTokens контекст модели в токенах: каталог групп (около 5 тыс.) и пачка названий должны поместиться
-     *                      — у Ollama по умолчанию контекст меньше
+     * @param endpoint  адрес векторов Ollama ({@code OLLAMA_EMBED_URL})
+     * @param timeout   срок ответа на один запрос
+     * @param batchSize текстов в одном запросе
      */
-    public record Api(@DefaultValue("http://localhost:11434/api/chat") String endpoint,
-            @DefaultValue("180s") Duration timeout, @DefaultValue("8192") int contextTokens) {
+    public record Api(@DefaultValue("http://localhost:11434/api/embed") String endpoint,
+            @DefaultValue("120s") Duration timeout, @DefaultValue("64") int batchSize) {
     }
 
     /**
-     * @param batchSize      названий в одном запросе
-     * @param batchesPerTask запросов за задание (задание — раз в час)
-     * @param checkPerBatch  сколько названий пачки — из вакансий портала с кодом профессии: ответ модели сверяется с
-     *                       кодом портала — мера точности (target/s262-model-check.sql)
+     * @param titlesPerTask   названий без позиции за задание (задание — раз в час)
+     * @param examplesPerTask новых примеров с известным кодом за задание: первый раз их около 50 тыс. (≈ 12 мин на
+     *                        Apple M5) — частями, чтобы задание укладывалось в аренду
+     * @param neighbours      сколько ближайших примеров голосуют за код
+     * @param minSimilarity   сходство с ближайшим примером не ниже — иначе «не понять» (замер §263: «Find out more»,
+     *                        «Apply Now» — 0,5–0,7; настоящие названия — 0,8 и выше)
      */
-    public record Limits(@DefaultValue("20") int batchSize, @DefaultValue("60") int batchesPerTask,
-            @DefaultValue("2") int checkPerBatch) {
+    public record Limits(@DefaultValue("5000") int titlesPerTask, @DefaultValue("20000") int examplesPerTask,
+            @DefaultValue("5") int neighbours, @DefaultValue("0.8") double minSimilarity) {
     }
 }

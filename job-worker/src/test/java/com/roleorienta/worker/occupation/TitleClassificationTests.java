@@ -2,6 +2,8 @@ package com.roleorienta.worker.occupation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
@@ -20,14 +22,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Распознавание позиции моделью (§262) с подменённым распознаванием: названия без позиции уходят модели вместе с
- * названиями портала с кодом (мера точности); ответ записывается по ключу названия и сразу ставит группу всем открытым
- * публикациям без кода с тем же ключом («ServiceNow Developer» и «… (m/ž)»); публикации с кодом портала группу не
- * получают; пересчёт раз в сутки ответ модели держит; модель недоступна — повтор без записи. Тест в транзакции с
- * откатом.
+ * Задание распознавания позиции (§262, §263) с подменённым распознаванием и примерами: названия без позиции уходят
+ * распознаванию, названия с кодом портала — нет; ответ записывается по ключу названия и сразу ставит группу всем
+ * открытым публикациям без кода с тем же ключом («ServiceNow Developer» и «… (m/ž)»); пересчёт раз в сутки ответ
+ * держит; примеры не готовы — названия не распознаются; модель недоступна — повтор без записи. Примеры с известным
+ * кодом: название портала с кодом — пример, вектор записывается и читается тем же. Тест в транзакции с откатом.
  */
-@SpringBootTest(properties = {"app.title-classification.limits.batch-size=1000", "app.title-classification.limits.check-per-batch=500",
-        "app.title-classification.limits.batches-per-task=1"})
+@SpringBootTest
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 @Transactional
@@ -35,6 +36,12 @@ class TitleClassificationTests {
 
     @MockitoBean
     private TitleClassifier classifier;
+
+    @MockitoBean
+    private TitleExamples examples;
+
+    @Autowired
+    private TitleClassificationRepository repository;
 
     @Autowired
     private TitleClassificationHandler handler;
@@ -51,7 +58,12 @@ class TitleClassificationTests {
         long developer = posting(source, "ServiceNow Developer", null);
         long developerMarked = posting(source, "ServiceNow Developer (m/ž)", null);
         long coded = posting(source, "Vodič MKD", "8322");
-        when(classifier.classify(any(), any())).thenAnswer(call -> answers(call.getArgument(0)));
+        when(examples.refresh()).thenReturn(true);
+        when(classifier.classify(any())).thenAnswer(call -> {
+            List<String> titles = call.getArgument(0);
+            assertThat(titles).doesNotContain("Vodič MKD");
+            return answers(titles);
+        });
 
         TaskOutcome outcome = handler.handle(new TaskRecord(0, TitleClassificationHandler.TYPE, "{}", 0));
 
@@ -59,8 +71,6 @@ class TitleClassificationTests {
         assertThat(recognized(developer)).isEqualTo("2512");
         assertThat(recognized(developerMarked)).isEqualTo("2512");
         assertThat(recognized(coded)).isNull();
-        assertThat(jdbcTemplate.queryForObject("SELECT code FROM title_classification WHERE title_key = "
-                + "same_title('Vodič MKD')", String.class)).isEqualTo("8322");
 
         occupations.relearn();
 
@@ -70,7 +80,8 @@ class TitleClassificationTests {
     @Test
     void unavailableServiceRetriesAndSavesNothing() {
         posting(source(), "ServiceNow Developer", null);
-        when(classifier.classify(any(), any())).thenThrow(new TitleClassifier.ClassifierUnavailable("HTTP 503"));
+        when(examples.refresh()).thenReturn(true);
+        when(classifier.classify(any())).thenThrow(new TitleClassifier.ClassifierUnavailable("HTTP 503"));
 
         TaskOutcome outcome = handler.handle(new TaskRecord(0, TitleClassificationHandler.TYPE, "{}", 0));
 
@@ -79,10 +90,37 @@ class TitleClassificationTests {
                 + "same_title('ServiceNow Developer')", Integer.class)).isZero();
     }
 
+    @Test
+    void titlesWaitForExamples() {
+        posting(source(), "ServiceNow Developer", null);
+        when(examples.refresh()).thenReturn(false);
+
+        TaskOutcome outcome = handler.handle(new TaskRecord(0, TitleClassificationHandler.TYPE, "{}", 0));
+
+        assertThat(outcome).isInstanceOf(TaskOutcome.Done.class);
+        verify(classifier, never()).classify(any());
+    }
+
+    @Test
+    void portalTitleWithCodeIsExampleAndKeepsVector() {
+        posting(source(), "Vodič MKD (muž/žena)", "8322");
+        TitleClassificationRepository.Example driver = new TitleClassificationRepository.Example("PORTAL",
+                jdbcTemplate.queryForObject("SELECT same_title('Vodič MKD (muž/žena)')", String.class),
+                "Vodič MKD (muž/žena)", "8322");
+        assertThat(repository.pendingExamples("test-model", 1000)).contains(driver);
+
+        repository.saveExamples(List.of(driver), new float[][] {{0.6f, -0.8f}}, "test-model");
+
+        assertThat(repository.pendingExamples("test-model", 1000)).doesNotContain(driver);
+        assertThat(repository.examples("test-model")).singleElement().satisfies(example -> {
+            assertThat(example.code()).isEqualTo("8322");
+            assertThat(example.vector()).containsExactly(0.6f, -0.8f);
+        });
+    }
+
     private static Map<String, String> answers(List<String> titles) {
         Map<String, String> answers = new HashMap<>();
-        titles.forEach(title -> answers.put(title, title.startsWith("ServiceNow") ? "2512"
-                : title.startsWith("Vodič") ? "8322" : ""));
+        titles.forEach(title -> answers.put(title, title.startsWith("ServiceNow") ? "2512" : ""));
         return answers;
     }
 

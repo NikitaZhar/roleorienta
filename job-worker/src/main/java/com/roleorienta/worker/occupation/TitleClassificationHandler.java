@@ -4,7 +4,6 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -12,13 +11,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Задание {@code TITLE_CLASSIFY} (стенограмма §262): названия вакансий без позиции — языковой модели, пачками
- * ({@link TitleClassifier}); ответы — в {@code title_classification}, распознанная группа — сразу публикациям
- * ({@link TitleClassificationRepository#save}). В каждой пачке несколько названий вакансий портала с кодом профессии —
- * для меры точности (их ответ публикациям не ставится: у них есть код портала).
+ * Задание {@code TITLE_CLASSIFY} (стенограмма §262, §263): сначала векторы новых примеров с известным кодом
+ * ({@link TitleExamples}); пока примеры не готовы целиком, названия не распознаются (часть примеров дала бы худшие
+ * ответы, а ответ на название не пересматривается). Затем названия вакансий без позиции ({@code limits.titles-per-task},
+ * сначала общие для большего числа вакансий) — {@link TitleClassifier}; ответы — в {@code title_classification},
+ * распознанная группа — сразу публикациям ({@link TitleClassificationRepository#save}).
  *
- * <p>Модель (Ollama) не запущена или не ответила — повтор задания позже; ответы уже полученных пачек сохранены.
- * Названия без ответа спросятся в следующем задании.</p>
+ * <p>Модель векторов (Ollama) не запущена или не ответила — повтор задания позже; ничего из незаконченной порции не
+ * записано.</p>
  */
 @Component
 public class TitleClassificationHandler implements TaskHandler {
@@ -32,17 +32,20 @@ public class TitleClassificationHandler implements TaskHandler {
     private static final Logger LOG = LoggerFactory.getLogger(TitleClassificationHandler.class);
 
     private final TitleClassificationRepository repository;
+    private final TitleExamples examples;
     private final TitleClassifier classifier;
     private final TitleClassificationProperties properties;
 
     /**
      * @param repository названия и ответы
+     * @param examples   примеры с известным кодом
      * @param classifier распознавание
-     * @param properties модель, пачки
+     * @param properties способ, объём задания
      */
-    public TitleClassificationHandler(TitleClassificationRepository repository, TitleClassifier classifier,
-            TitleClassificationProperties properties) {
+    public TitleClassificationHandler(TitleClassificationRepository repository, TitleExamples examples,
+            TitleClassifier classifier, TitleClassificationProperties properties) {
         this.repository = repository;
+        this.examples = examples;
         this.classifier = classifier;
         this.properties = properties;
     }
@@ -54,27 +57,21 @@ public class TitleClassificationHandler implements TaskHandler {
 
     @Override
     public TaskOutcome handle(TaskRecord task) {
-        TitleClassificationProperties.Limits limits = properties.limits();
-        List<TitleClassifier.Group> groups = repository.groups();
-        int asked = 0;
-        int recognized = 0;
-        for (int batch = 0; batch < limits.batchesPerTask(); batch++) {
-            List<String> titles = new ArrayList<>(repository.unrecognized(limits.batchSize() - limits.checkPerBatch()));
-            if (titles.isEmpty()) {
-                break;
+        try {
+            if (!examples.refresh()) {
+                LOG.info("Title classification waits: examples are not ready yet");
+                return new TaskOutcome.Done();
             }
-            titles.addAll(repository.coded(limits.checkPerBatch()));
-            Map<String, String> answers;
-            try {
-                answers = classifier.classify(titles, groups);
-            } catch (TitleClassifier.ClassifierUnavailable unavailable) {
-                LOG.warn("Title classification stopped after {} titles: {}", asked, unavailable.getMessage());
-                return new TaskOutcome.Retry(unavailable.getMessage(), RETRY_AFTER);
-            }
-            recognized += repository.save(answers, properties.model());
-            asked += titles.size();
+            List<String> titles = repository.unrecognized(properties.limits().titlesPerTask());
+            Map<String, String> answers = classifier.classify(titles);
+            int postings = repository.save(answers, properties.model());
+            long recognized = answers.values().stream().filter(code -> !code.isEmpty()).count();
+            LOG.info("Title classification: {} titles asked, {} recognized, {} postings recognized", titles.size(),
+                    recognized, postings);
+            return new TaskOutcome.Done();
+        } catch (TitleClassifier.ClassifierUnavailable unavailable) {
+            LOG.warn("Title classification stopped: {}", unavailable.getMessage());
+            return new TaskOutcome.Retry(unavailable.getMessage(), RETRY_AFTER);
         }
-        LOG.info("Title classification: {} titles asked, {} postings recognized", asked, recognized);
-        return new TaskOutcome.Done();
     }
 }

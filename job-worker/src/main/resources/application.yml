@@ -121,18 +121,19 @@ app:
   title-occupations:         # профессия по названию (§215): переучить и перераспознать раз в сутки, задание TITLE_OCCUPATIONS
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки; ключ задания по дате — раз в сутки
-  title-classification:     # позиция вакансии локальной языковой моделью (§262): раз в час, задание TITLE_CLASSIFY
+  title-classification:     # позиция вакансии по похожему названию (§263): раз в час, задание TITLE_CLASSIFY
     enabled: ${TITLE_CLASSIFICATION_ENABLED:false}  # true — такт ставит распознавание; нужна запущенная Ollama
-    model: ${TITLE_CLASSIFICATION_MODEL:qwen2.5:7b}  # модель Ollama (ollama pull qwen2.5:7b)
+    model: ${TITLE_CLASSIFICATION_MODEL:bge-m3}     # модель векторов Ollama (ollama pull bge-m3)
     interval-ms: 3600000       # тик постановки; ключ задания по часу
     api:
-      endpoint: ${OLLAMA_URL:http://localhost:11434/api/chat}
-      timeout: 180s            # срок ответа на одну пачку
-      context-tokens: 8192     # каталог ISCO-08 (около 5 тыс. токенов) и пачка названий
+      endpoint: ${OLLAMA_EMBED_URL:http://localhost:11434/api/embed}
+      timeout: 120s            # срок ответа на один запрос
+      batch-size: 64           # текстов в одном запросе
     limits:
-      batch-size: 20           # названий в одном запросе
-      batches-per-task: 60     # запросов за задание (не больше 1 200 названий в час)
-      check-per-batch: 2       # названий портала с кодом в пачке — мера точности (target/s262-model-check.sql)
+      titles-per-task: 5000    # названий без позиции за задание
+      examples-per-task: 20000 # новых примеров за задание (первый раз около 50 тыс. — три задания)
+      neighbours: 5            # ближайших примеров голосуют за код
+      min-similarity: 0.8      # сходство с ближайшим ниже — «не понять»
   metrics:                   # показатели ядра (§131): за вчерашний день, раз в сутки, задание COMPUTE_METRICS
     enabled: true              # false — постановка расчёта выключена (тесты)
     interval-ms: 3600000       # тик постановки; ключ задания по дню — день считается один раз

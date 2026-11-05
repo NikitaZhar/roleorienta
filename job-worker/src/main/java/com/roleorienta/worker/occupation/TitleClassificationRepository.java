@@ -1,6 +1,9 @@
 package com.roleorienta.worker.occupation;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.sql.PreparedStatement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -8,15 +11,16 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Названия к распознаванию моделью и её ответы ({@code title_classification}, V93; стенограмма §262). Ключ названия —
- * {@code same_title} (V92): одинаковые названия разных вакансий спрашиваются один раз.
+ * Названия к распознаванию, ответы ({@code title_classification}, V93) и примеры с известным кодом
+ * ({@code title_example}, V94); стенограмма §262, §263. Ключ названия — {@code same_title} (V92): одинаковые названия
+ * разных вакансий распознаются один раз.
  */
 @Repository
 public class TitleClassificationRepository {
 
     /**
      * Ключ открытой публикации, позиции которой нет: ни кода портала, ни распознанной группы, ни позиции словаря у её
-     * вакансии — и ключа ещё нет среди ответов модели.
+     * вакансии — и ключа ещё нет среди ответов.
      */
     private static final String UNRECOGNIZED = """
             FROM job_posting p
@@ -25,6 +29,12 @@ public class TitleClassificationRepository {
               AND same_title(p.title) <> ''
               AND NOT EXISTS (SELECT 1 FROM title_classification c WHERE c.title_key = same_title(p.title))""";
 
+    /** Длина названия портала для примера не больше (ключ примера — часть первичного ключа). */
+    private static final int MAX_EXAMPLE_LENGTH = 300;
+
+    /** Строк примеров за один приём из БД (векторы — около 4 КБ каждый). */
+    private static final int FETCH_SIZE = 1000;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -32,17 +42,6 @@ public class TitleClassificationRepository {
      */
     public TitleClassificationRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-    }
-
-    /**
-     * @return каталог: группы ISCO-08 уровня 4 с английским названием, по коду
-     */
-    public List<TitleClassifier.Group> groups() {
-        return jdbcTemplate.query("""
-                SELECT g.code, n.name FROM occupation_group g
-                JOIN occupation_group_name n ON n.code = g.code AND n.language = 'en'
-                WHERE g.level = 4 ORDER BY g.code
-                """, (row, number) -> new TitleClassifier.Group(row.getString(1), row.getString(2)));
     }
 
     /**
@@ -58,29 +57,12 @@ public class TitleClassificationRepository {
     }
 
     /**
-     * Названия вакансий портала с кодом профессии (§203), ключа которых ещё нет среди ответов: ответ модели на них
-     * сверяется с кодом портала — мера точности. Выбираются по кругу ключей ({@code md5}), а не по частоте: выборка
-     * — разные профессии, не только самые частые.
-     *
-     * @param limit сколько
-     * @return названия, как в публикации
-     */
-    public List<String> coded(int limit) {
-        return jdbcTemplate.queryForList("""
-                SELECT min(p.title) FROM job_posting p
-                WHERE p.occupation_code IS NOT NULL AND same_title(p.title) <> ''
-                  AND NOT EXISTS (SELECT 1 FROM title_classification c WHERE c.title_key = same_title(p.title))
-                GROUP BY same_title(p.title) ORDER BY md5(same_title(p.title)) LIMIT ?
-                """, String.class, limit);
-    }
-
-    /**
      * Записывает ответы и сразу проставляет распознанную группу открытым публикациям без кода портала и без
      * распознанной группы с теми же ключами — одной транзакцией (выдача видит их без ожидания пересчёта раз в сутки,
      * §215; пересчёт держит их тем же правилом — {@link TitleOccupationRepository#relearn}).
      *
-     * @param answers название → код группы (пусто — модель не распознала)
-     * @param model   какая модель ответила
+     * @param answers название → код группы (пусто — не распознано)
+     * @param model   каким способом распознано
      * @return у скольких публикаций появилась распознанная группа
      */
     @Transactional
@@ -97,5 +79,113 @@ public class TitleClassificationRepository {
                   AND c.title_key = ANY (SELECT same_title(t) FROM unnest(CAST(? AS TEXT[])) t)
                 """, (PreparedStatement statement) -> statement.setArray(1,
                         statement.getConnection().createArrayOf("text", answers.keySet().toArray())));
+    }
+
+    /**
+     * Примеры с известным кодом, вектора которых этой модели ещё нет: названия вакансий портала с одним кодом
+     * профессии на ключ (§203; ключ с разными кодами — не пример) и названия профессий ESCO на словацком и английском
+     * (V75). Сначала портал — названия того же языка и вида, что у распознаваемых вакансий.
+     *
+     * @param model модель векторов
+     * @param limit сколько
+     * @return примеры без вектора
+     */
+    public List<Example> pendingExamples(String model, int limit) {
+        return jdbcTemplate.query("""
+                SELECT e.source, e.example, e.text, e.code FROM (
+                    SELECT 'PORTAL' AS source, same_title(p.title) AS example, min(p.title) AS text,
+                           min(p.occupation_code) AS code
+                    FROM job_posting p
+                    WHERE p.occupation_code IS NOT NULL AND same_title(p.title) <> '' AND length(p.title) <= ?
+                    GROUP BY same_title(p.title) HAVING count(DISTINCT p.occupation_code) = 1
+                    UNION
+                    SELECT 'ESCO', l.label, l.label, o.group_code
+                    FROM esco_label l JOIN esco_occupation o ON o.id = l.occupation_id
+                    WHERE l.language IN ('sk', 'en')) e
+                WHERE NOT EXISTS (SELECT 1 FROM title_example x WHERE x.source = e.source AND x.example = e.example
+                                    AND x.code = e.code AND x.model = ?)
+                ORDER BY e.source DESC, e.example LIMIT ?
+                """, (row, number) -> new Example(row.getString(1), row.getString(2), row.getString(3),
+                        row.getString(4)), MAX_EXAMPLE_LENGTH, model, limit);
+    }
+
+    /**
+     * Записывает векторы примеров (вектор прежней модели заменяется).
+     *
+     * @param examples примеры
+     * @param vectors  вектор каждого примера, в том же порядке
+     * @param model    модель векторов
+     */
+    @Transactional
+    public void saveExamples(List<Example> examples, float[][] vectors, String model) {
+        List<Object[]> rows = new ArrayList<>(examples.size());
+        for (int index = 0; index < examples.size(); index++) {
+            Example example = examples.get(index);
+            rows.add(new Object[] {example.source(), example.example(), example.code(), example.text(), model,
+                bytes(vectors[index])});
+        }
+        jdbcTemplate.batchUpdate("""
+                INSERT INTO title_example (source, example, code, text, model, vector) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (source, example, code)
+                DO UPDATE SET text = EXCLUDED.text, model = EXCLUDED.model, vector = EXCLUDED.vector,
+                              created_at = now()
+                """, rows);
+    }
+
+    /**
+     * Все примеры этой модели с векторами — для поиска ближайших (около 50 тыс., около 200 МБ в памяти). Строки
+     * читаются порциями ({@code fetchSize} действует только внутри транзакции — драйвер PostgreSQL иначе читает всё
+     * сразу). https://jdbc.postgresql.org/documentation/query/#getting-results-based-on-a-cursor
+     *
+     * @param model модель векторов
+     * @return код и вектор каждого примера
+     */
+    @Transactional(readOnly = true)
+    public List<Labeled> examples(String model) {
+        List<Labeled> examples = new ArrayList<>();
+        jdbcTemplate.query(connection -> {
+            PreparedStatement statement = connection.prepareStatement(
+                    "SELECT code, vector FROM title_example WHERE model = ?");
+            statement.setFetchSize(FETCH_SIZE);
+            statement.setString(1, model);
+            return statement;
+        }, row -> {
+            examples.add(new Labeled(row.getString(1), floats(row.getBytes(2))));
+        });
+        return examples;
+    }
+
+    /** Вектор в байты: числа float по 4 байта, младший байт первым. */
+    static byte[] bytes(float[] vector) {
+        ByteBuffer buffer = ByteBuffer.allocate(vector.length * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.asFloatBuffer().put(vector);
+        return buffer.array();
+    }
+
+    /** Байты в вектор — обратно {@link #bytes}. */
+    static float[] floats(byte[] bytes) {
+        float[] vector = new float[bytes.length / Float.BYTES];
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(vector);
+        return vector;
+    }
+
+    /**
+     * Пример с известным кодом.
+     *
+     * @param source  {@code PORTAL} — название вакансии портала с кодом профессии; {@code ESCO} — название профессии
+     * @param example ключ: у портала — {@code same_title} названия, у ESCO — название
+     * @param text    текст, вектор которого ищется
+     * @param code    группа ISCO-08
+     */
+    public record Example(String source, String example, String text, String code) {
+    }
+
+    /**
+     * Пример для поиска ближайших.
+     *
+     * @param code   группа ISCO-08
+     * @param vector вектор длины 1
+     */
+    public record Labeled(String code, float[] vector) {
     }
 }
