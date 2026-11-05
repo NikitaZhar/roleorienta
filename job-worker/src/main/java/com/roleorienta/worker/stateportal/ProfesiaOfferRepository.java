@@ -97,16 +97,17 @@ public class ProfesiaOfferRepository {
     }
 
     /**
-     * @param num   объявление
-     * @param offer сведения его страницы
+     * @param num         объявление
+     * @param offer       сведения его страницы
+     * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика (§266); {@code null} — прежняя остаётся
      */
-    public void saveRead(long num, Offer offer) {
+    public void saveRead(long num, Offer offer, String employerUrl) {
         jdbcTemplate.update("""
                 UPDATE profesia_offer SET page_read_at = now(), title = ?, employer_name = ?, location = ?, content = ?,
-                       posted_at = ?
+                       posted_at = ?, employer_url = coalesce(?, employer_url)
                 WHERE num = ?
                 """, offer.title(), offer.employerName(), offer.location(), offer.content(),
-                offer.postedAt() == null ? null : Timestamp.from(offer.postedAt()), num);
+                offer.postedAt() == null ? null : Timestamp.from(offer.postedAt()), employerUrl, num);
     }
 
     /**

@@ -121,6 +121,9 @@ app:
   title-occupations:         # профессия по названию (§215): переучить и перераспознать раз в сутки, задание TITLE_OCCUPATIONS
     enabled: true              # false — постановка выключена (тесты)
     interval-ms: 3600000       # тик постановки; ключ задания по дате — раз в сутки
+  employer-links:            # источники по ссылке на вакансию у работодателя (§266): проход раз в час
+    enabled: true              # false — проход выключен (тесты)
+    interval-ms: 3600000       # первый — сразу после запуска
   title-classification:     # позиция вакансии по похожему названию (§263): раз в час, задание TITLE_CLASSIFY
     enabled: ${TITLE_CLASSIFICATION_ENABLED:false}  # true — такт ставит распознавание; нужна запущенная Ollama
     model: ${TITLE_CLASSIFICATION_MODEL:bge-m3}     # модель векторов Ollama (ollama pull bge-m3)

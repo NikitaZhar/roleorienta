@@ -210,6 +210,37 @@ public class CareerScanRepository {
     }
 
     /**
+     * Ссылки на вакансию у работодателя по кнопке отклика объявлений profesia.sk (§209, §266) с компанией объявления:
+     * у публикаций источников компании (общий список портала, связь не «группа») и у объявлений, добранных с
+     * profesia.sk (§219, компания — {@code profesia_offer.company_id}). Только открытые публикации и живые объявления.
+     *
+     * @return компания и ссылка, без повторов
+     */
+    public List<EmployerLink> employerLinks() {
+        return jdbcTemplate.query("""
+                SELECT cs.company_id, p.employer_url FROM job_posting p
+                JOIN company_source cs ON cs.source_id = p.source_id AND cs.role <> 'GROUP'
+                WHERE p.employer_url IS NOT NULL AND p.closed_at IS NULL
+                UNION
+                SELECT o.company_id, o.employer_url FROM profesia_offer o
+                WHERE o.company_id IS NOT NULL AND o.employer_url IS NOT NULL AND NOT o.page_gone
+                """, (row, number) -> new EmployerLink(row.getLong(1), row.getString(2)));
+    }
+
+    /**
+     * Источники по ссылке на вакансию у работодателя (§266): подключаются и связываются с компанией, как найденные
+     * поиском кадровой страницы; итог проверки компании не меняется (его ведёт поиск кадровой страницы).
+     *
+     * @param companyId компания
+     * @param boards    доски систем найма с основанием использования
+     * @param role      роль компании у источников
+     */
+    @Transactional
+    public void connectFromEmployerLink(long companyId, Set<Board> boards, Role role) {
+        link(companyId, boards, role);
+    }
+
+    /**
      * Источники подключаются (уже подключённый — не дублируется) и связываются с компанией; связь «группы» получает
      * роль работодателя (аудит §84); закрытый администратором источник (§206) не связывается — он не читается и каналом
      * компании не считается (аудит §211). Доски — в одном порядке во всех потоках: встречные вставки двух транзакций не
@@ -307,6 +338,15 @@ public class CareerScanRepository {
          * вакансии компании берутся с портала и profesia.sk, как при отметке администратора «своей страницы нет».
          */
         PORTAL_ONLY
+    }
+
+    /**
+     * Ссылка на вакансию у работодателя с компанией объявления.
+     *
+     * @param companyId компания
+     * @param url       конечный адрес переадресации кнопки отклика
+     */
+    public record EmployerLink(long companyId, String url) {
     }
 
     /**

@@ -313,9 +313,13 @@ public class StatePortalAdapter implements SourceAdapter {
      * найма. Запрашивается переадресация (клиент проходит её, как браузер) — ссылка — конечный адрес. Кнопки нет,
      * переадресации нет или она закончилась на profesia (форма отклика самой площадки) — ссылки нет. Ответ не получен
      * (сбой, отказ, слишком много переходов) — ссылка не выяснена ({@code null}): спросить при следующей записи, а не
-     * считать, что ссылки нет (аудит §211).
+     * считать, что ссылки нет (аудит §211). Общий для объявлений общего списка портала и добранных с profesia.sk
+     * ({@code ProfesiaPages#offer}, §266).
+     *
+     * @param document страница объявления profesia.sk
+     * @return ссылка ({@code url} {@code null} — её нет); {@code null} — не выяснена
      */
-    private EmployerLink employerLink(Document document) {
+    public EmployerLink employerLink(Document document) {
         Element button = document.selectFirst("a[href*=external-reaction-redirect]");
         if (button == null) {
             return new EmployerLink(null);

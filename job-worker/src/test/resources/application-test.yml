@@ -51,6 +51,8 @@ app:
     enabled: false           # расчёт показателей вызывается из теста вручную
   title-occupations:
     enabled: false           # пересчёт профессии по названию вызывается из теста вручную
+  employer-links:
+    enabled: false           # источники по ссылке работодателя подключаются из теста вручную
   title-classification:
     enabled: false           # распознавание моделью вызывается из теста вручную, модель подменена
   career-request:

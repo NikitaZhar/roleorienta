@@ -30,7 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code SnapshotPurgeTick}); 1017 — постановка расчёта показателей ядра ({@code ComputeMetricsTick}); 1018 —
  * постановка проверки адресов кадровых страниц пользователей ({@code CareerRequestTick}); 1019 — постановка сводок
  * на почту ({@code DigestTick}); 1020 — постановка пересчёта профессии по названию ({@code TitleOccupationTick}); 1021 —
- * пересчёт полноты сбора по компаниям ({@code CoverageTick}).</p>
+ * пересчёт полноты сбора по компаниям ({@code CoverageTick}); 1022 — постановка распознавания позиции по названию
+ * ({@code TitleClassificationTick}); 1023 — источники по ссылке на вакансию у работодателя
+ * ({@code EmployerLinkSources}).</p>
  */
 @Component
 public class PostgresLeaderLock {

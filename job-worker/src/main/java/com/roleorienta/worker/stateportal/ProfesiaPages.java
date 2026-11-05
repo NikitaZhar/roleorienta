@@ -1,5 +1,6 @@
 package com.roleorienta.worker.stateportal;
 
+import com.roleorienta.worker.adapter.stateportal.StatePortalAdapter;
 import com.roleorienta.worker.http.ExternalHttpClient;
 import com.roleorienta.worker.http.HttpResult;
 import com.roleorienta.worker.stateportal.StatePortalRepository.FoundSite;
@@ -29,18 +30,21 @@ public class ProfesiaPages {
     private static final int MAX_URL = 2000;
 
     private final ExternalHttpClient http;
+    private final StatePortalAdapter portal;
     private final URI sitemap;
     private final int sitemapMaxBytes;
 
     /**
      * @param http            внешний HTTP-клиент (robots.txt, пауза на хост)
+     * @param portal          ссылка на вакансию у работодателя по кнопке отклика (§209, §266)
      * @param sitemap         адрес карты сайта profesia.sk
      * @param sitemapMaxBytes потолок тела ответа только для карты сайта (≈ 7 МБ; общий потолок — 5 МБ)
      */
-    public ProfesiaPages(ExternalHttpClient http,
+    public ProfesiaPages(ExternalHttpClient http, StatePortalAdapter portal,
             @Value("${app.state-portal.profesia-sitemap-url:https://www.profesia.sk/sitemap.php}") URI sitemap,
             @Value("${app.state-portal.profesia-sitemap-max-bytes:16777216}") int sitemapMaxBytes) {
         this.http = http;
+        this.portal = portal;
         this.sitemap = sitemap;
         this.sitemapMaxBytes = sitemapMaxBytes;
     }
@@ -98,10 +102,20 @@ public class ProfesiaPages {
     public OfferRead offer(String url) {
         return switch (page(url)) {
             case Read read -> ProfesiaOfferPage.parse(read.document())
-                    .<OfferRead>map(OfferFound::new).orElseGet(OfferUnparsed::new);
+                    .<OfferRead>map(offer -> new OfferFound(offer, employerUrl(read.document())))
+                    .orElseGet(OfferUnparsed::new);
             case Failed failed -> new OfferUnavailable(failed.failure());
             case Gone gone -> new OfferGone();
         };
+    }
+
+    /**
+     * Ссылка на вакансию у работодателя по кнопке отклика (§266): та же переадресация, что у объявлений общего списка
+     * портала (§209); кнопки нет, отклик на profesia.sk или переадресация не получена — {@code null}.
+     */
+    private String employerUrl(Document page) {
+        StatePortalAdapter.EmployerLink link = portal.employerLink(page);
+        return link == null ? null : link.url();
     }
 
     /**
@@ -163,8 +177,11 @@ public class ProfesiaPages {
     public sealed interface OfferRead permits OfferFound, OfferGone, OfferUnparsed, OfferUnavailable {
     }
 
-    /** @param offer сведения объявления */
-    record OfferFound(ProfesiaOfferPage.Offer offer) implements OfferRead {
+    /**
+     * @param offer       сведения объявления
+     * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика; {@code null} — нет или не выяснена
+     */
+    record OfferFound(ProfesiaOfferPage.Offer offer, String employerUrl) implements OfferRead {
     }
 
     /** Объявления нет: удалено или закрыто robots.txt. */
