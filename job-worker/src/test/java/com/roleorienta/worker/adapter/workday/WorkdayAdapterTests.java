@@ -94,6 +94,11 @@ class WorkdayAdapterTests {
                 exchange.close();
                 return;
             }
+            if (exchange.getRequestURI().getPath().contains("/Removed")) {
+                exchange.sendResponseHeaders(403, -1);
+                exchange.close();
+                return;
+            }
             String additional = exchange.getRequestURI().getPath().contains("/Multi")
                     ? "\"additionalLocations\":[\"IND.Pune\",\"USA.VA.Reston\"]," : "";
             String start = exchange.getRequestURI().getPath().contains("/Undated")
@@ -298,7 +303,8 @@ class WorkdayAdapterTests {
     }
 
     /**
-     * Деталь есть — публикация на месте с новыми сведениями; 404 — её нет.
+     * Деталь есть — публикация на месте с новыми сведениями; 404 — её нет; 403 (так Workday Accenture отвечает на
+     * снятую вакансию, §269) — тоже нет.
      */
     @Test
     void checksPostingByDetail() {
@@ -306,6 +312,7 @@ class WorkdayAdapterTests {
                 new FetchedPosting("/job/Vienna/Java-Developer", "Java Developer",
                         stubUrl() + "/" + BOARD + "/job/Vienna/Java-Developer", "Vienna", "<p>Java</p>")));
         assertThat(adapter.check(BOARD, "/job/Gone")).isEqualTo(new PostingCheck.Absent());
+        assertThat(adapter.check(BOARD, "/job/Removed")).isEqualTo(new PostingCheck.Absent());
     }
 
     /**

@@ -354,14 +354,20 @@ public class WorkdayAdapter implements SourceAdapter {
     }
 
     /**
-     * Деталь публикации: {@code jobPostingInfo} есть — публикация на месте (сведения обновятся);
-     * 404/410 — её нет; прочее — проверить не удалось.
+     * Деталь публикации: {@code jobPostingInfo} есть — публикация на месте (сведения обновятся); 404/410 или 401/403 —
+     * её нет; прочее — проверить не удалось.
+     *
+     * <p>401/403 — тоже «нет» (§269): проверяются только публикации, которых нет в полном списке доски, а Workday
+     * Accenture на деталь снятой вакансии отвечает 403 (проверено 2026-11-06: 9 снятых — 403, две из списка — 200).
+     * Прежде такая публикация оставалась «не проверенной» и не закрывалась никогда: непроверенная не засчитывается
+     * пропавшей ({@code PostingRecorder.record}).</p>
      */
     @Override
     public PostingCheck check(String board, String externalId) {
         Tenant tenant = Tenant.of(board);
         HttpResult result = requestDetail(tenant, externalId);
-        if (result instanceof HttpResult.PermanentFailure failure && failure.kind() == HttpResult.Kind.NOT_FOUND) {
+        if (result instanceof HttpResult.PermanentFailure failure && (failure.kind() == HttpResult.Kind.NOT_FOUND
+                || failure.kind() == HttpResult.Kind.ACCESS_DENIED)) {
             return new PostingCheck.Absent();
         }
         JsonNode info = result instanceof HttpResult.Success success ? jobPostingInfo(success.body()) : null;
