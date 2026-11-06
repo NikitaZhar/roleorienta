@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
  * и доборе. Не больше {@value #ADS_PER_TASK} страниц за задание (раз в час; пауза на хост и robots.txt соблюдает
  * {@code ExternalHttpClient}), сначала работодатели с большим числом таких объявлений; не дольше
  * {@value #TIME_BUDGET_MINUTES} мин. profesia.sk временно недоступна — прочитанное записано, задание повторяется.
+ * Заодно — ссылка на вакансию у работодателя по кнопке отклика (§268), если её ещё нет: по ней объявление склеивается
+ * с вакансией системы найма работодателя.
  */
 @Component
 public class ProfesiaPositionsHandler implements TaskHandler {
@@ -58,21 +60,28 @@ public class ProfesiaPositionsHandler implements TaskHandler {
     public TaskOutcome handle(TaskRecord task) {
         long deadline = System.nanoTime() + Duration.ofMinutes(TIME_BUDGET_MINUTES).toNanos();
         Map<Long, Map<String, List<ProfesiaPosition>>> bySource = new HashMap<>();
+        Map<Long, Map<String, String>> linksBySource = new HashMap<>();
         int read = 0;
         boolean unavailable = false;
         for (PortalListRepository.UncheckedAd ad : repository.uncheckedProfesiaAds(ADS_PER_TASK)) {
             if (System.nanoTime() - deadline > 0) {
                 break;
             }
-            Optional<List<ProfesiaPosition>> positions = pages.positions(ad.url());
-            if (positions.isEmpty()) {
+            Optional<ProfesiaPages.AdFacts> facts = pages.positions(ad.url());
+            if (facts.isEmpty()) {
                 unavailable = true;
                 break;
             }
-            bySource.computeIfAbsent(ad.sourceId(), source -> new HashMap<>()).put(ad.externalId(), positions.get());
+            bySource.computeIfAbsent(ad.sourceId(), source -> new HashMap<>())
+                    .put(ad.externalId(), facts.get().positions());
+            if (facts.get().employerUrl() != null) {
+                linksBySource.computeIfAbsent(ad.sourceId(), source -> new HashMap<>())
+                        .put(ad.externalId(), facts.get().employerUrl());
+            }
             read++;
         }
         bySource.forEach(repository::recordProfesiaPositions);
+        linksBySource.forEach(repository::recordEmployerLinks);
         LOG.info("Profesia positions: {} offer pages read{}", read, unavailable ? ", profesia.sk unavailable" : "");
         return unavailable ? new TaskOutcome.Retry("profesia.sk unavailable", RETRY_AFTER) : new TaskOutcome.Done();
     }

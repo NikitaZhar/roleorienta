@@ -112,18 +112,29 @@ public class ProfesiaPages {
     }
 
     /**
-     * Позиции profesia.sk со страницы объявления (§267) — для объявлений, чья страница ради них ещё не читалась.
+     * Позиции profesia.sk (§267) и ссылка на вакансию у работодателя по кнопке отклика (§209, §268) со страницы
+     * объявления — для объявлений, чья страница ради них ещё не читалась.
      *
      * @param url адрес объявления
-     * @return позиции (пусто — их нет или объявления больше нет: читать снова незачем); {@code Optional.empty()} —
-     *         profesia.sk временно недоступна, спросить позже
+     * @return позиции (пусто — их нет или объявления больше нет: читать снова незачем) и ссылка ({@code null} — нет
+     *         или не выяснена); {@code Optional.empty()} — profesia.sk временно недоступна, спросить позже
      */
-    public Optional<List<ProfesiaPosition>> positions(String url) {
+    public Optional<AdFacts> positions(String url) {
         return switch (page(url)) {
-            case Read read -> Optional.of(ProfesiaPosition.of(read.document()));
-            case Gone gone -> Optional.of(List.of());
+            case Read read -> Optional.of(new AdFacts(ProfesiaPosition.of(read.document()),
+                    employerUrl(read.document())));
+            case Gone gone -> Optional.of(new AdFacts(List.of(), null));
             case Failed failed -> Optional.empty();
         };
+    }
+
+    /**
+     * Сведения страницы объявления для позиций и склейки.
+     *
+     * @param positions   позиции profesia.sk
+     * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика; {@code null} — нет или не выяснена
+     */
+    public record AdFacts(List<ProfesiaPosition> positions, String employerUrl) {
     }
 
     /**

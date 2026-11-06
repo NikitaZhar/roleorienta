@@ -1,6 +1,7 @@
 package com.roleorienta.worker.career;
 
 import com.roleorienta.worker.lock.PostgresLeaderLock;
+import com.roleorienta.worker.vacancy.VacancyMergeRepository;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -19,7 +20,9 @@ import org.springframework.stereotype.Component;
  * Greenhouse, SmartRecruiters, Nalgoo, Oracle, Personio), доска подключается источником компании объявления — её
  * вакансии читает адаптер, сайт компании для этого не нужен (Accenture: сайт accenture.com программе не отвечает, а
  * кнопка ведёт на Workday {@code accenture.wd103.myworkdayjobs.com/AccentureCareers}). Ссылка на собственный сайт
- * работодателя этим шагом не используется.
+ * работодателя этим шагом не используется. Затем в том же проходе объявления площадок склеиваются с вакансиями
+ * систем найма по той же ссылке ({@link VacancyMergeRepository#mergeByEmployerLinks}, §268): одна вакансия — одна
+ * запись, ссылка — на страницу работодателя.
  *
  * <p>Проход — раз в час под leader-lock (ключ {@value #LOCK_KEY}): все ссылки открытых публикаций и живых
  * объявлений ({@link CareerScanRepository#employerLinks}); подключение повторно ничего не дублирует. Провайдер без
@@ -38,14 +41,18 @@ public class EmployerLinkSources {
 
     private final PostgresLeaderLock leaderLock;
     private final CareerScanRepository sources;
+    private final VacancyMergeRepository merges;
 
     /**
      * @param leaderLock leader-lock
      * @param sources    ссылки, основания использования, подключение источников
+     * @param merges     склейка объявлений с вакансиями систем найма
      */
-    public EmployerLinkSources(PostgresLeaderLock leaderLock, CareerScanRepository sources) {
+    public EmployerLinkSources(PostgresLeaderLock leaderLock, CareerScanRepository sources,
+            VacancyMergeRepository merges) {
         this.leaderLock = leaderLock;
         this.sources = sources;
+        this.merges = merges;
     }
 
     /**
@@ -54,7 +61,11 @@ public class EmployerLinkSources {
     @Scheduled(fixedDelayString = "${app.employer-links.interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, this::connectAll);
+            leaderLock.runIfLeader(LOCK_KEY, () -> {
+                connectAll();
+                int merged = merges.mergeByEmployerLinks();
+                LOG.info("Vacancies merged into recruiting system vacancies by employer link: {}", merged);
+            });
         } catch (DataAccessException exception) {
             LOG.warn("Sources from employer links failed, will retry on next tick", exception);
         }
