@@ -61,11 +61,11 @@ public class EmployerLinkSources {
     @Scheduled(fixedDelayString = "${app.employer-links.interval-ms:3600000}")
     public void tick() {
         try {
-            leaderLock.runIfLeader(LOCK_KEY, () -> {
-                connectAll();
-                int merged = merges.mergeByEmployerLinks();
-                LOG.info("Vacancies merged into recruiting system vacancies by employer link: {}", merged);
-            });
+            leaderLock.runIfLeader(LOCK_KEY, this::connectAll);
+            // Отдельная транзакция (аудит §268): сбой склейки не откатывает подключение досок.
+            leaderLock.runIfLeader(LOCK_KEY, () -> LOG.info(
+                    "Vacancies merged into recruiting system vacancies by employer link: {}",
+                    merges.mergeByEmployerLinks()));
         } catch (DataAccessException exception) {
             LOG.warn("Sources from employer links failed, will retry on next tick", exception);
         }

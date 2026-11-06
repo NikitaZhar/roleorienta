@@ -16,7 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code …/accenturecareers/job/Bratislava/Business-Analyst_R00361539}, объявление общего списка портала с кнопкой
  * отклика на {@code …/sk-SK/AccentureCareers/job/…} и объявление, добранное с profesia.sk, со ссылкой в
  * {@code profesia_offer} — одна вакансия Workday: публикации переходят, отметка пользователя переходит (из «Viewed» и
- * «Applied» остаётся «Applied»), выдача переходит; объявление с другой ссылкой не трогается. Тест в транзакции с
+ * «Applied» остаётся «Applied»), выдача переходит; объявление с другой ссылкой не трогается. Аудит §268 (§270): номер
+ * вакансии в параметре (Taleo {@code jobdetail.ftl?job=N}) — склейка с той самой вакансией, а не с любой вакансией
+ * доски; ключ, общий для нескольких публикаций, — не основание; другое название при той же ссылке — не основание
+ * (§270); цепочек между проходами нет. Тест в транзакции с
  * откатом.
  */
 @SpringBootTest
@@ -28,8 +31,8 @@ class VacancyMergeRepositoryTests {
     private static final String WORKDAY =
             "https://accenture.wd103.myworkdayjobs.com/accenturecareers/job/Bratislava/Business-Analyst_R00361539";
     private static final String BUTTON =
-            "https://accenture.wd103.myworkdayjobs.com/sk-SK/AccentureCareers/job/Bratislava/Business-Analyst_R00361539"
-                    + "?source=profesia";
+            "https://accenture.wd103.myworkdayjobs.com/sk-SK/AccentureCareers/job/Bratislava/Business-Analyst_R00361539";
+    private static final String TALEO = "https://molgroup.taleo.net/careersection/external/jobdetail.ftl?job=";
 
     @Autowired
     private VacancyMergeRepository merges;
@@ -74,6 +77,40 @@ class VacancyMergeRepositoryTests {
         assertThat(jdbcTemplate.queryForObject("SELECT vacancy_id FROM delivered_vacancy WHERE search_condition_id = ?",
                 Long.class, condition)).isEqualTo(kept);
         assertThat(merges.mergeByEmployerLinks()).isZero();
+    }
+
+    @Test
+    void numberInQueryAndSharedLinksAreRespected() {
+        long taleo = source("taleo", "molgroup.taleo.net/external");
+        long portal = source("sluzbyzamestnanosti", "92680002");
+        long first = posting(taleo, "taleo-1", TALEO + "1&lang=en", null);
+        long second = posting(taleo, "taleo-2", TALEO + "2&lang=en", null);
+        long third = posting(taleo, "taleo-3", TALEO + "3&lang=en", null);
+        long ad = posting(portal, "profesia:9268011", "https://www.profesia.sk/O9268011", TALEO + "2&lang=en");
+        long careers = source("careerpage", "https://shared.test/kariera");
+        long sharedOne = posting(careers, "shared-1", "https://shared.test/kariera", null);
+        long sharedTwo = posting(careers, "shared-2", "https://shared.test/kariera/", null);
+        long sharedAd = posting(portal, "profesia:9268012", "https://www.profesia.sk/O9268012",
+                "https://shared.test/kariera");
+        long otherTitle = posting(portal, "profesia:9268013", "https://www.profesia.sk/O9268013", TALEO + "3&lang=en");
+        jdbcTemplate.update("UPDATE job_posting SET title = 'Compliance Specialist' WHERE external_id = 'profesia:9268013'");
+
+        assertThat(merges.mergeByEmployerLinks()).isEqualTo(1);
+        assertThat(merges.mergeByEmployerLinks()).isZero();
+
+        assertThat(vacancyOf("profesia:9268011")).isEqualTo(second);
+        assertThat(vacancyOf("taleo-1")).isEqualTo(first);
+        assertThat(vacancyOf("taleo-3")).isEqualTo(third);
+        assertThat(vacancyOf("profesia:9268012")).isEqualTo(sharedAd);
+        assertThat(vacancyOf("shared-1")).isEqualTo(sharedOne);
+        assertThat(vacancyOf("shared-2")).isEqualTo(sharedTwo);
+        assertThat(vacancyOf("profesia:9268013")).isEqualTo(otherTitle);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM vacancy WHERE id = ?", Integer.class, ad)).isZero();
+    }
+
+    private long vacancyOf(String externalId) {
+        return jdbcTemplate.queryForObject("SELECT vacancy_id FROM job_posting WHERE external_id = ?", Long.class,
+                externalId);
     }
 
     private long source(String provider, String board) {

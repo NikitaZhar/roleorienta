@@ -15,8 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Остаётся вакансия публикации системы найма; на неё переносятся публикации, история, выдача, сводка на почту и
  * отметки пользователя — как в склейке накопленных дублей V92 (из двух отметок одного пользователя — дальше по пути
  * отклика: Employer declined &gt; Interview &gt; Applied &gt; Not interested &gt; Viewed, затем последняя); соответствие
- * позициям и требования к языку пересчитывает сопоставление ({@code match_version} сброшен). Вакансия, к которой
- * присоединяются, сама ни к чему не присоединяется (нет цепочек). Одна транзакция.</p>
+ * позициям и требования к языку пересчитывает сопоставление ({@code match_version} сброшен).</p>
+ *
+ * <p>Склеивается, только если ключ ведёт ровно на одну открытую публикацию не с площадки (аудит §268, §270): ключ,
+ * общий для нескольких публикаций (одна ссылка у разных вакансий доски), — не основание. Так же исключены цепочки
+ * между проходами: у вакансии-приёмника уже есть эта публикация, а другой с тем же ключом нет. И только при том же
+ * названии ({@code same_title}, без пометок пола и зарплаты; §270): кнопки разных объявлений одного работодателя
+ * бывают направлены на одну общую страницу вакансий («Farmaceut/ka — Kremnica», «— Senec» → одна страница). Одна транзакция;
+ * {@code EmployerLinkSources} вызывает склейку отдельно от подключения досок — сбой склейки их не откатывает.</p>
  */
 @Repository
 public class VacancyMergeRepository {
@@ -40,23 +46,27 @@ public class VacancyMergeRepository {
         jdbcTemplate.execute("""
                 CREATE TEMPORARY TABLE merge_map ON COMMIT DROP AS
                 WITH link AS (
-                    SELECT p.vacancy_id, employer_link_key(p.employer_url) AS link_key
+                    SELECT p.vacancy_id, employer_link_key(p.employer_url) AS link_key, same_title(p.title) AS title_key
                     FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
                     WHERE p.closed_at IS NULL AND p.employer_url IS NOT NULL
                     UNION
-                    SELECT p.vacancy_id, employer_link_key(o.employer_url)
+                    SELECT p.vacancy_id, employer_link_key(o.employer_url), same_title(p.title)
                     FROM profesia_offer o
                     JOIN job_posting p ON p.external_id LIKE 'profesia:%' AND p.external_id = 'profesia:' || o.num
                                       AND p.closed_at IS NULL
                     JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
                     WHERE o.employer_url IS NOT NULL),
                 target AS (
-                    SELECT p.vacancy_id, employer_link_key(p.url) AS link_key
-                    FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
-                    WHERE p.closed_at IS NULL AND p.external_id NOT LIKE 'profesia:%'),
+                    SELECT vacancy_id, link_key, title_key FROM (
+                        SELECT p.vacancy_id, employer_link_key(p.url) AS link_key, same_title(p.title) AS title_key,
+                               count(*) OVER (PARTITION BY employer_link_key(p.url)) AS same_key
+                        FROM job_posting p JOIN vacancy v ON v.id = p.vacancy_id AND v.state <> 'CLOSED'
+                        WHERE p.closed_at IS NULL AND p.external_id NOT LIKE 'profesia:%') t
+                    WHERE same_key = 1),
                 pair AS (
                     SELECT l.vacancy_id, min(t.vacancy_id) AS keeper_id
-                    FROM link l JOIN target t ON t.link_key = l.link_key AND t.vacancy_id <> l.vacancy_id
+                    FROM link l JOIN target t ON t.link_key = l.link_key AND t.title_key = l.title_key
+                                             AND t.title_key <> '' AND t.vacancy_id <> l.vacancy_id
                     GROUP BY l.vacancy_id)
                 SELECT vacancy_id, keeper_id FROM pair
                 WHERE vacancy_id NOT IN (SELECT keeper_id FROM pair)""");
