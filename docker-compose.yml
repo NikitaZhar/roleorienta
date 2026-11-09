@@ -8,6 +8,9 @@ name: roleorienta
 services:
   postgres:
     image: postgres:16-alpine
+    # Ожидание блокировки дольше 1 с (deadlock_timeout) — в лог: при зависании видно, кто кого ждёт (§277).
+    # https://www.postgresql.org/docs/16/runtime-config-logging.html#GUC-LOG-LOCK-WAITS
+    command: ["postgres", "-c", "log_lock_waits=on"]
     environment:
       POSTGRES_DB: ${DB_NAME:-roleorienta}
       POSTGRES_USER: ${DB_USERNAME:-roleorienta}

@@ -6,10 +6,21 @@ spring:
     username: ${DB_USERNAME:roleorienta}
     password: ${DB_PASSWORD:roleorienta}
     hikari:
-      # Соединений с БД: обработчики четырёх очередей (6 + 4 + 2 + 2) и до 6 потоков проверки сайтов (§77), тики,
-      # публикатор outbox, продление аренды (§95); соединение берётся на время запроса, нехватка — ожидание до 30 с,
-      # затем временный отказ.
-      maximum-pool-size: 20
+      # Соединений с БД: обработчики четырёх очередей (6 + 4 + 2 + 2), до 6 потоков проверки сайтов (§77), до 8 тиков
+      # одновременно (spring.task.scheduling, §277), публикатор outbox, продление аренды (§95); соединение берётся на
+      # время запроса, нехватка — ожидание до 30 с, затем временный отказ.
+      maximum-pool-size: 28
+      # Ожидание блокировки (строки, advisory-блокировка записи вакансий §271) — не дольше 2 мин: дольше — ошибка
+      # запроса, задание повторяется, тик — в следующий раз, а не висит днями (§277: ядро стояло 06.11–09.11).
+      # https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-LOCK-TIMEOUT
+      connection-init-sql: SET lock_timeout = '2min'
+  # Тики (@Scheduled, 26 шт.) — в 8 потоках, а не в одном (по умолчанию): зависший тик не останавливает остальные
+  # (§277). Один и тот же тик два раза одновременно не идёт (fixedDelay ждёт конца прошлого запуска).
+  # https://docs.spring.io/spring-boot/reference/features/task-execution-and-scheduling.html
+  task:
+    scheduling:
+      pool:
+        size: 8
   # Почта для сводки (§164): SMTP Brevo — smtp-relay.brevo.com:587, логин и ключ SMTP из кабинета Brevo; STARTTLS —
   # шифрование соединения после приветствия сервера. Сводки включает DIGEST_ENABLED (app.digest.enabled); без MAIL_HOST
   # или MAIL_FROM письмо не уходит — задание сводки завершается ошибкой «Mail is not configured» (аудит §165).
