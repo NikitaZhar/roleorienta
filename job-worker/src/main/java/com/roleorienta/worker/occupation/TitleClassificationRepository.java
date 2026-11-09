@@ -19,6 +19,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class TitleClassificationRepository {
 
+    /** Позиция profesia.sk, которую распознавание не поняло, распознаётся снова через столько дней (§271). */
+    static final int RETRY_UNMAPPED_DAYS = 7;
+
+    /** Позиция profesia.sk к распознаванию: не сопоставлена или ответ «не понять» не моложе срока (не владельца). */
+    private static final String UNMAPPED = "(mapped_by IS NULL OR code IS NULL AND mapped_by <> 'OWNER' "
+            + "AND mapped_at < now() - make_interval(days => " + RETRY_UNMAPPED_DAYS + "))";
+
     /**
      * Ключ открытой публикации, позиции которой нет: ни кода портала, ни распознанной группы, ни позиции словаря у её
      * вакансии — и ключа ещё нет среди ответов.
@@ -83,11 +90,13 @@ public class TitleClassificationRepository {
     }
 
     /**
-     * @return позиции каталога profesia.sk без группы ISCO-08 (§267): ключ и название; ещё не сопоставленные
+     * @return позиции каталога profesia.sk без группы ISCO-08 (§267): ключ и название; ещё не сопоставленные и те, что
+     *         распознавание не поняло, — снова через {@value #RETRY_UNMAPPED_DAYS} дн. (§271, аудит §270 замечание 7:
+     *         примеров с кодом становится больше); сопоставленные владельцем ({@code OWNER}) — нет
      */
     public Map<String, String> unmappedProfesiaPositions() {
         Map<String, String> positions = new LinkedHashMap<>();
-        jdbcTemplate.query("SELECT slug, name FROM profesia_position WHERE mapped_by IS NULL ORDER BY slug",
+        jdbcTemplate.query("SELECT slug, name FROM profesia_position WHERE " + UNMAPPED + " ORDER BY slug",
                 row -> {
                     positions.put(row.getString(1), row.getString(2));
                 });
@@ -96,7 +105,8 @@ public class TitleClassificationRepository {
 
     /**
      * Группы ISCO-08 позиций profesia.sk по ответу распознавания (§267; способ — {@code mapped_by}); позицию, которую
-     * уже сопоставил владелец или прежний ответ, не трогает.
+     * уже сопоставил владелец или прежний ответ с группой, не трогает; ответ «не понять» заменяет через
+     * {@value #RETRY_UNMAPPED_DAYS} дн.
      *
      * @param codes ключ позиции → код группы (пусто — не распознано)
      * @param model каким способом распознано
@@ -105,7 +115,7 @@ public class TitleClassificationRepository {
     public void mapProfesiaPositions(Map<String, String> codes, String model) {
         codes.forEach((slug, code) -> jdbcTemplate.update("""
                 UPDATE profesia_position SET code = ?, mapped_by = ?, mapped_at = now()
-                WHERE slug = ? AND mapped_by IS NULL""", code.isEmpty() ? null : code, model, slug));
+                WHERE slug = ? AND """ + UNMAPPED, code.isEmpty() ? null : code, model, slug));
     }
 
     /**

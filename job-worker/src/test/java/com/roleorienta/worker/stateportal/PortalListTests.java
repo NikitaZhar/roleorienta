@@ -3,6 +3,7 @@ package com.roleorienta.worker.stateportal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.roleorienta.worker.TestcontainersConfiguration;
+import com.roleorienta.worker.adapter.stateportal.PortalOffer;
 import com.roleorienta.worker.adapter.stateportal.StatePortalSearch;
 import com.roleorienta.worker.source.SourceRepository;
 import com.roleorienta.worker.task.TaskExecutor;
@@ -20,6 +21,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -360,6 +362,25 @@ class PortalListTests {
                 .containsExactly(sourceId);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM (" + PORTAL_SOURCES + ") portal", Integer.class))
                 .isEqualTo(3);
+    }
+
+    /**
+     * EURES (§271, аудит §270 замечание 3): подставной IČO 10000000 не записывается — у объявлений разных зарубежных
+     * работодателей IČO нет, источники — по названию каждого, а не один общий с названием одного.
+     */
+    @Test
+    void euresPlaceholderNumberGivesSourceByEmployerName() {
+        long cycle = repository.startCycle();
+        String alfa = "0c0c0c0c-3333-4333-8333-000000000001";
+        String zeta = "0c0c0c0c-3333-4333-8333-000000000002";
+        repository.saveOffers(List.of(new PortalOffer(alfa, "Alfa GmbH", "Koch (muž/žena)", "Wien", "https://e.eu/1"),
+                new PortalOffer(zeta, "Zeta AB", "Svetsare (muž/žena)", "Malmö", "https://e.eu/2")),
+                Map.of(alfa, PortalListRepository.EURES_NUMBER, zeta, PortalListRepository.EURES_NUMBER));
+
+        assertThat(offers()).containsExactlyInAnyOrder(alfa + "|-|Koch (muž/žena)", zeta + "|-|Svetsare (muž/žena)");
+        assertThat(repository.employersWithoutCompany(cycle)).containsExactlyInAnyOrder(
+                new PortalListRepository.UnregisteredEmployer(PortalListRepository.NAME_BOARD + "Alfa GmbH", "Alfa GmbH"),
+                new PortalListRepository.UnregisteredEmployer(PortalListRepository.NAME_BOARD + "Zeta AB", "Zeta AB"));
     }
 
     private List<String> postings() {

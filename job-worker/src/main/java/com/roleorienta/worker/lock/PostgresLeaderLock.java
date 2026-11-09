@@ -32,10 +32,27 @@ import org.springframework.transaction.annotation.Transactional;
  * на почту ({@code DigestTick}); 1020 — постановка пересчёта профессии по названию ({@code TitleOccupationTick}); 1021 —
  * пересчёт полноты сбора по компаниям ({@code CoverageTick}); 1022 — постановка распознавания позиции по названию
  * ({@code TitleClassificationTick}); 1023 — источники по ссылке на вакансию у работодателя
- * ({@code EmployerLinkSources}); 1024 — постановка чтения позиций profesia.sk ({@code ProfesiaPositionsTick}).</p>
+ * ({@code EmployerLinkSources}); 1024 — постановка чтения позиций profesia.sk ({@code ProfesiaPositionsTick}); 1025 — не leader-lock, а
+ * блокировка записи вакансий ({@link #VACANCY_WRITE}, §271).</p>
  */
 @Component
 public class PostgresLeaderLock {
+
+    /**
+     * Ключ блокировки записи вакансий (§271, аудит §270 замечание 2): разделяемую ({@link #VACANCY_WRITE_SHARED}) берут
+     * транзакции, которые пишут публикации и ссылаются на вакансии (запись чтения источника, выдача, сводка на почту), —
+     * друг другу они не мешают; исключительную ({@link #VACANCY_WRITE_EXCLUSIVE}) — склейка вакансий, которая переносит
+     * публикации и удаляет вакансии: она ждёт окончания идущих записей, новые ждут её. Без этого запись, прочитавшая
+     * публикацию до склейки, пишет обратно удалённую вакансию (Hibernate обновляет все колонки) — откат чтения
+     * источника. Транзакционная: освобождается с концом транзакции. Берётся первым запросом транзакции.
+     */
+    public static final long VACANCY_WRITE = 1025;
+
+    /** Разделяемая блокировка записи вакансий ({@link #VACANCY_WRITE}). */
+    public static final String VACANCY_WRITE_SHARED = "SELECT 1 FROM pg_advisory_xact_lock_shared(" + VACANCY_WRITE + ")";
+
+    /** Исключительная блокировка записи вакансий ({@link #VACANCY_WRITE}) — склейка. */
+    public static final String VACANCY_WRITE_EXCLUSIVE = "SELECT 1 FROM pg_advisory_xact_lock(" + VACANCY_WRITE + ")";
 
     private final JdbcTemplate jdbcTemplate;
 

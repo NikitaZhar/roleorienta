@@ -82,7 +82,7 @@ app:
                              # достаётся по очереди — первым более старое отложенное задание (§96)
       exclusive:
         portal: [STATE_PORTAL, PORTAL_LIST]       # государственный портал: работодатели, сайт, общий список вакансий
-        profesia: [PROFESIA_SITE, PROFESIA_LIST, PROFESIA_OFFERS]  # profesia.sk
+        profesia: [PROFESIA_SITE, PROFESIA_LIST, PROFESIA_OFFERS, PROFESIA_POSITIONS]  # profesia.sk (§271)
   http:
     connect-timeout: 5s      # установление соединения
     read-timeout: 20s        # ожидание ответа и данных

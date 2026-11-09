@@ -1,5 +1,6 @@
 package com.roleorienta.worker.delivery;
 
+import com.roleorienta.worker.lock.PostgresLeaderLock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -90,6 +91,8 @@ public class DeliveryRepository {
      */
     @Transactional
     public int deliverPortion(long conditionId, long passRunId, Instant now, Instant visibleSince) {
+        // выдача ссылается на вакансии — не одновременно со склейкой, которая их удаляет (§271)
+        jdbcTemplate.queryForObject(PostgresLeaderLock.VACANCY_WRITE_SHARED, Integer.class);
         List<Map<String, Object>> condition = jdbcTemplate.queryForList(
                 "SELECT active FROM search_condition WHERE id = ? FOR UPDATE", conditionId);
         if (condition.isEmpty() || !Boolean.TRUE.equals(condition.get(0).get("active"))) {

@@ -6,12 +6,13 @@ import com.roleorienta.worker.career.BoardDiscoveryHandler;
 import com.roleorienta.worker.career.CareerScanHandler;
 import com.roleorienta.worker.collect.ReadSourceHandler;
 import com.roleorienta.worker.delivery.RunPassHandler;
+import com.roleorienta.worker.digest.SendDigestHandler;
 import com.roleorienta.worker.geo.GeoImportHandler;
 import com.roleorienta.worker.intake.CompanySizeHandler;
 import com.roleorienta.worker.intake.RegistryIntakeHandler;
-import com.roleorienta.worker.digest.SendDigestHandler;
 import com.roleorienta.worker.match.MatchVacanciesHandler;
 import com.roleorienta.worker.metrics.ComputeMetricsHandler;
+import com.roleorienta.worker.occupation.TitleClassificationHandler;
 import com.roleorienta.worker.site.SiteNameHandler;
 import com.roleorienta.worker.site.SiteScanHandler;
 import com.roleorienta.worker.site.WikidataSiteHandler;
@@ -30,7 +31,8 @@ import org.junit.jupiter.api.Test;
 class RabbitTopologyTests {
 
     /**
-     * Поиск — реестр, сайты, кадровые страницы, обратный путь, портал, справочник, удаление снимков — в очередь поиска.
+     * Поиск — реестр, сайты, кадровые страницы, обратный путь, портал, справочник, распознавание позиции по названию,
+     * удаление снимков — в очередь поиска.
      */
     @Test
     void discoveryTasksGoToDiscoveryQueue() {
@@ -38,7 +40,9 @@ class RabbitTopologyTests {
                 SiteScanHandler.TYPE, WikidataSiteHandler.TYPE, CareerScanHandler.TYPE, BoardDiscoveryHandler.TYPE,
                 StatePortalHandler.TYPE, GeoImportHandler.TYPE, CompanySizeHandler.TYPE, ProfesiaSiteHandler.TYPE,
                 ProfesiaListHandler.TYPE, ProfesiaOffersHandler.TYPE, ProfesiaPositionsHandler.TYPE,
-                SnapshotPurgeHandler.TYPE);
+                TitleClassificationHandler.TYPE, SnapshotPurgeHandler.TYPE);
+        assertThat(RabbitTopology.routingKey(TitleClassificationHandler.TYPE))
+                .isEqualTo(RabbitTopology.DISCOVERY_ROUTING_KEY);
         assertThat(RabbitTopology.routingKey(StatePortalHandler.TYPE)).isEqualTo(RabbitTopology.DISCOVERY_ROUTING_KEY);
     }
 

@@ -315,10 +315,26 @@ public class StatePortalAdapter implements SourceAdapter {
             return Optional.empty();
         }
         Document document = Jsoup.parse(page.body(), url);
+        if (!isProfesiaOffer(document)) {
+            // капча, баннер (200 без объявления): не «ссылки и позиций нет», а не прочитано — спросить позже (§271)
+            return Optional.empty();
+        }
         Element posted = document.selectFirst("[itemprop=datePosted]");
         return Optional.of(new OfferDetails(posted == null ? null
                 : PostedDates.parse(posted.hasAttr("content") ? posted.attr("content") : posted.text()), null,
                 linkWanted ? employerLink(document) : null, ProfesiaPosition.of(document)));
+    }
+
+    /**
+     * Страница — объявление profesia.sk: у него есть название {@code <h1>} (то же правило, что у разбора объявления
+     * добора, аудит §222); страница 200 без него — капча или баннер (§271, аудит §270 замечание 6).
+     *
+     * @param document страница по адресу объявления
+     * @return {@code true} — объявление
+     */
+    public static boolean isProfesiaOffer(Document document) {
+        Element heading = document.selectFirst("h1");
+        return heading != null && !heading.text().isBlank();
     }
 
     /**

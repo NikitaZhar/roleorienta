@@ -27,9 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
  *       ссылка совпадает без схемы, {@code www.} и {@code /} в конце или совпадают провайдер, хост и внешний id
  *       (§139: одна доска, подключённая дважды, языковые разделы), иначе — если совпадают название и место
  *       ({@link SameVacancy#byTitle}, §260: одна вакансия на кадровой странице и на портале); иначе — новая
- *       вакансия. Существующие вакансии между собой при записи не объединяются (накопленные дубли склеила миграция
- *       V92). Название и ссылку вакансии задаёт её первая публикация: присоединённая подтверждает вакансию, но их не
- *       меняет (аудит §143); сопоставление вакансии пересчитывается (у присоединённой — свои место и текст).</li>
+ *       вакансия. Существующие вакансии между собой при записи не объединяются: накопленные дубли склеила миграция
+ *       V92, объявления площадок с вакансиями систем найма по ссылке из кнопки склеивает раз в час
+ *       {@link VacancyMergeRepository} (§268). Название и ссылку вакансии задаёт её главная публикация — первая не с
+ *       profesia.sk, а нет такой — первая ({@link JobPostingRepository#findJoinedExternalIds}, §271): остальные
+ *       подтверждают вакансию, но их не меняют (аудит §143, §270); сопоставление вакансии пересчитывается (у
+ *       присоединённой — свои место и текст).</li>
  *   <li>Полное чтение: новая публикация — новая вакансия; известная — обновление сведений и
  *       подтверждение; отсутствующая — счётчик отсутствия, закрытие после
  *       {@link VacancyProperties#closeAfterMissingReads()} полных чтений подряд.</li>
@@ -46,7 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Обход ({@link CrawlRun}) и доступность источника ({@link CrawlLog}) сохраняются в той же
  * транзакции, что и изменения публикаций, — обход
  * первым: на него ссылается история вакансий ({@link VacancyRevision}), которую пишет только
- * полное чтение.</p>
+ * полное чтение. Перед ними — разделяемая блокировка записи вакансий (§271): склейка вакансий не идёт одновременно.</p>
  */
 @Service
 public class PostingRecorder {
@@ -110,6 +113,7 @@ public class PostingRecorder {
     @Transactional
     public void record(CrawlRun run, List<FetchedPosting> fetched, Set<String> unverified, Set<String> notRead,
             Map<String, Instant> postedAt) {
+        postings.lockVacancyWriteShared();
         Instant now = clock.instant();
         crawlLog.finish(run, now);
         Source source = run.getSource();
@@ -249,6 +253,7 @@ public class PostingRecorder {
      */
     @Transactional
     public void recordUnavailable(CrawlRun run) {
+        postings.lockVacancyWriteShared();
         Instant now = clock.instant();
         Set<Long> touched = new HashSet<>();
         for (JobPosting posting : postings.findBySourceId(run.getSource().getId())) {

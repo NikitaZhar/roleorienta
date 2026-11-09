@@ -1,5 +1,6 @@
 package com.roleorienta.worker.vacancy;
 
+import com.roleorienta.worker.lock.PostgresLeaderLock;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -13,6 +14,15 @@ import org.springframework.data.repository.query.Param;
  * обращается к вакансии каждой публикации, без этого был бы отдельный запрос на каждую (N+1).
  */
 public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
+
+    /**
+     * Разделяемая блокировка записи вакансий ({@link PostgresLeaderLock#VACANCY_WRITE}, §271): запись чтения
+     * источника не идёт одновременно со склейкой вакансий. Первым запросом транзакции записи.
+     *
+     * @return 1
+     */
+    @Query(value = PostgresLeaderLock.VACANCY_WRITE_SHARED, nativeQuery = true)
+    int lockVacancyWriteShared();
 
     /**
      * Открытые публикации других источников работодателя этого источника у незакрытых вакансий — кандидаты на
@@ -55,11 +65,15 @@ public interface JobPostingRepository extends JpaRepository<JobPosting, Long> {
 
     /**
      * @param sourceId источник
-     * @return внешние id публикаций источника, присоединённых к вакансии с более ранней публикацией другого
-     *         источника: название и ссылку вакансии они не меняют (аудит §143)
+     * @return внешние id публикаций источника, которые не главные в своей вакансии: название и ссылку вакансии они не
+     *         меняют (аудит §143). Главная — первая (по id) публикация не с profesia.sk, нет такой — первая
+     *         (§271, аудит §270 замечание 5): после склейки по ссылке из кнопки (§268) более раннее объявление
+     *         profesia.sk не перезаписывает ссылку системы найма своей ссылкой на profesia.sk
      */
     @Query("select p.externalId from JobPosting p where p.source.id = ?1 and exists "
-            + "(select q.id from JobPosting q where q.vacancy = p.vacancy and q.id < p.id)")
+            + "(select q.id from JobPosting q where q.vacancy = p.vacancy and q.id <> p.id and ("
+            + "q.externalId not like 'profesia:%' and (p.externalId like 'profesia:%' or q.id < p.id) "
+            + "or q.externalId like 'profesia:%' and p.externalId like 'profesia:%' and q.id < p.id))")
     List<String> findJoinedExternalIds(Long sourceId);
 
     /**

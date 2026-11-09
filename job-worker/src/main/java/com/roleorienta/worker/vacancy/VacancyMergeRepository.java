@@ -1,5 +1,6 @@
 package com.roleorienta.worker.vacancy;
 
+import com.roleorienta.worker.lock.PostgresLeaderLock;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
  * между проходами: у вакансии-приёмника уже есть эта публикация, а другой с тем же ключом нет. И только при том же
  * названии ({@code same_title}, без пометок пола и зарплаты; §270): кнопки разных объявлений одного работодателя
  * бывают направлены на одну общую страницу вакансий («Farmaceut/ka — Kremnica», «— Senec» → одна страница). Одна транзакция;
- * {@code EmployerLinkSources} вызывает склейку отдельно от подключения досок — сбой склейки их не откатывает.</p>
+ * {@code EmployerLinkSources} вызывает склейку отдельно от подключения досок — сбой склейки их не откатывает. Склейка
+ * берёт исключительную блокировку записи вакансий ({@link PostgresLeaderLock#VACANCY_WRITE}, §271): запись чтения
+ * источника, выдача и сводка на почту не идут одновременно с ней; строки публикаций и вакансий блокируются в порядке
+ * id.</p>
  */
 @Repository
 public class VacancyMergeRepository {
@@ -41,6 +45,8 @@ public class VacancyMergeRepository {
      */
     @Transactional
     public int mergeByEmployerLinks() {
+        // запись публикаций, выдача и сводка ждут конца склейки, склейка — конца идущих (§271)
+        jdbcTemplate.queryForObject(PostgresLeaderLock.VACANCY_WRITE_EXCLUSIVE, Integer.class);
         // временные таблицы удаляются при завершении транзакции; в одной внешней транзакции — повторный вызов
         jdbcTemplate.execute("DROP TABLE IF EXISTS merge_map, merge_status");
         jdbcTemplate.execute("""
@@ -74,6 +80,11 @@ public class VacancyMergeRepository {
         if (merged == 0) {
             return 0;
         }
+        // строки — в порядке id, как пересчёт профессий и запись (аудит §222): встречные обновления не ждут друг друга
+        jdbcTemplate.queryForList("SELECT id FROM job_posting WHERE vacancy_id IN (SELECT vacancy_id FROM merge_map) "
+                + "ORDER BY id FOR UPDATE");
+        jdbcTemplate.queryForList("SELECT id FROM vacancy WHERE id IN (SELECT vacancy_id FROM merge_map UNION "
+                + "SELECT keeper_id FROM merge_map) ORDER BY id FOR UPDATE");
         jdbcTemplate.update("UPDATE job_posting p SET vacancy_id = m.keeper_id FROM merge_map m "
                 + "WHERE p.vacancy_id = m.vacancy_id");
         jdbcTemplate.update("UPDATE vacancy_revision r SET vacancy_id = m.keeper_id FROM merge_map m "

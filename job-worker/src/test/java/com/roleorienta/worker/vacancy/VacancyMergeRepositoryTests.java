@@ -40,6 +40,9 @@ class VacancyMergeRepositoryTests {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private JobPostingRepository postings;
+
     @Test
     void adJoinsRecruitingSystemVacancyByEmployerLink() {
         long workday = source("workday", "accenture.wd103.myworkdayjobs.com/accenturecareers");
@@ -106,6 +109,25 @@ class VacancyMergeRepositoryTests {
         assertThat(vacancyOf("shared-2")).isEqualTo(sharedTwo);
         assertThat(vacancyOf("profesia:9268013")).isEqualTo(otherTitle);
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM vacancy WHERE id = ?", Integer.class, ad)).isZero();
+    }
+
+    /**
+     * Объявление записано раньше публикации системы найма (доска подключена позже, §266): после склейки главная
+     * публикация вакансии — Workday, объявление — присоединённое и её название и ссылку не меняет (§271, аудит §270
+     * замечание 5).
+     */
+    @Test
+    void earlierAdDoesNotBecomeMainPostingAfterMerge() {
+        long portal = source("sluzbyzamestnanosti", "92680003");
+        long workday = source("workday", "accenture.wd103.myworkdayjobs.com/accenturecareers");
+        posting(portal, "profesia:9268021", "https://www.profesia.sk/O9268021", BUTTON);
+        long kept = posting(workday, "/job/Bratislava/Business-Analyst_R00361539", WORKDAY, null);
+
+        assertThat(merges.mergeByEmployerLinks()).isEqualTo(1);
+
+        assertThat(vacancyOf("profesia:9268021")).isEqualTo(kept);
+        assertThat(postings.findJoinedExternalIds(portal)).containsExactly("profesia:9268021");
+        assertThat(postings.findJoinedExternalIds(workday)).isEmpty();
     }
 
     private long vacancyOf(String externalId) {

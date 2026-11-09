@@ -126,7 +126,8 @@ class StatePortalAdapterTests {
                 + field("Profesia (SK ISCO-08)", "9333004 - Pomocný pracovník v sklade (skladový manipulant)")
                 + field("Naposledy aktualizované", "21.10.2026 o 14:59") + "</dl></main></body></html>");
         String base = "http://127.0.0.1:" + server.getAddress().getPort();
-        profesiaPages.put("/praca/accenture/O5376258", "<div class=\"overall-info\"><strong>ID: </strong>5376258"
+        profesiaPages.put("/praca/accenture/O5376258", "<h1>Business Analyst</h1>"
+                + "<div class=\"overall-info\"><strong>ID: </strong>5376258"
                 + "<strong> Dátum zverejnenia: </strong> <span>16.10.2026</span>"
                 + "<span class=\"hidden\" itemprop=\"datePosted\">2026-10-16</span></div>");
 
@@ -135,17 +136,21 @@ class StatePortalAdapterTests {
         StatePortalAdapter.EmployerLink none = new StatePortalAdapter.EmployerLink(null);
         assertThat(adapter.offerPage("profesia:5376258", base + "/praca/accenture/O5376258"))
                 .contains(new StatePortalAdapter.OfferDetails(Instant.parse("2026-10-16T00:00:00Z"), null, none));
+        profesiaPages.put("/praca/none/O1", "<h1>Predavač</h1>");
         assertThat(adapter.offerPage("profesia:1", base + "/praca/none/O1"))
                 .contains(new StatePortalAdapter.OfferDetails(null, null, none));
+        // Страница 200 без объявления (нет <h1>: капча, баннер) — не прочитана, а не «ссылки и позиций нет» (§271).
+        assertThat(adapter.offerPage("profesia:3", base + "/praca/captcha/O3")).isEmpty();
         // Кнопка отклика ведёт к работодателю (§209): ссылка — конечный адрес переадресации.
-        profesiaPages.put("/praca/brightpick/O5380376", "<span itemprop=\"datePosted\">2026-10-20</span>"
+        profesiaPages.put("/praca/brightpick/O5380376", "<h1>DevOps Manager</h1><span itemprop=\"datePosted\">2026-10-20</span>"
                 + "<a id=\"offer-reaction\" href=\"/external-reaction-redirect?offerId=5380376&amp;_locale=sk\">"
                 + "Odpovedať</a>");
         assertThat(adapter.offerPage("profesia:5380376", base + "/praca/brightpick/O5380376"))
                 .contains(new StatePortalAdapter.OfferDetails(Instant.parse("2026-10-20T00:00:00Z"), null,
                         new StatePortalAdapter.EmployerLink(base + "/employer/jobs/7")));
         // Переадресация не получена (сбой) — ссылка не выяснена, спросить позже (аудит §211).
-        profesiaPages.put("/praca/broken/O2", "<a href=\"/external-reaction-redirect?offerId=0\">Odpovedať</a>");
+        profesiaPages.put("/praca/broken/O2", "<h1>Skladník</h1><a href=\"/external-reaction-redirect?offerId=0\">"
+                + "Odpovedať</a>");
         assertThat(adapter.offerPage("profesia:2", base + "/praca/broken/O2"))
                 .contains(new StatePortalAdapter.OfferDetails(null, null, null));
         assertThat(StatePortalAdapter.hasEmployerLink("profesia:5380376")).isTrue();

@@ -8,6 +8,7 @@ import java.sql.Array;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -38,6 +39,17 @@ public class PortalListRepository {
      * выражение названия.
      */
     private static final String NAME_BOARD_OF = "left('" + NAME_BOARD + "' || %s, 200)";
+
+    /**
+     * Подставной IČO объявлений EURES на портале (§271, аудит §270 замечание 3): один на всех зарубежных работодателей —
+     * не IČO. Не записывается ({@link #saveOffers}): у таких объявлений IČO нет, источник — по названию работодателя
+     * ({@link #NAME_BOARD}), как у прочих без IČO; иначе все объявления EURES уходили в один источник с названием
+     * одного работодателя.
+     */
+    static final String EURES_NUMBER = "10000000";
+
+    /** Страница объявления profesia.sk, прочитанная не до конца (§271), — снова не раньше, чем через столько дней. */
+    static final int DEFERRED_PAGE_DAYS = 7;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -80,8 +92,11 @@ public class PortalListRepository {
 
     /**
      * Открытые публикации объявлений profesia.sk любого источника (общий список портала, добор с profesia.sk), у которых
-     * позиции со страницы ещё не прочитаны (§267) и объявление не прочитано ради них добором; сначала работодатели с
-     * большим числом таких объявлений.
+     * позиции со страницы ещё не прочитаны (§267) и объявление не прочитано ради них добором, или кнопка отклика не
+     * прочитана и ссылки на вакансию у работодателя нет ни у публикации, ни у объявления добора (§271, аудит §270
+     * замечание 4: позиции, прочитанные до §268, — без кнопки); страница, прочитанная не до конца (капча, переадресация
+     * кнопки не получена), — снова через {@value #DEFERRED_PAGE_DAYS} дн. Сначала работодатели с большим числом таких
+     * объявлений.
      *
      * @param limit сколько
      * @return источник, внешний id, адрес страницы объявления
@@ -92,11 +107,17 @@ public class PortalListRepository {
                                    count(*) OVER (PARTITION BY p.source_id) AS per_source
                             FROM job_posting p
                             WHERE p.closed_at IS NULL AND p.external_id LIKE 'profesia:%'
-                              AND NOT p.profesia_positions_checked
-                              AND NOT EXISTS (SELECT 1 FROM profesia_offer o WHERE o.positions_read
-                                              AND 'profesia:' || o.num = p.external_id))
+                              AND (p.profesia_page_deferred_at IS NULL
+                                   OR p.profesia_page_deferred_at < now() - make_interval(days => ?))
+                              AND (NOT p.profesia_positions_checked
+                                   AND NOT EXISTS (SELECT 1 FROM profesia_offer o WHERE o.positions_read
+                                                   AND 'profesia:' || o.num = p.external_id)
+                                   OR NOT p.employer_link_checked AND p.employer_url IS NULL
+                                   AND NOT EXISTS (SELECT 1 FROM profesia_offer o WHERE o.employer_url IS NOT NULL
+                                                   AND 'profesia:' || o.num = p.external_id)))
                 SELECT source_id, external_id, url FROM ad ORDER BY per_source DESC, source_id, external_id LIMIT ?
-                """, (row, number) -> new UncheckedAd(row.getLong(1), row.getString(2), row.getString(3)), limit);
+                """, (row, number) -> new UncheckedAd(row.getLong(1), row.getString(2), row.getString(3)),
+                DEFERRED_PAGE_DAYS, limit);
     }
 
     /**
@@ -126,6 +147,18 @@ public class PortalListRepository {
             jdbcTemplate.update("UPDATE job_posting SET profesia_positions_checked = TRUE WHERE source_id = ? "
                     + "AND external_id = ?", sourceId, externalId);
         });
+    }
+
+    /**
+     * Страницы объявлений profesia.sk, прочитанные не до конца (§271): страница без объявления (капча, баннер) или
+     * переадресация кнопки отклика не получена — снова не раньше, чем через {@value #DEFERRED_PAGE_DAYS} дн.
+     *
+     * @param sourceId    источник
+     * @param externalIds внешние id объявлений
+     */
+    public void deferProfesiaPages(long sourceId, Collection<String> externalIds) {
+        externalIds.forEach(externalId -> jdbcTemplate.update("UPDATE job_posting SET profesia_page_deferred_at = now() "
+                + "WHERE source_id = ? AND external_id = ?", sourceId, externalId));
     }
 
     /**
@@ -256,7 +289,8 @@ public class PortalListRepository {
     }
 
     /**
-     * Записывает вакансии страницы: новые добавляются, известные обновляются; IČO не затирается пустым.
+     * Записывает вакансии страницы: новые добавляются, известные обновляются; IČO не затирается пустым; подставной IČO
+     * EURES ({@link #EURES_NUMBER}) не записывается.
      *
      * @param offers  вакансии страницы
      * @param numbers id вакансии → IČO (нет — не определён)
@@ -264,12 +298,12 @@ public class PortalListRepository {
     public void saveOffers(List<PortalOffer> offers, Map<String, String> numbers) {
         jdbcTemplate.batchUpdate("""
                 INSERT INTO portal_offer (external_id, employer_name, registration_number, title, place, url)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, nullif(?, '%s'), ?, ?, ?)
                 ON CONFLICT (external_id) DO UPDATE SET
                     employer_name = EXCLUDED.employer_name,
                     registration_number = coalesce(EXCLUDED.registration_number, portal_offer.registration_number),
                     title = EXCLUDED.title, place = EXCLUDED.place, url = EXCLUDED.url, last_seen_at = now()
-                """, new BatchPreparedStatementSetter() {
+                """.formatted(EURES_NUMBER), new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement statement, int index) throws SQLException {
                         PortalOffer offer = offers.get(index);

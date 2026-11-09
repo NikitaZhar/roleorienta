@@ -3,6 +3,7 @@ package com.roleorienta.worker.occupation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -121,6 +122,29 @@ class TitleClassificationTests {
                 SELECT slug || ' ' || code || ' ' || mapped_by FROM profesia_position
                 WHERE slug IN ('servicenow-test-developer', 'owner-test-position') ORDER BY slug""", String.class))
                 .containsExactly("owner-test-position 2511 OWNER", "servicenow-test-developer 2512 bge-m3");
+    }
+
+    /**
+     * Позиция, которую распознавание не поняло, распознаётся снова через неделю (§271, аудит §270 замечание 7), более
+     * свежая — нет; позиции и названия — одним вызовом распознавания (замечание 12).
+     */
+    @Test
+    void notUnderstoodProfesiaPositionIsAskedAgainAfterAWeek() {
+        jdbcTemplate.update("""
+                INSERT INTO profesia_position (slug, name, mapped_by, mapped_at)
+                VALUES ('servicenow-old-unknown', 'ServiceNow Old Unknown', 'bge-m3', now() - interval '8 days'),
+                       ('servicenow-new-unknown', 'ServiceNow New Unknown', 'bge-m3', now())""");
+        posting(source(), "ServiceNow Developer", null);
+        when(examples.refresh()).thenReturn(true);
+        when(classifier.classify(any())).thenAnswer(call -> answers(call.getArgument(0)));
+
+        handler.handle(new TaskRecord(0, TitleClassificationHandler.TYPE, "{}", 0));
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT slug || ' ' || coalesce(code, '-') FROM profesia_position
+                WHERE slug IN ('servicenow-old-unknown', 'servicenow-new-unknown') ORDER BY slug""", String.class))
+                .containsExactly("servicenow-new-unknown -", "servicenow-old-unknown 2512");
+        verify(classifier, times(1)).classify(any());
     }
 
     @Test

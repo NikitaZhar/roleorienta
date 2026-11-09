@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Component;
  * ({@link TitleExamples}); пока примеры не готовы целиком, названия не распознаются (часть примеров дала бы худшие
  * ответы, а ответ на название не пересматривается). Затем названия вакансий без позиции ({@code limits.titles-per-task},
  * сначала общие для большего числа вакансий) — {@link TitleClassifier}; ответы — в {@code title_classification},
- * распознанная группа — сразу публикациям ({@link TitleClassificationRepository#save}).
+ * распознанная группа — сразу публикациям ({@link TitleClassificationRepository#save}). Тем же вызовом — позиции
+ * каталога profesia.sk без группы ISCO-08 (§267; «Predavač/predavačka», «Database Administrator»; не понятые — снова
+ * через 7 дн., §271); владелец проверяет и исправляет ({@code mapped_by = 'OWNER'}).
  *
  * <p>Модель векторов (Ollama) не запущена или не ответила — повтор задания позже; ничего из незаконченной порции не
  * записано.</p>
@@ -52,23 +55,6 @@ public class TitleClassificationHandler implements TaskHandler {
         this.properties = properties;
     }
 
-    /**
-     * Позиции каталога profesia.sk, которые ещё без группы ISCO-08 (§267), — тем же распознаванием по названию позиции
-     * («Predavač/predavačka», «Database Administrator»); владелец проверяет и исправляет ({@code mapped_by = 'OWNER'}).
-     */
-    private void mapProfesiaPositions() {
-        Map<String, String> positions = repository.unmappedProfesiaPositions();
-        if (positions.isEmpty()) {
-            return;
-        }
-        Map<String, String> byName = classifier.classify(List.copyOf(new LinkedHashSet<>(positions.values())));
-        Map<String, String> codes = new HashMap<>();
-        positions.forEach((slug, name) -> codes.put(slug, byName.getOrDefault(name, "")));
-        repository.mapProfesiaPositions(codes, properties.model());
-        LOG.info("Profesia positions mapped: {}, with a group: {}", codes.size(),
-                codes.values().stream().filter(code -> !code.isEmpty()).count());
-    }
-
     @Override
     public String type() {
         return TYPE;
@@ -81,11 +67,23 @@ public class TitleClassificationHandler implements TaskHandler {
                 LOG.info("Title classification waits: examples are not ready yet");
                 return new TaskOutcome.Done();
             }
-            mapProfesiaPositions();
+            Map<String, String> positions = repository.unmappedProfesiaPositions();
             List<String> titles = repository.unrecognized(properties.limits().titlesPerTask());
-            Map<String, String> answers = classifier.classify(titles);
-            int postings = repository.save(answers, properties.model());
-            long recognized = answers.values().stream().filter(code -> !code.isEmpty()).count();
+            // одним вызовом: примеры (сотни МБ) загружаются один раз (аудит §270 замечание 12)
+            Set<String> asked = new LinkedHashSet<>(positions.values());
+            asked.addAll(titles);
+            Map<String, String> answers = asked.isEmpty() ? Map.of() : classifier.classify(List.copyOf(asked));
+            if (!positions.isEmpty()) {
+                Map<String, String> codes = new HashMap<>();
+                positions.forEach((slug, name) -> codes.put(slug, answers.getOrDefault(name, "")));
+                repository.mapProfesiaPositions(codes, properties.model());
+                LOG.info("Profesia positions mapped: {}, with a group: {}", codes.size(),
+                        codes.values().stream().filter(code -> !code.isEmpty()).count());
+            }
+            Map<String, String> titleAnswers = new HashMap<>();
+            titles.forEach(title -> titleAnswers.put(title, answers.getOrDefault(title, "")));
+            int postings = repository.save(titleAnswers, properties.model());
+            long recognized = titleAnswers.values().stream().filter(code -> !code.isEmpty()).count();
             LOG.info("Title classification: {} titles asked, {} recognized, {} postings recognized", titles.size(),
                     recognized, postings);
             return new TaskOutcome.Done();

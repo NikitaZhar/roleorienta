@@ -113,17 +113,20 @@ public class ProfesiaPages {
 
     /**
      * Позиции profesia.sk (§267) и ссылка на вакансию у работодателя по кнопке отклика (§209, §268) со страницы
-     * объявления — для объявлений, чья страница ради них ещё не читалась.
+     * объявления — для объявлений, чья страница ради них ещё не читалась. Страница без объявления (нет названия
+     * {@code <h1>}: капча, баннер — как {@link OfferUnparsed}, аудит §222) — {@code offerPage = false}: позиций и
+     * ссылки из неё нет, «позиций нет» не записывается (§271, аудит §270 замечание 6).
      *
      * @param url адрес объявления
-     * @return позиции (пусто — их нет или объявления больше нет: читать снова незачем) и ссылка ({@code null} — нет
-     *         или не выяснена); {@code Optional.empty()} — profesia.sk временно недоступна, спросить позже
+     * @return позиции (пусто — их нет или объявления больше нет: читать снова незачем) и ссылка;
+     *         {@code Optional.empty()} — profesia.sk временно недоступна, спросить позже
      */
     public Optional<AdFacts> positions(String url) {
         return switch (page(url)) {
-            case Read read -> Optional.of(new AdFacts(ProfesiaPosition.of(read.document()),
-                    employerUrl(read.document())));
-            case Gone gone -> Optional.of(new AdFacts(List.of(), null));
+            case Read read -> Optional.of(ProfesiaOfferPage.parse(read.document()).isEmpty()
+                    ? new AdFacts(List.of(), null, false)
+                    : new AdFacts(ProfesiaPosition.of(read.document()), portal.employerLink(read.document()), true));
+            case Gone gone -> Optional.of(new AdFacts(List.of(), new StatePortalAdapter.EmployerLink(null), true));
             case Failed failed -> Optional.empty();
         };
     }
@@ -131,10 +134,12 @@ public class ProfesiaPages {
     /**
      * Сведения страницы объявления для позиций и склейки.
      *
-     * @param positions   позиции profesia.sk
-     * @param employerUrl ссылка на вакансию у работодателя по кнопке отклика; {@code null} — нет или не выяснена
+     * @param positions позиции profesia.sk
+     * @param link      ссылка на вакансию у работодателя по кнопке отклика ({@code url} {@code null} — её нет);
+     *                  {@code null} — не выяснена (переадресация не получена) — спросить позже
+     * @param offerPage {@code false} — страница без объявления (капча, баннер): ничего не прочитано, спросить позже
      */
-    public record AdFacts(List<ProfesiaPosition> positions, String employerUrl) {
+    public record AdFacts(List<ProfesiaPosition> positions, StatePortalAdapter.EmployerLink link, boolean offerPage) {
     }
 
     /**
