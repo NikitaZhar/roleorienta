@@ -218,6 +218,23 @@ class CareerPageAdapterTests {
         assertThat(adapter.detail(url("/kariera/"), "https://example.org/kariera/casnik")).isNull();
     }
 
+    /**
+     * Адрес вакансии без сессионных параметров (§279): {@code search_id} кадровой страницы {@code *.profesia.sk} меняется
+     * при каждом чтении — внешний id один; {@code utm_*} — тоже; прочие параметры и якорь остаются.
+     */
+    @Test
+    void sessionParametersAreDroppedFromVacancyAddress() {
+        String vacancy = "https://ptacek.profesia.sk/praca/ptacek-velkoobchod/O5371567";
+        assertThat(CareerPageAdapter.withoutSessionParameters(vacancy + "?search_id=df11dc59")).isEqualTo(vacancy);
+        assertThat(CareerPageAdapter.withoutSessionParameters(vacancy + "?search_id=4bbb44bf")).isEqualTo(vacancy);
+        assertThat(CareerPageAdapter.withoutSessionParameters("https://firma.sk/kariera?id=5&utm_source=x#top"))
+                .isEqualTo("https://firma.sk/kariera?id=5#top");
+        assertThat(CareerPageAdapter.withoutSessionParameters("https://firma.sk/kariera?search_id=1&id=5"))
+                .isEqualTo("https://firma.sk/kariera?id=5");
+        assertThat(CareerPageAdapter.withoutSessionParameters("https://firma.sk/kariera/operator"))
+                .isEqualTo("https://firma.sk/kariera/operator");
+    }
+
     private String url(String path) {
         return "http://127.0.0.1:" + server.getAddress().getPort() + path;
     }

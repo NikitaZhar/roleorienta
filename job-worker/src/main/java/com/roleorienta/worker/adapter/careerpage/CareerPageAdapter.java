@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -54,6 +55,13 @@ public class CareerPageAdapter implements SourceAdapter {
 
     /** Код провайдера. */
     public static final String PROVIDER = "careerpage";
+    /**
+     * Сессионный параметр адреса: {@code search_id} или {@code utm_*} со значением; группа 1 — {@code ?} или
+     * {@code &} перед ним.
+     */
+    private static final Pattern SESSION_PARAMETER = Pattern.compile("([?&])(?:search_id|utm_[a-z_]+)=[^&#]*");
+    /** Пустой хвост запроса после удаления параметров: {@code ?} или {@code &} в конце или перед якорем (группа 1). */
+    private static final Pattern EMPTY_QUERY_END = Pattern.compile("[?&]+(#.*)?$");
 
     private final ExternalHttpClient httpClient;
     private final CareerPageProperties properties;
@@ -108,8 +116,9 @@ public class CareerPageAdapter implements SourceAdapter {
         boolean unconfirmed = false;
         for (int number = 1; ; number++) {
             for (CareerPageList.Item item : CareerPageList.vacancies(page)) {
-                postings.putIfAbsent(item.url(), new FetchedPosting(item.url(), item.title(), item.url(),
-                        location(item.card(), country), null));
+                String url = withoutSessionParameters(item.url());
+                postings.putIfAbsent(url, new FetchedPosting(url, item.title(), url, location(item.card(), country),
+                        null));
             }
             if (number == 1 && !postings.isEmpty()
                     && !CareerPageList.confirmed(List.copyOf(postings.keySet()), this::open)) {
@@ -147,6 +156,20 @@ public class CareerPageAdapter implements SourceAdapter {
             partial = PartialReason.LIST_NOT_RECOGNIZED;
         }
         return new SourceReadResult.Read(List.copyOf(postings.values()), partial, responses, Set.of(), Map.of());
+    }
+
+    /**
+     * Адрес вакансии без сессионных параметров ({@code search_id} кадровых страниц {@code *.profesia.sk} меняется при
+     * каждом чтении, {@code utm_*} — метки рекламы): внешний id публикации — один и тот же при каждом чтении, а не новая
+     * публикация (docs/vacancy-identity-plan.md §5, стенограмма §279). Остальные параметры остаются — они бывают
+     * частью адреса вакансии ({@code ?id=N}).
+     *
+     * @param url адрес вакансии из списка
+     * @return адрес без {@code search_id} и {@code utm_*}
+     */
+    static String withoutSessionParameters(String url) {
+        String cleaned = SESSION_PARAMETER.matcher(url).replaceAll("$1");
+        return EMPTY_QUERY_END.matcher(cleaned.replace("?&", "?").replaceAll("&{2,}", "&")).replaceFirst("$1");
     }
 
     /**

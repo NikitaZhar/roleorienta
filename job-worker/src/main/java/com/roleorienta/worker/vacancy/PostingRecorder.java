@@ -23,15 +23,18 @@ import org.springframework.transaction.annotation.Transactional;
  * (бизнес-описание §4.3).
  *
  * <ul>
- *   <li>Новая публикация присоединяется к незакрытой вакансии того же работодателя из другого его источника, если
- *       ссылка совпадает без схемы, {@code www.} и {@code /} в конце или совпадают провайдер, хост и внешний id
- *       (§139: одна доска, подключённая дважды, языковые разделы), иначе — если совпадают название и место
- *       ({@link SameVacancy#byTitle}, §260: одна вакансия на кадровой странице и на портале); иначе — новая
- *       вакансия. Существующие вакансии между собой при записи не объединяются: накопленные дубли склеила миграция
- *       V92, объявления площадок с вакансиями систем найма по ссылке из кнопки склеивает раз в час
- *       {@link VacancyMergeRepository} (§268). Название и ссылку вакансии задаёт её главная публикация — первая не с
- *       profesia.sk, а нет такой — первая ({@link JobPostingRepository#findJoinedExternalIds}, §271): остальные
- *       подтверждают вакансию, но их не меняют (аудит §143, §270); сопоставление вакансии пересчитывается (у
+ *   <li>Новая публикация присоединяется к незакрытой вакансии по одному определению «та же вакансия»
+ *       (docs/vacancy-identity-plan.md §4, стенограмма §279): сильный признак — тот же номер объявления profesia.sk,
+ *       адрес без сессионных параметров, провайдер + хост + внешний id (у всех публикаций, в том числе своего
+ *       источника, {@link JobPostingRepository#findStrongMatch}); иначе — название и место у работодателя
+ *       ({@link JobPostingRepository#findTitleAndPlaceMatch}), в том числе в своём источнике (решение владельца
+ *       2026-11-09: копии и повторы одного названия и места — одна вакансия). Объявлениям profesia.sk (портал,
+ *       добор) при записи — только сильные признаки: ссылка из кнопки отклика читается после записи, а кнопка на другую
+ *       вакансию запрещает склейку по названию (ZF Levice) — их по названию склеит пересмотр (план §6, срез 3).
+ *       Иначе — новая вакансия. Существующие вакансии между собой при записи не объединяются: объявления площадок с
+ *       вакансиями систем найма по ссылке из кнопки склеивает раз в час {@link VacancyMergeRepository} (§268).
+ *       Название и ссылку вакансии задаёт её главная публикация — первая не с profesia.sk, а нет такой — первая
+ *       ({@link JobPostingRepository#findJoinedExternalIds}, §271): остальные подтверждают вакансию, но их не меняют (аудит §143, §270); сопоставление вакансии пересчитывается (у
  *       присоединённой — свои место и текст).</li>
  *   <li>Полное чтение: новая публикация — новая вакансия; известная — обновление сведений и
  *       подтверждение; отсутствующая — счётчик отсутствия, закрытие после
@@ -61,6 +64,11 @@ public class PostingRecorder {
     private static final Pattern WEB_URL = Pattern.compile("(?i)https?://[^/?#\\s:@][^/?#\\s]*(?:[/?#].*)?",
             Pattern.DOTALL);
     private static final Logger LOG = LoggerFactory.getLogger(PostingRecorder.class);
+    /**
+     * Начало внешнего id объявления profesia.sk — в общем списке портала и у добора
+     * ({@code StatePortalAdapter.externalId}, {@code ProfesiaOfferRepository.EXTERNAL_ID}).
+     */
+    private static final String PROFESIA_AD = "profesia:";
 
     private final JobPostingRepository postings;
     private final VacancyRepository vacancies;
@@ -123,9 +131,6 @@ public class PostingRecorder {
         Set<Long> touched = new HashSet<>();
         Set<String> notVerified = new HashSet<>(unverified);
         Set<String> joined = new HashSet<>(postings.findJoinedExternalIds(source.getId()));
-        Set<Long> taken = known.values().stream().map(posting -> posting.getVacancy().getId())
-                .collect(Collectors.toCollection(HashSet::new));
-        SameVacancy same = null;
         for (FetchedPosting posting : fetched) {
             if (!isWebUrl(posting.url())) {
                 LOG.warn("Source {}: posting {} skipped, link is not http(s): {}", source.getId(),
@@ -136,15 +141,11 @@ public class PostingRecorder {
             JobPosting existing = known.remove(posting.externalId());
             Instant posted = postedAt.get(posting.externalId());
             if (existing == null) {
-                if (same == null) {
-                    same = SameVacancy.of(postings.findNeighbourPostings(source.getId()));
-                }
-                Optional<Vacancy> found = sameVacancy(same, source, posting, taken);
+                Optional<Vacancy> found = sameVacancy(source, posting);
                 Vacancy vacancy = found.orElseGet(() ->
                         vacancies.save(new Vacancy(posting.title(), posting.url(), now)));
                 vacancy.notePosted(posted);
                 postings.save(new JobPosting(source, vacancy, posting, now));
-                taken.add(vacancy.getId());
                 if (found.isPresent()) {
                     vacancy.resetMatch();
                     touched.add(vacancy.getId());
@@ -180,19 +181,20 @@ public class PostingRecorder {
     }
 
     /**
-     * Вакансия, к которой присоединяется новая публикация: по ссылке или внешнему id, иначе по названию и месту —
-     * ключи новой публикации считает БД ({@link JobPostingRepository#sameTitle}), только если у работодателя есть
-     * кандидаты с названием (у компании с одним источником запросов нет).
+     * Вакансия, к которой присоединяется новая публикация: по сильному признаку, иначе (не объявление profesia.sk) — по
+     * названию и месту. Ключи считает БД; перед запросом записанное в этом чтении сбрасывается в БД ({@code flush}):
+     * копии одного списка видят друг друга.
      */
-    private Optional<Vacancy> sameVacancy(SameVacancy same, Source source, FetchedPosting posting, Set<Long> taken) {
-        Optional<Long> id = same.find(source.getProvider(), posting);
-        if (id.isEmpty() && same.hasTitles()) {
-            id = same.byTitle(postings.sameTitle(posting.title()),
-                    postings.sameTitle(posting.location() == null ? "" : posting.location()), taken);
+    private Optional<Vacancy> sameVacancy(Source source, FetchedPosting posting) {
+        postings.flush();
+        Optional<Long> id = postings.findStrongMatch(source.getProvider(), posting.externalId(), posting.url(),
+                posting.title());
+        if (id.isEmpty() && !posting.externalId().startsWith(PROFESIA_AD)) {
+            id = postings.findTitleAndPlaceMatch(source.getId(), posting.title(), posting.location());
         }
         Optional<Vacancy> found = id.flatMap(vacancies::findById);
-        found.ifPresent(vacancy -> LOG.info("Source {}: posting {} joins vacancy {} of another source",
-                source.getId(), posting.externalId(), vacancy.getId()));
+        found.ifPresent(vacancy -> LOG.info("Source {}: posting {} joins vacancy {}", source.getId(),
+                posting.externalId(), vacancy.getId()));
         return found;
     }
 

@@ -21,10 +21,12 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Одна вакансия в двух источниках компании — одна запись (§139; бизнес-описание §4.3, сценарий 5): новая публикация
- * присоединяется к незакрытой вакансии другого источника той же компании по ссылке без схемы, {@code www.} и
- * {@code /} в конце или по провайдеру, хосту и внешнему id; иначе по названию и месту (§260): то же название и
- * место, или место только у одной; разные места, сомнение и одинаковые названия одного списка — свои вакансии.
+ * Одна вакансия — одна запись при записи чтения (§139, §260; одно определение «та же вакансия» —
+ * docs/vacancy-identity-plan.md §4, стенограмма §279): новая публикация присоединяется к незакрытой вакансии по
+ * сильному признаку у всех публикаций — номер объявления profesia.sk, адрес без сессионных параметров, провайдер + хост
+ * + внешний id (у Workday — и без суффикса копии при том же названии); иначе у работодателя по названию и месту, в том
+ * числе в своём источнике: то же название и место, или место только у одной при одной вакансии этого названия; разные
+ * места и сомнение — свои вакансии; объявление profesia.sk по названию при записи не присоединяется.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -108,17 +110,98 @@ class SameVacancyTests {
     }
 
     /**
-     * Источник другой компании с той же ссылкой — своя вакансия.
+     * Та же ссылка у источника другой компании — та же страница, та же вакансия (сильный признак — без отбора по
+     * работодателю, §279; прежде — своя вакансия, §139); другая ссылка — своя.
      */
     @Test
-    void anotherCompanyKeepsOwnVacancy() {
+    void sameLinkInSourceOfAnotherCompanyIsSameVacancy() {
         Source first = source("jobposting", "https://qwsame.test/ponuka");
         Source foreign = sources.save(new Source("jobposting", "https://qwsame.test/agentura"));
 
         read(first, posting("https://qwsame.test/ponuka/brusic", "https://qwsame.test/ponuka/brusic"));
-        read(foreign, posting("https://qwsame.test/ponuka/brusic", "https://qwsame.test/ponuka/brusic"));
+        read(foreign, posting("https://qwsame.test/ponuka/brusic", "https://qwsame.test/ponuka/brusic"),
+                posting("https://qwsame.test/agentura/zvarac", "https://qwsame.test/agentura/zvarac"));
 
         assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(2);
+        assertThat(count("SELECT count(DISTINCT vacancy_id) FROM job_posting WHERE url LIKE '%brusic'")).isEqualTo(1);
+    }
+
+    /**
+     * Тот же номер объявления profesia.sk — одна вакансия у любых источников и хостов: объявление общего списка
+     * портала, добор с profesia.sk (без компании) и кадровая страница на {@code *.profesia.sk} (§279, пары 155–160
+     * выборки s276); другой номер — своя.
+     */
+    @Test
+    void sameProfesiaNumberJoinsAcrossProvidersAndHosts() {
+        Source portal = source("sluzbyzamestnanosti", "99020001");
+        Source offers = sources.save(new Source("profesia", "qwsame"));
+        Source page = source("careerpage", "https://qwsame.profesia.sk/praca/qwsame");
+
+        read(portal, new FetchedPosting("profesia:9902001", "Skladník (muž/žena)", "https://www.profesia.sk/O9902001",
+                "Senec - Senec", null));
+        read(offers, new FetchedPosting("profesia:9902001", "Skladník", "https://www.profesia.sk/praca/qwsame/O9902001",
+                null, null), new FetchedPosting("profesia:9902002", "Skladník", "https://www.profesia.sk/O9902002",
+                null, null));
+        read(page, new FetchedPosting("https://qwsame.profesia.sk/praca/qwsame/O9902001", "Skladník",
+                "https://qwsame.profesia.sk/praca/qwsame/O9902001", "Slovakia", null));
+
+        assertThat(count("SELECT count(DISTINCT vacancy_id) FROM job_posting WHERE url LIKE '%O9902001'"))
+                .isEqualTo(1);
+        assertThat(vacancyOf("profesia:9902002"))
+                .isNotEqualTo(vacancyOf("https://qwsame.profesia.sk/praca/qwsame/O9902001"));
+    }
+
+    /**
+     * Сессионный параметр в адресе ({@code search_id} кадровой страницы) — та же публикация того же источника: новый
+     * внешний id без параметра присоединяется к вакансии прежнего (§279).
+     */
+    @Test
+    void addressWithoutSessionParameterJoinsVacancyOfOwnSource() {
+        Source page = source("careerpage", "https://qwsame.test/kariera");
+
+        read(page, posting("https://qwsame.test/kariera/1?search_id=a", "https://qwsame.test/kariera/1?search_id=a"));
+        read(page, posting("https://qwsame.test/kariera/1", "https://qwsame.test/kariera/1"));
+
+        assertThat(vacancyOf("https://qwsame.test/kariera/1")).isEqualTo(vacancyOf(
+                "https://qwsame.test/kariera/1?search_id=a"));
+    }
+
+    /**
+     * Копия вакансии на другом сайте Workday того же хоста — внешний id с суффиксом {@code -N} и то же название — одна
+     * вакансия (HPE, пары 75–79); с другим названием — своя.
+     */
+    @Test
+    void workdayCopyWithSuffixJoinsWhenTitleIsSame() {
+        Source first = sources.save(new Source("workday", "qwsame.wd5.myworkdayjobs.com/acjobsite"));
+        Source second = sources.save(new Source("workday", "qwsame.wd5.myworkdayjobs.com/wfm"));
+
+        read(first, new FetchedPosting("/job/Sofia/Architect_1209955", "AI Architect",
+                "https://qwsame.wd5.myworkdayjobs.com/acjobsite/job/Sofia/Architect_1209955", null, null),
+                new FetchedPosting("/job/Sofia/Lead_1209956", "Lead",
+                        "https://qwsame.wd5.myworkdayjobs.com/acjobsite/job/Sofia/Lead_1209956", null, null));
+        read(second, new FetchedPosting("/job/Sofia/Architect_1209955-1", "AI Architect",
+                "https://qwsame.wd5.myworkdayjobs.com/wfm/job/Sofia/Architect_1209955-1", null, null),
+                new FetchedPosting("/job/Sofia/Lead_1209956-1", "Lead Engineer",
+                        "https://qwsame.wd5.myworkdayjobs.com/wfm/job/Sofia/Lead_1209956-1", null, null));
+
+        assertThat(vacancyOf("/job/Sofia/Architect_1209955-1")).isEqualTo(vacancyOf("/job/Sofia/Architect_1209955"));
+        assertThat(vacancyOf("/job/Sofia/Lead_1209956-1")).isNotEqualTo(vacancyOf("/job/Sofia/Lead_1209956"));
+    }
+
+    /**
+     * Объявление profesia.sk при записи по названию и месту не присоединяется: ссылка из кнопки отклика читается позже и
+     * может вести на другую вакансию (ZF Levice, пара 99); их склеит пересмотр (план §6, срез 3).
+     */
+    @Test
+    void profesiaAdIsNotJoinedByTitleAtRecording() {
+        Source page = source("careerpage", "https://qwsame.test/kariera");
+        Source portal = source("sluzbyzamestnanosti", "99020001");
+
+        read(page, located("p1", "Veduci timu zákaznickej kvality (m/f/d)", "Levice, NI, SK, 934 01"));
+        read(portal, new FetchedPosting("profesia:9902099", "Veduci timu zákaznickej kvality (m/f/d) (muž/žena)",
+                "https://www.profesia.sk/O9902099", "Levice - Levice", null));
+
+        assertThat(vacancyOf("profesia:9902099")).isNotEqualTo(vacancyOf("p1"));
     }
 
     /**
@@ -145,10 +228,11 @@ class SameVacancyTests {
 
     /**
      * Сомнение — своя вакансия: публикация без места, когда у компании это название в двух местах; одинаковые
-     * названия одного списка (два «Operátor výroby» портала) — к одной вакансии присоединяется только первое.
+     * названия и место одного списка (два «Operátor výroby» портала) — одна вакансия (решение владельца 2026-11-09,
+     * §279; прежде — разные, §260).
      */
     @Test
-    void doubtfulPostingKeepsOwnVacancy() {
+    void doubtfulPostingKeepsOwnVacancyButCopiesJoin() {
         Source page = source("careerpage", "https://qwsame.test/kariera");
         Source portal = source("sluzbyzamestnanosti", "99020001");
 
@@ -159,16 +243,17 @@ class SameVacancyTests {
 
         assertThat(vacancyOf("s1")).isNotIn(vacancyOf("p1"), vacancyOf("p2"));
         assertThat(vacancyOf("s2")).isEqualTo(vacancyOf("p3"));
-        assertThat(vacancyOf("s3")).isNotEqualTo(vacancyOf("p3"));
-        assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(5);
+        assertThat(vacancyOf("s3")).isEqualTo(vacancyOf("p3"));
+        assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(4);
     }
 
     /**
-     * Работодатель вне реестра (§259): источник портала без компании и источник profesia.sk без компании с тем же
-     * названием работодателя (без регистра) — одна вакансия; другой работодатель — своя.
+     * Работодатель вне реестра (§259): у источников без компании название работодателя не различает работодателей
+     * (школы с одинаковым названием, выборка s276) — по названию и месту не присоединяется (§279; прежде — по
+     * названию работодателя), только по сильному признаку (тот же номер profesia.sk).
      */
     @Test
-    void employerWithoutCompanyJoinsByName() {
+    void employerWithoutCompanyJoinsOnlyByStrongSignal() {
         Source portal = sources.save(new Source("sluzbyzamestnanosti", "50393731"));
         Source profesia = sources.save(new Source("profesia", "martin-gaza"));
         Source other = sources.save(new Source("profesia", "iny"));
@@ -176,12 +261,16 @@ class SameVacancyTests {
         jdbcTemplate.update("UPDATE source SET employer_name = ? WHERE id = ?", "MARTIN GAŽA", profesia.getId());
         jdbcTemplate.update("UPDATE source SET employer_name = ? WHERE id = ?", "Iný s.r.o.", other.getId());
 
-        read(portal, located("s1", "Murár", "Senec"));
-        read(profesia, located("f1", "Murár (muž/žena)", "Senec"));
+        read(portal, located("s1", "Murár", "Senec"), new FetchedPosting("profesia:9902050", "Tesár (muž/žena)",
+                "https://www.profesia.sk/O9902050", "Senec - Senec", null));
+        read(profesia, located("f1", "Murár (muž/žena)", "Senec"), new FetchedPosting("profesia:9902050", "Tesár",
+                "https://www.profesia.sk/praca/martin-gaza/O9902050", null, null));
         read(other, located("o1", "Murár", "Senec"));
 
-        assertThat(vacancyOf("f1")).isEqualTo(vacancyOf("s1"));
+        assertThat(vacancyOf("f1")).isNotEqualTo(vacancyOf("s1"));
         assertThat(vacancyOf("o1")).isNotEqualTo(vacancyOf("s1"));
+        assertThat(count("SELECT count(DISTINCT vacancy_id) FROM job_posting WHERE external_id = 'profesia:9902050'"))
+                .isEqualTo(1);
     }
 
     /**
