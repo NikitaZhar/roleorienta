@@ -167,6 +167,13 @@ public class CrawlRun {
         return state == CrawlRunState.COMPLETE;
     }
 
+    /**
+     * @return причина неполноты; {@code null} — чтение полное, не прочитано или не удалось
+     */
+    public PartialReason getPartialReason() {
+        return partialReason;
+    }
+
     public Source getSource() {
         return source;
     }

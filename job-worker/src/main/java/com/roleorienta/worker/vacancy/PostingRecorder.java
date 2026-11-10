@@ -2,6 +2,7 @@ package com.roleorienta.worker.vacancy;
 
 import com.roleorienta.worker.crawl.CrawlRun;
 import com.roleorienta.worker.crawl.CrawlLog;
+import com.roleorienta.worker.crawl.PartialReason;
 import com.roleorienta.worker.source.Source;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,7 +42,11 @@ import org.springframework.transaction.annotation.Transactional;
  *       {@link VacancyProperties#closeAfterMissingReads()} полных чтений подряд.</li>
  *   <li>Неполное чтение: добавляются только новые публикации (они подтверждены); сохранённые не
  *       меняются и не закрываются, но теряют подтверждение — их вакансии нуждаются в повторной
- *       проверке (технический документ §4).</li>
+ *       проверке (технический документ §4). Исключение (§287): список не распознан
+ *       ({@code LIST_NOT_RECOGNIZED}, своя кадровая страница) и не найдено ни одной публикации — отсутствие
+ *       засчитывается, закрытие после {@link VacancyProperties#closeAfterUnrecognizedReads()} таких чтений подряд
+ *       (вместе с полными без публикации): иначе меню, товары и статьи, записанные прежними правилами, держались
+ *       открытыми вечно; список снова распознан — публикация с вакансией открывается.</li>
  *   <li>Ссылка публикации не http(s) (пустая, {@code javascript:} и т. п.; аудит §66): новая публикация не
  *       записывается, известная теряет подтверждение, но не меняется и не закрывается — ссылка уходит в
  *       сведения о вакансии и в SPA.</li>
@@ -126,6 +131,9 @@ public class PostingRecorder {
         crawlLog.finish(run, now);
         Source source = run.getSource();
         boolean complete = run.isComplete();
+        // §287: страница не дала списка вакансий (меню, товары, другая разметка) — прежние публикации не держатся
+        // вечно: такое чтение засчитывает отсутствие, но с порогом больше, чем у полного чтения.
+        boolean unrecognized = run.getPartialReason() == PartialReason.LIST_NOT_RECOGNIZED && fetched.isEmpty();
         Map<String, JobPosting> known = postings.findBySourceId(source.getId()).stream()
                 .collect(Collectors.toMap(JobPosting::getExternalId, Function.identity()));
         Set<Long> touched = new HashSet<>();
@@ -172,6 +180,8 @@ public class PostingRecorder {
             }
             if (complete && !notVerified.contains(missing.getExternalId())) {
                 missing.markMissing(properties.closeAfterMissingReads(), now);
+            } else if (unrecognized && !notVerified.contains(missing.getExternalId())) {
+                missing.markMissing(properties.closeAfterUnrecognizedReads(), now);
             } else {
                 missing.markUnconfirmed();
             }

@@ -274,6 +274,7 @@ app:
     unavailable-after: 7d      # серия временных отказов источника до статуса «недоступен»
   vacancy:
     close-after-missing-reads: 3  # полных чтений подряд без публикации до её закрытия
+    close-after-unrecognized-reads: 5  # чтений подряд «список не распознан» без публикаций (своя кадровая страница) до закрытия (§287)
   adapter:
     greenhouse:
       base-url: https://boards-api.greenhouse.io
