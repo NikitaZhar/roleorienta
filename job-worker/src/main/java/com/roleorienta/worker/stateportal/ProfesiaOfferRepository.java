@@ -54,26 +54,12 @@ public class ProfesiaOfferRepository {
     public static final String SAME_TITLE = "same_title(%s)";
 
     /**
-     * Объявление прочитано и той же вакансии у компании нет (§220): у компании работодателя ({@code o.company_id})
-     * нет живой публикации с тем же названием в её собственных источниках — «читаем компании, портал и только после
-     * этого profesia» (владелец). Живая — незакрытая, подтверждённая последним чтением своего незакрытого источника не
-     * дольше 3 суток назад (источники читаются раз в сутки), вакансия — в Словакии (стране profesia.sk) или страна не
-     * определена (доска Greenhouse без фильтра по стране: «Software Engineer» в Берлине — не та вакансия), источник
-     * компании — не кадрового агентства (аудит §222:
-     * незакрытая, но давно не подтверждаемая публикация — портал, отключённый «одним каналом», вакансия Workday другой
-     * страны — иначе отнимала бы настоящую вакансию). Работодатель не сопоставлен компании — сравнивать не с чем,
-     * объявление берётся.
+     * Объявление прочитано (название есть). Прежнее условие «той же вакансии у компании нет» (§220, по названию без
+     * места) снято (§280): объявление добора записывается и присоединяется к вакансии работодателя пересмотром «одна
+     * вакансия — одна запись» ({@code VacancyMergeRepository}) — без потери «то же название в другом городе» и без
+     * «карусели» по подтверждению за 3 дня.
      */
-    private static final String NEW_TO_COMPANY = """
-              AND o.title IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM company_source cs
-                              JOIN source s ON s.id = cs.source_id AND s.closed_at IS NULL
-                              JOIN job_posting p ON p.source_id = s.id AND p.closed_at IS NULL AND p.confirmed
-                                               AND p.last_confirmed_at > now() - interval '3 days'
-                              JOIN vacancy v ON v.id = p.vacancy_id
-                                            AND ('SK' = ANY (v.work_countries) OR cardinality(v.work_countries) = 0)
-                              WHERE cs.company_id = o.company_id AND cs.role <> 'AGENCY' AND %s = %s)"""
-            .formatted(SAME_TITLE.formatted("p.title"), SAME_TITLE.formatted("o.title"));
+    private static final String READ = " AND o.title IS NOT NULL";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -148,12 +134,12 @@ public class ProfesiaOfferRepository {
     }
 
     /**
-     * @return работодатели к записи: с прочитанными объявлениями, которых нет на портале и у компании
-     *         ({@link #NEW_TO_COMPANY}), и с источником, у которого
+     * @return работодатели к записи: с прочитанными объявлениями, которых нет на портале ({@link #READ}), и с
+     *         источником, у которого
      *         есть незакрытые публикации (им засчитывается отсутствие ушедших)
      */
     public Set<String> employersToRecord() {
-        return new LinkedHashSet<>(jdbcTemplate.queryForList("SELECT DISTINCT o.employer" + GAP + NEW_TO_COMPANY
+        return new LinkedHashSet<>(jdbcTemplate.queryForList("SELECT DISTINCT o.employer" + GAP + READ
                 + " UNION SELECT s.board FROM source s WHERE s.provider = ? AND s.closed_at IS NULL"
                 + "   AND EXISTS (SELECT 1 FROM job_posting p WHERE p.source_id = s.id AND p.closed_at IS NULL)",
                 String.class, StatePortalAdapter.PROFESIA_PROVIDER));
@@ -161,15 +147,15 @@ public class ProfesiaOfferRepository {
 
     /**
      * @param employer работодатель в адресе объявления
-     * @return его прочитанные объявления, которых нет на портале и у компании ({@link #NEW_TO_COMPANY}): публикации (ссылка — объявление profesia.sk), даты
-     *         размещения и название работодателя из последнего объявления
+     * @return его прочитанные объявления, которых нет на портале ({@link #READ}): публикации (ссылка — объявление
+     *         profesia.sk), даты размещения и название работодателя из последнего объявления
      */
     public EmployerOffers offersOf(String employer) {
         List<FetchedPosting> postings = new ArrayList<>();
         Map<String, Instant> postedAt = new HashMap<>();
         String[] name = {null};
         jdbcTemplate.query("SELECT o.num, o.title, o.url, o.location, o.content, o.posted_at, o.employer_name" + GAP
-                + NEW_TO_COMPANY + " AND o.employer = ? ORDER BY o.num", row -> {
+                + READ + " AND o.employer = ? ORDER BY o.num", row -> {
                     String externalId = EXTERNAL_ID + row.getLong(1);
                     postings.add(new FetchedPosting(externalId, row.getString(2), row.getString(3), row.getString(4),
                             row.getString(5)));
@@ -187,8 +173,8 @@ public class ProfesiaOfferRepository {
     /**
      * Источник работодателя: есть — он; нет и {@code create} — создаётся при записанном основании использования
      * ({@code source_permission}). Название работодателя записывается, пока его нет. Компания не связывается (V86):
-     * объявление, уже известное компании по названию, отсеивает {@link #NEW_TO_COMPANY} (§220); без компании источник
-     * склеивается по названию работодателя с источником портала вне реестра (§259, §260).
+     * объявление присоединяет к вакансии работодателя пересмотр по компании объявления ({@code profesia_offer.company_id},
+     * §280); без компании — только по номеру объявления, адресу и id (§279).
      *
      * @param employer     работодатель в адресе объявления (доска)
      * @param employerName название из объявления; {@code null} — нет

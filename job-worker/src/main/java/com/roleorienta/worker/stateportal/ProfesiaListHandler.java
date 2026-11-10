@@ -35,7 +35,10 @@ import org.springframework.stereotype.Component;
  * работодателя; работодатель сопоставляется компании реестра по названию ({@code company.name_slug}, только
  * однозначно); все объявления карты сайта — в {@code profesia_offer}, и ставится цепочка добора объявлений, которых
  * нет на портале ({@link ProfesiaOffersHandler}, §219); карта без объявлений или с объявлениями вдвое меньше прошлого
- * — объявления не обновляются и добор не ставится (аудит §222). Следующие круги — по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
+ * — объявления не обновляются и добор не ставится (аудит §222). Карта сайта — своя цепочка (ключи
+ * {@value #MAP_PREFIX}…), раз в день: идущие круги поиска сайтов её не держат (§282: круги 09.11 шли сутками, и с 06.11
+ * карта и добор не ставились). Круги поиска сайтов (ключи {@value #ROUND_PREFIX}…) ставятся после карты, если не идут
+ * уже; по одному в час (квота, §101), до {@value #EMPLOYERS_PER_TASK} сопоставленных
  * работодателей: объявление → страница
  * компании и разделы → кадровая ссылка или сайт ({@link ProfesiaPages#find}), запись сайта компании (источник
  * и подтверждение {@code PROFESIA}). Компании, у которых сайт со страницы profesia.sk уже есть (шаг 2 или этот),
@@ -51,6 +54,10 @@ public class ProfesiaListHandler implements TaskHandler {
     /** Тип задания. */
     public static final String TYPE = "PROFESIA_LIST";
 
+    /** Начало ключа задания «карта сайта» — отдельная цепочка, раз в день (§282). */
+    static final String MAP_PREFIX = "profesia-map:";
+    /** Начало ключей кругов поиска сайтов — своя цепочка. */
+    static final String ROUND_PREFIX = "profesia-list:";
     private static final int EMPLOYERS_PER_TASK = 20;
     /**
      * С этой попытки задания работодатель, на котором profesia.sk отвечает временным отказом, отмечается проверенным
@@ -102,13 +109,13 @@ public class ProfesiaListHandler implements TaskHandler {
     }
 
     /**
-     * Ставит первое задание цепочки (чтение карты сайта).
+     * Ставит чтение карты сайта. Идущие круги поиска сайтов не мешают: у карты свои ключи (§282).
      *
      * @param day часть ключа: день
-     * @return поставлено ли (цепочка идёт или повтор в тот же день — ничего не добавляется; стенограмма §95)
+     * @return поставлено ли (карта ещё читается или повтор в тот же день — ничего не добавляется; стенограмма §95)
      */
     public boolean enqueue(String day) {
-        return taskService.startChain(TYPE, key(day, 0), payload(day, 0));
+        return taskService.startChain(TYPE, MAP_PREFIX, MAP_PREFIX + day, payload(day, 0));
     }
 
     @Override
@@ -150,7 +157,8 @@ public class ProfesiaListHandler implements TaskHandler {
                     ProfesiaOffersHandler.payload(day, 1));
         }
         LOG.info("Profesia sitemap: {} employers, {} offers listed", employers.size(), offers.size());
-        taskService.enqueue(TYPE, key(day, 1), payload(day, 1));
+        // §282: круги поиска сайтов — своя цепочка; идут ещё прошлые — новые не ставятся (те же работодатели).
+        taskService.startChain(TYPE, ROUND_PREFIX, key(day, 1), payload(day, 1));
         return new TaskOutcome.Done();
     }
 
@@ -239,7 +247,7 @@ public class ProfesiaListHandler implements TaskHandler {
     }
 
     private static String key(String day, int round) {
-        return "profesia-list:" + day + ":" + round;
+        return ROUND_PREFIX + day + ":" + round;
     }
 
     private static String payload(String day, int round) {

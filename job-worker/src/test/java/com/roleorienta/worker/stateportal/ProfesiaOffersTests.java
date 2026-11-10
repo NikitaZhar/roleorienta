@@ -173,7 +173,10 @@ class ProfesiaOffersTests {
         assertThat(jdbcTemplate.queryForObject("SELECT state FROM vacancy", String.class)).isEqualTo("ACTIVE");
     }
 
-    /** Общий список портала устарел (аудит §222) — «нет на портале» ничего не значит: добор не идёт. */
+    /**
+     * Общий список портала устарел (аудит §222) — «нет на портале» ничего не значит: добор не идёт, а ждёт списка
+     * (повтор задания, §282), не заканчивается.
+     */
     @Test
     void stalePortalListStopsOffers() {
         jdbcTemplate.update("UPDATE portal_offer SET last_seen_at = now() - interval '5 days'");
@@ -183,6 +186,8 @@ class ProfesiaOffersTests {
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM job_posting", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM profesia_offer WHERE page_read_at IS NOT NULL",
                 Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForList("SELECT state FROM task WHERE type = ?", String.class,
+                ProfesiaOffersHandler.TYPE)).containsExactly("WAITING");
     }
 
     /** Объявление появилось на портале — у источника profesia.sk отсутствие; после трёх полных чтений закрыто. */
@@ -201,11 +206,12 @@ class ProfesiaOffersTests {
     }
 
     /**
-     * Та же вакансия уже есть у компании работодателя из её кадровой страницы (§220: «читаем компании, портал и только
-     * после этого profesia») — название без регистра и пометки «(m/ž)» совпало: объявление не берётся.
+     * Та же вакансия уже есть у компании работодателя из её кадровой страницы — объявление всё равно записывается (§280;
+     * прежде не бралось, §220): к вакансии компании его присоединяет пересмотр «одна вакансия — одна запись», а
+     * объявление того же названия в другом городе больше не теряется. Компания объявления определена.
      */
     @Test
-    void offerKnownFromCompanyIsNotTaken() {
+    void offerKnownFromCompanyIsTakenForMerge() {
         jdbcTemplate.update("INSERT INTO collection_country (country, active) VALUES ('SK', TRUE) "
                 + "ON CONFLICT (country) DO UPDATE SET active = TRUE");
         long company = jdbcTemplate.queryForObject("""
@@ -232,8 +238,10 @@ class ProfesiaOffersTests {
 
         assertThat(jdbcTemplate.queryForObject("SELECT company_id FROM profesia_offer WHERE num = 101", Long.class))
                 .isEqualTo(company);
+        // фильтр «той же вакансии у компании нет» (§220) снят (§280): объявление записывается, к вакансии кадровой
+        // страницы его присоединит пересмотр (VacancyMergeRepositoryTests)
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM job_posting WHERE external_id LIKE 'profesia:%'",
-                Integer.class)).isZero();
+                Integer.class)).isEqualTo(1);
     }
 
     private void portalOffer(long num) {

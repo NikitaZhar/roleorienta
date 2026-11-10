@@ -16,6 +16,7 @@ import com.roleorienta.worker.task.TaskHandler;
 import com.roleorienta.worker.task.TaskOutcome;
 import com.roleorienta.worker.task.TaskRecord;
 import com.roleorienta.worker.vacancy.PostingRecorder;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,6 +57,8 @@ public class ProfesiaOffersHandler implements TaskHandler {
     public static final String TYPE = "PROFESIA_OFFERS";
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    /** Список портала устарел — добор ждёт его столько (повтор задания; попытки ограничены, §282). */
+    private static final Duration PORTAL_WAIT = Duration.ofHours(1);
     private static final Logger LOG = LoggerFactory.getLogger(ProfesiaOffersHandler.class);
 
     private final ProfesiaOfferRepository repository;
@@ -109,8 +112,9 @@ public class ProfesiaOffersHandler implements TaskHandler {
             return new TaskOutcome.Done();
         }
         if (!repository.portalFresh()) {
-            LOG.warn("Profesia offers: state portal list is stale, offers are not added or closed");
-            return new TaskOutcome.Done();
+            // §282: прежде — Done, и добор дня пропадал, если карта сайта прочитана раньше списка портала.
+            LOG.warn("Profesia offers: state portal list is stale, offers wait for it");
+            return new TaskOutcome.Retry("state portal list is stale", PORTAL_WAIT);
         }
         JsonNode payload = parse(task.payload());
         String day = payload.path("day").asText();

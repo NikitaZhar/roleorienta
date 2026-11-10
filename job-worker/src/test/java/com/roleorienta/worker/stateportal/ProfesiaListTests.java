@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.roleorienta.worker.TestcontainersConfiguration;
 import com.roleorienta.worker.stateportal.ProfesiaOfferRepository.ListedOffer;
 import com.roleorienta.worker.task.TaskExecutor;
+import com.roleorienta.worker.task.TaskService;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -52,6 +53,9 @@ class ProfesiaListTests {
 
     @Autowired
     private TaskExecutor executor;
+
+    @Autowired
+    private TaskService taskService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -175,6 +179,25 @@ class ProfesiaListTests {
         company("90500014", "Žilinská Teplárenská (SK), spol. s r. o.");
         assertThat(jdbcTemplate.queryForObject("SELECT name_slug FROM company WHERE registration_number = ?",
                 String.class, "90500014")).isEqualTo("zilinska-teplarenska-sk");
+    }
+
+    /**
+     * Круги поиска сайтов прошлого дня ещё идут — карта сайта всё равно читается (§282: с 06.11 карта и добор не
+     * ставились, пока шли круги 09.11), а новые круги не ставятся.
+     */
+    @Test
+    void sitemapIsReadWhileEmployerRoundsGo() {
+        taskService.enqueue(ProfesiaListHandler.TYPE, "profesia-list:old:28", "{\"day\":\"old\",\"round\":28}");
+        jdbcTemplate.update("UPDATE task SET state = 'WAITING', last_error = 'quota', "
+                + "next_attempt_at = now() + interval '1 hour'");
+
+        assertThat(handler.enqueue("test")).isTrue();
+        runChain();
+
+        assertThat(jdbcTemplate.queryForList("SELECT task_key || ':' || state FROM task WHERE type = ? ORDER BY 1",
+                String.class, ProfesiaListHandler.TYPE)).containsExactly("profesia-list:old:28:WAITING",
+                "profesia-map:test:DONE");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM profesia_employer", Integer.class)).isEqualTo(2);
     }
 
     private void company(String ico, String name) {

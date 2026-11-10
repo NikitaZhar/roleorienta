@@ -33,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * пересчёт полноты сбора по компаниям ({@code CoverageTick}); 1022 — постановка распознавания позиции по названию
  * ({@code TitleClassificationTick}); 1023 — источники по ссылке на вакансию у работодателя
  * ({@code EmployerLinkSources}); 1024 — постановка чтения позиций profesia.sk ({@code ProfesiaPositionsTick}); 1025 — не leader-lock, а
- * блокировка записи вакансий ({@link #VACANCY_WRITE}, §271).</p>
+ * блокировка записи вакансий ({@link #VACANCY_WRITE}, §271); 1026 — пересмотр «одна вакансия — одна запись»
+ * ({@code VacancyMergeTick}, §280).</p>
  */
 @Component
 public class PostgresLeaderLock {

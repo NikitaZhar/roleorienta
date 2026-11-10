@@ -135,6 +135,10 @@ app:
   employer-links:            # источники по ссылке на вакансию у работодателя (§266): проход раз в час
     enabled: true              # false — проход выключен (тесты)
     interval-ms: 3600000       # первый — сразу после запуска
+  vacancy-merge:             # пересмотр «одна вакансия — одна запись» (§280): раз в час, партиями
+    enabled: true              # false — пересмотр выключен (тесты)
+    interval-ms: 3600000       # первый — сразу после запуска: склеивает накопленное
+    batch: 200                 # вакансий за партию — транзакцию с исключительной блокировкой записи вакансий
   title-classification:     # позиция вакансии по похожему названию (§263): раз в час, задание TITLE_CLASSIFY
     enabled: ${TITLE_CLASSIFICATION_ENABLED:false}  # true — такт ставит распознавание; нужна запущенная Ollama
     model: ${TITLE_CLASSIFICATION_MODEL:bge-m3}     # модель векторов Ollama (ollama pull bge-m3)
