@@ -23,6 +23,28 @@ class CareerPageListTests {
     private static final String LIST = "https://www.firma.sk/kariera/";
 
     /**
+     * Кнопки и метки условий над вакансией («TPP», «zum Job», «Find out more») — название из заголовка карточки;
+     * страницы кадрового раздела (GDPR, истории сотрудников) — не вакансии (§295).
+     */
+    @Test
+    void buttonsTakeCardHeadingAndCareerSectionPagesAreSkipped() {
+        Document page = page("""
+                <article><h3>Operátor výroby</h3><a href="/kariera/operator-vyroby/">TPP</a>
+                  <a href="/kariera/operator-vyroby/">zum Job</a></article>
+                <article><h3>Zvárač</h3><a href="/kariera/zvarac/">Find out more</a></article>
+                <a href="/kariera/gdpr">GDPR</a>
+                <a href="/kariera/be-story-cedric">Cedric – Private Banker</a>
+                <a href="/kariera/pribehy-nasich-kolegov/anna">Anna: HR partner</a>
+                <a href="/kariera/pribehy-nasich-kolegov/jan">Ján: majster výroby</a>
+                <a href="/kariera/pribehy-nasich-kolegov/eva">Eva: účtovníčka</a>
+                """);
+
+        assertThat(CareerPageList.vacancies(page)).containsExactly(
+                new Item("https://www.firma.sk/kariera/operator-vyroby/", "Operátor výroby", ""),
+                new Item("https://www.firma.sk/kariera/zvarac/", "Zvárač", ""));
+    }
+
+    /**
      * Ссылки списка с общим родительским путём; меню, подвал, PDF и кнопка «Viac» — не вакансии; ссылка-картинка и
      * ссылка-название на одну вакансию — одна вакансия с названием.
      */

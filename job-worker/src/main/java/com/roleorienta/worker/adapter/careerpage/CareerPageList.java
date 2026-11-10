@@ -96,6 +96,17 @@ public final class CareerPageList {
             + "(detail|detaily|viac)( \\S+){0,2} (ponuky|pozicie|pracovnej ponuky|informacii|info))$");
 
     /**
+     * Кнопка или метка условия над вакансией (§295, замер {@code target/s296-rules.sql}: «TPP» 182 раза, «zum Job» 164,
+     * «Živnosť» 65, «Podat žádost» 50, «Apply Now», «Details», «Podrobnosti», «Detail inzerátu», «Viac o ponuke» …):
+     * название — заголовок карточки ({@link #title}); заголовка нет — ссылка остаётся с этим текстом (как прежде), а не
+     * отбрасывается, как пункт меню {@link #NOT_TITLE}: за кнопкой — настоящая вакансия.
+     */
+    private static final Pattern BUTTON = Pattern.compile("^(tpp|zivnost|dohoda|zum job|podat zadost|find out more|"
+            + "more information|more info|details|mehr|mehr erfahren|podrobnosti|go|>|apply now( >)?|"
+            + "detail (inzeratu|pozicie)( \\S+)?|mam zaujem o tuto poziciu|read the requirements and apply|"
+            + "viac o ponuke|dalsie informacie|citaj viac|(show|view|see|explore) (jobs|opportunities|positions|all jobs))$");
+
+    /**
      * Последняя часть родительского пути — раздел не вакансий (§252, эталон §247): события, статьи, новости, страницы
      * «почему мы» на кадровом сайте (Kaufland {@code /events2/}, T-Systems {@code /careers/why-t-systems/}) — кадровое
      * слово в хосте их больше не делает списком. Сравнивается вся часть пути, а не подстрока (аудит §257:
@@ -103,7 +114,17 @@ public final class CareerPageList {
      */
     private static final Pattern NOT_JOBS_SEGMENT = Pattern.compile("(?i)events?\\d*|podujatia|clanky?|clanok|blog"
             + "|news|novinky|aktuality|magazin|why-.*|culture|diversity|benefity?|benefits|o-nas|about(?:-us)?"
-            + "|pribehy?|stories|tim|team|spoznaj-.*|zivot-v.*|life-at.*|faq|otazky|casto-kladene-otazky");
+            + "|pribehy?(-.*)?|stories|tim|team|spoznaj-.*|zivot-v.*|life-at.*|faq|otazky|casto-kladene-otazky"
+            + "|locations|culture(-.*)?|job-categories|krajina|informacie|notifikacie");
+
+    /**
+     * Последняя часть адреса самой ссылки — страница кадрового раздела, а не вакансия (§295: «GDPR», «Legal
+     * disclosures», «Discover our culture», истории сотрудников {@code /be-story-cedric}, «Apprentices»). Только целые
+     * названия разделов: адрес вакансии бывает любым словом ({@code /team-leader-vyroby} — вакансия).
+     */
+    private static final Pattern NOT_JOB_PAGE = Pattern.compile("(?i)gdpr|ochrana-osobnych-udajov|privacy(-policy)?"
+            + "|cookies|faq|benefity|benefits|culture(-and-values)?|legal-disclosures(-and-notices)?"
+            + "|(.+-)?stor(y|ies)(-.+)?|apprentices|dual-education|dualne-vzdelavanie");
 
     /** Название в карточке по порядку предпочтения: заголовок, затем элемент с «title» или «position» в классе (§252). */
     private static final List<String> TITLE_SELECTORS = List.of("h1, h2, h3, h4, h5, h6",
@@ -200,7 +221,7 @@ public final class CareerPageList {
             String parent = samePage ? path + "?" : path.substring(0, path.lastIndexOf('/') + 1);
             // Ссылки вакансий в корне сайта — только на кадровом хосте (§252: ponukyprace.manuvia.com/<вакансия>/).
             if (parent.length() <= 1 && !(careerHost && ROOT_VACANCY.matcher(path).find()) || path.isEmpty()
-                    || PAGINATION_PATH.matcher(link.getPath()).find() || notJobs(parent)) {
+                    || PAGINATION_PATH.matcher(link.getPath()).find() || notJobs(parent) || notJobPage(path)) {
                 continue;
             }
             Map<String, Element> group = groups.computeIfAbsent(parent, key -> new LinkedHashMap<>());
@@ -313,6 +334,16 @@ public final class CareerPageList {
     }
 
     /**
+     * @param path путь ссылки без {@code /} в конце
+     * @return {@code true} — последняя часть пути (без расширения {@code .html}) — страница кадрового раздела
+     *         ({@link #NOT_JOB_PAGE})
+     */
+    private static boolean notJobPage(String path) {
+        String last = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.[a-z]{2,5}$", "");
+        return NOT_JOB_PAGE.matcher(last).matches();
+    }
+
+    /**
      * Ссылка «следующая страница», которую листает скрипт (§252: Tatra banka — «Ďalšia strana» с {@code href="#"}): по
      * ней не перейти, список прочитан не весь.
      *
@@ -381,7 +412,8 @@ public final class CareerPageList {
      */
     static String title(Element anchor) {
         String title = heading(anchor).orElse(anchor.text());
-        if (NOT_TITLE.matcher(plain(title)).matches() || title.isBlank()) {
+        String plainTitle = plain(title);
+        if (NOT_TITLE.matcher(plainTitle).matches() || BUTTON.matcher(plainTitle).matches() || title.isBlank()) {
             String href = anchor.attr("href");
             String text = anchor.text();
             Element around = anchor;
@@ -409,7 +441,8 @@ public final class CareerPageList {
     private static Optional<String> heading(Element element) {
         for (String selector : TITLE_SELECTORS) {
             for (Element found : element.select(selector)) {
-                if (!found.text().isBlank() && !NOT_TITLE.matcher(plain(found.text())).matches()) {
+                if (!found.text().isBlank() && !NOT_TITLE.matcher(plain(found.text())).matches()
+                        && !BUTTON.matcher(plain(found.text())).matches()) {
                     return Optional.of(found.text());
                 }
             }

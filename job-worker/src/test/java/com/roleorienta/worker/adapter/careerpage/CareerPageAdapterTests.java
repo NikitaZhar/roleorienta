@@ -233,6 +233,9 @@ class CareerPageAdapterTests {
                 .isEqualTo("https://firma.sk/kariera?id=5");
         assertThat(CareerPageAdapter.withoutSessionParameters("https://firma.sk/kariera/operator"))
                 .isEqualTo("https://firma.sk/kariera/operator");
+        // §295: метка условия у ссылки на ту же вакансию (maxins.sk «TPP», «Živnosť»).
+        assertThat(CareerPageAdapter.withoutSessionParameters("https://www.maxins.sk/praca/trnava-predajca/?filter=tpp"))
+                .isEqualTo("https://www.maxins.sk/praca/trnava-predajca/");
     }
 
     private String url(String path) {
