@@ -276,13 +276,13 @@ public class CareerScanHandler implements TaskHandler {
         }
         // Страницы самой площадки (журнал profesia.sk, меню) — не доски компании (§251: кадровая страница Slovenské
         // elektrárne переадресует на profesia.sk); доски систем найма по ссылкам со страницы компании на площадке — её.
-        boards = boards.stream().filter(board -> !CareerLinks.onJobPortal(board))
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        boards = withoutJobPortals(boards);
         if (boards.isEmpty() && careerPage.isEmpty() && homePage.isPresent()) {
             Rendered rendered = rendered(URI.create(homePage.get().location()), companyKeys);
             if (rendered.found()) {
                 LOG.info("Site {} of company {}: career page found after scripts ran", site.host(), site.companyId());
-                boards = new LinkedHashSet<>(rendered.boards());
+                // §290: и доски, найденные после скриптов, — не площадки (прежде profesia.sk «kariéra v kocke»).
+                boards = withoutJobPortals(rendered.boards());
                 careerPage = rendered.careerPage();
                 careerLink = rendered.careerLink();
             }
@@ -311,6 +311,15 @@ public class CareerScanHandler implements TaskHandler {
         }
         repository.record(site, permitted, result, careerUrl, role.orElse(Role.EMPLOYER));
         LOG.info("Site {} of company {}: {} {}", site.host(), site.companyId(), result, boards);
+    }
+
+    /**
+     * @param boards найденные доски
+     * @return они же без страниц площадок вакансий ({@link CareerLinks#onJobPortal}), порядок сохранён
+     */
+    private static Set<Board> withoutJobPortals(Set<Board> boards) {
+        return boards.stream().filter(board -> !CareerLinks.onJobPortal(board))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**

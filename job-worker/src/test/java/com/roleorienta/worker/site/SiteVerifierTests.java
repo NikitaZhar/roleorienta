@@ -187,6 +187,7 @@ class SiteVerifierTests {
         assertThat(verify("alfaplast.sk")).isEqualTo(Verdict.GONE);
         assertThat(SiteBrand.registrable("sk.firma.com")).isEqualTo("firma.com");
         assertThat(SiteBrand.registrable("www.yura.co.kr")).isEqualTo("yura.co.kr");
+        assertThat(SiteBrand.registrable("www.indprop.gov.sk")).isEqualTo("indprop.gov.sk");
     }
 
     /**
@@ -207,6 +208,13 @@ class SiteVerifierTests {
         assertThat(SiteBrand.keys(NAME)).containsExactly("alfaplast");
         assertThat(SiteBrand.keys("Železnice Slovenskej republiky")).containsExactly("zeleznice", "zelezniceslovenskej");
         assertThat(SiteBrand.keys("Obec Senec")).containsExactly("obecsenec");
+        // §290: титул сам по себе не бренд, вместе со следующим словом — бренд; два общих слова слитно — общее;
+        // название вразрядку — одно слово.
+        assertThat(SiteBrand.keys("Ing. Milan Singhofer s.r.o.")).containsExactly("ingmilan");
+        assertThat(SiteBrand.keys("MUDr. Škombár, s.r.o.")).containsExactly("mudrskombar");
+        assertThat(SiteBrand.keys("Dr. MAGNET s.r.o.")).containsExactly("drmagnet");
+        assertThat(SiteBrand.keys("Spojená škola, Nivy 2, Šaľa")).isEmpty();
+        assertThat(SiteBrand.keys("P R O T O spol. s r.o.")).containsExactly("proto");
     }
 
     /**

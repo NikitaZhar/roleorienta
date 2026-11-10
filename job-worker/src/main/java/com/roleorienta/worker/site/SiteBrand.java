@@ -57,8 +57,18 @@ public final class SiteBrand {
             + "buy this domain|parked|hugedomains|sedo\\.com|afternic|dan\\.com|godaddy|domain_profile");
     private static final Pattern SLOVAK_SIGNAL = Pattern.compile("(?iu)slovensk|\\bslovakia\\b|\\bslovak republic\\b");
     private static final Set<String> SLOVAK_SEGMENTS = Set.of("sk", "sk-sk", "sk_sk", "slovakia");
-    /** Второй уровень в двухбуквенной зоне: регистрируемый домен — три последние части ({@code firma.co.kr}). */
-    private static final Set<String> SECOND_LEVEL = Set.of("co", "com", "org", "net", "ac");
+    /**
+     * Второй уровень в двухбуквенной зоне: регистрируемый домен — три последние части ({@code firma.co.kr}); gov, edu,
+     * mil, gv, or — у каждого органа свой домен ({@code indprop.gov.sk} и {@code upsvr.gov.sk} — разные, §290).
+     */
+    private static final Set<String> SECOND_LEVEL = Set.of("co", "com", "org", "net", "ac", "gov", "edu", "mil", "gv",
+            "or");
+    /**
+     * Титул перед именем владельца: сам по себе не бренд (§290: «Ing. Milan Singhofer» — бренд «ing» вёл на
+     * {@code ing.sk} и кадровый сайт ING); вместе со следующим словом — бренд («MUDr. Škombár» — {@code mudrskombar}).
+     */
+    private static final Set<String> TITLES = Set.of("ing", "mgr", "mudr", "mvdr", "mddr", "judr", "phdr", "rndr",
+            "paeddr", "bc", "dr", "doc", "prof", "phd");
     private static final Set<String> SKIPPED_WORDS = Set.of("a", "the", "and");
     /** Общие слова названий: сайт с таким доменом подтверждается только IČO, не брендом. */
     private static final Set<String> GENERIC = Set.of(("obec mesto mestska skola zakladna stredna spojena gymnazium "
@@ -157,7 +167,9 @@ public final class SiteBrand {
         List<String> clean = nameWords(companyName);
         Set<String> brands = new LinkedHashSet<>();
         if (!clean.isEmpty()) {
-            brands.add(clean.get(0));
+            if (clean.size() == 1 || !TITLES.contains(clean.get(0))) {
+                brands.add(clean.get(0));
+            }
             if (clean.size() > 1) {
                 brands.add(clean.get(0) + clean.get(1));
                 brands.add(clean.get(0) + "-" + clean.get(1));
@@ -174,9 +186,13 @@ public final class SiteBrand {
      * @return бренды по порядку, без повторов
      */
     public static Set<String> keys(String companyName) {
+        List<String> words = nameWords(companyName);
+        // §290: два общих слова слитно — тоже общее («Spojená škola» — spojenaskola.sk у шести школ).
+        boolean genericPair = words.size() > 1 && GENERIC.contains(words.get(0)) && GENERIC.contains(words.get(1));
+        String pair = genericPair ? words.get(0) + words.get(1) : null;
         Set<String> keys = new LinkedHashSet<>();
         for (String brand : brands(companyName)) {
-            if (!GENERIC.contains(brand)) {
+            if (!GENERIC.contains(brand) && !brand.replace("-", "").equals(pair)) {
                 keys.add(brand.replace("-", ""));
             }
         }
@@ -261,7 +277,34 @@ public final class SiteBrand {
                 clean.add(stripped);
             }
         }
-        return clean;
+        return spacedLettersJoined(clean);
+    }
+
+    /**
+     * Название вразрядку («P R O T O», «K O F T»): подряд идущие однобуквенные слова — одно слово ({@code proto}), а не
+     * бренд из первых двух букв ({@code pr.sk}, §290).
+     *
+     * @param words слова названия
+     * @return слова, где серии из двух и больше одиночных букв склеены
+     */
+    private static List<String> spacedLettersJoined(List<String> words) {
+        List<String> joined = new ArrayList<>();
+        StringBuilder run = new StringBuilder();
+        for (String word : words) {
+            if (word.length() == 1 && Character.isLetter(word.charAt(0))) {
+                run.append(word);
+                continue;
+            }
+            if (!run.isEmpty()) {
+                joined.add(run.toString());
+                run.setLength(0);
+            }
+            joined.add(word);
+        }
+        if (!run.isEmpty()) {
+            joined.add(run.toString());
+        }
+        return joined;
     }
 
     /**
@@ -281,8 +324,8 @@ public final class SiteBrand {
     }
 
     /**
-     * Регистрируемый домен хоста: {@code firma.sk}, {@code firma.com}, {@code firma.co.kr} (второй уровень co, com,
-     * org, net, ac в двухбуквенной зоне — три последние части).
+     * Регистрируемый домен хоста: {@code firma.sk}, {@code firma.com}, {@code firma.co.kr}, {@code indprop.gov.sk}
+     * (второй уровень co, com, org, net, ac, gov, edu, mil, gv, or в двухбуквенной зоне — три последние части).
      *
      * @param host хост
      * @return домен в нижнем регистре

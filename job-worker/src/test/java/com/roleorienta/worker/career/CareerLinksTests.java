@@ -397,4 +397,24 @@ class CareerLinksTests {
         assertThat(CareerLinks.portalOnly(Jsoup.parse("<p>Kariéra</p><footer><a href=\"https://www.profesia.sk/praca/acme/"
                 + "C123\">Profesia</a></footer>", "https://www.acme.sk/kariera"))).isFalse();
     }
+
+    /**
+     * Сайты органов на gov.sk — разные домены (§290): кадровая страница другого органа — не своя; своя — своя.
+     * job.sk и dentaljobs.sk — площадки вакансий, не кадровая страница компании.
+     */
+    @Test
+    void governmentSitesAndJobPortalsAreNotOwnCareerPages() {
+        Document inspectorate = Jsoup.parse("<a href=\"https://indprop.gov.sk/o-urade/o-urade/kariera\">Kariéra</a>"
+                + "<a href=\"https://www.upsvr.gov.sk/volne-pracovne-miesta.html\">Voľné pracovné miesta</a>",
+                "https://www.ip.gov.sk/");
+        assertThat(CareerLinks.careerPage(inspectorate, "www.ip.gov.sk")).isEmpty();
+        Document own = Jsoup.parse("<a href=\"https://www.ip.gov.sk/o-nas/pracovne-prilezitosti/\">Kariéra</a>",
+                "https://www.ip.gov.sk/");
+        assertThat(CareerLinks.careerPage(own, "www.ip.gov.sk"))
+                .contains("https://www.ip.gov.sk/o-nas/pracovne-prilezitosti/");
+
+        assertThat(CareerLinks.onJobPortal(new Board("careerpage", "https://www.job.sk/ponuky"))).isTrue();
+        assertThat(CareerLinks.onJobPortal(new Board("careerpage", "https://www.dentaljobs.sk/"))).isTrue();
+        assertThat(CareerLinks.onJobPortal(new Board("careerpage", "https://www.dreamjobs.sk/kariera"))).isFalse();
+    }
 }

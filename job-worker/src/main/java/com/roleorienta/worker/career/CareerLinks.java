@@ -122,10 +122,13 @@ public final class CareerLinks {
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     /** Сколько первых символов текста страницы проверяется на кадровые слова (как в скрипте). */
     private static final int CAREER_TEXT_LIMIT = 300_000;
-    /** Площадки вакансий и продажи доменов — не кадровая страница компании (скрипт: {@code FOOTER_HOSTS}). */
+    /**
+     * Площадки вакансий и продажи доменов — не кадровая страница компании (скрипт: {@code FOOTER_HOSTS}); job.sk и
+     * dentaljobs.sk — §290.
+     */
     private static final Pattern JOB_PORTAL_HOSTS = Pattern.compile(
             "almacareer|jobs\\.cz|prace\\.cz|atmoskop|platy\\.(?:sk|cz)|teamio|cvonline|hugedomains|sedo|afternic"
-                    + "|profesia\\.(?:sk|cz)|istp\\.sk|sluzbyzamestnanosti|(?:^|\\.)(?:kariera|praca)\\.sk$",
+                    + "|profesia\\.(?:sk|cz)|istp\\.sk|sluzbyzamestnanosti|(?:^|\\.)(?:kariera|praca|job|dentaljobs)\\.sk$",
             Pattern.CASE_INSENSITIVE);
     /**
      * Ссылка на страницу компании на площадке вакансий (§251): profesia.sk ({@code /praca/<компания>/C123},
