@@ -32,7 +32,8 @@ import org.springframework.stereotype.Component;
  *   <li>Публикация — ссылка списка ({@link CareerPageList#vacancies}): внешний id и ссылка — адрес страницы вакансии,
  *       название — заголовок в ссылке или в карточке кнопки «подробнее», иначе текст ссылки (§252), место — текст
  *       карточки без названия; карточки без текста — страна источника (страна компании, решение владельца
- *       2026-10-19): вакансия собственной страницы словацкой фирмы без указанного города — в Словакии.</li>
+ *       2026-10-19), только у кадровой страницы в зоне этой страны ({@code .sk}; §299, решение владельца 2026-11-10):
+ *       вакансия словацкой фирмы без указанного города — в Словакии, вакансия глобального кадрового сайта — без места.</li>
  *   <li>Следующие страницы списка — не больше {@link CareerPageProperties#maxPages()}; упор — неполное чтение
  *       ({@link PartialReason#PAGE_LIMIT}), отказ следующей страницы — {@link PartialReason#PAGE_FAILED}; следующая
  *       страница — ссылка «далее» или номер страницы (§255); «далее» листает скрипт ({@link CareerPageList#scriptNext})
@@ -117,8 +118,8 @@ public class CareerPageAdapter implements SourceAdapter {
         for (int number = 1; ; number++) {
             for (CareerPageList.Item item : CareerPageList.vacancies(page)) {
                 String url = withoutSessionParameters(item.url());
-                postings.putIfAbsent(url, new FetchedPosting(url, item.title(), url, location(item.card(), country),
-                        null));
+                postings.putIfAbsent(url, new FetchedPosting(url, item.title(), url,
+                        location(item.card(), country, first.getHost()), null));
             }
             if (number == 1 && !postings.isEmpty()
                     && !CareerPageList.confirmed(List.copyOf(postings.keySet()), this::open)) {
@@ -219,13 +220,22 @@ public class CareerPageAdapter implements SourceAdapter {
     }
 
     /**
-     * Место публикации: текст карточки; пусто — страна источника по-английски ({@code Slovakia}); нет страны —
-     * {@code null}.
+     * Место публикации: текст карточки; карточки без текста — страна источника по-английски ({@code Slovakia}), только
+     * если кадровая страница в зоне этой страны ({@code .sk}); иначе {@code null} (§299: глобальные кадровые сайты —
+     * {@code globallogic.com}, {@code careers.ing.com} — давали вакансиям других стран Словакию; решение владельца
+     * 2026-11-10, вариант 1').
+     *
+     * @param card    текст карточки вакансии
+     * @param country страна источника; {@code null} — нет
+     * @param host    хост кадровой страницы
+     * @return место или {@code null}
      */
-    private static String location(String card, String country) {
+    static String location(String card, String country, String host) {
         if (!card.isBlank()) {
             return card;
         }
-        return country == null ? null : Locale.of("", country).getDisplayCountry(Locale.ENGLISH);
+        boolean countryZone = country != null && host != null
+                && host.toLowerCase(Locale.ROOT).endsWith("." + country.toLowerCase(Locale.ROOT));
+        return countryZone ? Locale.of("", country).getDisplayCountry(Locale.ENGLISH) : null;
     }
 }

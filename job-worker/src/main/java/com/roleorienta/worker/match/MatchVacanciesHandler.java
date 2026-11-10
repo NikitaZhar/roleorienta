@@ -98,6 +98,7 @@ public class MatchVacanciesHandler implements TaskHandler {
         Map<String, Long> positionIds = stored.positionIds();
         Map<String, String> cities = repository.cities();
         LocationResolver resolver = new LocationResolver(cities, regions);
+        Map<String, String> homePlaces = repository.homePlaces();
         String version = version(dictionary.version(), regions.version(), languages.version(), cities.size());
         List<VacancyText> vacancies = repository.vacanciesToMatch(version, BATCH);
         int matched = 0;
@@ -109,7 +110,9 @@ public class MatchVacanciesHandler implements TaskHandler {
             try {
                 repository.saveMatches(vacancy, version, positions,
                         resolver.resolve(vacancy.places().locations(), vacancy.title(), text)
-                                .orPortalCountry(vacancy.places().portalCountry()),
+                                .orPortalCountry(vacancy.places().portalCountry())
+                                .orHomeCountries(LocationResolver.homeCountries(homePlaces, vacancy.title(),
+                                        vacancy.places().locations())),
                         languages.find(vacancy.content()));
                 matched += positions.isEmpty() ? 0 : 1;
             } catch (OptimisticLockingFailureException changed) {

@@ -69,10 +69,12 @@ class CareerPageAdapterTests {
     }
 
     /**
-     * Две страницы списка — полное чтение; место — текст карточки, карточка без текста — страна источника.
+     * Две страницы списка — полное чтение; место — текст карточки; карточка без текста на кадровой странице вне зоны
+     * страны источника (здесь {@code 127.0.0.1}) — без места (§299; в зоне {@code .sk} — страна, см.
+     * {@link #sessionParametersAreDroppedFromVacancyAddress}).
      */
     @Test
-    void readsListPagesWithPlacesAndCountryOfCompany() {
+    void readsListPagesWithPlaces() {
         pages.put("/kariera/casnik", VACANCY);
         pages.put("/kariera/kuchar", VACANCY);
         pages.put("/kariera/", "<ul><li><a href=\"/kariera/casnik\">Čašník</a> Piešťany</li>"
@@ -84,7 +86,7 @@ class CareerPageAdapterTests {
         assertThat(read.complete()).isTrue();
         assertThat(read.postings()).containsExactly(
                 new FetchedPosting(url("/kariera/casnik"), "Čašník", url("/kariera/casnik"), "Piešťany", null),
-                new FetchedPosting(url("/kariera/kuchar"), "Kuchár", url("/kariera/kuchar"), "Slovakia", null));
+                new FetchedPosting(url("/kariera/kuchar"), "Kuchár", url("/kariera/kuchar"), null, null));
     }
 
     /**
@@ -233,6 +235,11 @@ class CareerPageAdapterTests {
                 .isEqualTo("https://firma.sk/kariera?id=5");
         assertThat(CareerPageAdapter.withoutSessionParameters("https://firma.sk/kariera/operator"))
                 .isEqualTo("https://firma.sk/kariera/operator");
+        // §299: карточка без текста — страна источника только у кадровой страницы в её зоне.
+        assertThat(CareerPageAdapter.location("", "SK", "www.firma.sk")).isEqualTo("Slovakia");
+        assertThat(CareerPageAdapter.location("", "SK", "www.globallogic.com")).isNull();
+        assertThat(CareerPageAdapter.location("Nitra", "SK", "www.globallogic.com")).isEqualTo("Nitra");
+        assertThat(CareerPageAdapter.location("", null, "www.firma.sk")).isNull();
         // §295: метка условия у ссылки на ту же вакансию (maxins.sk «TPP», «Živnosť»).
         assertThat(CareerPageAdapter.withoutSessionParameters("https://www.maxins.sk/praca/trnava-predajca/?filter=tpp"))
                 .isEqualTo("https://www.maxins.sk/praca/trnava-predajca/");

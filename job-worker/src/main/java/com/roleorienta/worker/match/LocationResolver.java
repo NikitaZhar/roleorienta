@@ -39,7 +39,7 @@ final class LocationResolver {
      * {@code MatchVacanciesHandler.MAX_VERSION_LENGTH} («places-2» дал 41 символ и запись отказала, стенограмма §149;
      * запас проверяет {@code MatchVersionTests}).
      */
-    static final String VERSION = "p3";
+    static final String VERSION = "p4";
 
     /** Самое короткое начало куска места, которое ищется как город или страна: короче — слишком много совпадений. */
     static final int MIN_PREFIX = 4;
@@ -49,6 +49,10 @@ final class LocationResolver {
     private static final Pattern PLACES = Pattern.compile("[;|/]| or ");
     /** Куски сегмента: тире с пробелами вокруг и скобки (тире без пробелов — часть названия: Baden-Baden). */
     private static final Pattern PIECES = Pattern.compile("\\s+\\p{Pd}\\s+|[()_]");
+    /** Слова для поиска места страны сбора в названии и тексте карточки: буквы и цифры. */
+    private static final Pattern WORD_SEPARATORS = Pattern.compile("[^\\p{L}\\p{N}]+");
+    /** Самое длинное название города в словах (Banská Bystrica, Vranov nad Topľou, Nové Mesto nad Váhom). */
+    private static final int MAX_PLACE_WORDS = 4;
     private static final Pattern REMOTE_WORDS = Pattern.compile(
             "\\b(fully remote|remote first|remote|work from home|home office|praca z domu|na dialku)\\b");
     private static final Pattern REMOTE_TEXT = Pattern.compile(
@@ -104,6 +108,35 @@ final class LocationResolver {
         String markers = PositionDictionary.normalize(title + " " + String.join(" ", locations.stream()
                 .map(location -> location == null ? "" : location).toList()));
         return new LocationFacts(Set.copyOf(countries), format(markers, PositionDictionary.normalize(text)));
+    }
+
+    /**
+     * Страны сбора по их городам в названии вакансии и в местах публикаций целыми словами (§299: «Farmaceut/ka -
+     * Tesco, Ružomberok», «… development centre Košice», карточка «TPP Lokalita Nitra Základná mzda …»). Только
+     * подтверждает страну сбора, чужих стран не даёт: имена людей и слова совпадают с городами мира («Milan», «Dual»),
+     * а с городом страны сбора — редко (замер {@code target/s299-sk-place.sql}: из 259 — 8 мимо).
+     *
+     * @param homePlaces города стран сбора ({@code MatchRepository#homePlaces}): нормализованное название → страна
+     * @param title      название вакансии
+     * @param locations  места публикаций ({@code null} — нет)
+     * @return страны сбора, чьи города найдены; пусто — нет
+     */
+    static Set<String> homeCountries(Map<String, String> homePlaces, String title, List<String> locations) {
+        StringBuilder text = new StringBuilder(title == null ? "" : title);
+        locations.forEach(location -> text.append(' ').append(location == null ? "" : location));
+        String[] words = WORD_SEPARATORS.split(PositionDictionary.normalize(text.toString()).strip());
+        Set<String> countries = new HashSet<>();
+        for (int start = 0; start < words.length; start++) {
+            StringBuilder name = new StringBuilder();
+            for (int count = 0; count < MAX_PLACE_WORDS && start + count < words.length; count++) {
+                name.append(count == 0 ? "" : " ").append(words[start + count]);
+                String country = homePlaces.get(name.toString());
+                if (country != null) {
+                    countries.add(country);
+                }
+            }
+        }
+        return countries;
     }
 
     private Set<String> place(String place) {
@@ -185,6 +218,18 @@ final class LocationResolver {
         LocationFacts orPortalCountry(String portalCountry) {
             return countries.isEmpty() && portalCountry != null
                     ? new LocationFacts(Set.of(portalCountry), format) : this;
+        }
+
+        /**
+         * Страна не распознана ни по местам, ни по порталу — страны сбора, чьи города есть в названии или местах
+         * ({@link LocationResolver#homeCountries}, §299).
+         *
+         * @param homeCountries найденные страны сбора
+         * @return сведения с ними; иначе — эти же сведения
+         */
+        LocationFacts orHomeCountries(Set<String> homeCountries) {
+            return countries.isEmpty() && !homeCountries.isEmpty()
+                    ? new LocationFacts(Set.copyOf(homeCountries), format) : this;
         }
     }
 }

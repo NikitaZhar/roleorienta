@@ -92,6 +92,24 @@ public class MatchRepository {
     }
 
     /**
+     * Города стран сбора ({@code collection_country}): нормализованное название (от {@link LocationResolver#MIN_PREFIX}
+     * букв) → страна; для правила «место страны сбора в названии или карточке» (§299).
+     *
+     * @return название → страна; при одинаковом названии в двух странах — самого населённого
+     */
+    public Map<String, String> homePlaces() {
+        Map<String, String> places = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT g.name, g.country FROM geo_city g
+                JOIN collection_country c ON c.country = g.country AND c.active
+                WHERE length(g.name) >= ? ORDER BY g.population DESC
+                """, row -> {
+                    places.putIfAbsent(row.getString("name"), row.getString("country"));
+                }, LocationResolver.MIN_PREFIX);
+        return places;
+    }
+
+    /**
      * @return страна города по нормализованному названию; при одинаковом названии — самого
      *         населённого (GeoNames)
      */
