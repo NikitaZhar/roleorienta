@@ -730,12 +730,18 @@ export interface ProfesiaPosition {
   slug: string;
   name: string;
   vacancies: number;
+  /** из них не находит ни один поиск — столько станет видно после выбора группы */
+  unseen: number;
   hints: GroupHint[];
 }
 
-/** @returns позиции profesia.sk без группы, больше вакансий — первыми (не больше 30), с подсказкой групп */
-export function profesiaPositions(): Promise<ProfesiaPosition[]> {
-  return request<ProfesiaPosition[]>('GET', '/api/v1/admin/profesia-positions');
+/**
+ * @param assigned true — позиции с группой, выбранной администратором (исправить), недавние — первыми; иначе — без
+ *                 группы, больше ненайденных поиском — первыми (не больше 30)
+ * @returns позиции profesia.sk с подсказкой групп (у выбранной — она первой)
+ */
+export function profesiaPositions(assigned: boolean): Promise<ProfesiaPosition[]> {
+  return request<ProfesiaPosition[]>('GET', '/api/v1/admin/profesia-positions?assigned=' + assigned);
 }
 
 /** Выбрать группу позиции profesia.sk: её объявления сразу находятся поиском этой группы. */

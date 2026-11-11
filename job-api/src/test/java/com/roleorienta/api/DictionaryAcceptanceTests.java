@@ -191,7 +191,7 @@ class DictionaryAcceptanceTests {
      * Позиция profesia.sk без группы (§305): в списке — только с открытыми вакансиями, с числом вакансий и подсказкой
      * группы по другой позиции того же объявления; позиция с группой в список не входит; список и выбор
      * — только администратору; неизвестная группа — {@code 400}, неизвестная позиция — {@code 404}; выбранная группа
-     * записана как выбор владельца, позиция уходит из списка.
+     * записана как выбор владельца, позиция уходит из списка и видна среди выбранных, где группу можно заменить.
      *
      * @throws Exception ошибка HTTP
      */
@@ -223,7 +223,7 @@ class DictionaryAcceptanceTests {
         ApiTestClient admin = admin();
         String list = admin.send("GET", "/api/v1/admin/profesia-positions", null).body();
         assertThat(list).contains("{\"slug\":\"test-autoklampiar\",\"name\":\"Autoklampiar/autoklampiarka\","
-                + "\"vacancies\":1,\"hints\":[").contains("{\"code\":\"7213\",")
+                + "\"vacancies\":1,\"unseen\":0,\"hints\":[").contains("{\"code\":\"7213\",")
                 .contains("\"reason\":\"1 of 1 ads\"").doesNotContain("test-no-ads", "test-klampiar");
         assertThat(admin.send("PUT", "/api/v1/admin/profesia-positions/test-autoklampiar", "{\"group\":\"9999\"}")
                 .status()).isEqualTo(400);
@@ -234,6 +234,14 @@ class DictionaryAcceptanceTests {
         assertThat(jdbcTemplate.queryForMap("SELECT code, mapped_by FROM profesia_position WHERE slug = "
                 + "'test-autoklampiar'")).containsEntry("code", "7213").containsEntry("mapped_by", "OWNER");
         assertThat(admin.send("GET", "/api/v1/admin/profesia-positions", null).body()).doesNotContain("test-autoklampiar");
+        // Выбранная группа видна в «Assigned by admin» первой подсказкой и меняется тем же PUT (ошибку можно исправить).
+        assertThat(admin.send("GET", "/api/v1/admin/profesia-positions?assigned=true", null).body())
+                .contains("{\"slug\":\"test-autoklampiar\",\"name\":\"Autoklampiar/autoklampiarka\","
+                        + "\"vacancies\":1,\"unseen\":0,\"hints\":[{\"code\":\"7213\",");
+        assertThat(admin.send("PUT", "/api/v1/admin/profesia-positions/test-autoklampiar", "{\"group\":\"7212\"}")
+                .status()).isEqualTo(204);
+        assertThat(jdbcTemplate.queryForObject("SELECT code FROM profesia_position WHERE slug = 'test-autoklampiar'",
+                String.class)).isEqualTo("7212");
     }
 
     private ApiTestClient admin() throws Exception {

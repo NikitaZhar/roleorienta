@@ -120,18 +120,20 @@ export function ChosenWithoutVacanciesAdmin() {
  * администратор не выберет группу ISCO-08. Больше вакансий — первыми; подсказка групп — кнопками (та же подсказка, что
  * у пользователя); группу можно и ввести — название или 4 цифры, как в форме словаря. «Save» — позиция уходит из списка.
  * Лучшая подсказка сразу в поле (верна — один «Save»); остальные — метками под полем, выбранная выделена (aria-pressed),
- * с причиной: позиция словаря, доля объявлений, название ESCO.
+ * с причиной: позиция словаря, доля объявлений, название ESCO. Порядок — больше ненайденных поиском вакансий первыми
+ * («Not found / vacancies»). «Assigned by admin» — выбранные группы, недавние первыми: ошибку исправляют тем же «Save».
  */
 export function ProfesiaPositionsAdmin() {
+  const [assigned, setAssigned] = useState(false);
   const [items, setItems] = useState<ProfesiaPosition[] | null>(null);
   const [groups, setGroups] = useState<{ code: string; name: string }[]>([]);
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
-  async function load() {
+  async function load(mode = assigned) {
     setMessage(null);
     try {
-      const loaded = await profesiaPositions();
+      const loaded = await profesiaPositions(mode);
       setItems(loaded);
       setChosen(Object.fromEntries(loaded.filter((item) => item.hints.length > 0)
         .map((item) => [item.slug, label(item.hints[0])])));
@@ -155,7 +157,11 @@ export function ProfesiaPositionsAdmin() {
     }
     try {
       await mapProfesiaPosition(slug, group);
-      setItems((items ?? []).filter((item) => item.slug !== slug));
+      if (assigned) {
+        await load(true);
+      } else {
+        setItems((items ?? []).filter((item) => item.slug !== slug));
+      }
     } catch (failure) {
       setMessage((failure as Error).message);
     }
@@ -164,22 +170,31 @@ export function ProfesiaPositionsAdmin() {
   return (
     <section>
       <h2>profesia.sk positions without a group</h2>
-      <p className="muted">Ads with these positions are found by no search. The best suggestion is already in the
-        field: if it is right, press Save; otherwise pick another suggestion or type a group. The ads are found by
-        searches of that group at once.</p>
+      <div className="position-filter">
+        <button type="button" className={assigned ? 'chip' : 'chip current'} aria-pressed={!assigned}
+          onClick={() => { setAssigned(false); load(false); }}>Without a group</button>
+        <button type="button" className={assigned ? 'chip current' : 'chip'} aria-pressed={assigned}
+          onClick={() => { setAssigned(true); load(true); }}>Assigned by admin</button>
+      </div>
+      <p className="muted">{assigned
+        ? 'Groups you chose, the latest first. To fix a mistake, pick another group and press Save.'
+        : 'Ads with these positions are found by no search; the first rows bring the most vacancies. The best '
+          + 'suggestion is already in the field: if it is right, press Save; otherwise pick another suggestion or '
+          + 'type a group. The ads are found by searches of that group at once.'}</p>
       {message !== null && <p className="error" role="alert">{message}</p>}
-      {items !== null && (items.length === 0 ? <p className="muted">None: every position has a group.</p> : (
+      {items !== null && (items.length === 0 ? <p className="muted">{assigned ? 'No group chosen yet.'
+        : 'None: every position has a group.'}</p> : (
         <div className="scroll">
           <table className="companies">
             <thead>
-              <tr><th>Position on profesia.sk</th><th>Vacancies</th><th>Group</th>
+              <tr><th>Position on profesia.sk</th><th>{assigned ? 'Vacancies' : 'Not found / vacancies'}</th><th>Group</th>
                 <th><span className="sr-only">Actions</span></th></tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.slug}>
                   <td>{item.name}</td>
-                  <td>{item.vacancies}</td>
+                  <td className="nowrap">{assigned ? item.vacancies : item.unseen + ' / ' + item.vacancies}</td>
                   <td>
                     <div className="group-choice">
                       <input aria-label={'Group for ' + item.name} list="profesia-isco-groups"
@@ -213,7 +228,7 @@ export function ProfesiaPositionsAdmin() {
       <datalist id="profesia-isco-groups">
         {groups.map((group) => <option key={group.code} value={group.code + ' ' + group.name} />)}
       </datalist>
-      <button type="button" onClick={load}>Refresh</button>
+      <button type="button" onClick={() => load()}>Refresh</button>
     </section>
   );
 }

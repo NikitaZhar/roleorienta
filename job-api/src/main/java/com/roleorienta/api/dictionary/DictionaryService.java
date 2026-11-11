@@ -33,8 +33,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DictionaryService {
 
-    /** Сколько позиций profesia.sk без группы показывается администратору (больше вакансий — первыми, §305). */
+    /** Сколько позиций profesia.sk без группы показывается администратору (больше ненайденных — первыми, §305). */
     static final int PROFESIA_POSITIONS = 30;
+    /** Сколько позиций profesia.sk с группой, выбранной администратором, показывается для исправления (§305). */
+    static final int ASSIGNED_POSITIONS = 100;
     /** Сколько групп в подсказке к позиции profesia.sk. */
     static final int HINTS = 3;
     /** Язык названий групп в подсказке: страница администратора — на английском. */
@@ -147,13 +149,32 @@ public class DictionaryService {
      * ищутся: «Architect» давал «Building architects» у «IT Architect» (проверка владельца 2026-11-11). Ничего не
      * записывает (запрос администратора — не «искали и не нашли» пользователя).
      *
-     * @return не больше {@value #PROFESIA_POSITIONS} позиций, больше вакансий — первыми
+     * @return не больше {@value #PROFESIA_POSITIONS} позиций, больше ненайденных вакансий — первыми
      */
     @Transactional(readOnly = true)
     public List<ProfesiaPosition> unmappedProfesiaPositions() {
         return repository.unmappedProfesiaPositions(PROFESIA_POSITIONS).stream()
                 .map(position -> new ProfesiaPosition(position.slug(), position.name(), position.vacancies(),
-                        hints(position)))
+                        position.unseen(), hints(position)))
+                .toList();
+    }
+
+    /**
+     * Позиции profesia.sk с группой, выбранной администратором (§305), — чтобы исправить ошибку: выбранная группа
+     * первой, за ней — подсказка, как у позиций без группы; новый выбор — тем же {@link #mapProfesiaPosition}.
+     *
+     * @return не больше {@value #ASSIGNED_POSITIONS} позиций, недавние — первыми
+     */
+    @Transactional(readOnly = true)
+    public List<ProfesiaPosition> assignedProfesiaPositions() {
+        return repository.assignedProfesiaPositions(ASSIGNED_POSITIONS).stream()
+                .map(position -> {
+                    Map<String, GroupHint> choice = new LinkedHashMap<>();
+                    position.hints().forEach(hint -> choice.put(hint.code(), hint));
+                    hints(position).forEach(hint -> choice.putIfAbsent(hint.code(), hint));
+                    return new ProfesiaPosition(position.slug(), position.name(), position.vacancies(), 0,
+                            choice.values().stream().limit(HINTS + 1).toList());
+                })
                 .toList();
     }
 

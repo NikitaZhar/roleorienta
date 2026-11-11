@@ -138,9 +138,11 @@ public final class DictionaryDtos {
      * @param slug      ключ позиции profesia.sk ({@code profesia_position.slug})
      * @param name      название, как на profesia.sk
      * @param vacancies открытых вакансий с этой позицией
-     * @param hints     подсказка групп — та же подсказка, что у пользователя при выборе позиции; пусто — не нашлось
+     * @param unseen    из них не находит ни одно условие поиска (ни позиции, ни кода никаким путём) — столько станет
+     *                  видно после выбора группы; у позиции с группой — 0
+     * @param hints     подсказка групп; у позиции с группой первой — выбранная («assigned»); пусто — не нашлось
      */
-    public record ProfesiaPosition(String slug, String name, long vacancies, List<GroupHint> hints) {
+    public record ProfesiaPosition(String slug, String name, long vacancies, long unseen, List<GroupHint> hints) {
     }
 
     /**

@@ -169,26 +169,66 @@ public class DictionaryRepository {
     }
 
     /**
-     * Позиции profesia.sk без группы ISCO-08, у которых есть открытые вакансии (§305): больше вакансий — первыми.
-     * Позиция объявления — {@code profesia_ad_position} (номер объявления — {@code job_posting.external_id}
-     * {@code profesia:<номер>}, как в представлении {@code search_condition_match}, V97).
+     * Вакансия {@code v.vacancy_id} не находится ни одним условием поиска: ни позиции словаря, ни кода портала, ни кода
+     * по названию, ни позиции profesia.sk с группой у её открытых публикаций (пути представления
+     * {@code search_condition_match}, V97).
+     */
+    private static final String UNSEEN = """
+            NOT EXISTS (SELECT 1 FROM vacancy_position_match m WHERE m.vacancy_id = v.vacancy_id)
+            AND NOT EXISTS (SELECT 1 FROM job_posting y WHERE y.vacancy_id = v.vacancy_id AND y.closed_at IS NULL
+                            AND (y.occupation_code IS NOT NULL OR y.title_occupation_code IS NOT NULL))
+            AND NOT EXISTS (SELECT 1 FROM job_posting y
+                            JOIN profesia_ad_position a ON y.external_id = 'profesia:' || a.num
+                            JOIN profesia_position q ON q.slug = a.slug AND q.code IS NOT NULL
+                            WHERE y.vacancy_id = v.vacancy_id AND y.closed_at IS NULL
+                              AND y.external_id LIKE 'profesia:%')""";
+
+    /** Открытые вакансии позиций profesia.sk ({@code profesia_ad_position}, номер — {@code profesia:<номер>}, V97). */
+    private static final String POSITION_VACANCIES = """
+            SELECT pp.slug, pp.name, pp.code, pp.mapped_at, jp.vacancy_id
+            FROM profesia_position pp
+            JOIN profesia_ad_position ap ON ap.slug = pp.slug
+            JOIN job_posting jp ON jp.external_id LIKE 'profesia:%' AND jp.external_id = 'profesia:' || ap.num
+                               AND jp.closed_at IS NULL""";
+
+    /**
+     * Позиции profesia.sk без группы ISCO-08, у которых есть открытые вакансии (§305): первыми — те, у которых больше
+     * вакансий не находит ни один поиск (выбор группы даёт больше всего), затем — больше вакансий.
      *
      * @param limit сколько позиций
      * @return позиции без подсказки ({@code hints} пусто)
      */
     public List<ProfesiaPosition> unmappedProfesiaPositions(int limit) {
+        return jdbcTemplate.query("WITH v AS (" + POSITION_VACANCIES + " WHERE pp.code IS NULL) "
+                + "SELECT v.slug, v.name, count(DISTINCT v.vacancy_id) AS vacancies, "
+                + "count(DISTINCT v.vacancy_id) FILTER (WHERE " + UNSEEN + ") AS unseen "
+                + "FROM v GROUP BY v.slug, v.name ORDER BY unseen DESC, vacancies DESC, v.name LIMIT ?",
+                (row, number) -> new ProfesiaPosition(row.getString(1), row.getString(2), row.getLong(3),
+                        row.getLong(4), List.of()), limit);
+    }
+
+    /**
+     * Позиции profesia.sk, группу которых выбрал администратор (§305) — чтобы исправить ошибку: недавние — первыми;
+     * подсказка — выбранная группа («assigned» и дата); вакансии — открытые (позиции без открытых вакансий — с 0).
+     *
+     * @param limit сколько позиций
+     * @return позиции с выбранной группой первой подсказкой
+     */
+    public List<ProfesiaPosition> assignedProfesiaPositions(int limit) {
         return jdbcTemplate.query("""
-                SELECT pp.slug, pp.name, count(DISTINCT jp.vacancy_id) AS vacancies
+                SELECT pp.slug, pp.name, pp.code, n.name, to_char(pp.mapped_at, 'YYYY-MM-DD'),
+                       count(DISTINCT jp.vacancy_id)
                 FROM profesia_position pp
-                JOIN profesia_ad_position ap ON ap.slug = pp.slug
-                JOIN job_posting jp ON jp.external_id LIKE 'profesia:%' AND jp.external_id = 'profesia:' || ap.num
-                                   AND jp.closed_at IS NULL
-                WHERE pp.code IS NULL
-                GROUP BY pp.slug, pp.name
-                ORDER BY vacancies DESC, pp.name
+                JOIN occupation_group_name n ON n.code = pp.code AND n.language = 'en'
+                LEFT JOIN profesia_ad_position ap ON ap.slug = pp.slug
+                LEFT JOIN job_posting jp ON jp.external_id LIKE 'profesia:%' AND jp.external_id = 'profesia:' || ap.num
+                                        AND jp.closed_at IS NULL
+                WHERE pp.mapped_by = 'OWNER' AND pp.code IS NOT NULL
+                GROUP BY pp.slug, pp.name, pp.code, n.name, pp.mapped_at
+                ORDER BY pp.mapped_at DESC, pp.name
                 LIMIT ?
-                """, (row, number) -> new ProfesiaPosition(row.getString(1), row.getString(2), row.getLong(3),
-                List.of()), limit);
+                """, (row, number) -> new ProfesiaPosition(row.getString(1), row.getString(2), row.getLong(6), 0,
+                List.of(new GroupHint(row.getString(3), row.getString(4), "assigned " + row.getString(5)))), limit);
     }
 
     /**

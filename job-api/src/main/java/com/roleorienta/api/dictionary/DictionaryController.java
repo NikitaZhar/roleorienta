@@ -110,12 +110,13 @@ public class DictionaryController {
     }
 
     /**
-     * @return позиции profesia.sk без группы ISCO-08, у которых есть открытые вакансии (§305), больше вакансий —
-     *         первыми, не больше 30; к каждой — подсказка групп
+     * @param assigned {@code true} — позиции, группу которых выбрал администратор (для исправления), недавние — первыми,
+     *                 до 100; иначе — без группы, с открытыми вакансиями, больше ненайденных поиском — первыми, до 30
+     * @return позиции profesia.sk (§305); к каждой — подсказка групп, у выбранной — она первой
      */
     @GetMapping("/api/v1/admin/profesia-positions")
-    public List<ProfesiaPosition> profesiaPositions() {
-        return dictionary.unmappedProfesiaPositions();
+    public List<ProfesiaPosition> profesiaPositions(@RequestParam(defaultValue = "false") boolean assigned) {
+        return assigned ? dictionary.assignedProfesiaPositions() : dictionary.unmappedProfesiaPositions();
     }
 
     /**
