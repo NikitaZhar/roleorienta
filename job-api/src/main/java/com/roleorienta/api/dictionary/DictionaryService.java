@@ -1,14 +1,19 @@
 package com.roleorienta.api.dictionary;
 
+import com.roleorienta.api.condition.ConditionDtos.PositionOption;
 import com.roleorienta.api.condition.InvalidFieldException;
+import com.roleorienta.api.condition.OccupationRepository;
 import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
+import com.roleorienta.api.dictionary.DictionaryDtos.GroupHint;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
+import com.roleorienta.api.dictionary.DictionaryDtos.ProfesiaPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import com.roleorienta.api.dictionary.DictionaryDtos.Terms;
 import com.roleorienta.api.dictionary.DictionaryRepository.Versioned;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,13 +33,23 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DictionaryService {
 
+    /** Сколько позиций profesia.sk без группы показывается администратору (больше вакансий — первыми, §305). */
+    static final int PROFESIA_POSITIONS = 30;
+    /** Сколько групп в подсказке к позиции profesia.sk. */
+    static final int HINTS = 3;
+    /** Язык названий групп в подсказке: страница администратора — на английском. */
+    private static final String HINT_LANGUAGE = "en";
+
     private final DictionaryRepository repository;
+    private final OccupationRepository occupations;
 
     /**
-     * @param repository словарь в БД
+     * @param repository  словарь в БД
+     * @param occupations подсказка групп ISCO-08 (та же, что у пользователя)
      */
-    public DictionaryService(DictionaryRepository repository) {
+    public DictionaryService(DictionaryRepository repository, OccupationRepository occupations) {
         this.repository = repository;
+        this.occupations = occupations;
     }
 
     /**
@@ -122,6 +137,53 @@ public class DictionaryService {
     @Transactional
     public boolean forgetSearchMiss(String query) {
         return repository.forgetSearchMiss(query);
+    }
+
+    /**
+     * Позиции profesia.sk без группы (§305) с подсказкой групп по порядку: позиция словаря с тем же названием
+     * ({@link DictionaryRepository#dictionaryGroups}); группы, которые у вакансий с этой позицией уже есть другим путём
+     * ({@link DictionaryRepository#neighbourGroups}); если обе пусты — название профессии ESCO
+     * ({@link OccupationRepository#suggestions}) по первому варианту названия до «/». Отдельные слова названия не
+     * ищутся: «Architect» давал «Building architects» у «IT Architect» (проверка владельца 2026-11-11). Ничего не
+     * записывает (запрос администратора — не «искали и не нашли» пользователя).
+     *
+     * @return не больше {@value #PROFESIA_POSITIONS} позиций, больше вакансий — первыми
+     */
+    @Transactional(readOnly = true)
+    public List<ProfesiaPosition> unmappedProfesiaPositions() {
+        return repository.unmappedProfesiaPositions(PROFESIA_POSITIONS).stream()
+                .map(position -> new ProfesiaPosition(position.slug(), position.name(), position.vacancies(),
+                        hints(position)))
+                .toList();
+    }
+
+    /**
+     * @param slug  ключ позиции profesia.sk
+     * @param group группа ISCO-08
+     * @return {@code false} — такой позиции нет
+     * @throws InvalidFieldException группы нет в справочнике
+     */
+    @Transactional
+    public boolean mapProfesiaPosition(String slug, String group) {
+        requireGroup(group);
+        return repository.mapProfesiaPosition(slug, group);
+    }
+
+    private List<GroupHint> hints(ProfesiaPosition position) {
+        String title = position.name().split("/", 2)[0].strip();
+        Map<String, GroupHint> found = new LinkedHashMap<>();
+        List<GroupHint> candidates = new ArrayList<>(repository.dictionaryGroups(title));
+        candidates.addAll(repository.neighbourGroups(position.slug(), HINTS));
+        for (GroupHint hint : candidates) {
+            found.putIfAbsent(hint.code(), hint);
+        }
+        if (found.isEmpty() && !title.isEmpty()) {
+            occupations.suggestions(title, HINT_LANGUAGE).stream()
+                    .filter(PositionOption::group)
+                    .forEach(option -> found.putIfAbsent(option.code(),
+                            new GroupHint(option.code(), option.name(), "ESCO occupation name")));
+        }
+        return found.values().stream().limit(HINTS).toList();
     }
 
     private void requireGroup(String group) {

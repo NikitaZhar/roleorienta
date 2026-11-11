@@ -1,8 +1,10 @@
 package com.roleorienta.api.dictionary;
 
 import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
+import com.roleorienta.api.dictionary.DictionaryDtos.GroupHint;
 import com.roleorienta.api.dictionary.DictionaryDtos.Placement;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionView;
+import com.roleorienta.api.dictionary.DictionaryDtos.ProfesiaPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import com.roleorienta.api.dictionary.DictionaryDtos.Terms;
@@ -164,6 +166,122 @@ public class DictionaryRepository {
      */
     public boolean forgetSearchMiss(String query) {
         return jdbcTemplate.update("DELETE FROM position_search_miss WHERE query = ?", query) == 1;
+    }
+
+    /**
+     * Позиции profesia.sk без группы ISCO-08, у которых есть открытые вакансии (§305): больше вакансий — первыми.
+     * Позиция объявления — {@code profesia_ad_position} (номер объявления — {@code job_posting.external_id}
+     * {@code profesia:<номер>}, как в представлении {@code search_condition_match}, V97).
+     *
+     * @param limit сколько позиций
+     * @return позиции без подсказки ({@code hints} пусто)
+     */
+    public List<ProfesiaPosition> unmappedProfesiaPositions(int limit) {
+        return jdbcTemplate.query("""
+                SELECT pp.slug, pp.name, count(DISTINCT jp.vacancy_id) AS vacancies
+                FROM profesia_position pp
+                JOIN profesia_ad_position ap ON ap.slug = pp.slug
+                JOIN job_posting jp ON jp.external_id LIKE 'profesia:%' AND jp.external_id = 'profesia:' || ap.num
+                                   AND jp.closed_at IS NULL
+                WHERE pp.code IS NULL
+                GROUP BY pp.slug, pp.name
+                ORDER BY vacancies DESC, pp.name
+                LIMIT ?
+                """, (row, number) -> new ProfesiaPosition(row.getString(1), row.getString(2), row.getLong(3),
+                List.of()), limit);
+    }
+
+    /**
+     * Подсказка 1 (§305): группы включённых позиций словаря, к которым название позиции profesia.sk отнесли бы правила
+     * словаря: название позиции словаря или эквивалентное название (вид {@code TITLE}) — целыми словами в названии
+     * («Architect» в «IT Architect»), или роль ({@code ROLE}) вместе с ключевым словом ({@code KEYWORD}) («Programmer»
+     * и «Python» в «Python Programmer»); слово-исключение ({@code EXCLUDE}) позицию отменяет. Регистр не важен;
+     * диакритика — как написана (в БД нет функции её снятия). Целое слово — {@code (^|[^[:alnum:]])…($|[^[:alnum:]])},
+     * особые знаки слов словаря («c++», «.net») экранируются.
+     *
+     * @param title первый вариант названия позиции profesia.sk
+     * @return группы с названием совпавшей позиции словаря
+     */
+    public List<GroupHint> dictionaryGroups(String title) {
+        return jdbcTemplate.query("""
+                WITH q AS (SELECT lower(CAST(? AS TEXT)) AS title),
+                word AS (
+                    SELECT t.position_id, t.kind,
+                           '(^|[^[:alnum:]])' || regexp_replace(lower(t.term), '([.^$|?*+()\\[\\]{}\\\\])', '\\\\\\1', 'g')
+                           || '($|[^[:alnum:]])' AS pattern
+                    FROM position_term t
+                    UNION ALL
+                    SELECT p.id, 'TITLE',
+                           '(^|[^[:alnum:]])' || regexp_replace(lower(p.name), '([.^$|?*+()\\[\\]{}\\\\])', '\\\\\\1', 'g')
+                           || '($|[^[:alnum:]])'
+                    FROM position p),
+                hit AS (SELECT w.position_id, w.kind FROM word w, q WHERE q.title ~ w.pattern)
+                SELECT DISTINCT ON (p.occupation_code) p.occupation_code, n.name, p.name
+                FROM position p
+                JOIN occupation_group_name n ON n.code = p.occupation_code AND n.language = 'en'
+                WHERE p.active AND p.occupation_code IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM hit h WHERE h.position_id = p.id AND h.kind = 'EXCLUDE')
+                  AND (EXISTS (SELECT 1 FROM hit h WHERE h.position_id = p.id AND h.kind = 'TITLE')
+                       OR EXISTS (SELECT 1 FROM hit h WHERE h.position_id = p.id AND h.kind = 'ROLE')
+                          AND EXISTS (SELECT 1 FROM hit h WHERE h.position_id = p.id AND h.kind = 'KEYWORD'))
+                ORDER BY p.occupation_code, p.name
+                """, (row, number) -> new GroupHint(row.getString(1), row.getString(2), "dictionary: " + row.getString(3)),
+                title);
+    }
+
+    /**
+     * Подсказка 2 (§305): группы, которые у открытых вакансий с этой позицией profesia.sk уже есть другим путём — другая
+     * позиция того же объявления с группой, код портала, код по названию, позиция словаря; чаще — первыми (одна
+     * вакансия — один голос за группу).
+     *
+     * @param slug  ключ позиции profesia.sk
+     * @param limit сколько групп
+     * @return группы с долей вакансий («12 of 31 ads»)
+     */
+    public List<GroupHint> neighbourGroups(String slug, int limit) {
+        return jdbcTemplate.query("""
+                WITH ads AS (
+                    SELECT DISTINCT jp.vacancy_id FROM profesia_ad_position ap
+                    JOIN job_posting jp ON jp.external_id LIKE 'profesia:%' AND jp.external_id = 'profesia:' || ap.num
+                                       AND jp.closed_at IS NULL
+                    WHERE ap.slug = ?),
+                codes AS (
+                    SELECT ads.vacancy_id, pp.code FROM ads
+                    JOIN job_posting jp ON jp.vacancy_id = ads.vacancy_id AND jp.closed_at IS NULL
+                                       AND jp.external_id LIKE 'profesia:%'
+                    JOIN profesia_ad_position ap ON jp.external_id = 'profesia:' || ap.num
+                    JOIN profesia_position pp ON pp.slug = ap.slug AND pp.code IS NOT NULL
+                    UNION
+                    SELECT ads.vacancy_id, jp.occupation_code FROM ads
+                    JOIN job_posting jp ON jp.vacancy_id = ads.vacancy_id AND jp.closed_at IS NULL
+                    WHERE jp.occupation_code IS NOT NULL
+                    UNION
+                    SELECT ads.vacancy_id, jp.title_occupation_code FROM ads
+                    JOIN job_posting jp ON jp.vacancy_id = ads.vacancy_id AND jp.closed_at IS NULL
+                    WHERE jp.title_occupation_code IS NOT NULL
+                    UNION
+                    SELECT ads.vacancy_id, p.occupation_code FROM ads
+                    JOIN vacancy_position_match m ON m.vacancy_id = ads.vacancy_id
+                    JOIN position p ON p.id = m.position_id WHERE p.occupation_code IS NOT NULL)
+                SELECT c.code, n.name, count(DISTINCT c.vacancy_id) AS votes, (SELECT count(*) FROM ads) AS total
+                FROM codes c JOIN occupation_group_name n ON n.code = c.code AND n.language = 'en'
+                GROUP BY c.code, n.name ORDER BY votes DESC, c.code LIMIT ?
+                """, (row, number) -> new GroupHint(row.getString(1), row.getString(2),
+                row.getLong(3) + " of " + row.getLong(4) + " ads"), slug, limit);
+    }
+
+    /**
+     * Группа позиции profesia.sk выбрана администратором (§305): {@code mapped_by = 'OWNER'} — распознавание
+     * воркера её больше не меняет ({@code TitleClassificationRepository}); объявления с ней находятся условиями этой
+     * группы сразу (представление {@code search_condition_match}).
+     *
+     * @param slug  ключ позиции
+     * @param group группа ISCO-08
+     * @return {@code false} — такой позиции нет
+     */
+    public boolean mapProfesiaPosition(String slug, String group) {
+        return jdbcTemplate.update("UPDATE profesia_position SET code = ?, mapped_by = 'OWNER', mapped_at = now() "
+                + "WHERE slug = ?", group, slug) == 1;
     }
 
     /**

@@ -130,4 +130,35 @@ public final class DictionaryDtos {
      */
     public record ChosenWithoutVacancies(String code, String name, long conditions) {
     }
+
+    /**
+     * Позиция каталога profesia.sk без группы ISCO-08 (§305): её объявления не находит ни одно условие поиска, пока
+     * администратор не выберет группу.
+     *
+     * @param slug      ключ позиции profesia.sk ({@code profesia_position.slug})
+     * @param name      название, как на profesia.sk
+     * @param vacancies открытых вакансий с этой позицией
+     * @param hints     подсказка групп — та же подсказка, что у пользователя при выборе позиции; пусто — не нашлось
+     */
+    public record ProfesiaPosition(String slug, String name, long vacancies, List<GroupHint> hints) {
+    }
+
+    /**
+     * Группа ISCO-08 в подсказке.
+     *
+     * @param code   код (4 цифры)
+     * @param name   название (английское)
+     * @param reason почему предложена: позиция словаря с тем же названием («dictionary: Python developer»), доля
+     *               объявлений, у которых эта группа уже есть другим путём («12 of 31 ads»), или название профессии ESCO
+     */
+    public record GroupHint(String code, String name, String reason) {
+    }
+
+    /**
+     * Выбор администратора для позиции profesia.sk.
+     *
+     * @param group группа ISCO-08 (4 цифры справочника)
+     */
+    public record ProfesiaGroup(@NotNull @Pattern(regexp = "[0-9]{4}") String group) {
+    }
 }

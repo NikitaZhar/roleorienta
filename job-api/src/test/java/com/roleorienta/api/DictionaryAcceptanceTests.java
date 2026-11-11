@@ -49,6 +49,11 @@ class DictionaryAcceptanceTests {
         jdbcTemplate.update("DELETE FROM position_term WHERE position_id IN (SELECT id FROM position WHERE code LIKE "
                 + "'test-%')");
         jdbcTemplate.update("DELETE FROM position WHERE code LIKE 'test-%'");
+        jdbcTemplate.update("DELETE FROM profesia_ad_position WHERE slug LIKE 'test-%'");
+        jdbcTemplate.update("DELETE FROM profesia_position WHERE slug LIKE 'test-%'");
+        jdbcTemplate.update("DELETE FROM job_posting WHERE source_id IN (SELECT id FROM source WHERE board = 'test-profesia')");
+        jdbcTemplate.update("DELETE FROM vacancy WHERE primary_url LIKE 'https://test-profesia.example/%'");
+        jdbcTemplate.update("DELETE FROM source WHERE board = 'test-profesia'");
     }
 
     /**
@@ -180,6 +185,55 @@ class DictionaryAcceptanceTests {
         assertThat(admin.send("DELETE", "/api/v1/admin/position-misses?query=zzqx", null).status()).isEqualTo(204);
         assertThat(admin.send("DELETE", "/api/v1/admin/position-misses?query=zzqx", null).status()).isEqualTo(404);
         assertThat(admin.send("GET", "/api/v1/admin/position-misses", null).body()).doesNotContain("zzqx");
+    }
+
+    /**
+     * Позиция profesia.sk без группы (§305): в списке — только с открытыми вакансиями, с числом вакансий и подсказкой
+     * группы по другой позиции того же объявления; позиция с группой в список не входит; список и выбор
+     * — только администратору; неизвестная группа — {@code 400}, неизвестная позиция — {@code 404}; выбранная группа
+     * записана как выбор владельца, позиция уходит из списка.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void administratorGivesProfesiaPositionGroup() throws Exception {
+        long source = jdbcTemplate.queryForObject("INSERT INTO source (provider, board) VALUES ('profesia', "
+                + "'test-profesia') RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO profesia_position (slug, name) VALUES ('test-autoklampiar', "
+                + "'Autoklampiar/autoklampiarka'), ('test-no-ads', 'Bez objednávok')");
+        long vacancy = jdbcTemplate.queryForObject("""
+                INSERT INTO vacancy (state, title, primary_url, first_seen_at, last_confirmed_at)
+                VALUES ('ACTIVE', 'Autoklampiar', 'https://test-profesia.example/990001', now(), now()) RETURNING id""",
+                Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO job_posting (source_id, vacancy_id, external_id, title, url, first_seen_at, last_confirmed_at)
+                VALUES (?, ?, 'profesia:990001', 'Autoklampiar', 'https://test-profesia.example/990001', now(), now())""",
+                source, vacancy);
+        jdbcTemplate.update("INSERT INTO profesia_ad_position (num, slug) VALUES (990001, 'test-autoklampiar')");
+        // Вторая позиция того же объявления уже с группой — подсказка «1 of 1 ads».
+        jdbcTemplate.update("INSERT INTO profesia_position (slug, name, code, mapped_by) VALUES ('test-klampiar', "
+                + "'Klampiar', '7213', 'OWNER')");
+        jdbcTemplate.update("INSERT INTO profesia_ad_position (num, slug) VALUES (990001, 'test-klampiar')");
+
+        ApiTestClient user = ApiTestClient.signedIn(port(), "user@example.com");
+        assertThat(user.send("GET", "/api/v1/admin/profesia-positions", null).status()).isEqualTo(403);
+        assertThat(user.send("PUT", "/api/v1/admin/profesia-positions/test-autoklampiar", "{\"group\":\"7213\"}")
+                .status()).isEqualTo(403);
+
+        ApiTestClient admin = admin();
+        String list = admin.send("GET", "/api/v1/admin/profesia-positions", null).body();
+        assertThat(list).contains("{\"slug\":\"test-autoklampiar\",\"name\":\"Autoklampiar/autoklampiarka\","
+                + "\"vacancies\":1,\"hints\":[").contains("{\"code\":\"7213\",")
+                .contains("\"reason\":\"1 of 1 ads\"").doesNotContain("test-no-ads", "test-klampiar");
+        assertThat(admin.send("PUT", "/api/v1/admin/profesia-positions/test-autoklampiar", "{\"group\":\"9999\"}")
+                .status()).isEqualTo(400);
+        assertThat(admin.send("PUT", "/api/v1/admin/profesia-positions/test-unknown", "{\"group\":\"7213\"}")
+                .status()).isEqualTo(404);
+        assertThat(admin.send("PUT", "/api/v1/admin/profesia-positions/test-autoklampiar", "{\"group\":\"7213\"}")
+                .status()).isEqualTo(204);
+        assertThat(jdbcTemplate.queryForMap("SELECT code, mapped_by FROM profesia_position WHERE slug = "
+                + "'test-autoklampiar'")).containsEntry("code", "7213").containsEntry("mapped_by", "OWNER");
+        assertThat(admin.send("GET", "/api/v1/admin/profesia-positions", null).body()).doesNotContain("test-autoklampiar");
     }
 
     private ApiTestClient admin() throws Exception {

@@ -4,6 +4,8 @@ import com.roleorienta.api.dictionary.DictionaryDtos.ChosenWithoutVacancies;
 import com.roleorienta.api.dictionary.DictionaryDtos.DictionaryView;
 import com.roleorienta.api.dictionary.DictionaryDtos.NewPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.PositionChange;
+import com.roleorienta.api.dictionary.DictionaryDtos.ProfesiaGroup;
+import com.roleorienta.api.dictionary.DictionaryDtos.ProfesiaPosition;
 import com.roleorienta.api.dictionary.DictionaryDtos.SearchMiss;
 import com.roleorienta.api.dictionary.DictionaryDtos.Settings;
 import jakarta.validation.Valid;
@@ -105,5 +107,30 @@ public class DictionaryController {
     @GetMapping("/api/v1/admin/positions/without-vacancies")
     public List<ChosenWithoutVacancies> chosenWithoutVacancies() {
         return dictionary.chosenWithoutVacancies();
+    }
+
+    /**
+     * @return позиции profesia.sk без группы ISCO-08, у которых есть открытые вакансии (§305), больше вакансий —
+     *         первыми, не больше 30; к каждой — подсказка групп
+     */
+    @GetMapping("/api/v1/admin/profesia-positions")
+    public List<ProfesiaPosition> profesiaPositions() {
+        return dictionary.unmappedProfesiaPositions();
+    }
+
+    /**
+     * Администратор выбирает группу позиции profesia.sk (§305): объявления с этой позицией сразу находятся условиями
+     * группы.
+     *
+     * @param slug  ключ позиции
+     * @param group группа ISCO-08
+     * @return {@code 204}; {@code 404} — такой позиции нет; {@code 400} — группы нет в справочнике
+     */
+    @PutMapping("/api/v1/admin/profesia-positions/{slug}")
+    public ResponseEntity<Void> mapProfesiaPosition(@PathVariable String slug, @Valid @RequestBody ProfesiaGroup group) {
+        if (!dictionary.mapProfesiaPosition(slug, group.group())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profesia position not found");
+        }
+        return ResponseEntity.noContent().build();
     }
 }

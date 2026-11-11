@@ -1674,3 +1674,20 @@ table.dictionary .nowrap {
 .loss h3 {
   margin-top: 0;
 }
+
+/* Выбор группы позиции profesia.sk (§305): поле с лучшей подсказкой, под ним — остальные подсказки метками. */
+.group-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 320px;
+}
+
+.group-choice input {
+  width: 100%;
+}
+
+.group-choice .position-filter {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}

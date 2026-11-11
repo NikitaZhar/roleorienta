@@ -7,7 +7,7 @@ import { GroupBadge } from './companyGroups';
 import { CareerRequestsAdmin, UnlinkedSourcesAdmin } from './CompaniesAdmin';
 import { DictionaryAdmin } from './DictionaryAdmin';
 import { LossesAdmin, useLosses } from './LossesAdmin';
-import { ChosenWithoutVacanciesAdmin, SearchMissesAdmin } from './SearchMissesAdmin';
+import { ChosenWithoutVacanciesAdmin, ProfesiaPositionsAdmin, SearchMissesAdmin } from './SearchMissesAdmin';
 
 /** Разделы страницы — по задачам администратора (§206): ядро работает, растёт ли охват, находят ли пользователи
  * нужное, ошибки по компаниям. */
@@ -161,7 +161,7 @@ function countryLabel(code: string): string {
  * тревога видна точкой у вкладки из любого раздела. Metrics — показатели ядра по дням (бизнес-описание §7.3): строки —
  * показатель и разрез (итог жирным), столбцы — дни, новые слева; у сайта и подключения — доля от «обработано».
  * Losses — компании, у которых вакансии портала не найдены на их странице, по одной, с уведомлением браузера (§235).
- * Positions — запросы без результата (§205) и словарь позиций (§160). Companies — отметка «не работодатель» (§138),
+ * Positions — запросы без результата (§205), позиции profesia.sk без группы (§305) и словарь позиций (§160). Companies — отметка «не работодатель» (§138),
  * общая для всех: сайт и кадровая страница не ищутся, адрес не вводится; подключённые источники читаются дальше. При
  * ошибке загрузки блока — «Retry» (§143).
  */
@@ -250,6 +250,7 @@ export function AdminApp() {
           <>
             <SearchMissesAdmin onAdd={setAdding} onCount={setMissCount} />
             <ChosenWithoutVacanciesAdmin />
+            <ProfesiaPositionsAdmin />
             <DictionaryAdmin adding={adding} onAdding={setAdding} />
           </>
         )}

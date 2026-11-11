@@ -716,3 +716,29 @@ export function searchMisses(): Promise<SearchMiss[]> {
 export function forgetSearchMiss(query: string): Promise<void> {
   return request<void>('DELETE', '/api/v1/admin/position-misses?query=' + encodeURIComponent(query));
 }
+
+/** Группа ISCO-08 в подсказке к позиции profesia.sk. */
+export interface GroupHint {
+  code: string;
+  name: string;
+  /** почему предложена: «dictionary: Python developer», «12 of 31 ads», «ESCO occupation name» */
+  reason: string;
+}
+
+/** Позиция каталога profesia.sk без группы ISCO-08 (§305): её объявления не находит ни один поиск. */
+export interface ProfesiaPosition {
+  slug: string;
+  name: string;
+  vacancies: number;
+  hints: GroupHint[];
+}
+
+/** @returns позиции profesia.sk без группы, больше вакансий — первыми (не больше 30), с подсказкой групп */
+export function profesiaPositions(): Promise<ProfesiaPosition[]> {
+  return request<ProfesiaPosition[]>('GET', '/api/v1/admin/profesia-positions');
+}
+
+/** Выбрать группу позиции profesia.sk: её объявления сразу находятся поиском этой группы. */
+export function mapProfesiaPosition(slug: string, group: string): Promise<void> {
+  return request<void>('PUT', '/api/v1/admin/profesia-positions/' + encodeURIComponent(slug), { group });
+}
