@@ -7,7 +7,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Версия Ubuntu закреплена (2026-11-11, §307): ubuntu-latest с 19.10.2026 переходит на Ubuntu 26, а
+    # «playwright install-deps» версии 1.49 ставит библиотеки Chromium только для известных ему версий Ubuntu (до 24.04) —
+    # шаг падал, сборка не запускалась. Поднять — вместе с версией Playwright (job-worker/pom.xml).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
