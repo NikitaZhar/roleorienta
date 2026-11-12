@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import {
   type Admin, adminAddCareerPage, adminLogin, adminSearchCompanies, type CompanyItem, coreStatus, type CoreStatus, currentAdmin, logout,
-  metrics, type MetricRow, type MetricsTable, searchMisses, setNotEmployer,
+  metrics, type MetricRow, type MetricsTable, onSignedOut, searchMisses, setNotEmployer,
 } from './api';
 import { GroupBadge } from './companyGroups';
 import { CareerRequestsAdmin, UnlinkedSourcesAdmin } from './CompaniesAdmin';
@@ -199,6 +199,12 @@ export function AdminApp() {
 
   useEffect(() => {
     currentAdmin().then(setAdmin, (failure: Error) => setError(failure.message));
+  }, []);
+
+  /** Вход завершён (§316: 401 или 403 на любой запрос) — экран входа администратора вместо «Forbidden». */
+  useEffect(() => {
+    onSignedOut(() => setAdmin(null));
+    return () => onSignedOut(null);
   }, []);
 
   async function signOut() {

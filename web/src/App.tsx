@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  type Account, browserTimeZone, currentAccount, finishedResponses, logout, responses, saveSettings, silentResponses,
-  unsuitableVacancies, vacancies,
+  type Account, browserTimeZone, currentAccount, finishedResponses, logout, onSignedOut, responses, saveSettings,
+  silentResponses, unsuitableVacancies, vacancies,
 } from './api';
 import { CompaniesPage } from './CompaniesPage';
 import { ConditionsPage } from './ConditionsPage';
@@ -70,6 +70,15 @@ export function App() {
     currentAccount().then(signedIn, (failure: Error) => setError(failure.message));
   }, []);
 
+  /** Вход завершён (§316: 401 или 403 на любой запрос) — экран входа вместо «Forbidden»; состояние — как при выходе. */
+  useEffect(() => {
+    onSignedOut(() => {
+      reset();
+      setAccount(null);
+    });
+    return () => onSignedOut(null);
+  }, []);
+
   /**
    * Учётная запись получена (загрузка или вход): язык экрана — из неё. Часовой пояс сводки отличается от пояса браузера
    * (учётная запись до §164, переезд) — записывается пояс браузера, письмо приходит в 8:00 по нему (аудит §165). Отказ
@@ -114,18 +123,23 @@ export function App() {
     try {
       await flushMarks();
       await logout();
-      setNotice(null);
-      setView('list');
-      listScroll.current = 0;
-      setOpened(null);
-      setFresh(false);
-      setApplicationsQuery('');
-      setMarkedQuery('');
-      setResultsQuery('');
+      reset();
       setAccount(null);
     } catch (failure) {
       setNotice(t('menu.signOutFailed', { detail: (failure as Error).message }));
     }
+  }
+
+  /** Раздел, открытая вакансия и поиски — как при первом входе (выход и завершённый вход, §316). */
+  function reset() {
+    setNotice(null);
+    setView('list');
+    listScroll.current = 0;
+    setOpened(null);
+    setFresh(false);
+    setApplicationsQuery('');
+    setMarkedQuery('');
+    setResultsQuery('');
   }
 
   function show(next: View) {

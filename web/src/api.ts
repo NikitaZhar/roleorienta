@@ -52,6 +52,17 @@ function csrfToken(): string | undefined {
   return cookie === undefined ? undefined : decodeURIComponent(cookie.substring(CSRF_COOKIE.length + 1));
 }
 
+/** Пути входа и регистрации: их 401 — неверный пароль, а не завершённый вход. */
+const SIGN_IN_PATHS = ['/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/admin/login'];
+
+/** Вход завершён (§316): ставят App и AdminApp — показать экран входа; null — никто. */
+let signedOutHandler: (() => void) | null = null;
+
+/** @param handler вызывается, когда API ответил 401 или 403 — сессия истекла или в ней вход другой роли (§316) */
+export function onSignedOut(handler: (() => void) | null) {
+  signedOutHandler = handler;
+}
+
 /** Язык интерфейса для названий групп ISCO-08 в ответах (§204): заголовок Accept-Language; ставит I18nProvider. */
 let requestLanguage = 'en';
 
@@ -105,6 +116,11 @@ export async function exchange<T>(method: string, path: string, body?: unknown,
   if (response.status === 403 && method !== 'GET') {
     await fetch(TOKEN_SOURCE, { credentials: 'same-origin' });
     response = await send(method, path, body, ifMatch);
+  }
+  if ((response.status === 401 || response.status === 403) && !SIGN_IN_PATHS.includes(path)) {
+    // Вход завершён (сессия истекла) или в сессии вход другой роли (/admin в той же вкладке браузера) — экран входа,
+    // а не «Forbidden» на месте данных (§316).
+    signedOutHandler?.();
   }
   const text = await response.text();
   const json = (response.headers.get('Content-Type') ?? '').includes('json');
