@@ -193,8 +193,8 @@ class CareerPageAdapterTests {
 
     /**
      * Неподтверждённый список и фраза «вакансий нет» на той же странице (аудит §197): страницы вакансий не открылись —
-     * сбой разбора ({@link PartialReason#LIST_NOT_RECOGNIZED}), а не полное пустое чтение, которое закрыло бы прежние
-     * вакансии.
+     * сбой чтения ({@link PartialReason#PAGE_FAILED}, аудит §313: не «не список», к закрытию по §287 не засчитывается),
+     * а не полное пустое чтение, которое закрыло бы прежние вакансии.
      */
     @Test
     void unconfirmedListWithNoVacanciesPhraseIsNotComplete() {
@@ -202,7 +202,7 @@ class CareerPageAdapterTests {
 
         SourceReadResult.Read read = (SourceReadResult.Read) adapter.read(url("/kariera/"), "SK");
 
-        assertThat(read.partialReason()).isEqualTo(PartialReason.LIST_NOT_RECOGNIZED);
+        assertThat(read.partialReason()).isEqualTo(PartialReason.PAGE_FAILED);
         assertThat(read.postings()).isEmpty();
     }
 

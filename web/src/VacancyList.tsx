@@ -164,15 +164,15 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
   /** Запрос, по которому показана страница: сменился — с первой страницы. */
   const shownQuery = useRef(query);
   /**
-   * Текущие страница, размер и выбранная позиция — для отправки отметки по таймеру (аудит §197): функция таймера
-   * создана при нажатии и видела бы значения того времени.
+   * Текущие страница, размер, выбранная позиция и поиск — для отправки отметки по таймеру (аудит §197, поиск — аудит
+   * §313): функция таймера создана при нажатии и видела бы значения того времени.
    */
-  const view = useRef({ page: 1, size, filter });
+  const view = useRef({ page: 1, size, filter, query });
   useEffect(() => {
-    view.current = { page: data?.page ?? 1, size, filter };
+    view.current = { page: data?.page ?? 1, size, filter, query };
   });
 
-  async function show(page: number, rows: number, chosen: ResultFilter = filter) {
+  async function show(page: number, rows: number, chosen: ResultFilter = filter, search: string = query) {
     setLoading(true);
     setMessage(null);
     try {
@@ -189,9 +189,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
           setFilter(target);
         }
       }
-      let next = await load(page, rows, target, query);
+      let next = await load(page, rows, target, search);
       if (next.items.length === 0 && next.total > 0 && page > 1) {
-        next = await load(Math.ceil(next.total / rows), rows, target, query);
+        next = await load(Math.ceil(next.total / rows), rows, target, search);
       }
       setData(next);
       if (next.total === 0 && kind === 'results') {
@@ -234,7 +234,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
       setMessage(errorText(failure, t));
       return;
     }
-    await show(view.current.page, view.current.size, view.current.filter);
+    await show(view.current.page, view.current.size, view.current.filter, view.current.query);
     setDismissed((ids) => ids.filter((other) => other !== id));
   }
 

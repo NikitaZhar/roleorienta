@@ -426,7 +426,6 @@ public class VacancyRepository {
                 """, userId, vacancyId, status.name(), utc(at));
     }
 
-    /** Статусы как SQL-список; значения — имена перечисления, не данные пользователя. */
     /**
      * Видимая часть накопленного списка версии условий подзапросом {@code r} (поля {@link #COLUMNS} и дата открытия
      * {@code opened_at}) с отбором по позиции, «после прошлого захода» и словам поиска {@link #WORDS} (§312: поиск — по
@@ -463,6 +462,7 @@ public class VacancyRepository {
                 .toArray(String[]::new);
     }
 
+    /** Статусы как SQL-список; значения — имена перечисления, не данные пользователя. */
     private static String names(List<StatusEvent> statuses) {
         return statuses.stream().map(status -> "'" + status.name() + "'").collect(Collectors.joining(", "));
     }

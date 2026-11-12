@@ -154,6 +154,8 @@ export function App() {
     if (changed) {
       setFresh(true);
       setSearches((count) => count + 1);
+      // Новые условия — новый список (аудит §313): прежний поиск показал бы «ничего не найдено» до первой порции.
+      setResultsQuery('');
     }
   }
 

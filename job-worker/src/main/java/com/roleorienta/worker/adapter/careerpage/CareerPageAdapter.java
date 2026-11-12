@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -39,11 +40,14 @@ import org.springframework.stereotype.Component;
  *       страница — ссылка «далее» или номер страницы (§255); «далее» листает скрипт ({@link CareerPageList#scriptNext})
  *       — хвост не прочитан, {@link PartialReason#PAGE_FAILED}.</li>
  *   <li>Ссылки первой страницы списка не подтверждены текстом ({@link CareerPageList#confirmed}, §183) — вакансий не
- *       найдено, чтение неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): это не список вакансий (товары, меню,
- *       новости сайта) или его страницы не открылись — даже при фразе «вакансий нет» (аудит §197).</li>
+ *       найдено, чтение неполное, даже при фразе «вакансий нет» (аудит §197): страницы открылись, но без признаков
+ *       вакансии — это не список вакансий (товары, меню, новости сайта), {@link PartialReason#LIST_NOT_RECOGNIZED};
+ *       хоть одна не открылась — сбой чтения, {@link PartialReason#PAGE_FAILED} (аудит §313: к закрытию по §287 не
+ *       засчитывается).</li>
  *   <li>Списка нет: фраза «вакансий нет» — полное пустое чтение (прежние вакансии закрываются по общим правилам, обвалом
  *       числа оно не считается — §257);
- *       иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): сбой разбора, а не закрытие.</li>
+ *       иначе — неполное ({@link PartialReason#LIST_NOT_RECOGNIZED}): прежние публикации закрываются после
+ *       нескольких таких чтений подряд (§287).</li>
  *   <li>Отказ первой страницы — источник недоступен.</li>
  *   <li>Первая страница по HTML сервера — без распознанного списка или с кнопкой «показать ещё»
  *       ({@link LoadMore}): она открывается браузером без окна с нажатием «показать ещё» ({@link PageRenderer#expanded},
@@ -115,6 +119,8 @@ public class CareerPageAdapter implements SourceAdapter {
         Set<String> visited = new HashSet<>(List.of(first.toString(), page.location()));
         PartialReason partial = null;
         boolean unconfirmed = false;
+        // Страница вакансии не открылась при подтверждении списка (аудит §313): сбой чтения, а не «не список».
+        AtomicBoolean notOpened = new AtomicBoolean();
         for (int number = 1; ; number++) {
             for (CareerPageList.Item item : CareerPageList.vacancies(page)) {
                 String url = withoutSessionParameters(item.url());
@@ -122,7 +128,7 @@ public class CareerPageAdapter implements SourceAdapter {
                         location(item.card(), country, first.getHost()), null));
             }
             if (number == 1 && !postings.isEmpty()
-                    && !CareerPageList.confirmed(List.copyOf(postings.keySet()), this::open)) {
+                    && !CareerPageList.confirmed(List.copyOf(postings.keySet()), uri -> opened(uri, notOpened))) {
                 postings.clear();
                 unconfirmed = true;
                 break;
@@ -149,10 +155,11 @@ public class CareerPageAdapter implements SourceAdapter {
             page = Jsoup.parse(nextSuccess.body(), nextSuccess.locationOr(next.get()).toString());
         }
         if (partial == null) {
-            partial = expansion;
+            partial = unconfirmed && notOpened.get() ? PartialReason.PAGE_FAILED : expansion;
         }
-        // Список есть, но не подтверждён (страницы вакансий не открылись или без признаков) — сбой разбора, а не
-        // «вакансий нет», даже если на странице есть такая фраза: иначе прежние вакансии закрылись бы (аудит §197).
+        // Список есть, но не подтверждён: страницы вакансий открылись без признаков вакансии — «не список»; хоть одна
+        // не открылась — выше, PAGE_FAILED. Не «вакансий нет», даже если на странице есть такая фраза: иначе прежние
+        // вакансии закрылись бы полным чтением (аудит §197).
         if (postings.isEmpty() && partial == null && (!noVacancies || unconfirmed)) {
             partial = PartialReason.LIST_NOT_RECOGNIZED;
         }
@@ -209,6 +216,15 @@ public class CareerPageAdapter implements SourceAdapter {
         }
         return renderer.expanded(URI.create(page.location()))
                 .filter(built -> CareerPageList.vacancies(built).size() >= listed.size());
+    }
+
+    /** {@link #open}; не открылась — отметка в {@code failed}. */
+    private Optional<Document> opened(URI uri, AtomicBoolean failed) {
+        Optional<Document> page = open(uri);
+        if (page.isEmpty()) {
+            failed.set(true);
+        }
+        return page;
     }
 
     /**
