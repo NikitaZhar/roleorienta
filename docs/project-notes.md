@@ -11679,6 +11679,10 @@ Mesto, Skalica, Žilina; браузер 2026-11-11) — 6 вакансий, IT �
   между разделами держится, выход сбрасывает); `VacancyList` у результатов — поле, когда есть вакансии или набран поиск;
   заголовок — «N found» при поиске (`headCount`); ничего не найдено — «Nothing found for “…”», а не «ничего пока нет»;
   при поиске нет «идёт первый сбор» и его повторных опросов.
+- Числа у заголовка результатов — без строк, скрытых «✓» / «×» до ответа сервера (`hidden`, `shownTotal`, `shownNew`):
+  строка уходит сразу, страница перечитывается после «Undo» (5 с); до этого «2 found» при пустом списке (проверка
+  владельца 2026-11-12: поиск «GlobalLogic» — все 124 вакансии уже «Not interested» / «Employer declined»,
+  `target/s312-search.sql`); «Undo» возвращает и строку, и число.
 - `CompaniesPage` — поле в `.search-field` с «×» (`row-mark`, «Clear search»): пустое поле и без найденного.
 
 **Тесты.** `VacancyAcceptanceTests.searchFindsInResults` (новый): `ZILINA` находит «Java Žilina», `total` 1; «employer

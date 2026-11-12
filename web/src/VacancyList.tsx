@@ -370,12 +370,20 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
   const searching = query !== '';
   const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES && !searching;
   const hasCounts = positions.length > 1 && positions.some((item) => item.count > 0);
+  /**
+   * Числа у заголовка без строк, скрытых «✓» или «×» до ответа сервера (§312): строка уходит сразу, страница
+   * перечитывается после «Undo» ({@value UNDO_MS} мс) — до этого «N found» и «N not opened» считали бы её; «Undo»
+   * возвращает строку и число.
+   */
+  const hidden = data.items.filter((item) => dismissed.includes(item.id));
+  const shownTotal = data.total - hidden.length;
+  const shownNew = data.newCount - hidden.filter((item) => item.timeline.status.code === 'NEW').length;
   return (
     <section className="list">
       {results ? (data.total > 0 || searching) && (
         <div className="list-head">
-          <h1>{headCount(kind, query, data.total, t)}</h1>
-          {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
+          <h1>{headCount(kind, query, shownTotal, t)}</h1>
+          {shownNew > 0 && <span className="fresh">{t('list.newCount', { fresh: shownNew })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
       ) : collapsible ? (
