@@ -438,6 +438,39 @@ class VacancyAcceptanceTests {
     }
 
     /**
+     * Поиск в результатах (§312): слова — в позиции или работодателе, без регистра и диакритики; вместе с отбором по
+     * позиции; число — найденные; {@code %} — буквально; одни пробелы — весь список.
+     *
+     * @throws Exception ошибка HTTP
+     */
+    @Test
+    void searchFindsInResults() throws Exception {
+        ApiTestClient client = ApiTestClient.signedIn(port(), "user@example.com");
+        client.send("PUT", "/api/v1/me/search-condition",
+                "{\"countries\":[\"SK\"],\"positions\":[\"java-developer\",\"devops-engineer\"]}");
+        long condition = activeCondition();
+        delivered(condition, "Java Žilina", "ACTIVE", 0, 3);
+        long both = delivered(condition, "Java DevOps Košice", "ACTIVE", 0, 2);
+        jdbcTemplate.update("""
+                INSERT INTO vacancy_position_match (vacancy_id, position_id, dictionary_version, explanation)
+                SELECT ?, id, 'test', 'title' FROM position WHERE code = 'devops-engineer'
+                """, both);
+
+        ApiTestClient.Response found = client.send("GET", "/api/v1/me/vacancies?q=ZILINA", null);
+        assertThat(titles(found.body())).isEqualTo("Java Žilina");
+        assertThat(found.body()).contains("\"total\":1,");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies?q=employer%20ko%C5%A1ice", null).body()))
+                .isEqualTo("Java DevOps Košice");
+        assertThat(client.send("GET", "/api/v1/me/vacancies?position=devops-engineer&q=zilina", null).body())
+                .contains("\"total\":0,");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies?position=devops-engineer&q=java", null).body()))
+                .isEqualTo("Java DevOps Košice");
+        assertThat(client.send("GET", "/api/v1/me/vacancies?q=%25", null).body()).contains("\"total\":0,");
+        assertThat(titles(client.send("GET", "/api/v1/me/vacancies?q=%20%20", null).body()))
+                .isEqualTo("Java DevOps Košice,Java Žilina");
+    }
+
+    /**
      * Группы ISCO-08 в условиях (§204): к группе подходит вакансия с кодом группы у публикации (государственный портал)
      * и вакансия, сопоставленная позиции словаря этой группы; остальные — нет. Метки и плашки строки — названия групп.
      *

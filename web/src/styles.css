@@ -796,7 +796,7 @@ nav .current,
   color: var(--accent);
 }
 
-/* Поиск в «My applications» и «Not interested» (§226): поле во всю ширину списка, «×» внутри справа. */
+/* Поиск в «My applications», «Not interested» (§226) и результатах (§312): поле во всю ширину списка, «×» внутри справа. */
 .list-search {
   position: relative;
   margin-bottom: 12px;
@@ -1292,9 +1292,22 @@ table.companies td.row-actions button + button {
   margin-left: 2px;
 }
 
-.company-search input {
+/* Поле поиска компаний с «×» внутри справа (§312), как у поиска в списках (§226). */
+.company-search .search-field {
+  position: relative;
   flex: 1;
   max-width: 420px;
+}
+
+.company-search input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.company-search .row-mark {
+  position: absolute;
+  top: 2px;
+  right: 2px;
 }
 
 /* Вкладки раздела «Companies» (§175): как разделы в панели — текст, текущая — акцентом и линией снизу; под ними —
@@ -1617,7 +1630,7 @@ table.dictionary .nowrap {
     margin-bottom: 8px;
   }
 
-  .company-search input {
+  .company-search .search-field {
     max-width: none;
   }
 

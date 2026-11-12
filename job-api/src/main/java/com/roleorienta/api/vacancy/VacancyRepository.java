@@ -133,9 +133,9 @@ public class VacancyRepository {
             WHERE st.user_id = ? AND st.status IN (%1$s)""";
 
     /**
-     * Поиск в «Моих откликах» и «Не интересно» (§226): у строки подзапроса {@code r} (поля {@link #COLUMNS}) каждое
-     * слово запроса встречается в позиции, работодателе или агентстве — без регистра и диакритики (словацкие буквы, как
-     * в V84, и чешские, немецкие). Параметр — массив слов с экранированными {@code \ % _}; пустой — без отбора.
+     * Поиск в «Моих откликах», «Не интересно» (§226) и результатах (§312): у строки подзапроса {@code r} (поля
+     * {@link #COLUMNS}) каждое слово запроса встречается в позиции, работодателе или агентстве — без регистра и
+     * диакритики (словацкие буквы, как в V84, и чешские, немецкие). Параметр — массив слов с экранированными {@code \ % _}; пустой — без отбора.
      */
     private static final String WORDS = " WHERE NOT EXISTS (SELECT 1 FROM unnest(CAST(? AS TEXT[])) w(word) WHERE "
             + fold("concat_ws(' ', r.title, r.employer, r.agency)") + " NOT LIKE '%' || " + fold("w.word")
@@ -219,33 +219,28 @@ public class VacancyRepository {
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
      * @param page         смещение и размер страницы
-     * @param position     код позиции или группы условий — только подходящие к ней (§194, §204); {@code null} — все
-     * @param recentFrom   только впервые полученные позже (§200: «после прошлого захода»); {@code null} — все
+     * @param selection    отбор внутри результатов ({@link Selection})
      * @return вакансии страницы
      */
-    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, String position,
-            Instant recentFrom) {
-        OffsetDateTime recent = recentFrom == null ? null : utc(recentFrom);
-        return jdbcTemplate.query("SELECT " + COLUMNS.formatted("c.user_id") + DELIVERED_FROM + ONE_POSITION
-                + SINCE_VISIT + " ORDER BY " + OPENED + " DESC, d.vacancy_id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), condition, utc(visibleSince), position, position, recent, recent,
-                page.size(), page.offset());
+    public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, Selection selection) {
+        OffsetDateTime recent = selection.recentFrom() == null ? null : utc(selection.recentFrom());
+        return jdbcTemplate.query(selected("*") + " ORDER BY r.opened_at DESC, r.id DESC LIMIT ? OFFSET ?",
+                (row, number) -> vacancy(row), condition, utc(visibleSince), selection.position(),
+                selection.position(), recent, recent, escaped(selection.words()), page.size(), page.offset());
     }
 
     /**
      * @param condition    версия условий
      * @param visibleSince не подтверждённые с этого момента не показываются
-     * @param position     код позиции или группы условий (§194, §204); {@code null} — все
-     * @param recentFrom   только впервые полученные позже (§200); {@code null} — все
+     * @param selection    отбор внутри результатов ({@link Selection})
      * @return сколько вакансий в видимой части накопленного списка (те же условия, что у {@link #delivered}) и
      *         сколько из них новых (статуса пользователя нет)
      */
-    public Counts countDelivered(long condition, Instant visibleSince, String position, Instant recentFrom) {
-        OffsetDateTime recent = recentFrom == null ? null : utc(recentFrom);
-        return jdbcTemplate.queryForObject("SELECT count(*), count(*) FILTER (WHERE st.status IS NULL)"
-                + DELIVERED_FROM + ONE_POSITION + SINCE_VISIT,
-                (row, number) -> new Counts(row.getLong(1), row.getLong(2)),
-                condition, utc(visibleSince), position, position, recent, recent);
+    public Counts countDelivered(long condition, Instant visibleSince, Selection selection) {
+        OffsetDateTime recent = selection.recentFrom() == null ? null : utc(selection.recentFrom());
+        return jdbcTemplate.queryForObject(selected("count(*), count(*) FILTER (WHERE r.user_status IS NULL)"),
+                (row, number) -> new Counts(row.getLong(1), row.getLong(2)), condition, utc(visibleSince),
+                selection.position(), selection.position(), recent, recent, escaped(selection.words()));
     }
 
     /**
@@ -433,6 +428,17 @@ public class VacancyRepository {
 
     /** Статусы как SQL-список; значения — имена перечисления, не данные пользователя. */
     /**
+     * Видимая часть накопленного списка версии условий подзапросом {@code r} (поля {@link #COLUMNS} и дата открытия
+     * {@code opened_at}) с отбором по позиции, «после прошлого захода» и словам поиска {@link #WORDS} (§312: поиск — по
+     * вычисленным работодателю и агентству, поэтому подзапросом, как у «Моих откликов»); параметры — версия условий,
+     * срок подтверждения, код дважды, граница захода дважды, слова.
+     */
+    private static String selected(String select) {
+        return "SELECT " + select + " FROM (SELECT " + COLUMNS.formatted("c.user_id") + ", " + OPENED + " AS opened_at"
+                + DELIVERED_FROM + ONE_POSITION + SINCE_VISIT + ") r" + WORDS;
+    }
+
+    /**
      * Вакансии с текущим статусом из списка подзапросом {@code r} и отбор {@link #WORDS}; параметры — пользователь и
      * слова.
      */
@@ -549,6 +555,16 @@ public class VacancyRepository {
      * @param format    {@code OFFICE}/{@code HYBRID}/{@code REMOTE}/{@code CONFLICT}; {@code null} — не указан
      */
     public record WorkFacts(List<String> countries, String format) {
+    }
+
+    /**
+     * Отбор внутри результатов.
+     *
+     * @param position   код позиции или группы условий — только подходящие к ней (§194, §204); {@code null} — все
+     * @param recentFrom только впервые полученные позже (§200: «после прошлого захода»); {@code null} — все
+     * @param words      слова поиска ({@link #WORDS}, §312); пусто — все
+     */
+    public record Selection(String position, Instant recentFrom, List<String> words) {
     }
 
     /**

@@ -388,10 +388,14 @@ export interface ResultFilter {
 
 /**
  * @param filter отбор внутри результатов; нет — все
+ * @param search поиск по позиции, работодателю и агентству (§312); пусто — без поиска
  * @returns страница накопленного списка: номер с 1, строк на странице
  */
-export function vacancies(page: number, size: number, filter: ResultFilter = {}): Promise<VacancyPage> {
+export function vacancies(page: number, size: number, filter: ResultFilter = {}, search = ''): Promise<VacancyPage> {
   const query = new URLSearchParams({ page: String(page), size: String(size) });
+  if (search !== '') {
+    query.set('q', search);
+  }
   if (filter.position !== undefined) {
     query.set('position', filter.position);
   }

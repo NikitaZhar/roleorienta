@@ -77,6 +77,13 @@ export function CompaniesPage() {
     }
   }
 
+  /** «×» в поле поиска (§312): пустое поле и без найденного — как при открытии вкладки. */
+  function clear() {
+    setQuery('');
+    setFound(null);
+    setMessage(null);
+  }
+
   function added() {
     setMessage(null);
     loadRequests();
@@ -103,8 +110,16 @@ export function CompaniesPage() {
       {tab === 'find' && (
         <section>
           <form className="inline-form company-search" onSubmit={search} role="search">
-            <input aria-label={t('companies.query')} placeholder={t('companies.query')} value={query}
-              onChange={(event) => setQuery(event.target.value)} />
+            <span className="search-field">
+              <input aria-label={t('companies.query')} placeholder={t('companies.query')} value={query}
+                onChange={(event) => setQuery(event.target.value)} />
+              {query !== '' && (
+                <button type="button" className="row-mark" aria-label={t('list.searchClear')}
+                  title={t('list.searchClear')} onClick={clear}>
+                  ×
+                </button>
+              )}
+            </span>
             <button type="submit" className="primary">{t('companies.search')}</button>
           </form>
           {found !== null && (found.length === 0 ? <p className="muted">{t('companies.noneFound')}</p>

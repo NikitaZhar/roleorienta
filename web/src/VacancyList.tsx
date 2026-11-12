@@ -335,7 +335,8 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
   }, [typed]);
 
   useEffect(() => {
-    if (!poll || data === null || loading || !hasConditions || data.total > 0 || refreshes >= REFRESH_TIMES) {
+    if (!poll || data === null || loading || !hasConditions || data.total > 0 || query !== ''
+      || refreshes >= REFRESH_TIMES) {
       return;
     }
     const timer = setTimeout(() => {
@@ -365,13 +366,15 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
     return null;
   }
   const rowsShown = !collapsible || expanded;
-  const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES;
+  /** Поиск в результатах (§312): поле видно, когда есть что искать или поиск уже набран. */
+  const searching = query !== '';
+  const collecting = results && data.total === 0 && poll && refreshes < REFRESH_TIMES && !searching;
   const hasCounts = positions.length > 1 && positions.some((item) => item.count > 0);
   return (
     <section className="list">
-      {results ? data.total > 0 && (
+      {results ? (data.total > 0 || searching) && (
         <div className="list-head">
-          <h1>{data.total === 1 ? t('list.countOne') : t('list.count', { total: data.total })}</h1>
+          <h1>{headCount(kind, query, data.total, t)}</h1>
           {data.newCount > 0 && <span className="fresh">{t('list.newCount', { fresh: data.newCount })}</span>}
           <span className="muted">· {t('list.updatedHourly')}</span>
         </div>
@@ -388,7 +391,7 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
           )}
         </div>
       )}
-      {onQuery !== undefined && (
+      {onQuery !== undefined && (!results || data.total > 0 || searching) && (
         <div className="list-search">
           <input type="text" value={typed} maxLength={SEARCH_MAX} placeholder={t('list.search')}
             aria-label={t('list.search')} onChange={(event) => setTyped(event.target.value)} />
@@ -434,9 +437,9 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
           ))}
         </div>
       )}
-      {results && data.total === 0 && !collecting && (
-        <Empty title={t('list.nothingYetTitle')} text={t('list.nothingYetText')} />
-      )}
+      {results && data.total === 0 && !collecting && (searching
+        ? <Empty title={t('list.notFound', { query })} />
+        : <Empty title={t('list.nothingYetTitle')} text={t('list.nothingYetText')} />)}
       {data.total > 0 && rowsShown && (
         <ul className="rows">
           {data.items.filter((item) => !dismissed.includes(item.id)).map((item) => {

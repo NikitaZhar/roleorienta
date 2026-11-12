@@ -59,6 +59,8 @@ export function App() {
   /** Поиск в «My applications» и «Not interested» (§226): остаётся при переходе между разделами, выход сбрасывает. */
   const [applicationsQuery, setApplicationsQuery] = useState('');
   const [markedQuery, setMarkedQuery] = useState('');
+  /** Поиск в результатах (§312): как в «Моих откликах», держится при переходе между разделами, выход сбрасывает. */
+  const [resultsQuery, setResultsQuery] = useState('');
   /** Меню учётной записи ({@code <details>}): закрывается при переходе в раздел и щелчке мимо (§163). */
   const menu = useRef<HTMLDetailsElement>(null);
   /** Прокрутка раздела в момент открытия вакансии: карточка короче списка, браузер прижал бы прокрутку. */
@@ -119,6 +121,7 @@ export function App() {
       setFresh(false);
       setApplicationsQuery('');
       setMarkedQuery('');
+      setResultsQuery('');
       setAccount(null);
     } catch (failure) {
       setNotice(t('menu.signOutFailed', { detail: (failure as Error).message }));
@@ -197,7 +200,7 @@ export function App() {
             <>
               <ConditionsPage onSaved={searched} />
               <VacancyList key={searches} kind="results" load={vacancies} poll={fresh} reload={reloads}
-                onOpen={open} />
+                onOpen={open} query={resultsQuery} onQuery={setResultsQuery} />
             </>
           )}
           {view === 'applications' && (

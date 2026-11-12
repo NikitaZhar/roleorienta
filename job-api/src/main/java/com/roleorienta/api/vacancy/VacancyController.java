@@ -1,7 +1,7 @@
 package com.roleorienta.api.vacancy;
 
 import com.roleorienta.api.account.AccountService;
-import com.roleorienta.api.vacancy.VacancyDtos.ResultFilter;
+import com.roleorienta.api.vacancy.VacancyDtos.ResultQuery;
 import com.roleorienta.api.vacancy.VacancyDtos.ResultFilters;
 import com.roleorienta.api.vacancy.VacancyDtos.StatusRequest;
 import com.roleorienta.api.vacancy.VacancyDtos.VacancyDetails;
@@ -46,8 +46,9 @@ public class VacancyController {
      * @param authentication вошедший пользователь
      * @param page           номер страницы, с 1 (меньше — первая)
      * @param size           строк на странице (1–100)
-     * @param position       код позиции или группы условий — только подходящие к ней (§194, §204); нет — все
-     * @param since          {@code true} — только пришедшие после прошлого захода (§200)
+     * @param query          отбор: позиция или группа условий ({@code position}, §194, §204), только пришедшие после
+     *                       прошлого захода ({@code since}, §200), поиск по позиции, работодателю и агентству
+     *                       ({@code q}, §312); нет — все
      * @return страница результатов по текущим условиям (новые и просмотренные), открытые позже сверху, общее число и
      *         число новых; условия не заданы — пусто. Открытие записывается как заход в список (§191) — отдельным
      *         вызовом до чтения страницы: чтение идёт в транзакции {@code REPEATABLE READ}, запись захода — вне её
@@ -58,11 +59,10 @@ public class VacancyController {
     public VacancyPage list(Authentication authentication,
             @RequestParam(defaultValue = "" + VacancyService.FIRST_PAGE) int page,
             @RequestParam(defaultValue = "" + VacancyService.DEFAULT_SIZE) int size,
-            @RequestParam(required = false) String position,
-            @RequestParam(defaultValue = "false") boolean since) {
+            ResultQuery query) {
         long userId = userId(authentication);
         return vacancies.delivered(userId, new View(page, size, RequestLanguage.current()),
-                vacancies.visit(userId), new ResultFilter(position, since));
+                vacancies.visit(userId), query.filter());
     }
 
     /**

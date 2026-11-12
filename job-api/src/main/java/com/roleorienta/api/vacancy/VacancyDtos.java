@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.List;
+import org.springframework.web.bind.annotation.BindParam;
 
 /**
  * Ответы и запросы API накопленного списка, сведений и статусов вакансии (технический документ §8; бизнес-описание §6). Отсутствующие
@@ -62,8 +63,26 @@ public final class VacancyDtos {
      *
      * @param position       код позиции или группы условий (§194, §204); {@code null} — все
      * @param sinceLastVisit только вакансии, впервые полученные после прошлого захода (§200)
+     * @param query          поиск по позиции, работодателю и агентству (§226, §312); {@code null} или пусто — все
      */
-    public record ResultFilter(String position, boolean sinceLastVisit) {
+    public record ResultFilter(String position, boolean sinceLastVisit, String query) {
+    }
+
+    /**
+     * Параметры отбора результатов из адреса запроса ({@code ?position=&since=&q=}); одним объектом — у метода
+     * контроллера не больше пяти параметров (Checkstyle).
+     *
+     * @param position код позиции или группы условий (§194, §204); нет — все
+     * @param since    {@code true} — только пришедшие после прошлого захода (§200); нет — {@code false}
+     * @param search   поиск по позиции, работодателю и агентству (§312), параметр адреса {@code q} ({@code @BindParam}:
+     *                 имя компонента записи — не короче двух знаков, Checkstyle); нет — все
+     */
+    public record ResultQuery(String position, Boolean since, @BindParam("q") String search) {
+
+        /** @return отбор внутри результатов */
+        public ResultFilter filter() {
+            return new ResultFilter(position, Boolean.TRUE.equals(since), search);
+        }
     }
 
     /**

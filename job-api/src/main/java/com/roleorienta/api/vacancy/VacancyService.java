@@ -18,6 +18,7 @@ import com.roleorienta.api.vacancy.VacancyDtos.Work;
 import com.roleorienta.api.vacancy.VacancyRepository.Counts;
 import com.roleorienta.api.vacancy.VacancyRepository.PageWindow;
 import com.roleorienta.api.vacancy.VacancyRepository.RowState;
+import com.roleorienta.api.vacancy.VacancyRepository.Selection;
 import com.roleorienta.api.vacancy.VacancyRepository.StoredLine;
 import com.roleorienta.api.vacancy.VacancyRepository.VacancyRow;
 import com.roleorienta.api.vacancy.VacancyRepository.WorkFacts;
@@ -117,7 +118,8 @@ public class VacancyService {
      * @param visitFrom граница текущего захода ({@link #visit}): вакансии, полученные позже, — с точкой (§191);
      *                  {@code null} — без точек
      * @param filter    отбор внутри результатов: позиция условий (§194) и «после прошлого захода» (§200; прошлого захода
-     *                  не было — пусто); общее число и число новых — по отобранным
+     *                  не было — пусто) и поиск по позиции, работодателю и агентству ({@link #words}, §312); общее
+     *                  число и число новых — по отобранным
      * @return страница результатов, общее число и число новых; условия не заданы — пусто
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -131,9 +133,9 @@ public class VacancyService {
         Instant visibleSince = Instant.now().minus(properties.hideAfter());
         long conditionId = condition.get();
         Instant recentFrom = !filter.sinceLastVisit() ? null : visitFrom != null ? visitFrom : Instant.now();
-        List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows),
-                filter.position(), recentFrom);
-        Counts counts = repository.countDelivered(conditionId, visibleSince, filter.position(), recentFrom);
+        Selection selection = new Selection(filter.position(), recentFrom, words(filter.query()));
+        List<VacancyRow> shown = repository.delivered(conditionId, visibleSince, window(number, rows), selection);
+        Counts counts = repository.countDelivered(conditionId, visibleSince, selection);
         Map<Long, List<String>> matched = repository.matchedPositions(conditionId,
                 shown.stream().map(VacancyRow::id).toList(), view.language());
         return new VacancyPage(items(shown, visitFrom, matched), number, rows,
@@ -156,8 +158,8 @@ public class VacancyService {
             return new ResultFilters(List.of(), 0);
         }
         Instant visibleSince = Instant.now().minus(properties.hideAfter());
-        long recent = visitFrom == null ? 0
-                : repository.countDelivered(condition.get(), visibleSince, null, visitFrom).total();
+        long recent = visitFrom == null ? 0 : repository.countDelivered(condition.get(), visibleSince,
+                new Selection(null, visitFrom, List.of())).total();
         return new ResultFilters(repository.positionCounts(condition.get(), visibleSince, language), recent);
     }
 
