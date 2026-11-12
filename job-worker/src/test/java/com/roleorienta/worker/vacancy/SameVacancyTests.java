@@ -85,6 +85,32 @@ class SameVacancyTests {
     }
 
     /**
+     * Сценарий 5 (бизнес-описание §7.4-А): одна вакансия в двух источниках — одна запись; пропала из одного источника
+     * (три полных чтения без неё — её публикация закрыта), а другой её подтверждает — вакансия не закрыта; пропала и из
+     * второго — закрыта.
+     */
+    @Test
+    void scenario5VacancyOfTwoSourcesClosesOnlyWhenGoneFromBoth() {
+        Source first = source("jobposting", "https://qwsame.test/ponuka");
+        Source second = source("jobposting", "https://www.qwsame.test/ponuka/");
+        read(first, posting("https://qwsame.test/ponuka/brusic/", "https://qwsame.test/ponuka/brusic/"));
+        read(second, posting("https://www.qwsame.test/ponuka/brusic", "https://www.qwsame.test/ponuka/brusic"));
+        assertThat(count("SELECT count(*) FROM vacancy")).isEqualTo(1);
+
+        for (int reads = 0; reads < 3; reads++) {
+            read(first);
+            read(second, posting("https://www.qwsame.test/ponuka/brusic", "https://www.qwsame.test/ponuka/brusic"));
+        }
+        assertThat(count("SELECT count(*) FROM job_posting WHERE closed_at IS NOT NULL")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM vacancy WHERE state = 'ACTIVE'")).isEqualTo(1);
+
+        for (int reads = 0; reads < 3; reads++) {
+            read(second);
+        }
+        assertThat(count("SELECT count(*) FROM vacancy WHERE state = 'CLOSED'")).isEqualTo(1);
+    }
+
+    /**
      * Языковые разделы одной доски Phenom: тот же хост и внешний id — одна вакансия; другой хост — своя; повторное
      * чтение присоединённого раздела не меняет название и ссылку вакансии (их задаёт первая публикация, аудит §143).
      */
