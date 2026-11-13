@@ -176,14 +176,24 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
   useEffect(() => {
     view.current = { page: data?.page ?? 1, size, filter, query };
   });
+  /**
+   * Номер последней загрузки страницы (§318): ответ более ранней загрузки, пришедший позже, не показывается — иначе
+   * после очистки поиска мог остаться список прежнего запроса («Nothing found for …» при пустом поле).
+   */
+  const latestLoad = useRef(0);
 
   async function show(page: number, rows: number, chosen: ResultFilter = filter, search: string = query) {
+    const loadNumber = ++latestLoad.current;
+    const stale = () => loadNumber !== latestLoad.current;
     setLoading(true);
     setMessage(null);
     try {
       let target = chosen;
       if (kind === 'results') {
         const labels = await resultFilters();
+        if (stale()) {
+          return;
+        }
         setPositions(labels.positions);
         setRecent(labels.sinceLastVisit);
         const position = target.position !== undefined
@@ -198,15 +208,25 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
       if (next.items.length === 0 && next.total > 0 && page > 1) {
         next = await load(Math.ceil(next.total / rows), rows, target, search);
       }
+      if (stale()) {
+        return;
+      }
       setData(next);
       setDataQuery(search);
       if (next.total === 0 && kind === 'results') {
-        setHasConditions((await searchCondition()) !== null);
+        const condition = await searchCondition();
+        if (!stale()) {
+          setHasConditions(condition !== null);
+        }
       }
     } catch (failure) {
-      setMessage(errorText(failure, t));
+      if (!stale()) {
+        setMessage(errorText(failure, t));
+      }
     } finally {
-      setLoading(false);
+      if (!stale()) {
+        setLoading(false);
+      }
     }
   }
 
@@ -416,6 +436,10 @@ export function VacancyList({ title, kind, load, poll, reload, onOpen, query = '
             </button>
           )}
         </div>
+      )}
+      {/* Новый запрос поиска ещё не ответил (§318): строка о том, что идёт, — иначе на экране прежний список без признаков. */}
+      {loading && query !== dataQuery && (
+        <p className="muted" role="status">{query !== '' ? t('list.searching', { query }) : t('app.loading')}</p>
       )}
       {/* Метки — когда есть что отбирать: пока идёт первый сбор (все нули), строки нулей нет (§208). */}
       {results && (hasCounts || recent > 0 || filter.sinceLastVisit === true) && (

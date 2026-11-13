@@ -77,18 +77,33 @@ public class VacancyRepository {
      * вакансии есть страна условий или страна не определена — стран нет; только «*», удалённо «весь мир», и не
      * рассчитанные страны — нет; решения владельца 2026-10-20, §148) и формату текущих условий (гибрид — при любом
      * формате, §125); статус пользователя — «Новая» или «Просмотрена» (остальные — в «Моих откликах» и «Не
-     * интересно», §156).
+     * интересно», §156). Совпадения с позициями — из {@link #MATCHES} ({@code m}).
      */
     private static final String VISIBLE = """
             v.state <> 'CLOSED' AND v.last_confirmed_at >= ?
-            AND EXISTS (SELECT 1 FROM search_condition_match sm
-                        WHERE sm.search_condition_id = c.id AND sm.vacancy_id = v.id)
+            AND v.id IN (SELECT m.vacancy_id FROM m)
             AND (v.work_countries && c.countries OR cardinality(v.work_countries) = 0)
             AND (c.work_format IS NULL OR v.work_format IS NULL
                  OR v.work_format IN ('CONFLICT', 'HYBRID', c.work_format))
             AND (st.status IS NULL OR st.status = 'VIEWED')""";
 
-    /** Видимая часть накопленного списка версии условий: параметры — версия условий и срок подтверждения. */
+    /**
+     * Совпадения вакансий с позициями и группами версии условий ({@code m}: вакансия, код) — один раз на запрос, в
+     * начале запроса; параметр — версия условий. Представление {@code search_condition_match} вычисляется заново при
+     * каждом обращении: проверка {@code EXISTS} по нему у каждой вакансии стоила ≈ 2–3 мс на строку — 1,4 с на запрос
+     * списка, 8 с на числа позиций (§320, замеры {@code target/s318-search-speed.txt}, {@code target/s319-match-speed.txt}).
+     * {@code MATERIALIZED} — PostgreSQL вычисляет подзапрос один раз и не встраивает его в основной:
+     * https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-CTE-MATERIALIZATION
+     */
+    private static final String MATCHES = """
+            WITH m AS MATERIALIZED (SELECT sm.vacancy_id, sm.code FROM search_condition_match sm
+                                    WHERE sm.search_condition_id = ?)
+            """;
+
+    /**
+     * Видимая часть накопленного списка версии условий: параметры — версия условий и срок подтверждения; совпадения —
+     * {@link #MATCHES} в начале запроса.
+     */
     private static final String DELIVERED_FROM = """
              FROM delivered_vacancy d JOIN search_condition c ON c.id = d.search_condition_id
             JOIN vacancy v ON v.id = d.vacancy_id
@@ -100,9 +115,7 @@ public class VacancyRepository {
      * все.
      */
     private static final String ONE_POSITION = """
-             AND (CAST(? AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM search_condition_match fm
-                                                    WHERE fm.search_condition_id = c.id AND fm.vacancy_id = v.id
-                                                      AND fm.code = ?))""";
+             AND (CAST(? AS TEXT) IS NULL OR v.id IN (SELECT m.vacancy_id FROM m WHERE m.code = ?))""";
 
     /**
      * Позиции и группы версии условий с названиями (у группы — на языке интерфейса, иначе английское; §204): код и
@@ -225,7 +238,7 @@ public class VacancyRepository {
     public List<VacancyRow> delivered(long condition, Instant visibleSince, PageWindow page, Selection selection) {
         OffsetDateTime recent = selection.recentFrom() == null ? null : utc(selection.recentFrom());
         return jdbcTemplate.query(selected("*") + " ORDER BY r.opened_at DESC, r.id DESC LIMIT ? OFFSET ?",
-                (row, number) -> vacancy(row), condition, utc(visibleSince), selection.position(),
+                (row, number) -> vacancy(row), condition, condition, utc(visibleSince), selection.position(),
                 selection.position(), recent, recent, escaped(selection.words()), page.size(), page.offset());
     }
 
@@ -239,8 +252,9 @@ public class VacancyRepository {
     public Counts countDelivered(long condition, Instant visibleSince, Selection selection) {
         OffsetDateTime recent = selection.recentFrom() == null ? null : utc(selection.recentFrom());
         return jdbcTemplate.queryForObject(selected("count(*), count(*) FILTER (WHERE r.user_status IS NULL)"),
-                (row, number) -> new Counts(row.getLong(1), row.getLong(2)), condition, utc(visibleSince),
-                selection.position(), selection.position(), recent, recent, escaped(selection.words()));
+                (row, number) -> new Counts(row.getLong(1), row.getLong(2)), condition, condition,
+                utc(visibleSince), selection.position(), selection.position(), recent, recent,
+                escaped(selection.words()));
     }
 
     /**
@@ -253,16 +267,16 @@ public class VacancyRepository {
      * @return позиции и группы условий, больше вакансий — первыми, при равном числе — по названию
      */
     public List<PositionCount> positionCounts(long condition, Instant visibleSince, String language) {
-        return jdbcTemplate.query("""
-                SELECT i.code, i.name, (SELECT count(*)""" + DELIVERED_FROM + """
-                     AND EXISTS (SELECT 1 FROM search_condition_match pm
-                                 WHERE pm.search_condition_id = c.id AND pm.vacancy_id = v.id
-                                   AND pm.code = i.code)) AS total
+        return jdbcTemplate.query(MATCHES + """
+                , visible AS (SELECT v.id""" + DELIVERED_FROM + """
+                ), counted AS (SELECT m.code, count(DISTINCT m.vacancy_id) AS total
+                               FROM m JOIN visible ON visible.id = m.vacancy_id GROUP BY m.code)
+                SELECT i.code, i.name, coalesce(counted.total, 0) AS total
                 FROM """ + ITEMS + """
-                 i (code, name)
+                 i (code, name) LEFT JOIN counted ON counted.code = i.code
                 ORDER BY total DESC, i.name
                 """, (row, number) -> new PositionCount(row.getString(1), row.getString(2), row.getLong(3)),
-                condition, utc(visibleSince), condition, language, condition);
+                condition, condition, utc(visibleSince), condition, language, condition);
     }
 
     /**
@@ -429,11 +443,12 @@ public class VacancyRepository {
     /**
      * Видимая часть накопленного списка версии условий подзапросом {@code r} (поля {@link #COLUMNS} и дата открытия
      * {@code opened_at}) с отбором по позиции, «после прошлого захода» и словам поиска {@link #WORDS} (§312: поиск — по
-     * вычисленным работодателю и агентству, поэтому подзапросом, как у «Моих откликов»); параметры — версия условий,
-     * срок подтверждения, код дважды, граница захода дважды, слова.
+     * вычисленным работодателю и агентству, поэтому подзапросом, как у «Моих откликов»); параметры — версия условий
+     * ({@link #MATCHES}), версия условий, срок подтверждения, код дважды, граница захода дважды, слова.
      */
     private static String selected(String select) {
-        return "SELECT " + select + " FROM (SELECT " + COLUMNS.formatted("c.user_id") + ", " + OPENED + " AS opened_at"
+        return "SELECT " + select + " FROM (" + MATCHES + "SELECT " + COLUMNS.formatted("c.user_id") + ", " + OPENED
+                + " AS opened_at"
                 + DELIVERED_FROM + ONE_POSITION + SINCE_VISIT + ") r" + WORDS;
     }
 

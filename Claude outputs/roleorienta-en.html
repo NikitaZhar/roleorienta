@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>roleorienta — jobs the big job boards don’t show</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --card: #ffffff; --ink: #1f2328; --muted: #5d6166; --line: #e3ddd2;
+    --accent: #b5643a; --accent-soft: #f3e3d6; --green: #2f7d4f; --green-soft: #e1efe5;
+    --dark: #23272b; --serif: Georgia, "DejaVu Serif", "Times New Roman", serif;
+    --mono: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --sans: "Helvetica Neue", Arial, "DejaVu Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+  a { color: inherit; text-decoration: none; }
+  .wrap { width: 860px; margin: 0 auto; }
+  .label { font: 11px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .label.dim { color: var(--muted); }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 700; margin: 0; }
+  h1 { font-size: 40px; line-height: 1.08; letter-spacing: -.01em; }
+  h1 em { color: var(--accent); }
+  h2 { font-size: 30px; line-height: 1.15; }
+  h3 { font-size: 22px; line-height: 1.2; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .chip { display: inline-block; font: 12px/1 var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; margin: 0 6px 6px 0; }
+  .chip.on { background: var(--green-soft); border-color: #cfe3d5; color: var(--green); }
+  .chip.acc { background: var(--accent-soft); border-color: #ecd0bc; color: var(--accent); }
+  .tag { display: inline-block; font: 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 5px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); margin-right: 6px; }
+  .tag.g { background: var(--green-soft); color: var(--green); }
+  section { padding: 56px 0; }
+  .ticks { list-style: none; padding: 0; margin: 16px 0 0; }
+  .ticks li { position: relative; padding-left: 22px; margin: 8px 0; color: var(--muted); font-size: 14px; }
+  .ticks li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+  /* nav */
+  nav { border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 700 16px var(--serif); }
+  .logo { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), #3c6b57); }
+  nav .links { display: flex; gap: 22px; font-size: 13px; color: var(--muted); }
+  .btn { display: inline-block; font: 600 13px var(--sans); padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; padding: 56px 0 72px; }
+  .hero .lead { margin: 18px 0 22px; font-size: 16px; color: var(--muted); }
+  .hero .lead b { color: var(--ink); }
+  .pills { margin-top: 20px; font: 11px/1.8 var(--mono); color: var(--muted); }
+  .pills span { margin-right: 16px; }
+  .pills span::before { content: "●"; color: var(--accent); margin-right: 6px; font-size: 9px; }
+  .jobcard { padding: 18px; position: relative; }
+  .jobcard .title { font: 700 18px var(--serif); margin: 12px 0 2px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; background: #faf8f4; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .k { font: 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .v { font-size: 13px; }
+  .v.acc { color: var(--accent); }
+  .float { position: absolute; right: -14px; bottom: -22px; background: var(--dark); color: #fff; border-radius: 10px; padding: 10px 14px; font-size: 12px; }
+  .float b { font: 700 18px var(--serif); margin-right: 6px; color: #f0b48d; }
+  .caption { font: 11px var(--mono); color: var(--muted); margin-top: 10px; }
+  .jobwrap .caption { margin-top: 34px; }
+  /* problem */
+  .problem { padding: 26px 28px; }
+  .problem .head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px; }
+  .problem .head .label { white-space: nowrap; }
+  .problem .head h3 { font-size: 20px; }
+  .problem .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 36px; }
+  .problem .k { color: var(--accent); margin-bottom: 4px; }
+  .problem p { font-size: 14px; color: var(--muted); }
+  .problem p b { color: var(--ink); }
+  /* four */
+  .four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 26px; }
+  .four .card { padding: 16px; }
+  .num { font: italic 22px var(--serif); color: var(--accent); }
+  .four h4 { font: 700 15px var(--sans); margin: 8px 0 6px; }
+  .four p { font-size: 13px; color: var(--muted); }
+  /* how */
+  .how { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 26px; }
+  .how .card { padding: 18px; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+  .letter { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #ecd0bc; color: var(--accent); font: 12px/26px var(--mono); text-align: center; }
+  .how h4 { font: 700 15px var(--sans); margin: 4px 0 6px; }
+  .how p { font-size: 13px; color: var(--muted); }
+  /* auto */
+  .auto { background: #efe2d4; border: 1px solid #e2cbb5; border-radius: 16px; padding: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; }
+  .auto p.text { margin-top: 12px; font-size: 14px; color: #4b4f53; }
+  .panel { padding: 16px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .row:last-child { border-bottom: 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 8px; }
+  .dot.a { background: var(--accent); }
+  .dot.q { background: #c9c3b8; }
+  /* feature rows */
+  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; padding: 30px 0; }
+  .feat p.text { margin-top: 12px; font-size: 14px; color: var(--muted); }
+  .search { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 10px 0; }
+  .res { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding: 10px 0; font-size: 13px; }
+  .res .t { font-weight: 600; }
+  .res .s { font-size: 12px; color: var(--muted); }
+  .marks span { display: inline-block; width: 24px; height: 24px; line-height: 22px; text-align: center; border: 1px solid var(--line); border-radius: 6px; margin-left: 6px; color: var(--muted); }
+  .merge { display: grid; grid-template-columns: 1fr 30px 1fr; align-items: center; gap: 6px; }
+  .merge .src { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-bottom: 8px; background: #faf8f4; }
+  .merge .arrow { text-align: center; color: var(--accent); font-size: 20px; }
+  .merge .one { border: 2px solid var(--accent); border-radius: 10px; padding: 12px; background: #fffaf6; font-size: 13px; }
+  .group { font: 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 12px 0 2px; }
+  /* roadmap */
+  .road { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
+  .road .card { padding: 16px; }
+  .road h4 { font: 700 14px var(--sans); margin: 8px 0 6px; }
+  .road p { font-size: 13px; color: var(--muted); }
+  /* faq */
+  .faq { margin-top: 22px; width: 680px; }
+  .faq .q { border-top: 1px solid var(--line); padding: 14px 0; }
+  .faq .q:last-child { border-bottom: 1px solid var(--line); }
+  .faq h4 { font: 700 14px var(--sans); margin: 0 0 6px; }
+  .faq p { font-size: 13px; color: var(--muted); }
+  /* cta */
+  .cta { background: var(--dark); color: #fff; border-radius: 16px; padding: 44px 64px; text-align: center; }
+  .cta h2 { color: #fff; font-size: 30px; margin: 10px 0 12px; }
+  .cta h2 em { color: #f0a877; }
+  .cta .sub { color: #b9bcc0; font-size: 14px; }
+  .cta .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; text-align: left; border-top: 1px solid #3a3f44; margin-top: 26px; padding-top: 20px; }
+  .cta .cols .k { color: #f0a877; }
+  .cta .cols h4 { font: 700 14px var(--sans); margin: 6px 0 4px; }
+  .cta .cols p { color: #b9bcc0; font-size: 13px; }
+  footer { border-top: 1px solid var(--line); margin-top: 56px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; padding: 24px 0 32px; font-size: 12px; color: var(--muted); }
+  footer p { width: 420px; }
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <div class="brand"><span class="logo"></span>roleorienta</div>
+  <div class="links"><a href="#problem">Problem</a><a href="#difference">Difference</a><a href="#how">How it works</a><a href="#sources">Sources</a><a href="#features">Features</a><a href="#next">What’s next</a><a href="#faq">FAQ</a></div>
+  <a class="btn" href="#start">Get started</a>
+</div></nav>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="label">Search · collection · applications</div>
+      <h1 style="margin-top:14px">Work is where<br>the big job boards<br><em>don’t reach.</em></h1>
+      <p class="lead">roleorienta finds employers, collects their jobs from the state job portal, the job board and <b>their own recruiting systems</b>, and brings you only the ones that fit — every hour, without duplicates.</p>
+      <a class="btn primary" href="#how">How it works →</a> <a class="btn" href="#features">Features</a>
+      <div class="pills"><span>One job — one record</span><span>New jobs every hour</span><br><span>Applications in one place</span></div>
+    </div>
+    <div class="jobwrap">
+      <div class="card jobcard">
+        <span class="tag">In the employer’s system</span><span class="tag g">Not opened</span>
+        <div class="title">Senior Backend Engineer</div>
+        <div class="muted" style="font-size:13px">Northwind Labs · Slovakia · Hybrid</div>
+        <div class="grid2">
+          <div><div class="k">Opened</div><div class="v">posted 3 days ago</div></div>
+          <div><div class="k">Also found on</div><div class="v">state portal, job board</div></div>
+          <div><div class="k">Languages</div><div class="v">English required</div></div>
+          <div><div class="k">Posting</div><div class="v acc">open the original ↗</div></div>
+        </div>
+        <div class="k" style="margin-bottom:6px">Matches your positions</div>
+        <span class="chip on">Software developers</span><span class="chip on">Java developer</span>
+        <div class="float"><b>7</b>new since your last visit</div>
+      </div>
+      <div class="caption">Sample job card. Data shown schematically.</div>
+    </div>
+  </div>
+
+  <div class="card problem" id="problem">
+    <div class="head"><span class="label">Why ordinary search isn’t enough</span><h3>You simply don’t see some of the jobs that fit</h3></div>
+    <div class="cols">
+      <div><div class="k">A blind spot</div><p>Large employers publish jobs in <b>their own recruiting systems</b> — Workday, SuccessFactors and others; smaller ones only on the state portal. Many never reach the big job board.</p></div>
+      <div><div class="k">You can’t cover it by hand</div><p>To avoid missing them you’d have to know hundreds of companies, find where each one posts and <b>check them all regularly</b>. That’s hard to keep up for long.</p></div>
+      <div><div class="k">A cluttered feed</div><p>The same job appears on the portal, on the board and at the employer; agency ads and stale listings mix in. It’s hard to tell <b>what is new and what is one job</b>.</p></div>
+      <div><div class="k">Everything is scattered</div><p>Applications, replies and interviews are spread across spreadsheets and bookmarks. Pulling it together is a job in itself.</p></div>
+    </div>
+  </div>
+</div>
+
+<section id="difference"><div class="wrap">
+  <div class="label dim">What roleorienta does</div>
+  <h2 style="margin-top:10px">Four things the big<br>job boards do poorly</h2>
+  <p class="muted" style="margin-top:10px;width:520px">roleorienta works in depth: it goes from the company register to each employer’s own channels — and brings back one clean list.</p>
+  <div class="four">
+    <div class="card"><div class="num">01</div><h4>Finds the employers</h4><p>From the national company register to the company’s site, its careers section and its recruiting system — on its own.</p></div>
+    <div class="card"><div class="num">02</div><h4>Every channel, one record</h4><p>The state portal, the job board and the employer’s system are read together; the same job found three times is shown once.</p></div>
+    <div class="card"><div class="num">03</div><h4>Data you can trust</h4><p>No guesses: what isn’t known isn’t shown. A failed check never closes a job; old listings step aside.</p></div>
+    <div class="card"><div class="num">04</div><h4>Professions, not keywords</h4><p>Positions follow the international ISCO-08 / ESCO classification, so “Programátor” and “Software Engineer” land in one place.</p></div>
+  </div>
+</div></section>
+
+<section id="how" style="padding-top:20px"><div class="wrap">
+  <div class="label dim">How it works</div>
+  <h2 style="margin-top:10px">From the first job to<br>the interview result</h2>
+  <p class="muted" style="margin-top:10px">Four steps — all in one clear interface.</p>
+  <div class="how">
+    <div class="card"><div class="letter">A</div><div><div class="label dim">Describe what you’re looking for</div><h4>Results right away, not a blank screen</h4><p>Choose countries, work format and positions — professions from the classification or precise positions like Java developer. Every matching job already collected appears at once.</p></div></div>
+    <div class="card"><div class="letter">B</div><div><div class="label dim">New jobs every hour</div><h4>The search keeps running without you</h4><p>Collection never stops; every hour new matching jobs join your results, and jobs that arrived since your last visit are marked.</p></div></div>
+    <div class="card"><div class="letter">C</div><div><div class="label dim">Work through the results</div><h4>Find, open, decide</h4><p>Search by employer or position, narrow to one of your positions, open the original posting, mark ✓ applied or × not interested — with a few seconds to undo.</p></div></div>
+    <div class="card"><div class="letter">D</div><div><div class="label dim">Track applications</div><h4>Every step of the search — in one place</h4><p>Applied, interview, no reply for 3+ weeks, completed: your applications sorted by state, with the history of every change. You always apply yourself.</p></div></div>
+  </div>
+</div></section>
+
+<div class="wrap">
+  <div class="auto">
+    <div>
+      <div class="label">Works without you</div>
+      <h2 style="margin-top:8px">New jobs every hour</h2>
+      <p class="text">The app reads the state portal, the job board and every connected recruiting system on its own — politely, within each site’s limits and robots.txt — and adds new matching jobs to your list every hour.</p>
+      <ul class="ticks">
+        <li>Your conditions are saved: change them, and the list is rebuilt from everything already collected.</li>
+        <li>“New since last visit” shows only what arrived while you were away.</li>
+        <li>An email digest with a frequency you choose is built and switches on with the server stage.</li>
+      </ul>
+    </div>
+    <div class="card panel">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="k">Collection</span><span class="tag g">Running</span></div>
+      <div class="row"><span><span class="dot"></span>State job portal</span><span class="muted">read every hour</span></div>
+      <div class="row"><span><span class="dot"></span>Job board ads</span><span class="muted">added daily</span></div>
+      <div class="row"><span><span class="dot"></span>Recruiting systems</span><span class="muted">each at least daily</span></div>
+      <div class="k" style="margin:12px 0 6px">Your conditions</div>
+      <span class="chip">Slovakia</span><span class="chip">Any format</span><span class="chip">Software developers</span><span class="chip">Systems analysts</span>
+      <div class="row" style="margin-top:6px"><span><span class="dot a"></span><b>12</b>&nbsp;new since your last visit</span><span class="muted">updated hourly</span></div>
+    </div>
+  </div>
+</div>
+
+<section id="sources"><div class="wrap">
+  <div class="label dim">Features up close</div>
+  <h2 style="margin-top:10px">Data you can trust</h2>
+  <p class="muted" style="margin-top:10px;width:520px">Every feature follows one principle: show the data accurately and clearly, without guesses.</p>
+
+  <div class="feat">
+    <div>
+      <div class="label">Where the jobs come from</div>
+      <h3 style="margin-top:8px">All the channels an<br>employer uses</h3>
+      <p class="text">The state portal brings small and mid-sized employers together with the job-board ads it links to them; large employers are read in their own systems, found automatically from their site or from the “apply” button of a board ad.</p>
+      <ul class="ticks">
+        <li>Ten recruiting-system formats: Workday, SAP SuccessFactors, Oracle Taleo, Oracle Recruiting Cloud, Greenhouse, SmartRecruiters, Personio, Phenom, Nalgoo, schema.org JobPosting.</li>
+        <li>Company career pages without a system are read as they are.</li>
+        <li>Access restrictions and CAPTCHAs are never bypassed.</li>
+      </ul>
+    </div>
+    <div class="card panel">
+      <div class="k" style="margin-bottom:6px">Northwind Labs · channels</div>
+      <div class="row"><span><span class="dot"></span>Company register</span><span class="muted">registration no.</span></div>
+      <div class="row"><span><span class="dot"></span>Company site</span><span class="muted">northwind.sk</span></div>
+      <div class="row"><span><span class="dot"></span>Recruiting system</span><span class="muted">Workday · 26 jobs</span></div>
+      <div class="row"><span><span class="dot"></span>State job portal</span><span class="muted">9 jobs</span></div>
+      <div class="row"><span><span class="dot"></span>Job board</span><span class="muted">5 ads</span></div>
+      <div class="caption">Jobs found in several channels count once.</div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="card panel">
+      <div class="merge">
+        <div>
+          <div class="src">State portal · “IT Consultant (m/ž)”</div>
+          <div class="src">Job board · ad 5384483</div>
+          <div class="src">Employer’s system · job 024-01</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="one"><b>IT Consultant</b><br><span class="muted">Northwind Labs · Žilina</span><br><span class="chip on" style="margin-top:8px">one record</span></div>
+      </div>
+      <div class="caption">Joined by ad number, address, system job id — or the same title and place at the same employer.</div>
+    </div>
+    <div>
+      <div class="label">One job, one record</div>
+      <h3 style="margin-top:8px">The same job never<br>shows up three times</h3>
+      <p class="text">A job published on the portal, on the board and in the employer’s system is one entry in your results — and it closes only when it is gone from every channel.</p>
+      <ul class="ticks">
+        <li>A source that is down or read only partly leaves its jobs open.</li>
+        <li>A job closes after it is missing from several complete reads in a row.</li>
+        <li>Jobs the employer published more than 4 months ago step aside.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="feat" id="features">
+    <div>
+      <div class="label">Results</div>
+      <h3 style="margin-top:8px">Find the job you need<br>in seconds</h3>
+      <p class="text">Search your results by employer or position, narrow them to one of your positions, and decide right in the row.</p>
+      <ul class="ticks">
+        <li>Search ignores case and diacritics: “zilina” finds “Žilina”.</li>
+        <li>Position chips show how many jobs match each of your positions.</li>
+        <li>✓ Applied and × Not interested come with a few seconds to undo.</li>
+      </ul>
+    </div>
+    <div class="card panel">
+      <div style="display:flex;justify-content:space-between"><span style="font:700 16px var(--serif)">3 found</span><span class="muted" style="font-size:12px">2 not opened · updated hourly</span></div>
+      <div class="search"><span>northwind</span><span class="muted">×</span></div>
+      <span class="chip acc">Software developers 385</span><span class="chip">Systems analysts 45</span><span class="chip">Java developer 16</span>
+      <div class="res"><div><div class="t">IT Consultant</div><div class="s">Northwind Labs · Slovakia</div></div><div class="marks"><span>✓</span><span>×</span></div></div>
+      <div class="res"><div><div class="t">Senior Backend Engineer</div><div class="s">Northwind Labs · Slovakia · Hybrid</div></div><div class="marks"><span>✓</span><span>×</span></div></div>
+      <div class="res"><div><div class="t">Data Engineer</div><div class="s">Northwind Labs · Slovakia</div></div><div class="marks"><span>✓</span><span>×</span></div></div>
+    </div>
+  </div>
+
+  <div class="feat">
+    <div class="card panel">
+      <div class="k">My applications</div>
+      <div class="group">Active · 3</div>
+      <div class="row"><span><span class="dot a"></span>Senior Backend Engineer</span><span class="muted">Interview · 10 Nov</span></div>
+      <div class="row"><span><span class="dot"></span>IT Consultant</span><span class="muted">Applied · 8 Nov</span></div>
+      <div class="row"><span><span class="dot"></span>Platform Engineer</span><span class="muted">Applied · 4 Nov</span></div>
+      <div class="group">No reply 3+ weeks · 1</div>
+      <div class="row"><span><span class="dot q"></span>Java Developer</span><span class="muted">Applied · 14 Oct</span></div>
+      <div class="group">Completed · 2</div>
+      <div class="row"><span><span class="dot q"></span>DevOps Engineer</span><span class="muted">Employer declined</span></div>
+    </div>
+    <div>
+      <div class="label">Application tracking</div>
+      <h3 style="margin-top:8px">From application to<br>outcome — nothing gets lost</h3>
+      <p class="text">Mark a job as applied, move it to interview or employer declined — every change is kept in the job’s history, and your applications sort themselves by state.</p>
+      <ul class="ticks">
+        <li>Active applications on top; silent ones after 3 weeks; completed ones below.</li>
+        <li>A job closed by the employer stays in your applications with a mark.</li>
+        <li>Dismissed jobs wait in “Not interested” and can be returned.</li>
+      </ul>
+    </div>
+  </div>
+</div></section>
+
+<section id="next" style="padding-top:20px"><div class="wrap">
+  <div class="label dim">What’s next</div>
+  <h2 style="margin-top:10px">Planned on the roadmap</h2>
+  <p class="muted" style="margin-top:10px;width:560px">The current version is the MVP for Slovakia. These features are planned and not part of it yet.</p>
+  <div class="road">
+    <div class="card"><span class="tag">Planned</span><h4>Company monitoring</h4><p>Pick the employers you care about and follow their jobs.</p></div>
+    <div class="card"><span class="tag">Planned</span><h4>Change history</h4><p>See how requirements, salary and terms of a job changed over time.</p></div>
+    <div class="card"><span class="tag">Planned</span><h4>Salary as in the job</h4><p>Amount or range, currency, period, gross or net — and a filter that compares only comparable figures.</p></div>
+    <div class="card"><span class="tag">Planned</span><h4>Skills and technologies</h4><p>A job’s technologies matched against yours, and what an employer asks for most often.</p></div>
+    <div class="card"><span class="tag">Planned</span><h4>Application details</h4><p>A copy of the job as it was when you applied, stages, notes, dates and interview outcomes.</p></div>
+    <div class="card"><span class="tag">Planned</span><h4>More countries</h4><p>The app isn’t tied to one market; new countries follow after the server stage.</p></div>
+  </div>
+</div></section>
+
+<section id="faq" style="padding-top:20px"><div class="wrap">
+  <div class="label dim">Good to know</div>
+  <h2 style="margin-top:10px">Questions that matter</h2>
+  <div class="faq">
+    <div class="q"><h4>Do you promise every job on the market?</h4><p>No. Coverage grows with the sources and formats the app can read, and it is honest about the rest. The administrator sees which companies lose jobs and closes the gaps one by one.</p></div>
+    <div class="q"><h4>Where does the data come from and how current is it?</h4><p>From the state job portal, the job board and employers’ own recruiting systems and career pages. Sources are read at least once a day, the portal hourly; your results are updated every hour.</p></div>
+    <div class="q"><h4>Why don’t I see the source and the last check date?</h4><p>By design: what matters to you is getting the job in time, not which channel it came through — often it came through several. You see when the job was opened and whether the employer closed it, and the link takes you to the original posting.</p></div>
+    <div class="q"><h4>How does the app know a job is my profession?</h4><p>From the employer’s code on the state portal, the job board’s position, the position dictionary, or the similarity of the title to titles with a known profession. If none of them is sure, the job isn’t guessed into your list.</p></div>
+    <div class="q"><h4>Can I add a company the app missed?</h4><p>Yes. Find it in Companies and add the address of its career page: the app checks it and starts reading it.</p></div>
+    <div class="q"><h4>Do you send applications for me?</h4><p>No. You always apply yourself; the app only keeps track of what you did.</p></div>
+    <div class="q"><h4>Are my applications private?</h4><p>Yes. One user can’t see another’s conditions, lists or marks, and collection works without any user data.</p></div>
+  </div>
+</div></section>
+
+<div class="wrap" id="start">
+  <div class="cta">
+    <div class="label" style="color:#f0a877">Your next step</div>
+    <h2>Start seeing jobs <em>that<br>others don’t.</em></h2>
+    <p class="sub">Describe what you’re looking for once — and get new matching jobs every hour,<br>from every channel employers use.</p>
+    <div class="cols">
+      <div><div class="k">For the candidate</div><h4>Describe what you’re looking for</h4><p>Countries, positions, work format — and results right away, including jobs from employers’ own systems.</p></div>
+      <div><div class="k">Applications</div><h4>Keep the whole search in one place</h4><p>Mark what you applied to, follow replies and interviews, and return to anything you dismissed.</p></div>
+    </div>
+  </div>
+</div>
+
+<footer><div class="wrap">
+  <div class="brand"><span class="logo"></span>roleorienta</div>
+  <p>An app for finding and collecting jobs from every channel employers use. Illustrations on this page are schematic; company names, numbers and dates are shown as examples.</p>
+</div></footer>
+
+</body>
+</html>
